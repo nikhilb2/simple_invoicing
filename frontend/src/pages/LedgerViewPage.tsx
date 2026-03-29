@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
-import type { CompanyProfile, Invoice, Ledger, LedgerStatement, Product } from '../types/api';
+import type { CompanyProfile, Invoice, Ledger, LedgerStatement, PaymentCreate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
 
 function formatCurrency(value: number, currencyCode = 'INR') {
@@ -39,6 +39,17 @@ export default function LedgerViewPage() {
   const [loadingStatement, setLoadingStatement] = useState(false);
   const [error, setError] = useState('');
   const [period, setPeriod] = useState(defaultDateRange);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [paymentForm, setPaymentForm] = useState<PaymentCreate>({
+    ledger_id: ledgerId,
+    voucher_type: 'receipt',
+    amount: 0,
+    date: new Date().toISOString().slice(0, 16),
+    mode: '',
+    reference: '',
+    notes: '',
+  });
+  const [submittingPayment, setSubmittingPayment] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,6 +109,35 @@ export default function LedgerViewPage() {
     }
   }
 
+  async function handleSubmitPayment(e: React.FormEvent) {
+    e.preventDefault();
+    if (paymentForm.amount <= 0) {
+      setError('Amount must be greater than 0');
+      return;
+    }
+    try {
+      setSubmittingPayment(true);
+      setError('');
+      await api.post('/payments/', paymentForm);
+      setShowPaymentForm(false);
+      setPaymentForm({
+        ledger_id: ledgerId,
+        voucher_type: 'receipt',
+        amount: 0,
+        date: new Date().toISOString().slice(0, 16),
+        mode: '',
+        reference: '',
+        notes: '',
+      });
+      // Refresh statement
+      setPeriod((c) => ({ ...c }));
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to record payment'));
+    } finally {
+      setSubmittingPayment(false);
+    }
+  }
+
   if (loadingLedger) {
     return (
       <div className="page-grid">
@@ -138,6 +178,9 @@ export default function LedgerViewPage() {
         </div>
         <button type="button" className="button button--secondary" onClick={() => navigate('/ledgers')}>
           Back to ledgers
+        </button>
+        <button type="button" className="button button--primary" onClick={() => setShowPaymentForm(true)}>
+          Record Receipt / Payment
         </button>
       </section>
 
@@ -215,29 +258,120 @@ export default function LedgerViewPage() {
               <div className="empty-state">No voucher entries in selected period.</div>
             ) : null}
             {!loadingStatement && statement
-              ? statement.entries.map((entry) => (
-                  <div key={entry.invoice_id} className="invoice-row">
+              ? statement.entries.map((entry, idx) => (
+                  <div key={`${entry.entry_type}-${entry.entry_id}-${idx}`} className="invoice-row">
                     <div className="invoice-row__meta">
-                      <strong>{entry.voucher_type} #{entry.invoice_id}</strong>
+                      <strong>{entry.voucher_type} #{entry.entry_id}</strong>
                       <span className="table-subtext">{new Date(entry.date).toLocaleDateString()} · {entry.particulars}</span>
                     </div>
                     <span className="invoice-row__price">
                       {entry.debit > 0 ? `Dr ${formatCurrency(entry.debit, activeCurrencyCode)}` : `Cr ${formatCurrency(entry.credit, activeCurrencyCode)}`}
                     </span>
-                    <button
-                      type="button"
-                      className="button button--ghost button--small"
-                      onClick={() => void handleViewInvoice(entry.invoice_id)}
-                      title="View invoice"
-                    >
-                      View
-                    </button>
+                    {entry.entry_type === 'invoice' ? (
+                      <button
+                        type="button"
+                        className="button button--ghost button--small"
+                        onClick={() => void handleViewInvoice(entry.entry_id)}
+                        title="View invoice"
+                      >
+                        View
+                      </button>
+                    ) : null}
                   </div>
                 ))
               : null}
           </div>
         </article>
       </section>
+
+      {showPaymentForm ? (
+        <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setShowPaymentForm(false)}>
+          <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="panel stack">
+              <div className="panel__header">
+                <h2 className="nav-panel__title">Record Receipt / Payment</h2>
+                <button type="button" className="button button--ghost" onClick={() => setShowPaymentForm(false)}>✕</button>
+              </div>
+              <form onSubmit={(e) => void handleSubmitPayment(e)} className="stack">
+                <div className="field">
+                  <label htmlFor="pay-type">Type</label>
+                  <select
+                    id="pay-type"
+                    className="input"
+                    value={paymentForm.voucher_type}
+                    onChange={(e) => setPaymentForm((f) => ({ ...f, voucher_type: e.target.value as 'receipt' | 'payment' }))}
+                  >
+                    <option value="receipt">Receipt (money received)</option>
+                    <option value="payment">Payment (money paid)</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="pay-amount">Amount</label>
+                  <input
+                    id="pay-amount"
+                    className="input"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={paymentForm.amount || ''}
+                    onChange={(e) => setPaymentForm((f) => ({ ...f, amount: parseFloat(e.target.value) || 0 }))}
+                    required
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="pay-date">Date</label>
+                  <input
+                    id="pay-date"
+                    className="input"
+                    type="datetime-local"
+                    value={paymentForm.date}
+                    onChange={(e) => setPaymentForm((f) => ({ ...f, date: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="pay-mode">Mode</label>
+                  <select
+                    id="pay-mode"
+                    className="input"
+                    value={paymentForm.mode}
+                    onChange={(e) => setPaymentForm((f) => ({ ...f, mode: e.target.value }))}
+                  >
+                    <option value="">Select mode</option>
+                    <option value="cash">Cash</option>
+                    <option value="bank">Bank Transfer</option>
+                    <option value="upi">UPI</option>
+                    <option value="cheque">Cheque</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="pay-ref">Reference (optional)</label>
+                  <input
+                    id="pay-ref"
+                    className="input"
+                    type="text"
+                    placeholder="Cheque no, txn ID..."
+                    value={paymentForm.reference}
+                    onChange={(e) => setPaymentForm((f) => ({ ...f, reference: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="pay-notes">Notes (optional)</label>
+                  <input
+                    id="pay-notes"
+                    className="input"
+                    type="text"
+                    value={paymentForm.notes}
+                    onChange={(e) => setPaymentForm((f) => ({ ...f, notes: e.target.value }))}
+                  />
+                </div>
+                <button type="submit" className="button button--primary" disabled={submittingPayment}>
+                  {submittingPayment ? 'Saving...' : 'Save'}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {previewInvoice ? (
         <InvoicePreview

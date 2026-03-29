@@ -53,7 +53,8 @@ class PaginatedLedgerOut(BaseModel):
 
 
 class LedgerStatementEntry(BaseModel):
-    invoice_id: int
+    entry_id: int
+    entry_type: str  # "invoice" or "payment"
     date: datetime
     voucher_type: str
     particulars: str
@@ -73,7 +74,8 @@ class LedgerStatementOut(BaseModel):
 
 
 class DayBookEntry(BaseModel):
-    invoice_id: int
+    entry_id: int
+    entry_type: str  # "invoice" or "payment"
     date: datetime
     voucher_type: str
     ledger_name: str

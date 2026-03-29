@@ -159,7 +159,8 @@ export type InvoiceCreate = {
 };
 
 export type LedgerStatementEntry = {
-  invoice_id: number;
+  entry_id: number;
+  entry_type: 'invoice' | 'payment';
   date: string;
   voucher_type: string;
   particulars: string;
@@ -179,7 +180,8 @@ export type LedgerStatement = {
 };
 
 export type DayBookEntry = {
-  invoice_id: number;
+  entry_id: number;
+  entry_type: 'invoice' | 'payment';
   date: string;
   voucher_type: string;
   ledger_name: string;
@@ -194,4 +196,27 @@ export type DayBook = {
   total_debit: number;
   total_credit: number;
   entries: DayBookEntry[];
+};
+
+export type Payment = {
+  id: number;
+  ledger_id: number;
+  voucher_type: 'receipt' | 'payment';
+  amount: number;
+  date: string;
+  mode: string | null;
+  reference: string | null;
+  notes: string | null;
+  created_by: number;
+  created_at: string;
+};
+
+export type PaymentCreate = {
+  ledger_id: number;
+  voucher_type: 'receipt' | 'payment';
+  amount: number;
+  date?: string;
+  mode?: string;
+  reference?: string;
+  notes?: string;
 };

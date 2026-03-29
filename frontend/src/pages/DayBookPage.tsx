@@ -129,10 +129,10 @@ export default function DayBookPage() {
             {loading ? <div className="empty-state">Loading vouchers...</div> : null}
             {!loading && (!dayBook || dayBook.entries.length === 0) ? <div className="empty-state">No vouchers found for this period.</div> : null}
             {!loading && dayBook
-              ? dayBook.entries.map((entry) => (
-                  <div key={entry.invoice_id} className="invoice-row">
+              ? dayBook.entries.map((entry, idx) => (
+                  <div key={`${entry.entry_type}-${entry.entry_id}-${idx}`} className="invoice-row">
                     <div className="invoice-row__meta">
-                      <strong>{entry.voucher_type} #{entry.invoice_id}</strong>
+                      <strong>{entry.voucher_type} #{entry.entry_id}</strong>
                       <span className="table-subtext">{new Date(entry.date).toLocaleDateString()} · {entry.ledger_name}</span>
                       <span className="table-subtext">{entry.particulars}</span>
                     </div>

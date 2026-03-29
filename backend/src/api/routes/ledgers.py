@@ -1,4 +1,4 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func
@@ -8,10 +8,18 @@ from src.api.deps import get_current_user, require_roles
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
 from src.models.invoice import Invoice
+from src.models.payment import Payment
 from src.models.user import User, UserRole
 from src.schemas.ledger import DayBookEntry, DayBookOut, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementOut, PaginatedLedgerOut
 
 router = APIRouter()
+
+
+def _make_aware(dt: datetime) -> datetime:
+    """Ensure a datetime is timezone-aware (UTC) for consistent sorting."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 @router.post("", response_model=LedgerOut, include_in_schema=False)
@@ -131,6 +139,10 @@ def delete_ledger(
     if has_invoices:
         raise HTTPException(status_code=400, detail="Cannot delete ledger linked to invoices")
 
+    has_payments = db.query(Payment.id).filter(Payment.ledger_id == ledger_id).first()
+    if has_payments:
+        raise HTTPException(status_code=400, detail="Cannot delete ledger linked to payments")
+
     db.delete(ledger)
     db.commit()
     return {"message": "Ledger deleted"}
@@ -157,18 +169,39 @@ def get_day_book(
         .all()
     )
 
-    entries = [
-        DayBookEntry(
-            invoice_id=invoice.id,
+    payments = (
+        db.query(Payment)
+        .filter(Payment.date >= period_start)
+        .filter(Payment.date <= period_end)
+        .order_by(Payment.date.asc(), Payment.id.asc())
+        .all()
+    )
+
+    entries = []
+    for invoice in invoices:
+        entries.append(DayBookEntry(
+            entry_id=invoice.id,
+            entry_type="invoice",
             date=invoice.created_at,
             voucher_type=invoice.voucher_type.title(),
             ledger_name=invoice.ledger_name or "Unknown ledger",
             particulars=f"{invoice.voucher_type.title()} Invoice #{invoice.id}",
             debit=float(invoice.total_amount) if invoice.voucher_type == "sales" else 0.0,
             credit=float(invoice.total_amount) if invoice.voucher_type == "purchase" else 0.0,
-        )
-        for invoice in invoices
-    ]
+        ))
+    for payment in payments:
+        ledger = db.query(Ledger).filter(Ledger.id == payment.ledger_id).first()
+        entries.append(DayBookEntry(
+            entry_id=payment.id,
+            entry_type="payment",
+            date=payment.date,
+            voucher_type=payment.voucher_type.title(),
+            ledger_name=ledger.name if ledger else "Unknown ledger",
+            particulars=f"{payment.voucher_type.title()} #{payment.id}" + (f" ({payment.mode})" if payment.mode else ""),
+            debit=float(payment.amount) if payment.voucher_type == "payment" else 0.0,
+            credit=float(payment.amount) if payment.voucher_type == "receipt" else 0.0,
+        ))
+    entries.sort(key=lambda e: _make_aware(e.date))
 
     return DayBookOut(
         from_date=from_date,
@@ -207,6 +240,16 @@ def get_ledger_statement(
         .one()
     )
 
+    opening_payment_totals = (
+        db.query(
+            func.coalesce(func.sum(case((Payment.voucher_type == "payment", Payment.amount), else_=0)), 0),
+            func.coalesce(func.sum(case((Payment.voucher_type == "receipt", Payment.amount), else_=0)), 0),
+        )
+        .filter(Payment.ledger_id == ledger_id)
+        .filter(Payment.date < period_start)
+        .one()
+    )
+
     period_invoices = (
         db.query(Invoice)
         .filter(Invoice.ledger_id == ledger_id)
@@ -216,22 +259,42 @@ def get_ledger_statement(
         .all()
     )
 
-    entries = [
-        LedgerStatementEntry(
-            invoice_id=invoice.id,
+    period_payments = (
+        db.query(Payment)
+        .filter(Payment.ledger_id == ledger_id)
+        .filter(Payment.date >= period_start)
+        .filter(Payment.date <= period_end)
+        .order_by(Payment.date.asc(), Payment.id.asc())
+        .all()
+    )
+
+    entries = []
+    for invoice in period_invoices:
+        entries.append(LedgerStatementEntry(
+            entry_id=invoice.id,
+            entry_type="invoice",
             date=invoice.created_at,
             voucher_type=invoice.voucher_type.title(),
             particulars=invoice.ledger_name or ledger.name,
             debit=float(invoice.total_amount) if invoice.voucher_type == "sales" else 0.0,
             credit=float(invoice.total_amount) if invoice.voucher_type == "purchase" else 0.0,
-        )
-        for invoice in period_invoices
-    ]
+        ))
+    for payment in period_payments:
+        entries.append(LedgerStatementEntry(
+            entry_id=payment.id,
+            entry_type="payment",
+            date=payment.date,
+            voucher_type=payment.voucher_type.title(),
+            particulars=f"{payment.voucher_type.title()}" + (f" ({payment.mode})" if payment.mode else ""),
+            debit=float(payment.amount) if payment.voucher_type == "payment" else 0.0,
+            credit=float(payment.amount) if payment.voucher_type == "receipt" else 0.0,
+        ))
+    entries.sort(key=lambda e: _make_aware(e.date))
 
     period_debit = sum(entry.debit for entry in entries)
     period_credit = sum(entry.credit for entry in entries)
-    opening_debit = float(opening_totals[0])
-    opening_credit = float(opening_totals[1])
+    opening_debit = float(opening_totals[0]) + float(opening_payment_totals[0])
+    opening_credit = float(opening_totals[1]) + float(opening_payment_totals[1])
     opening_balance = opening_debit - opening_credit
     closing_balance = opening_balance + period_debit - period_credit
 
