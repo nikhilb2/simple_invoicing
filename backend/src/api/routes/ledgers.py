@@ -86,6 +86,70 @@ def list_ledgers(
     )
 
 
+@router.get("/day-book", response_model=DayBookOut)
+def get_day_book(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    if from_date > to_date:
+        raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
+
+    period_start = datetime.combine(from_date, time.min)
+    period_end = datetime.combine(to_date, time.max)
+
+    invoices = (
+        db.query(Invoice)
+        .filter(Invoice.created_at >= period_start)
+        .filter(Invoice.created_at <= period_end)
+        .order_by(Invoice.created_at.asc(), Invoice.id.asc())
+        .all()
+    )
+
+    payments = (
+        db.query(Payment)
+        .filter(Payment.date >= period_start)
+        .filter(Payment.date <= period_end)
+        .order_by(Payment.date.asc(), Payment.id.asc())
+        .all()
+    )
+
+    entries = []
+    for invoice in invoices:
+        entries.append(DayBookEntry(
+            entry_id=invoice.id,
+            entry_type="invoice",
+            date=invoice.created_at,
+            voucher_type=invoice.voucher_type.title(),
+            ledger_name=invoice.ledger_name or "Unknown ledger",
+            particulars=f"{invoice.voucher_type.title()} Invoice #{invoice.id}",
+            debit=float(invoice.total_amount) if invoice.voucher_type == "sales" else 0.0,
+            credit=float(invoice.total_amount) if invoice.voucher_type == "purchase" else 0.0,
+        ))
+    for payment in payments:
+        ledger = db.query(Ledger).filter(Ledger.id == payment.ledger_id).first()
+        entries.append(DayBookEntry(
+            entry_id=payment.id,
+            entry_type="payment",
+            date=payment.date,
+            voucher_type=payment.voucher_type.title(),
+            ledger_name=ledger.name if ledger else "Unknown ledger",
+            particulars=f"{payment.voucher_type.title()} #{payment.id}" + (f" ({payment.mode})" if payment.mode else ""),
+            debit=float(payment.amount) if payment.voucher_type == "payment" else 0.0,
+            credit=float(payment.amount) if payment.voucher_type == "receipt" else 0.0,
+        ))
+    entries.sort(key=lambda e: _make_aware(e.date))
+
+    return DayBookOut(
+        from_date=from_date,
+        to_date=to_date,
+        total_debit=sum(entry.debit for entry in entries),
+        total_credit=sum(entry.credit for entry in entries),
+        entries=entries,
+    )
+
+
 @router.get("/{ledger_id}", response_model=LedgerOut)
 def get_ledger(
     ledger_id: int,
@@ -152,70 +216,6 @@ def delete_ledger(
     db.delete(ledger)
     db.commit()
     return {"message": "Ledger deleted"}
-
-
-@router.get("/day-book", response_model=DayBookOut)
-def get_day_book(
-    from_date: date = Query(...),
-    to_date: date = Query(...),
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
-):
-    if from_date > to_date:
-        raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
-
-    period_start = datetime.combine(from_date, time.min)
-    period_end = datetime.combine(to_date, time.max)
-
-    invoices = (
-        db.query(Invoice)
-        .filter(Invoice.created_at >= period_start)
-        .filter(Invoice.created_at <= period_end)
-        .order_by(Invoice.created_at.asc(), Invoice.id.asc())
-        .all()
-    )
-
-    payments = (
-        db.query(Payment)
-        .filter(Payment.date >= period_start)
-        .filter(Payment.date <= period_end)
-        .order_by(Payment.date.asc(), Payment.id.asc())
-        .all()
-    )
-
-    entries = []
-    for invoice in invoices:
-        entries.append(DayBookEntry(
-            entry_id=invoice.id,
-            entry_type="invoice",
-            date=invoice.created_at,
-            voucher_type=invoice.voucher_type.title(),
-            ledger_name=invoice.ledger_name or "Unknown ledger",
-            particulars=f"{invoice.voucher_type.title()} Invoice #{invoice.id}",
-            debit=float(invoice.total_amount) if invoice.voucher_type == "sales" else 0.0,
-            credit=float(invoice.total_amount) if invoice.voucher_type == "purchase" else 0.0,
-        ))
-    for payment in payments:
-        ledger = db.query(Ledger).filter(Ledger.id == payment.ledger_id).first()
-        entries.append(DayBookEntry(
-            entry_id=payment.id,
-            entry_type="payment",
-            date=payment.date,
-            voucher_type=payment.voucher_type.title(),
-            ledger_name=ledger.name if ledger else "Unknown ledger",
-            particulars=f"{payment.voucher_type.title()} #{payment.id}" + (f" ({payment.mode})" if payment.mode else ""),
-            debit=float(payment.amount) if payment.voucher_type == "payment" else 0.0,
-            credit=float(payment.amount) if payment.voucher_type == "receipt" else 0.0,
-        ))
-    entries.sort(key=lambda e: _make_aware(e.date))
-
-    return DayBookOut(
-        from_date=from_date,
-        to_date=to_date,
-        total_debit=sum(entry.debit for entry in entries),
-        total_credit=sum(entry.credit for entry in entries),
-        entries=entries,
-    )
 
 
 @router.get("/{ledger_id}/statement", response_model=LedgerStatementOut)
