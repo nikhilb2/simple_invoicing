@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest an improvement or new feature
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for your idea. Please share context so we can evaluate and plan it.
+  - type: input
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem are you trying to solve?
+      placeholder: Users cannot schedule recurring invoices
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the ideal behavior
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any other approaches you evaluated?
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Who benefits and how?
