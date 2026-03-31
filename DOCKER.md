@@ -1,6 +1,6 @@
 # Docker Setup Guide
 
-This guide explains how to run the Respawn Invoicing application using Docker and Docker Compose.
+This guide explains how to run the Simple Invoicing application using Docker and Docker Compose.
 
 ## Prerequisites
 
@@ -9,52 +9,56 @@ This guide explains how to run the Respawn Invoicing application using Docker an
 
 ## Quick Start
 
-### 1. Start all services
+### 1. Set up environment variables
+
+Copy the example `.env` file and update the values:
 
 ```bash
-docker-compose up -d
+cp .env.example .env
+```
+
+### 2. Start services
+
+**Production:**
+
+```bash
+docker compose --profile prod up -d
+```
+
+**Development (with hot-reload):**
+
+```bash
+docker compose --profile dev up -d
 ```
 
 This will:
 - Create and start a PostgreSQL database
-- Build and start the FastAPI backend service
-- Build and start the React frontend service with Nginx
+- Build and start the FastAPI backend service (with hot-reload in dev mode)
+- Build and start the React frontend service (Nginx in prod, Vite dev server in dev)
 
-### 2. Access the application
+### 3. Access the application
 
-- **Frontend**: http://localhost (port 80)
-- **Backend API**: http://localhost:8000 (port 8000)
-- **Database**: localhost:5432 (port 5432)
+| Service      | Production          | Development              |
+|-------------|---------------------|--------------------------|
+| Frontend    | http://localhost     | http://localhost:5173     |
+| Backend API | http://localhost:8000 | http://localhost:8000    |
+| Database    | localhost:5432       | localhost:5432           |
 
-### 3. Seed initial data (optional)
+### 4. Seed initial data (optional)
 
 ```bash
-docker-compose exec backend python seed_admin.py
+docker compose --profile dev exec backend-dev python seed_admin.py
 ```
-
-This creates an admin user with:
-- Email: `admin@respawn.dev`
-- Password: `Admin@123`
 
 ## Development
 
 ### Running in development mode
 
-For development with hot-reload:
-
 ```bash
-docker-compose up -d
+docker compose --profile dev up -d
 ```
 
-The backend container is already configured with `--reload` flag to enable hot-reload on code changes.
-
-For frontend live reload, you can also run locally:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
+This starts `db`, `backend-dev`, and `frontend-dev` services. The backend has `--reload` enabled and source code is mounted as a volume, so changes are reflected immediately. The frontend runs the Vite dev server with hot module replacement on port 5173.
 
 ### Viewing logs
 
@@ -127,7 +131,7 @@ docker-compose up -d --build backend
 ```bash
 docker-compose exec backend bash
 docker-compose exec frontend sh
-docker-compose exec db psql -U respawn_user -d respawn_invoicing
+docker-compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB
 ```
 
 ## Troubleshooting
@@ -178,9 +182,12 @@ Create a `.env` file in the project root to override defaults:
 
 ```env
 # Database
-DATABASE_URL=postgresql://respawn_user:respawn_password@db:5432/respawn_invoicing
+POSTGRES_USER=your_db_user
+POSTGRES_PASSWORD=your_db_password
+POSTGRES_DB=your_db_name
 
 # Backend
+DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
 SECRET_KEY=your-very-secure-secret-key
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -208,7 +215,7 @@ docker-compose ps
 ### Check specific service health
 
 ```bash
-docker inspect respawn_backend | grep -A 5 '"Health"'
+docker inspect simple_invoicing_backend | grep -A 5 '"Health"'
 ```
 
 ### Monitor resource usage
