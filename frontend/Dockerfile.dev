@@ -6,6 +6,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
+# Install Playwright chromium browser and its OS-level dependencies
+RUN npx playwright install --with-deps chromium
+
 # Source code is mounted as a volume — not copied
 EXPOSE 5173
 
