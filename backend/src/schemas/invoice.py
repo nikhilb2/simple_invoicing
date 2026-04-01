@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 from pydantic import BaseModel, Field
-from typing import List, Literal
+from typing import List, Literal, Optional
 from src.schemas.ledger import LedgerOut
 
 
@@ -13,6 +13,7 @@ class InvoiceItemCreate(BaseModel):
 class InvoiceCreate(BaseModel):
     ledger_id: int
     voucher_type: Literal["sales", "purchase"] = "sales"
+    invoice_date: Optional[date] = None
     items: List[InvoiceItemCreate]
 
 
@@ -59,6 +60,7 @@ class InvoiceOut(BaseModel):
     sgst_amount: float
     igst_amount: float
     total_amount: float
+    invoice_date: datetime
     created_at: datetime
     items: list[InvoiceItemOut] = Field(default_factory=list)
 

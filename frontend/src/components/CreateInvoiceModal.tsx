@@ -43,6 +43,7 @@ export default function CreateInvoiceModal({
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [selectedLedgerId, setSelectedLedgerId] = useState(preselectedLedgerId ? String(preselectedLedgerId) : '');
   const [voucherType, setVoucherType] = useState<'sales' | 'purchase'>(preselectedVoucherType || 'sales');
+  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [items, setItems] = useState<InvoiceFormItem[]>([createItem(1)]);
   const [nextItemId, setNextItemId] = useState(2);
   const [loading, setLoading] = useState(true);
@@ -112,6 +113,7 @@ export default function CreateInvoiceModal({
       const payload: InvoiceCreate = {
         ledger_id: Number(selectedLedgerId),
         voucher_type: voucherType,
+        invoice_date: invoiceDate,
         items: items.map((item) => ({
           product_id: Number(item.productId),
           quantity: Number(item.quantity),
@@ -177,6 +179,18 @@ export default function CreateInvoiceModal({
                     <option key={l.id} value={l.id}>{l.name} ({l.gst})</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="field">
+                <label htmlFor="modal-inv-date">Invoice date</label>
+                <input
+                  id="modal-inv-date"
+                  className="input"
+                  type="date"
+                  value={invoiceDate}
+                  onChange={(e) => setInvoiceDate(e.target.value)}
+                  required
+                />
               </div>
             </div>
 

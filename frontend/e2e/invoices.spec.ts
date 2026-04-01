@@ -300,4 +300,70 @@ test.describe('Invoices', () => {
     // The projected total chip should exist somewhere on page
     // It updates as line items are filled
   });
+
+  test('creates an invoice with a custom (backdated) invoice date', async ({ authedPage: page }) => {
+    const { sku, ledgerName } = await seedInvoiceData(page);
+
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    // Select voucher type
+    await page.selectOption('#invoice-voucher-type', 'sales');
+
+    // Select ledger
+    const ledgerSelect = page.locator('#invoice-ledger');
+    const ledgerOptions = ledgerSelect.locator('option');
+    const ledgerCount = await ledgerOptions.count();
+    for (let i = 0; i < ledgerCount; i++) {
+      const text = await ledgerOptions.nth(i).textContent();
+      if (text?.includes(ledgerName)) {
+        const val = (await ledgerOptions.nth(i).getAttribute('value')) || '';
+        await ledgerSelect.selectOption(val);
+        break;
+      }
+    }
+
+    // Set a past invoice date
+    const pastDate = '2025-06-15';
+    await page.fill('#invoice-date', pastDate);
+
+    // Select product in line item
+    const productSelect = page.locator('[id^="invoice-product-"]').first();
+    const prodOptions = productSelect.locator('option');
+    const prodCount = await prodOptions.count();
+    for (let i = 0; i < prodCount; i++) {
+      const text = await prodOptions.nth(i).textContent();
+      if (text?.includes(sku)) {
+        const val = (await prodOptions.nth(i).getAttribute('value')) || '';
+        await productSelect.selectOption(val);
+        break;
+      }
+    }
+    await page.locator('[id^="invoice-quantity-"]').first().fill('2');
+
+    await page.click('button:has-text("Create invoice")');
+    await expectSuccess(page, 'invoice created');
+
+    // Verify the invoice appears in the list with the backdated date
+    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
+    await expect(invoiceRow).toBeVisible();
+    // The date chip should show 6/15/2025 (locale-dependent, check for the year)
+    await expect(invoiceRow.locator('.invoice-meta-chip', { hasText: 'Date' })).toContainText('2025');
+
+    // Verify the invoice date field resets to today after creation
+    const dateInput = page.locator('#invoice-date');
+    const resetValue = await dateInput.inputValue();
+    const today = new Date().toISOString().slice(0, 10);
+    expect(resetValue).toBe(today);
+  });
+
+  test('invoice date defaults to today', async ({ authedPage: page }) => {
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    const dateInput = page.locator('#invoice-date');
+    const value = await dateInput.inputValue();
+    const today = new Date().toISOString().slice(0, 10);
+    expect(value).toBe(today);
+  });
 });

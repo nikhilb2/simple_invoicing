@@ -146,6 +146,7 @@ export type Invoice = {
   sgst_amount: number;
   igst_amount: number;
   total_amount: number;
+  invoice_date: string;
   created_at: string;
   items: InvoiceItem[];
 };
@@ -171,6 +172,7 @@ export type InvoiceItemInput = {
 export type InvoiceCreate = {
   voucher_type: 'sales' | 'purchase';
   ledger_id: number;
+  invoice_date?: string;
   items: InvoiceItemInput[];
 };
 

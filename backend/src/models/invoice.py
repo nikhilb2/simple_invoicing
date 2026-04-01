@@ -34,6 +34,7 @@ class Invoice(Base):
     sgst_amount = Column(Numeric(10, 2), nullable=False, default=0)
     igst_amount = Column(Numeric(10, 2), nullable=False, default=0)
     total_amount = Column(Numeric(10, 2), nullable=False)
+    invoice_date = Column(DateTime, nullable=False, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     ledger = relationship("Buyer", back_populates="invoices")

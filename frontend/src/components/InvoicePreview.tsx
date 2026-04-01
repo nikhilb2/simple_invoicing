@@ -102,7 +102,7 @@ export default function InvoicePreview({ invoice, products, currencyCode, onClos
             <div className="invoice-sheet__meta">
               <span className="invoice-badge">{invoice.voucher_type === 'sales' ? 'Sales' : 'Purchase'}</span>
               <h2>Invoice {invoice.invoice_number || `#${invoice.id}`}</h2>
-              <p>Date: {new Date(invoice.created_at).toLocaleDateString()}</p>
+              <p>Date: {new Date(invoice.invoice_date).toLocaleDateString()}</p>
               <p>Currency: {previewCurrencyCode}</p>
             </div>
           </header>

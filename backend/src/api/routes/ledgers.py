@@ -101,9 +101,9 @@ def get_day_book(
 
     invoices = (
         db.query(Invoice)
-        .filter(Invoice.created_at >= period_start)
-        .filter(Invoice.created_at <= period_end)
-        .order_by(Invoice.created_at.asc(), Invoice.id.asc())
+        .filter(Invoice.invoice_date >= period_start)
+        .filter(Invoice.invoice_date <= period_end)
+        .order_by(Invoice.invoice_date.asc(), Invoice.id.asc())
         .all()
     )
 
@@ -120,7 +120,7 @@ def get_day_book(
         entries.append(DayBookEntry(
             entry_id=invoice.id,
             entry_type="invoice",
-            date=invoice.created_at,
+            date=invoice.invoice_date,
             voucher_type=invoice.voucher_type.title(),
             ledger_name=invoice.ledger_name or "Unknown ledger",
             particulars=f"{invoice.voucher_type.title()} Invoice #{invoice.id}",
@@ -242,7 +242,7 @@ def get_ledger_statement(
             func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", Invoice.total_amount), else_=0)), 0),
         )
         .filter(Invoice.ledger_id == ledger_id)
-        .filter(Invoice.created_at < period_start)
+        .filter(Invoice.invoice_date < period_start)
         .one()
     )
 
@@ -259,9 +259,9 @@ def get_ledger_statement(
     period_invoices = (
         db.query(Invoice)
         .filter(Invoice.ledger_id == ledger_id)
-        .filter(Invoice.created_at >= period_start)
-        .filter(Invoice.created_at <= period_end)
-        .order_by(Invoice.created_at.asc(), Invoice.id.asc())
+        .filter(Invoice.invoice_date >= period_start)
+        .filter(Invoice.invoice_date <= period_end)
+        .order_by(Invoice.invoice_date.asc(), Invoice.id.asc())
         .all()
     )
 
@@ -279,7 +279,7 @@ def get_ledger_statement(
         entries.append(LedgerStatementEntry(
             entry_id=invoice.id,
             entry_type="invoice",
-            date=invoice.created_at,
+            date=invoice.invoice_date,
             voucher_type=invoice.voucher_type.title(),
             particulars=invoice.ledger_name or ledger.name,
             debit=float(invoice.total_amount) if invoice.voucher_type == "sales" else 0.0,
@@ -641,7 +641,7 @@ def download_ledger_statement_pdf(
             func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", Invoice.total_amount), else_=0)), 0),
         )
         .filter(Invoice.ledger_id == ledger_id)
-        .filter(Invoice.created_at < period_start)
+        .filter(Invoice.invoice_date < period_start)
         .one()
     )
 
@@ -658,9 +658,9 @@ def download_ledger_statement_pdf(
     period_invoices = (
         db.query(Invoice)
         .filter(Invoice.ledger_id == ledger_id)
-        .filter(Invoice.created_at >= period_start)
-        .filter(Invoice.created_at <= period_end)
-        .order_by(Invoice.created_at.asc(), Invoice.id.asc())
+        .filter(Invoice.invoice_date >= period_start)
+        .filter(Invoice.invoice_date <= period_end)
+        .order_by(Invoice.invoice_date.asc(), Invoice.id.asc())
         .all()
     )
 
@@ -678,7 +678,7 @@ def download_ledger_statement_pdf(
         entries.append(LedgerStatementEntry(
             entry_id=invoice.id,
             entry_type="invoice",
-            date=invoice.created_at,
+            date=invoice.invoice_date,
             voucher_type=invoice.voucher_type.title(),
             particulars=invoice.ledger_name or ledger.name,
             debit=float(invoice.total_amount) if invoice.voucher_type == "sales" else 0.0,

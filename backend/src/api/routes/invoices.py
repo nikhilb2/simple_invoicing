@@ -1,5 +1,6 @@
 from io import BytesIO
 from html import escape
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -97,6 +98,10 @@ def _apply_payload_to_invoice(
     invoice.voucher_type = payload.voucher_type
     if created_by is not None:
         invoice.created_by = created_by
+
+    if payload.invoice_date is not None:
+        invoice.invoice_date = datetime.combine(payload.invoice_date, datetime.min.time())
+
     invoice.invoice_number = _generate_invoice_number(invoice.id)
 
     if not invoice.company_gst or not invoice.ledger_gst:
@@ -310,7 +315,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
     currency = invoice.company_currency_code or "USD"
     voucher_label = "Sales" if invoice.voucher_type == "sales" else "Purchase"
     inv_number = invoice.invoice_number or f"#{invoice.id}"
-    inv_date = invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A"
+    inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else (invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A")
 
     product_map = {p.id: p for p in products}
 

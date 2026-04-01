@@ -40,6 +40,7 @@ export default function InvoicesPage() {
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [selectedLedgerId, setSelectedLedgerId] = useState('');
   const [voucherType, setVoucherType] = useState<'sales' | 'purchase'>('sales');
+  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [showLedgerModal, setShowLedgerModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
   const [showStockModal, setShowStockModal] = useState(false);
@@ -153,6 +154,7 @@ export default function InvoicesPage() {
     const defaultProduct = products[0];
     setItems([createItem(1, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))]);
     setNextItemId(2);
+    setInvoiceDate(new Date().toISOString().slice(0, 10));
   }
 
   function startEditingInvoice(invoice: Invoice) {
@@ -171,6 +173,7 @@ export default function InvoicesPage() {
     setEditingInvoiceId(invoice.id);
     setVoucherType(invoice.voucher_type);
     setSelectedLedgerId(String(invoice.ledger_id));
+    setInvoiceDate(invoice.invoice_date ? invoice.invoice_date.slice(0, 10) : new Date().toISOString().slice(0, 10));
 
     const nextItems = invoice.items.map((line, index) => ({
       id: index + 1,
@@ -194,6 +197,7 @@ export default function InvoicesPage() {
       const payload: InvoiceCreate = {
         ledger_id: Number(selectedLedgerId),
         voucher_type: voucherType,
+        invoice_date: invoiceDate,
         items: items.map((item) => ({
           product_id: Number(item.productId),
           quantity: Number(item.quantity),
@@ -428,6 +432,18 @@ export default function InvoicesPage() {
                 </select>
               </div>
 
+              <div className="field">
+                <label htmlFor="invoice-date">Invoice date</label>
+                <input
+                  id="invoice-date"
+                  className="input"
+                  type="date"
+                  value={invoiceDate}
+                  onChange={(event) => setInvoiceDate(event.target.value)}
+                  required
+                />
+              </div>
+
               <div className="button-row">
                 <button type="button" className="button button--secondary" onClick={() => setShowLedgerModal(true)}>
                   Add ledger
@@ -588,7 +604,7 @@ export default function InvoicesPage() {
                       </div>
 
                       <div className="invoice-row__chips">
-                        <span className="invoice-meta-chip">Date {new Date(invoice.created_at).toLocaleDateString()}</span>
+                        <span className="invoice-meta-chip">Date {new Date(invoice.invoice_date).toLocaleDateString()}</span>
                         <span className="invoice-meta-chip">GST {invoice.ledger?.gst || invoice.ledger_gst || 'N/A'}</span>
                         <span className="invoice-meta-chip">Phone {invoice.ledger?.phone_number || invoice.ledger_phone || 'N/A'}</span>
                       </div>
