@@ -84,6 +84,8 @@ services:
       dockerfile: Dockerfile.dev
     container_name: simple_invoicing_frontend_dev
     profiles: ["dev"]
+    environment:
+      API_PROXY_TARGET: http://backend-dev:8000
     depends_on:
       - backend-dev
     ports:
