@@ -100,13 +100,13 @@ test.describe('Ledgers CRUD', () => {
     await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
     await expectSuccess(page, 'Ledger created');
 
-    // Search, then delete — accept the confirm dialog and wait for new banner
+    // Search, then delete — click Delete row button, then confirm in the custom dialog
     await page.fill('#ledger-search', name);
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: name });
     await expect(row).toBeVisible({ timeout: 10_000 });
-    page.on('dialog', (dialog) => dialog.accept());
     await row.locator('button:has-text("Delete")').click();
+    await page.locator('.modal-overlay button:has-text("Delete")').click();
     await expect(page.locator('.status-banner--success')).toContainText('Ledger deleted', { timeout: 10_000 });
     await expect(page.locator('.table-row', { hasText: name })).not.toBeVisible();
   });

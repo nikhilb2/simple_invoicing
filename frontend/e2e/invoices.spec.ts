@@ -285,10 +285,10 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'invoice created');
 
-    // Delete the invoice — handle confirm dialog
+    // Delete the invoice — click Delete row button, then confirm in the custom dialog
     const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    page.on('dialog', (dialog) => dialog.accept());
     await invoiceRow.locator('button:has-text("Delete")').click();
+    await page.locator('.modal-overlay button:has-text("Delete")').click();
     await expect(page.locator('.status-banner--success')).toContainText('deleted', { timeout: 10_000 });
   });
 
