@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import type { Ledger, PaginatedLedgers } from '../types/api';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 export default function LedgersPage() {
   const navigate = useNavigate();
@@ -9,6 +10,8 @@ export default function LedgersPage() {
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingLedgerId, setDeletingLedgerId] = useState<number | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [pendingDeleteLedgerId, setPendingDeleteLedgerId] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [search, setSearch] = useState('');
@@ -46,22 +49,33 @@ export default function LedgersPage() {
     void loadLedgers(page, search);
   }, [page, search]);
 
-  async function handleDeleteLedger(ledgerId: number) {
-    const confirmed = window.confirm(`Delete ledger #${ledgerId}?`);
-    if (!confirmed) return;
+  function handleDeleteLedger(ledgerId: number) {
+    setPendingDeleteLedgerId(ledgerId);
+    setShowDeleteDialog(true);
+  }
+
+  function cancelDeleteLedger() {
+    setShowDeleteDialog(false);
+    setPendingDeleteLedgerId(null);
+  }
+
+  async function confirmDeleteLedger() {
+    if (pendingDeleteLedgerId === null) return;
+    setShowDeleteDialog(false);
 
     try {
-      setDeletingLedgerId(ledgerId);
+      setDeletingLedgerId(pendingDeleteLedgerId);
       setError('');
       setSuccess('');
-      await api.delete(`/ledgers/${ledgerId}`);
-      setLedgers((current) => current.filter((l) => l.id !== ledgerId));
+      await api.delete(`/ledgers/${pendingDeleteLedgerId}`);
+      setLedgers((current) => current.filter((l) => l.id !== pendingDeleteLedgerId));
       setTotal((t) => t - 1);
       setSuccess('Ledger deleted successfully.');
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to delete ledger'));
     } finally {
       setDeletingLedgerId(null);
+      setPendingDeleteLedgerId(null);
     }
   }
 
@@ -146,7 +160,7 @@ export default function LedgersPage() {
                       <button
                         type="button"
                         className="button button--danger"
-                        onClick={() => void handleDeleteLedger(ledger.id)}
+                        onClick={() => handleDeleteLedger(ledger.id)}
                         disabled={deletingLedgerId === ledger.id}
                       >
                         {deletingLedgerId === ledger.id ? 'Deleting...' : 'Delete'}
@@ -182,6 +196,18 @@ export default function LedgersPage() {
           ) : null}
         </article>
       </section>
+
+      {showDeleteDialog ? (
+        <ConfirmDialog
+          message={`Are you sure you want to delete ledger #${pendingDeleteLedgerId}?`}
+          title="Delete ledger"
+          confirmText="Delete"
+          cancelText="Cancel"
+          danger={true}
+          onConfirm={() => void confirmDeleteLedger()}
+          onCancel={cancelDeleteLedger}
+        />
+      ) : null}
     </div>
   );
 }

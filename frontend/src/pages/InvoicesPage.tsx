@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerCreate, PaginatedInvoices, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 type InvoiceFormItem = {
   id: number;
@@ -66,6 +67,8 @@ export default function InvoicesPage() {
   const [nextItemId, setNextItemId] = useState(2);
   const [editingInvoiceId, setEditingInvoiceId] = useState<number | null>(null);
   const [deletingInvoiceId, setDeletingInvoiceId] = useState<number | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [pendingDeleteInvoiceId, setPendingDeleteInvoiceId] = useState<number | null>(null);
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -227,18 +230,26 @@ export default function InvoicesPage() {
   }
 
   async function handleDeleteInvoice(invoiceId: number) {
-    const shouldDelete = window.confirm(`Delete invoice #${invoiceId}? Inventory will be rolled back.`);
-    if (!shouldDelete) {
-      return;
-    }
+    setPendingDeleteInvoiceId(invoiceId);
+    setShowDeleteDialog(true);
+  }
+
+  function cancelDeleteInvoice() {
+    setShowDeleteDialog(false);
+    setPendingDeleteInvoiceId(null);
+  }
+
+  async function confirmDeleteInvoice() {
+    if (pendingDeleteInvoiceId === null) return;
+    setShowDeleteDialog(false);
 
     try {
-      setDeletingInvoiceId(invoiceId);
+      setDeletingInvoiceId(pendingDeleteInvoiceId);
       setError('');
       setSuccess('');
-      await api.delete(`/invoices/${invoiceId}`);
+      await api.delete(`/invoices/${pendingDeleteInvoiceId}`);
 
-      if (editingInvoiceId === invoiceId) {
+      if (editingInvoiceId === pendingDeleteInvoiceId) {
         resetInvoiceForm();
       }
 
@@ -248,6 +259,7 @@ export default function InvoicesPage() {
       setError(getApiErrorMessage(err, 'Unable to delete invoice'));
     } finally {
       setDeletingInvoiceId(null);
+      setPendingDeleteInvoiceId(null);
     }
   }
 
@@ -984,6 +996,18 @@ export default function InvoicesPage() {
             </form>
           </div>
         </div>
+      ) : null}
+
+      {showDeleteDialog ? (
+        <ConfirmDialog
+          message={`Are you sure you want to delete invoice #${pendingDeleteInvoiceId}? Inventory will be rolled back.`}
+          title="Delete invoice"
+          confirmText="Delete"
+          cancelText="Cancel"
+          danger={true}
+          onConfirm={() => void confirmDeleteInvoice()}
+          onCancel={cancelDeleteInvoice}
+        />
       ) : null}
     </div>
   );
