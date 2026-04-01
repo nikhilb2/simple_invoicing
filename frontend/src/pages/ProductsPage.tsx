@@ -226,7 +226,7 @@ export default function ProductsPage() {
                   className="input"
                   value={form.name}
                   onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                  placeholder="Respawn Controller"
+                  placeholder="Simple Controller"
                   required
                 />
               </div>

@@ -1,6 +1,6 @@
-# Contributing to Respawn Invoicing
+# Contributing to Simple Invoicing
 
-Thank you for your interest in contributing to Respawn Invoicing.
+Thank you for your interest in contributing to Simple Invoicing.
 
 We welcome all kinds of contributions:
 - Bug reports

@@ -1,7 +1,7 @@
 import { test as base, expect, Page } from '@playwright/test';
 
 /** Default admin credentials – override via env vars if needed. */
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'admin@respawn.dev';
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'admin@simple.dev';
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'Admin@123';
 
 /**

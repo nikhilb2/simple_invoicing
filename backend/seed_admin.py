@@ -1,13 +1,18 @@
 from src.db.session import SessionLocal
+from src.db.base import Base
+from src.db.session import engine
 from src.models.user import User, UserRole
 from src.core.security import get_password_hash
 
-EMAIL = "admin@respawn.dev"
+EMAIL = "admin@simple.dev"
 PASSWORD = "Admin@123"
 NAME = "System Admin"
 
 
 def main():
+    # Ensure core tables exist when running seed directly against a fresh database.
+    Base.metadata.create_all(bind=engine)
+
     db = SessionLocal()
     try:
         existing = db.query(User).filter(User.email == EMAIL).first()

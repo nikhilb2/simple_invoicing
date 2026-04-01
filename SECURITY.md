@@ -14,7 +14,7 @@ We actively support the latest `main` branch.
 Please do not open public issues for security vulnerabilities.
 
 Instead, report vulnerabilities privately via:
-- Email: security@respawn.dev
+- Email: security@simple.dev
 
 Please include:
 - A clear description of the issue
