@@ -22,7 +22,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <div className="app-shell__backdrop app-shell__backdrop--right" />
       <header className="topbar">
         <div>
-          <Link to="/" className="brand-mark">Respawn Invoicing</Link>
+          <Link to="/" className="brand-mark">Simple Invoicing</Link>
           <p className="topbar__subtitle">
             Stock, billing, and operator workflows in one place.
           </p>

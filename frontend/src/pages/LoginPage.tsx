@@ -36,7 +36,7 @@ export default function LoginPage() {
         transition={{ duration: 0.35, ease: 'easeOut' }}
       >
         <section className="login-hero">
-          <p className="eyebrow">Respawn control surface</p>
+          <p className="eyebrow">Simple control surface</p>
           <h1 className="login-hero__title">Run inventory and invoicing without spreadsheet drag.</h1>
           <p className="section-copy">
             The frontend now centers the live workflows the backend already supports: product intake,
@@ -85,7 +85,7 @@ export default function LoginPage() {
             <input
               id="email"
               className="input"
-              placeholder="admin@respawn.dev"
+              placeholder="admin@simple.dev"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               autoComplete="email"

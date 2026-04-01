@@ -1,11 +1,11 @@
-# Respawn Invoicing - Project Context
+# Simple Invoicing - Project Context
 
 **Last Updated**: March 25, 2026  
 **Project Type**: Full-stack invoicing system with Tally-style accounting ledger
 
 ## Project Overview
 
-Respawn Invoicing is a modern web application that transforms traditional buyer-based invoicing into a comprehensive accounting ledger system inspired by Tally accounting software. The application supports dual-voucher accounting (Sales and Purchase invoices) with inventory management, period-based financial reporting, and a day-book register.
+Simple Invoicing is a modern web application that transforms traditional buyer-based invoicing into a comprehensive accounting ledger system inspired by Tally accounting software. The application supports dual-voucher accounting (Sales and Purchase invoices) with inventory management, period-based financial reporting, and a day-book register.
 
 **Primary Goals**:
 - Provide a Tally-like minimal replica for small business invoicing and accounting
@@ -41,7 +41,7 @@ Respawn Invoicing is a modern web application that transforms traditional buyer-
 ## Project Structure
 
 ```
-respawn-invoicing/
+simple_invoicing/
 ├── backend/
 │   ├── app_main.py                 # FastAPI app initialization, migrations, routes registration
 │   ├── requirements.txt             # Python dependencies
@@ -307,7 +307,7 @@ Uses SQLAlchemy `case()` to separate sales and purchase totals in the opening pe
 ## Authentication & Security
 
 **Default Admin Credentials** (create via `python seed_admin.py`):
-- Email: `admin@respawn.dev`
+- Email: `admin@simple.dev`
 - Password: `Admin@123`
 
 **JWT Token**:

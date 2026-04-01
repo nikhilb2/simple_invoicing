@@ -70,7 +70,7 @@ cd backend
 The backend Dockerfile (`backend/Dockerfile`) already installs the system libraries. No extra steps are needed — just build normally:
 
 ```bash
-docker build -t respawn-backend ./backend
+docker build -t simple-backend ./backend
 ```
 
 ## Troubleshooting

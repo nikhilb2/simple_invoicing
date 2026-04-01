@@ -1,6 +1,6 @@
 <div align="center">
 
-# Respawn Invoicing
+# Simple Invoicing
 
 **Modern, open-source invoicing & accounting system for small businesses**
 
@@ -109,7 +109,7 @@ python seed_admin.py
 ### Default Credentials
 
 After seeding, log in with:
-- **Email:** `admin@respawn.dev`
+- **Email:** `admin@simple.dev`
 - **Password:** `Admin@123`
 
 > ⚠️ Change these immediately in production!
@@ -117,7 +117,7 @@ After seeding, log in with:
 ## Project Structure
 
 ```
-respawn-invoicing/
+simple_invoicing/
 ├── backend/                # FastAPI application
 │   ├── src/
 │   │   ├── api/routes/     # REST API endpoints

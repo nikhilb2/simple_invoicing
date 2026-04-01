@@ -58,7 +58,7 @@ def run_pending_migrations() -> None:
 
 run_pending_migrations()
 
-app = FastAPI(title="Respawn Invoicing API", version="0.1.0")
+app = FastAPI(title="Simple Invoicing API", version="0.1.0")
 
 
 def get_cors_origins() -> list[str]:

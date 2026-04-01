@@ -23,7 +23,7 @@ test.describe('Authentication', () => {
 
   test('logs in with valid admin credentials', async ({ page }) => {
     await page.goto('/login');
-    await page.fill('#email', 'admin@respawn.dev');
+    await page.fill('#email', 'admin@simple.dev');
     await page.fill('#password', 'Admin@123');
     await page.click('button:has-text("Open dashboard")');
     await expect(page).toHaveURL('/', { timeout: 10_000 });
@@ -32,7 +32,7 @@ test.describe('Authentication', () => {
 
   test('shows loading state while signing in', async ({ page }) => {
     await page.goto('/login');
-    await page.fill('#email', 'admin@respawn.dev');
+    await page.fill('#email', 'admin@simple.dev');
     await page.fill('#password', 'Admin@123');
     await page.click('button:has-text("Open dashboard")');
     // Button should briefly show "Signing in..."
@@ -48,7 +48,7 @@ test.describe('Authentication', () => {
   test('logout redirects to login page', async ({ page }) => {
     // First log in
     await page.goto('/login');
-    await page.fill('#email', 'admin@respawn.dev');
+    await page.fill('#email', 'admin@simple.dev');
     await page.fill('#password', 'Admin@123');
     await page.click('button:has-text("Open dashboard")');
     await expect(page).toHaveURL('/', { timeout: 10_000 });

@@ -100,7 +100,7 @@ Local frontend development with direct backend connection.
 
 ```env
 VITE_API_BASE_URL=http://localhost:8000/api
-VITE_APP_NAME=Respawn Invoicing
+VITE_APP_NAME=Simple Invoicing
 VITE_LOG_LEVEL=debug
 ```
 
@@ -111,7 +111,7 @@ Production frontend served via Nginx with API proxy.
 
 ```env
 VITE_API_BASE_URL=/api
-VITE_APP_NAME=Respawn Invoicing
+VITE_APP_NAME=Simple Invoicing
 VITE_LOG_LEVEL=error
 ```
 
@@ -123,7 +123,7 @@ VITE_LOG_LEVEL=error
 Local backend development with local PostgreSQL.
 
 ```env
-DATABASE_URL=postgresql://respawn_user:respawn_password@localhost:5432/respawn_invoicing
+DATABASE_URL=postgresql://simple_user:simple_password@localhost:5432/simple_invoicing
 SECRET_KEY=dev-secret-key-change-in-production
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -136,7 +136,7 @@ DEBUG=true
 Production backend running in Docker with remote database.
 
 ```env
-DATABASE_URL=postgresql://respawn_user:respawn_password@db:5432/respawn_invoicing
+DATABASE_URL=postgresql://simple_user:simple_password@db:5432/simple_invoicing
 SECRET_KEY=your-secure-secret-key-here-minimum-32-chars
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -157,11 +157,11 @@ Root-level environment file for Docker Compose orchestration.
 FRONTEND_PORT=5173
 VITE_API_BASE_URL=http://localhost:8000/api
 BACKEND_PORT=8000
-DATABASE_URL=postgresql://respawn_user:respawn_password@localhost:5432/respawn_invoicing
-POSTGRES_USER=respawn_user
-POSTGRES_PASSWORD=respawn_password
-POSTGRES_DB=respawn_invoicing
-COMPOSE_PROJECT_NAME=respawn-invoicing
+DATABASE_URL=postgresql://simple_user:simple_password@localhost:5432/simple_invoicing
+POSTGRES_USER=simple_user
+POSTGRES_PASSWORD=simple_password
+POSTGRES_DB=simple_invoicing
+COMPOSE_PROJECT_NAME=simple_invoicing
 ```
 
 **When to use**: Setting up Docker Compose environment
@@ -173,7 +173,7 @@ COMPOSE_PROJECT_NAME=respawn-invoicing
 | Variable | Development | Production | Purpose |
 |----------|-------------|-----------|---------|
 | `VITE_API_BASE_URL` | `http://localhost:8000/api` | `/api` | Backend API endpoint |
-| `VITE_APP_NAME` | `Respawn Invoicing` | `Respawn Invoicing` | App display name |
+| `VITE_APP_NAME` | `Simple Invoicing` | `Simple Invoicing` | App display name |
 | `VITE_LOG_LEVEL` | `debug` | `error` | Console logging verbosity |
 
 **Vite Note**: All frontend variables must be prefixed with `VITE_` to be accessible in the code via `import.meta.env`.
@@ -182,7 +182,7 @@ COMPOSE_PROJECT_NAME=respawn-invoicing
 
 | Variable | Development | Production | Purpose | Required |
 |----------|-------------|-----------|---------|----------|
-| `DATABASE_URL` | `postgresql://respawn_user:respawn_password@localhost:5432/respawn_invoicing` | `postgresql://respawn_user:respawn_password@db:5432/respawn_invoicing` | PostgreSQL connection string | ✓ |
+| `DATABASE_URL` | `postgresql://simple_user:simple_password@localhost:5432/simple_invoicing` | `postgresql://simple_user:simple_password@db:5432/simple_invoicing` | PostgreSQL connection string | ✓ |
 | `SECRET_KEY` | `dev-secret-key-change-in-production` | Strong random string (32+ chars) | JWT signing secret | ✓ |
 | `ALGORITHM` | `HS256` | `HS256` | JWT algorithm | ✓ |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | `30` | Token expiration time | ✓ |
@@ -224,9 +224,9 @@ SECRET_KEY=your-generated-string-here
 1. **Setup PostgreSQL** (install locally or use Docker for DB only):
    ```bash
    docker run -d --name postgres \
-     -e POSTGRES_USER=respawn_user \
-     -e POSTGRES_PASSWORD=respawn_password \
-     -e POSTGRES_DB=respawn_invoicing \
+     -e POSTGRES_USER=simple_user \
+     -e POSTGRES_PASSWORD=simple_password \
+     -e POSTGRES_DB=simple_invoicing \
      -p 5432:5432 \
      postgres:16-alpine
    ```

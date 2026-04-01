@@ -119,7 +119,7 @@ export default function CompanyPage() {
                     className="input"
                     value={form.name}
                     onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                    placeholder="Respawn Invoicing Pvt Ltd"
+                    placeholder="Simple Invoicing Pvt Ltd"
                     required
                   />
                 </div>
@@ -169,7 +169,7 @@ export default function CompanyPage() {
                     className="input"
                     value={form.email}
                     onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-                    placeholder="billing@respawn.dev"
+                    placeholder="billing@simple.dev"
                   />
                 </div>
 
@@ -180,7 +180,7 @@ export default function CompanyPage() {
                     className="input"
                     value={form.website}
                     onChange={(event) => setForm((current) => ({ ...current, website: event.target.value }))}
-                    placeholder="https://respawn.dev"
+                    placeholder="https://simple.dev"
                   />
                 </div>
 
@@ -225,7 +225,7 @@ export default function CompanyPage() {
                     className="input"
                     value={form.account_name}
                     onChange={(event) => setForm((current) => ({ ...current, account_name: event.target.value }))}
-                    placeholder="Respawn Invoicing Pvt Ltd"
+                    placeholder="Simple Invoicing Pvt Ltd"
                   />
                 </div>
 
