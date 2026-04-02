@@ -119,7 +119,7 @@ export default function InventoryPage() {
             </div>
 
             <div className="button-row">
-              <button className="button button--secondary" disabled={submitting || products.length === 0}>
+              <button className="button button--secondary" disabled={submitting || products.length === 0} title="Apply inventory adjustment" aria-label="Apply inventory adjustment">
                 {submitting ? 'Applying change...' : 'Apply adjustment'}
               </button>
             </div>

@@ -89,7 +89,7 @@ export default function LedgersPage() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div className="status-chip">{total} ledgers listed</div>
-          <button className="button button--primary" onClick={() => navigate('/ledgers/new')}>
+          <button className="button button--primary" onClick={() => navigate('/ledgers/new')} title="Create ledger" aria-label="Create ledger">
             Create ledger
           </button>
         </div>
@@ -151,10 +151,10 @@ export default function LedgersPage() {
                     </div>
                     <span className="table-subtext text-right">Ledger #{ledger.id}</span>
                     <div className="table-row__actions">
-                      <button type="button" className="button button--ghost" onClick={() => navigate(`/ledgers/${ledger.id}`)}>
+                      <button type="button" className="button button--ghost" onClick={() => navigate(`/ledgers/${ledger.id}`)} title={`View ledger ${ledger.name}`} aria-label={`View ledger ${ledger.name}`}>
                         View
                       </button>
-                      <button type="button" className="button button--ghost" onClick={() => navigate(`/ledgers/${ledger.id}/edit`)}>
+                      <button type="button" className="button button--ghost" onClick={() => navigate(`/ledgers/${ledger.id}/edit`)} title={`Edit ledger ${ledger.name}`} aria-label={`Edit ledger ${ledger.name}`}>
                         Edit
                       </button>
                       <button
@@ -162,6 +162,8 @@ export default function LedgersPage() {
                         className="button button--danger"
                         onClick={() => handleDeleteLedger(ledger.id)}
                         disabled={deletingLedgerId === ledger.id}
+                        title={`Delete ledger ${ledger.name}`}
+                        aria-label={`Delete ledger ${ledger.name}`}
                       >
                         {deletingLedgerId === ledger.id ? 'Deleting...' : 'Delete'}
                       </button>
@@ -178,6 +180,8 @@ export default function LedgersPage() {
                 className="button button--ghost"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => p - 1)}
+                title="Previous page"
+                aria-label="Previous page"
               >
                 Previous
               </button>
@@ -189,6 +193,8 @@ export default function LedgersPage() {
                 className="button button--ghost"
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => p + 1)}
+                title="Next page"
+                aria-label="Next page"
               >
                 Next
               </button>

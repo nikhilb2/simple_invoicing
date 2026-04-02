@@ -53,12 +53,14 @@ export default function InvoicePreview({ invoice, products, currencyCode, onClos
             <h2 id="invoice-preview-title" className="nav-panel__title">Printable invoice {invoice.invoice_number || `#${invoice.id}`}</h2>
           </div>
           <div className="button-row">
-            <button type="button" className="button button--secondary" onClick={() => window.print()}>
+            <button type="button" className="button button--secondary" onClick={() => window.print()} title="Print invoice" aria-label="Print invoice">
               Print
             </button>
             <button
               type="button"
               className="button button--primary"
+              title="Download invoice PDF"
+              aria-label="Download invoice PDF"
               onClick={async () => {
                 try {
                   const response = await api.get(`/invoices/${invoice.id}/pdf`, {
@@ -77,7 +79,7 @@ export default function InvoicePreview({ invoice, products, currencyCode, onClos
             >
               Download PDF
             </button>
-            <button type="button" className="button button--ghost" onClick={onClose}>
+            <button type="button" className="button button--ghost" onClick={onClose} title="Close invoice preview" aria-label="Close invoice preview">
               Close
             </button>
           </div>

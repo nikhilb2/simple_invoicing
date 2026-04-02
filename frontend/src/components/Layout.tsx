@@ -32,7 +32,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <p className="eyebrow">Signed in as</p>
             <p className="session-email">{userEmail ?? 'Active user'}</p>
           </div>
-          <button className="button button--ghost" onClick={logout}>
+          <button className="button button--ghost" onClick={logout} title="Logout" aria-label="Logout">
             Logout
           </button>
         </div>

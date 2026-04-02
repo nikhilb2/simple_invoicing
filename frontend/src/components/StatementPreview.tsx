@@ -46,12 +46,14 @@ export default function StatementPreview({ ledger, statement, company, currencyC
             </h2>
           </div>
           <div className="button-row">
-            <button type="button" className="button button--secondary" onClick={() => window.print()}>
+            <button type="button" className="button button--secondary" onClick={() => window.print()} title="Print statement" aria-label="Print statement">
               Print
             </button>
             <button
               type="button"
               className="button button--primary"
+              title="Download statement PDF"
+              aria-label="Download statement PDF"
               onClick={async () => {
                 try {
                   const response = await api.get(`/ledgers/${ledger.id}/statement/pdf`, {
@@ -71,7 +73,7 @@ export default function StatementPreview({ ledger, statement, company, currencyC
             >
               Download PDF
             </button>
-            <button type="button" className="button button--ghost" onClick={onClose}>
+            <button type="button" className="button button--ghost" onClick={onClose} title="Close statement preview" aria-label="Close statement preview">
               Close
             </button>
           </div>

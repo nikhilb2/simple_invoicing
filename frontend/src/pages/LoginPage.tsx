@@ -107,7 +107,7 @@ export default function LoginPage() {
 
           {error ? <div className="status-banner status-banner--error">{error}</div> : null}
 
-          <button className="button button--primary" disabled={submitting}>
+          <button className="button button--primary" disabled={submitting} title="Open dashboard" aria-label="Open dashboard">
             {submitting ? 'Signing in...' : 'Open dashboard'}
           </button>
         </motion.form>

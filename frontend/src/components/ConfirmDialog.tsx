@@ -54,6 +54,8 @@ export default function ConfirmDialog({
             type="button"
             className="button button--secondary"
             onClick={onCancel}
+            title={cancelText}
+            aria-label={cancelText}
           >
             {cancelText}
           </button>
@@ -61,6 +63,8 @@ export default function ConfirmDialog({
             type="button"
             className={`button ${danger ? 'button--danger' : 'button--primary'}`}
             onClick={onConfirm}
+            title={confirmText}
+            aria-label={confirmText}
           >
             {confirmText}
           </button>

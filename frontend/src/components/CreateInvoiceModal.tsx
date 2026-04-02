@@ -142,7 +142,7 @@ export default function CreateInvoiceModal({
           </div>
           <div className="button-row">
             <div className="status-chip">Total {formatCurrency(totalAmount, currencyCode)}</div>
-            <button type="button" className="button button--ghost" onClick={onClose}>✕</button>
+            <button type="button" className="button button--ghost" onClick={onClose} title="Close invoice dialog" aria-label="Close invoice dialog">✕</button>
           </div>
         </div>
 
@@ -257,18 +257,18 @@ export default function CreateInvoiceModal({
                       {formatCurrency(lineTotal, currencyCode)}
                       <div className="table-subtext">Incl GST {gstRate}% ({formatCurrency(taxAmount, currencyCode)})</div>
                     </div>
-                    <button type="button" className="button button--danger" onClick={() => removeItem(item.id)}>Remove</button>
+                    <button type="button" className="button button--danger" onClick={() => removeItem(item.id)} title={`Remove line item ${index + 1}`} aria-label={`Remove line item ${index + 1}`}>Remove</button>
                   </div>
                 );
               })}
             </div>
 
             <div className="button-row">
-              <button type="button" className="button button--ghost" onClick={addItem} disabled={products.length === 0}>
+              <button type="button" className="button button--ghost" onClick={addItem} disabled={products.length === 0} title="Add line item" aria-label="Add line item">
                 Add line item
               </button>
-              <button type="button" className="button button--secondary" onClick={onClose}>Cancel</button>
-              <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId}>
+              <button type="button" className="button button--secondary" onClick={onClose} title="Cancel invoice creation" aria-label="Cancel invoice creation">Cancel</button>
+              <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId} title="Create invoice" aria-label="Create invoice">
                 {submitting ? 'Creating invoice...' : 'Create invoice'}
               </button>
             </div>

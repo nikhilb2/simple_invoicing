@@ -253,7 +253,7 @@ export default function CompanyPage() {
               </div>
 
               <div className="button-row">
-                <button className="button button--primary" disabled={submitting}>
+                <button className="button button--primary" disabled={submitting} title="Save company details" aria-label="Save company details">
                   {submitting ? 'Saving company...' : 'Save company details'}
                 </button>
               </div>
