@@ -14,7 +14,7 @@ test.describe('Authentication', () => {
     await page.fill('#email', 'wrong@example.com');
     await page.fill('#password', 'WrongPassword');
     await page.click('button:has-text("Open dashboard")');
-    await expect(page.locator('.status-banner--error')).toBeVisible({
+    await expect(page.locator('.toast--error')).toBeVisible({
       timeout: 10_000,
     });
     // Should stay on the login page

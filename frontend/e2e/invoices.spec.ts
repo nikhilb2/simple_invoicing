@@ -289,7 +289,7 @@ test.describe('Invoices', () => {
     const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
     await invoiceRow.locator('button:has-text("Delete")').click();
     await page.locator('.modal-overlay button:has-text("Delete")').click();
-    await expect(page.locator('.status-banner--success')).toContainText('deleted', { timeout: 10_000 });
+    await expect(page.locator('.toast--success')).toContainText('deleted', { timeout: 10_000 });
   });
 
   test('shows projected total while composing', async ({

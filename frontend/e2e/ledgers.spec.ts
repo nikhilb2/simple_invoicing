@@ -107,7 +107,7 @@ test.describe('Ledgers CRUD', () => {
     await expect(row).toBeVisible({ timeout: 10_000 });
     await row.locator('button:has-text("Delete")').click();
     await page.locator('.modal-overlay button:has-text("Delete")').click();
-    await expect(page.locator('.status-banner--success')).toContainText('Ledger deleted', { timeout: 10_000 });
+    await expect(page.locator('.toast--success')).toContainText('Ledger deleted', { timeout: 10_000 });
     await expect(page.locator('.table-row', { hasText: name })).not.toBeVisible();
   });
 

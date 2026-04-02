@@ -22,16 +22,16 @@ export const test = base.extend<{ authedPage: Page }>({
 
 export { expect };
 
-/** Helper: wait for a success banner to appear and contain text. */
+/** Helper: wait for a success toast to appear and contain text. */
 export async function expectSuccess(page: Page, substring: string) {
-  const banner = page.locator('.status-banner--success');
+  const banner = page.locator('.toast--success');
   await expect(banner).toBeVisible({ timeout: 10_000 });
   await expect(banner).toContainText(substring);
 }
 
-/** Helper: wait for an error banner to appear. */
+/** Helper: wait for an error toast to appear. */
 export async function expectError(page: Page, substring?: string) {
-  const banner = page.locator('.status-banner--error');
+  const banner = page.locator('.toast--error');
   await expect(banner).toBeVisible({ timeout: 10_000 });
   if (substring) {
     await expect(banner).toContainText(substring);

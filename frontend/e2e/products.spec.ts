@@ -140,7 +140,7 @@ test.describe('Products CRUD', () => {
     page.on('dialog', (dialog) => dialog.accept());
     // Wait for old banner to disappear then the new one to appear
     await row.locator('button:has-text("Delete")').click();
-    await expect(page.locator('.status-banner--success')).toContainText('Product deleted', { timeout: 10_000 });
+    await expect(page.locator('.toast--success')).toContainText('Product deleted', { timeout: 10_000 });
 
     // Should no longer appear
     await expect(page.locator('.table-row', { hasText: sku })).not.toBeVisible();
@@ -160,7 +160,7 @@ test.describe('Products CRUD', () => {
     // The form has max=100 so the browser may prevent submission
     // or the API will reject it
     const errorVisible = await page
-      .locator('.status-banner--error')
+      .locator('.toast--error')
       .isVisible()
       .catch(() => false);
     const stillOnForm = await page
