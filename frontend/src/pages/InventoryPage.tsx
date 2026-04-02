@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
+import StatusToasts from '../components/StatusToasts';
 import type { InventoryAdjust, InventoryRow, Product } from '../types/api';
 
 export default function InventoryPage() {
@@ -72,8 +73,7 @@ export default function InventoryPage() {
         <div className="status-chip">{rows.length} rows tracked</div>
       </section>
 
-      {error ? <div className="status-banner status-banner--error">{error}</div> : null}
-      {success ? <div className="status-banner status-banner--success">{success}</div> : null}
+      <StatusToasts error={error} success={success} onClearError={() => setError('')} onClearSuccess={() => setSuccess('')} />
 
       <section className="content-grid">
         <article className="panel stack">

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
+import StatusToasts from '../components/StatusToasts';
 import type { CompanyProfile, InventoryRow, Invoice, Product } from '../types/api';
 
 type DashboardState = {
@@ -88,7 +89,7 @@ export default function DashboardPage() {
         <div className="status-chip">Backend synced</div>
       </section>
 
-      {error ? <div className="status-banner status-banner--error">{error}</div> : null}
+      <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
 
       <section className="stats-grid">
         <article className="stat-card">

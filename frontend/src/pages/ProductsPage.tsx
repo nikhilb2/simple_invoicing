@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, PaginatedProducts, Product, ProductCreate } from '../types/api';
+import StatusToasts from '../components/StatusToasts';
 
 function formatCurrency(value: number, currencyCode = 'USD') {
   try {
@@ -155,8 +156,7 @@ export default function ProductsPage() {
         <div className="status-chip">{total} loaded</div>
       </section>
 
-      {error ? <div className="status-banner status-banner--error">{error}</div> : null}
-      {success ? <div className="status-banner status-banner--success">{success}</div> : null}
+      <StatusToasts error={error} success={success} onClearError={() => setError('')} onClearSuccess={() => setSuccess('')} />
 
       <section className="content-grid">
         <article className="panel stack">

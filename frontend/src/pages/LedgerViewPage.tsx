@@ -4,6 +4,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, Invoice, Ledger, LedgerStatement, PaymentCreate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
 import StatementPreview from '../components/StatementPreview';
+import StatusToasts from '../components/StatusToasts';
 import CreateInvoiceModal from '../components/CreateInvoiceModal';
 
 function formatCurrency(value: number, currencyCode = 'INR') {
@@ -165,7 +166,7 @@ export default function LedgerViewPage() {
             <h1 className="page-title">Ledger not found</h1>
           </div>
         </section>
-        {error ? <div className="status-banner status-banner--error">{error}</div> : null}
+        <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
       </div>
     );
   }
@@ -192,7 +193,7 @@ export default function LedgerViewPage() {
         </button>
       </section>
 
-      {error ? <div className="status-banner status-banner--error">{error}</div> : null}
+      <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
 
       <section className="content-grid">
         <article className="panel stack">

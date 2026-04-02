@@ -3,6 +3,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerCreate, PaginatedInvoices, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
 import ConfirmDialog from '../components/ConfirmDialog';
+import StatusToasts from '../components/StatusToasts';
 
 type InvoiceFormItem = {
   id: number;
@@ -371,8 +372,7 @@ export default function InvoicesPage() {
         <div className="status-chip">{invoiceTotal} invoices listed</div>
       </section>
 
-      {error ? <div className="status-banner status-banner--error">{error}</div> : null}
-      {success ? <div className="status-banner status-banner--success">{success}</div> : null}
+      <StatusToasts error={error} success={success} onClearError={() => setError('')} onClearSuccess={() => setSuccess('')} />
 
       <section className="content-grid">
         <article className="panel stack">

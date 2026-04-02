@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
+import StatusToasts from '../components/StatusToasts';
 import type { Ledger, LedgerCreate } from '../types/api';
 
 export default function LedgerCreatePage() {
@@ -113,7 +114,7 @@ export default function LedgerCreatePage() {
         </div>
       </section>
 
-      {error ? <div className="status-banner status-banner--error">{error}</div> : null}
+      <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
 
       <section className="content-grid">
         <article className="panel stack">

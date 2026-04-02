@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
+import StatusToasts from '../components/StatusToasts';
 import type { CompanyProfile, DayBook } from '../types/api';
 
 function formatCurrency(value: number, currencyCode = 'USD') {
@@ -76,7 +77,7 @@ export default function DayBookPage() {
         <div className="status-chip">{dayBook?.entries.length ?? 0} vouchers</div>
       </section>
 
-      {error ? <div className="status-banner status-banner--error">{error}</div> : null}
+      <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
 
       <section className="content-grid">
         <article className="panel stack">

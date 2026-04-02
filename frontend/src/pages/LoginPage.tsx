@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { getApiErrorMessage } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import StatusToasts from '../components/StatusToasts';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -105,7 +106,7 @@ export default function LoginPage() {
             />
           </div>
 
-          {error ? <div className="status-banner status-banner--error">{error}</div> : null}
+          <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
 
           <button className="button button--primary" disabled={submitting}>
             {submitting ? 'Signing in...' : 'Open dashboard'}
