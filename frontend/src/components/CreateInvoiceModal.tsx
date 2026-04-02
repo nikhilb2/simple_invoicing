@@ -132,6 +132,20 @@ export default function CreateInvoiceModal({
     }
   }
 
+  /** Escape Handler */
+
+  useEffect(() => {
+    const handleKeyDown = (e : KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (e.key === "Escape" && !["INPUT", "SELECT", "TEXTAREA"].includes(tag)) {
+        onClose()
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    
+    return () => {window.removeEventListener("keydown", handleKeyDown)};
+  }, [onClose])
+
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="create-invoice-modal-title" onClick={onClose}>
       <div className="modal-panel modal-panel--invoice-preview" onClick={(e) => e.stopPropagation()}>
