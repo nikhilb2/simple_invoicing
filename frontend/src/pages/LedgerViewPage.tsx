@@ -182,13 +182,13 @@ export default function LedgerViewPage() {
             {ledger.email ? ` · ${ledger.email}` : ''}
           </p>
         </div>
-        <button type="button" className="button button--secondary" onClick={() => navigate('/ledgers')}>
+        <button type="button" className="button button--secondary" onClick={() => navigate('/ledgers')} title="Back to ledgers" aria-label="Back to ledgers">
           Back to ledgers
         </button>
-        <button type="button" className="button button--primary" onClick={() => setShowPaymentForm(true)}>
+        <button type="button" className="button button--primary" onClick={() => setShowPaymentForm(true)} title="Record receipt or payment" aria-label="Record receipt or payment">
           Record Receipt / Payment
         </button>
-        <button type="button" className="button button--primary" onClick={() => setShowInvoiceModal(true)}>
+        <button type="button" className="button button--primary" onClick={() => setShowInvoiceModal(true)} title="Create invoice" aria-label="Create invoice">
           Create Invoice
         </button>
       </section>
@@ -202,7 +202,7 @@ export default function LedgerViewPage() {
               <p className="eyebrow">Ledger details</p>
               <h2 className="nav-panel__title">Account info</h2>
             </div>
-            <button type="button" className="button button--ghost" onClick={() => navigate(`/ledgers/${ledgerId}/edit`)}>
+            <button type="button" className="button button--ghost" onClick={() => navigate(`/ledgers/${ledgerId}/edit`)} title="Edit ledger" aria-label="Edit ledger">
               Edit
             </button>
           </div>
@@ -227,7 +227,7 @@ export default function LedgerViewPage() {
               <h2 className="nav-panel__title">Period view</h2>
             </div>
             {statement && statement.entries.length > 0 ? (
-              <button type="button" className="button button--secondary" onClick={() => setShowStatementPreview(true)}>
+              <button type="button" className="button button--secondary" onClick={() => setShowStatementPreview(true)} title="Preview statement PDF" aria-label="Preview statement PDF">
                 Preview / PDF
               </button>
             ) : null}
@@ -287,6 +287,7 @@ export default function LedgerViewPage() {
                         className="button button--ghost button--small"
                         onClick={() => void handleViewInvoice(entry.entry_id)}
                         title="View invoice"
+                        aria-label="View invoice"
                       >
                         View
                       </button>
@@ -315,7 +316,7 @@ export default function LedgerViewPage() {
             <div className="panel stack">
               <div className="panel__header">
                 <h2 className="nav-panel__title">Record Receipt / Payment</h2>
-                <button type="button" className="button button--ghost" onClick={() => setShowPaymentForm(false)}>✕</button>
+                <button type="button" className="button button--ghost" onClick={() => setShowPaymentForm(false)} title="Close payment dialog" aria-label="Close payment dialog">✕</button>
               </div>
               <form onSubmit={(e) => void handleSubmitPayment(e)} className="stack">
                 <div className="field">
@@ -389,7 +390,7 @@ export default function LedgerViewPage() {
                     onChange={(e) => setPaymentForm((f) => ({ ...f, notes: e.target.value }))}
                   />
                 </div>
-                <button type="submit" className="button button--primary" disabled={submittingPayment}>
+                <button type="submit" className="button button--primary" disabled={submittingPayment} title="Save payment" aria-label="Save payment">
                   {submittingPayment ? 'Saving...' : 'Save'}
                 </button>
               </form>

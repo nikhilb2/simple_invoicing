@@ -244,11 +244,11 @@ export default function ProductsPage() {
 
             <div className="button-row">
               {editingProductId ? (
-                <button type="button" className="button button--secondary" onClick={resetForm}>
+                <button type="button" className="button button--secondary" onClick={resetForm} title="Cancel edit" aria-label="Cancel edit">
                   Cancel edit
                 </button>
               ) : null}
-              <button className="button button--primary" disabled={submitting}>
+              <button className="button button--primary" disabled={submitting} title={editingProductId ? "Update product" : "Create product"} aria-label={editingProductId ? "Update product" : "Create product"}>
                 {submitting ? (editingProductId ? 'Updating product...' : 'Saving product...') : editingProductId ? 'Update product' : 'Create product'}
               </button>
             </div>
@@ -295,7 +295,7 @@ export default function ProductsPage() {
                     </div>
                     <span className="table-row__price">{formatCurrency(product.price, activeCurrencyCode)}</span>
                     <div className="table-row__actions">
-                      <button type="button" className="button button--ghost" onClick={() => startEditProduct(product)} disabled={submitting}>
+                      <button type="button" className="button button--ghost" onClick={() => startEditProduct(product)} disabled={submitting} title={`Edit product ${product.name}`} aria-label={`Edit product ${product.name}`}>
                         Edit
                       </button>
                       <button
@@ -303,6 +303,8 @@ export default function ProductsPage() {
                         className="button button--danger"
                         onClick={() => void handleDeleteProduct(product.id)}
                         disabled={deletingProductId === product.id}
+                        title={`Delete product ${product.name}`}
+                        aria-label={`Delete product ${product.name}`}
                       >
                         {deletingProductId === product.id ? 'Deleting...' : 'Delete'}
                       </button>
@@ -319,6 +321,8 @@ export default function ProductsPage() {
                 className="button button--ghost"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => p - 1)}
+                title="Previous page"
+                aria-label="Previous page"
               >
                 Previous
               </button>
@@ -330,6 +334,8 @@ export default function ProductsPage() {
                 className="button button--ghost"
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => p + 1)}
+                title="Next page"
+                aria-label="Next page"
               >
                 Next
               </button>

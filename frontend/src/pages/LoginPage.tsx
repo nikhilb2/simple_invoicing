@@ -108,7 +108,7 @@ export default function LoginPage() {
 
           <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
 
-          <button className="button button--primary" disabled={submitting}>
+          <button className="button button--primary" disabled={submitting} title="Open dashboard" aria-label="Open dashboard">
             {submitting ? 'Signing in...' : 'Open dashboard'}
           </button>
         </motion.form>

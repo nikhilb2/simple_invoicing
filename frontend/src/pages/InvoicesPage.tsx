@@ -457,13 +457,13 @@ export default function InvoicesPage() {
               </div>
 
               <div className="button-row">
-                <button type="button" className="button button--secondary" onClick={() => setShowLedgerModal(true)}>
+                <button type="button" className="button button--secondary" onClick={() => setShowLedgerModal(true)} title="Add ledger" aria-label="Add ledger">
                   Add ledger
                 </button>
-                <button type="button" className="button button--secondary" onClick={() => setShowProductModal(true)}>
+                <button type="button" className="button button--secondary" onClick={() => setShowProductModal(true)} title="Add product" aria-label="Add product">
                   Add product
                 </button>
-                <button type="button" className="button button--secondary" onClick={() => setShowStockModal(true)}>
+                <button type="button" className="button button--secondary" onClick={() => setShowStockModal(true)} title="Update stock" aria-label="Update stock">
                   Update stock
                 </button>
               </div>
@@ -536,7 +536,7 @@ export default function InvoicesPage() {
                       {formatCurrency(lineTotal, activeCurrencyCode)}
                       <div className="table-subtext">Incl GST {gstRate}% ({formatCurrency(taxAmount, activeCurrencyCode)})</div>
                     </div>
-                    <button type="button" className="button button--danger" onClick={() => removeItem(item.id)}>
+                    <button type="button" className="button button--danger" onClick={() => removeItem(item.id)} title={`Remove line item ${index + 1}`} aria-label={`Remove line item ${index + 1}`}>
                       Remove
                     </button>
                   </div>
@@ -545,15 +545,15 @@ export default function InvoicesPage() {
             </div>
 
             <div className="button-row">
-              <button type="button" className="button button--ghost" onClick={addItem} disabled={products.length === 0}>
+              <button type="button" className="button button--ghost" onClick={addItem} disabled={products.length === 0} title="Add line item" aria-label="Add line item">
                 Add line item
               </button>
               {editingInvoiceId ? (
-                <button type="button" className="button button--secondary" onClick={resetInvoiceForm}>
+                <button type="button" className="button button--secondary" onClick={resetInvoiceForm} title="Cancel invoice edit" aria-label="Cancel invoice edit">
                   Cancel edit
                 </button>
               ) : null}
-              <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId}>
+              <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId} title={editingInvoiceId ? "Update invoice" : "Create invoice"} aria-label={editingInvoiceId ? "Update invoice" : "Create invoice"}>
                 {submitting ? (editingInvoiceId ? 'Updating invoice...' : 'Creating invoice...') : editingInvoiceId ? 'Update invoice' : 'Create invoice'}
               </button>
             </div>
@@ -658,10 +658,10 @@ export default function InvoicesPage() {
                       </div>
 
                       <div className="invoice-row__actions">
-                        <button type="button" className="button button--ghost button--small" onClick={() => setPreviewInvoice(invoice)} title="Preview invoice">
+                        <button type="button" className="button button--ghost button--small" onClick={() => setPreviewInvoice(invoice)} title="Preview invoice" aria-label={`Preview invoice ${invoice.invoice_number || invoice.id}`}>
                           Preview
                         </button>
-                        <button type="button" className="button button--ghost button--small" onClick={() => startEditingInvoice(invoice)} disabled={submitting} title="Edit invoice">
+                        <button type="button" className="button button--ghost button--small" onClick={() => startEditingInvoice(invoice)} disabled={submitting} title="Edit invoice" aria-label={`Edit invoice ${invoice.invoice_number || invoice.id}`}>
                           Edit
                         </button>
                         <button
@@ -670,6 +670,7 @@ export default function InvoicesPage() {
                           onClick={() => void handleDeleteInvoice(invoice.id)}
                           disabled={deletingInvoiceId === invoice.id}
                           title="Delete invoice"
+                          aria-label={`Delete invoice ${invoice.invoice_number || invoice.id}`}
                         >
                           {deletingInvoiceId === invoice.id ? 'Deleting...' : 'Delete'}
                         </button>
@@ -687,6 +688,8 @@ export default function InvoicesPage() {
                 className="button button--ghost"
                 disabled={invoicePage <= 1}
                 onClick={() => setInvoicePage((p) => p - 1)}
+                title="Previous page"
+                aria-label="Previous page"
               >
                 Previous
               </button>
@@ -698,6 +701,8 @@ export default function InvoicesPage() {
                 className="button button--ghost"
                 disabled={invoicePage >= invoiceTotalPages}
                 onClick={() => setInvoicePage((p) => p + 1)}
+                title="Next page"
+                aria-label="Next page"
               >
                 Next
               </button>
@@ -833,10 +838,10 @@ export default function InvoicesPage() {
               </div>
 
               <div className="button-row">
-                <button type="button" className="button button--ghost" onClick={() => setShowLedgerModal(false)}>
+                <button type="button" className="button button--ghost" onClick={() => setShowLedgerModal(false)} title="Cancel ledger creation" aria-label="Cancel ledger creation">
                   Cancel
                 </button>
-                <button className="button button--primary" disabled={ledgerSubmitting}>
+                <button className="button button--primary" disabled={ledgerSubmitting} title="Save ledger" aria-label="Save ledger">
                   {ledgerSubmitting ? 'Saving ledger...' : 'Save ledger'}
                 </button>
               </div>
@@ -929,10 +934,10 @@ export default function InvoicesPage() {
               </div>
 
               <div className="button-row">
-                <button type="button" className="button button--ghost" onClick={() => setShowProductModal(false)}>
+                <button type="button" className="button button--ghost" onClick={() => setShowProductModal(false)} title="Cancel product creation" aria-label="Cancel product creation">
                   Cancel
                 </button>
-                <button className="button button--primary" disabled={productSubmitting}>
+                <button className="button button--primary" disabled={productSubmitting} title="Save product" aria-label="Save product">
                   {productSubmitting ? 'Saving product...' : 'Save product'}
                 </button>
               </div>
@@ -986,10 +991,10 @@ export default function InvoicesPage() {
               </div>
 
               <div className="button-row">
-                <button type="button" className="button button--ghost" onClick={() => setShowStockModal(false)}>
+                <button type="button" className="button button--ghost" onClick={() => setShowStockModal(false)} title="Cancel stock update" aria-label="Cancel stock update">
                   Cancel
                 </button>
-                <button className="button button--primary" disabled={stockSubmitting}>
+                <button className="button button--primary" disabled={stockSubmitting} title="Update stock" aria-label="Update stock">
                   {stockSubmitting ? 'Updating stock...' : 'Update stock'}
                 </button>
               </div>

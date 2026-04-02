@@ -237,10 +237,10 @@ export default function LedgerCreatePage() {
             </div>
 
             <div className="button-row">
-              <button type="button" className="button button--secondary" onClick={() => navigate('/ledgers')}>
+              <button type="button" className="button button--secondary" onClick={() => navigate('/ledgers')} title="Cancel and return to ledgers" aria-label="Cancel and return to ledgers">
                 Cancel
               </button>
-              <button className="button button--primary" disabled={submitting}>
+              <button className="button button--primary" disabled={submitting} title={editingLedgerId ? "Update ledger" : "Create ledger"} aria-label={editingLedgerId ? "Update ledger" : "Create ledger"}>
                 {submitting
                   ? (editingLedgerId ? 'Updating ledger...' : 'Saving ledger...')
                   : (editingLedgerId ? 'Update ledger' : 'Create ledger')}
