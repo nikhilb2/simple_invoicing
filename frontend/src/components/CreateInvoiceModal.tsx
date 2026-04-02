@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import type { InvoiceCreate, Ledger, Product } from '../types/api';
 
@@ -132,19 +133,7 @@ export default function CreateInvoiceModal({
     }
   }
 
-  /** Escape Handler */
-
-  useEffect(() => {
-    const handleKeyDown = (e : KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (e.key === "Escape" && !["INPUT", "SELECT", "TEXTAREA"].includes(tag)) {
-        onClose()
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    
-    return () => {window.removeEventListener("keydown", handleKeyDown)};
-  }, [onClose])
+  useEscapeClose(onClose);
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="create-invoice-modal-title" onClick={onClose}>

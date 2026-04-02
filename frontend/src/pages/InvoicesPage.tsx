@@ -4,6 +4,7 @@ import type { CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerCreate, Pagi
 import InvoicePreview from '../components/InvoicePreview';
 import ConfirmDialog from '../components/ConfirmDialog';
 import StatusToasts from '../components/StatusToasts';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 
 type InvoiceFormItem = {
   id: number;
@@ -46,6 +47,13 @@ export default function InvoicesPage() {
   const [showLedgerModal, setShowLedgerModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
   const [showStockModal, setShowStockModal] = useState(false);
+
+  useEscapeClose(() => {
+    if (showStockModal) setShowStockModal(false);
+    else if (showProductModal) setShowProductModal(false);
+    else if (showLedgerModal) setShowLedgerModal(false);
+  });
+
   const [ledgerForm, setLedgerForm] = useState<LedgerCreate>({
     name: '',
     address: '',

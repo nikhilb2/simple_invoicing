@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import type { Invoice, Product } from '../types/api';
 
@@ -45,19 +45,7 @@ type InvoicePreviewProps = {
 export default function InvoicePreview({ invoice, products, currencyCode, onClose, onError }: InvoicePreviewProps) {
   const previewCurrencyCode = invoice.company_currency_code || currencyCode;
 
-  /** Escape Handler */
-
-  useEffect(() => {
-    const handleKeyDown = (e : KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (e.key === "Escape" && !["INPUT", "SELECT", "TEXTAREA"].includes(tag)) {
-        onClose()
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    
-    return () => {window.removeEventListener("keydown", handleKeyDown)};
-  }, [onClose])
+  useEscapeClose(onClose);
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="invoice-preview-title">

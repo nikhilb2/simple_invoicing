@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useEffect } from 'react';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 
 type ConfirmDialogProps = {
   /** Message to display in the dialog */
@@ -32,20 +32,7 @@ export default function ConfirmDialog({
   cancelText = 'Cancel',
   danger = false,
 }: ConfirmDialogProps) {
-
-  /** Escape Handler */
-
-  useEffect(() => {
-    const handleKeyDown = (e : KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (e.key === "Escape" && !["INPUT", "SELECT", "TEXTAREA"].includes(tag)) {
-        onCancel()
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    
-    return () => {window.removeEventListener("keydown", handleKeyDown)};
-  }, [onCancel])
+  useEscapeClose(onCancel);
 
   return (
     <div
