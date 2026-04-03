@@ -133,6 +133,7 @@ export default function CompanyPage() {
                     onChange={(event) => setForm((current) => ({ ...current, gst: event.target.value }))}
                     placeholder="27ABCDE1234F1Z5"
                   />
+                  <small className="field-hint">Format: 27ABCDE1234F1Z5</small>
                 </div>
 
                 <div className="field">
@@ -144,6 +145,7 @@ export default function CompanyPage() {
                     onChange={(event) => setForm((current) => ({ ...current, phone_number: event.target.value }))}
                     placeholder="+91 9876543210"
                   />
+                  <small className="field-hint">e.g. +91 98765 43210</small>
                 </div>
 
                 <div className="field">
@@ -249,6 +251,7 @@ export default function CompanyPage() {
                     onChange={(event) => setForm((current) => ({ ...current, ifsc_code: event.target.value }))}
                     placeholder="HDFC0001234"
                   />
+                  <small className="field-hint">Format: SBIN0001234</small>
                 </div>
               </div>
 
