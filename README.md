@@ -161,13 +161,17 @@ Full interactive docs available at `/docs` (Swagger UI) when the backend is runn
 ## Development
 
 ```bash
-make dev          # Start dev environment (Docker)
-make test         # Run all tests
-make lint         # Lint backend and frontend
-make migrate      # Run database migrations
-make seed         # Seed admin user
-make logs         # Tail all service logs
-make down         # Stop all services
+make dev                              # Start dev environment (Docker)
+make test                             # Run all tests
+make lint                             # Lint backend and frontend
+make migrate                          # Run all pending migrations
+make migrate-status                   # Show migration status
+make migrate-down                     # Roll back last migration
+make migrate-down-all                 # Roll back all migrations
+make migrate-create name=<name>       # Create a new migration file
+make seed                             # Seed admin user
+make logs                             # Tail all service logs
+make down                             # Stop all services
 ```
 
 See the [Makefile](Makefile) for all available commands.

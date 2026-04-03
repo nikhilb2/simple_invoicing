@@ -18,10 +18,13 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from src.db.session import engine
-
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 MIGRATIONS_TABLE = "_migrations"
+
+
+def get_engine():
+    from src.db.session import engine
+    return engine
 
 
 def ensure_migrations_table(conn) -> None:
@@ -59,7 +62,7 @@ def load_migration_module(path: Path):
 
 
 def cmd_up(args) -> None:
-    with engine.begin() as conn:
+    with get_engine().begin() as conn:
         ensure_migrations_table(conn)
         applied = set(get_applied_migrations(conn))
         files = discover_migration_files()
@@ -83,7 +86,7 @@ def cmd_up(args) -> None:
 
 
 def cmd_down(args) -> None:
-    with engine.begin() as conn:
+    with get_engine().begin() as conn:
         ensure_migrations_table(conn)
         applied = get_applied_migrations(conn)
 
@@ -112,7 +115,7 @@ def cmd_down(args) -> None:
 
 
 def cmd_status(args) -> None:
-    with engine.begin() as conn:
+    with get_engine().begin() as conn:
         ensure_migrations_table(conn)
         applied = set(get_applied_migrations(conn))
         files = discover_migration_files()

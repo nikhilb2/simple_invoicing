@@ -4,22 +4,24 @@ Sequelize-style migration system for managing schema changes. Each migration is 
 
 ## Commands
 
+Using Make (recommended, runs inside Docker):
+
+```bash
+make migrate                              # Apply all pending migrations
+make migrate-status                       # Check which migrations are applied / pending
+make migrate-down                         # Roll back the last applied migration
+make migrate-down-all                     # Roll back ALL migrations
+make migrate-create name="add_discount_to_invoices"  # Scaffold a new migration file
+```
+
+Or directly via `migrate.py` (e.g. local development without Docker):
+
 ```bash
 cd backend
-
-# Check which migrations are applied / pending
 python migrate.py status
-
-# Apply all pending migrations
 python migrate.py up
-
-# Roll back the last applied migration
 python migrate.py down
-
-# Roll back ALL migrations
 python migrate.py down --all
-
-# Scaffold a new migration file
 python migrate.py create "add_discount_to_invoices"
 ```
 
