@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, PaginatedProducts, Product, ProductCreate } from '../types/api';
 import StatusToasts from '../components/StatusToasts';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 function formatCurrency(value: number, currencyCode = 'USD') {
   try {
@@ -23,6 +24,8 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [deletingProductId, setDeletingProductId] = useState<number | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [pendingDeleteProductId, setPendingDeleteProductId] = useState<number | null>(null);
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -120,19 +123,27 @@ export default function ProductsPage() {
     }
   }
 
-  async function handleDeleteProduct(productId: number) {
-    const confirmed = window.confirm(`Delete product #${productId}? This cannot be undone.`);
-    if (!confirmed) {
-      return;
-    }
+  function handleDeleteProduct(productId: number) {
+    setPendingDeleteProductId(productId);
+    setShowDeleteDialog(true);
+  }
+
+  function cancelDeleteProduct() {
+    setShowDeleteDialog(false);
+    setPendingDeleteProductId(null);
+  }
+
+  async function confirmDeleteProduct() {
+    if (pendingDeleteProductId === null) return;
+    setShowDeleteDialog(false);
 
     try {
-      setDeletingProductId(productId);
+      setDeletingProductId(pendingDeleteProductId);
       setError('');
       setSuccess('');
 
-      await api.delete(`/products/${productId}`);
-      if (editingProductId === productId) {
+      await api.delete(`/products/${pendingDeleteProductId}`);
+      if (editingProductId === pendingDeleteProductId) {
         resetForm();
       }
 
@@ -142,6 +153,7 @@ export default function ProductsPage() {
       setError(getApiErrorMessage(err, 'Unable to delete product'));
     } finally {
       setDeletingProductId(null);
+      setPendingDeleteProductId(null);
     }
   }
 
@@ -301,7 +313,7 @@ export default function ProductsPage() {
                       <button
                         type="button"
                         className="button button--danger"
-                        onClick={() => void handleDeleteProduct(product.id)}
+                        onClick={() => handleDeleteProduct(product.id)}
                         disabled={deletingProductId === product.id}
                         title={`Delete product ${product.name}`}
                         aria-label={`Delete product ${product.name}`}
@@ -343,6 +355,18 @@ export default function ProductsPage() {
           ) : null}
         </article>
       </section>
+
+      {showDeleteDialog ? (
+        <ConfirmDialog
+          message={`Are you sure you want to delete product #${pendingDeleteProductId}? This cannot be undone.`}
+          title="Delete product"
+          confirmText="Delete"
+          cancelText="Cancel"
+          danger={true}
+          onConfirm={() => void confirmDeleteProduct()}
+          onCancel={cancelDeleteProduct}
+        />
+      ) : null}
     </div>
   );
 }
