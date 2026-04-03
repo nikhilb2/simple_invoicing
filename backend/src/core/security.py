@@ -2,6 +2,20 @@ from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from src.core.config import settings
+import base64
+import hashlib
+from cryptography.fernet import Fernet
+
+def _get_fernet() -> Fernet:
+    # Derive a valid 32-byte Fernet key from SECRET_KEY
+    key = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(key))
+
+def encrypt_value(plaintext: str) -> str:
+    return _get_fernet().encrypt(plaintext.encode()).decode()
+
+def decrypt_value(ciphertext: str) -> str:
+    return _get_fernet().decrypt(ciphertext.encode()).decode()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
