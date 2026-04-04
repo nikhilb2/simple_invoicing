@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     N8N_EMAIL_WEBHOOK_URL: str = "https://n8n.nikhilbhatia.com/webhook/mail"
     N8N_EMAIL_WEBHOOK_USER: str = ""
     N8N_EMAIL_WEBHOOK_PASS: str = ""
+    SMTP_ENCRYPTION_KEY: str | None = None
 
     class Config:
         env_file = str(env_file_path)
@@ -31,6 +32,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+if settings.ENVIRONMENT == "production" and not settings.SMTP_ENCRYPTION_KEY:
+    raise ValueError("SMTP_ENCRYPTION_KEY is required in production environment")
 
 # Log which environment is being used
 print(f"🚀 Backend running in {settings.ENVIRONMENT} mode (loaded from {env_file_path})")
