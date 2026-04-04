@@ -3,8 +3,11 @@ from sqlalchemy.orm import Session
 from src.models.user import User, UserRole
 from src.models.smtp_config import SMTPConfig
 from src.db.session import get_db
-from src.schemas.smtp_config import SmtpConfigResponse, SmtpConfigCreate, SmtpConfigUpdate
+from src.schemas.smtp_config import SmtpConfigResponse, SmtpConfigCreate, SmtpConfigUpdate, SmtpConfigTest
 from src.api.deps import require_roles
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 router = APIRouter()
 
@@ -116,3 +119,37 @@ def activate_smtp_config(
     db.commit()
     db.refresh(config)
     return config   
+
+
+@router.post("/test", response_model=dict)
+def test_smtp_config(
+    payload: SmtpConfigTest,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.admin)),
+):
+
+    # Fetch active SMTP config from DB (this is just a placeholder, implement actual DB fetch)
+    config = db.query(SMTPConfig).filter(SMTPConfig.id == payload.id).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="No active SMTP configuration found")
+    try:
+        # Create a test email message
+        msg = MIMEMultipart()
+        msg['From'] = config.from_email
+        msg['To'] = payload.to  # Sending test email to the specified address
+        msg['Subject'] = "Test Email from Invoicing System"
+        msg.attach(MIMEText("This is a test email to verify SMTP configuration.", 'plain'))
+
+        # Connect to the SMTP server and send the email
+        if config.use_tls:
+            server = smtplib.SMTP(config.host, config.port)
+            server.starttls()
+        else:
+            server = smtplib.SMTP_SSL(config.host, config.port)
+
+        server.login(config.username, config.password)
+        server.send_message(msg)
+        server.quit()
+        return {"detail": "Test email sent successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to send test email: {str(e)}")

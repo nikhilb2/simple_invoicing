@@ -24,6 +24,11 @@ class SmtpConfigUpdate(BaseModel):
     use_tls: bool | None = None
 
 
+class SmtpConfigTest(BaseModel):
+    id: int
+    to: EmailStr
+
+
 class SmtpConfigResponse(BaseModel):
     id: int
     name: str
