@@ -4,11 +4,17 @@ from passlib.context import CryptContext
 from src.core.config import settings
 import base64
 import hashlib
+import logging
 from cryptography.fernet import Fernet
 
+logger = logging.getLogger(__name__)
+
 def _get_fernet() -> Fernet:
-    # Derive a valid 32-byte Fernet key from SECRET_KEY
-    key = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
+    if settings.SMTP_ENCRYPTION_KEY:
+        key = hashlib.sha256(settings.SMTP_ENCRYPTION_KEY.encode()).digest()
+    else:
+        logger.warning("SMTP_ENCRYPTION_KEY is not set. Falling back to SECRET_KEY for deriving Fernet encryption key.")
+        key = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
     return Fernet(base64.urlsafe_b64encode(key))
 
 def encrypt_value(plaintext: str) -> str:
