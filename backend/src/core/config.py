@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import model_validator
 import os
 from pathlib import Path
 
@@ -26,15 +27,18 @@ class Settings(BaseSettings):
     N8N_EMAIL_WEBHOOK_PASS: str = ""
     SMTP_ENCRYPTION_KEY: str | None = None
 
+    @model_validator(mode="after")
+    def validate_smtp_key_in_production(self):
+        if self.ENVIRONMENT == "production" and not self.SMTP_ENCRYPTION_KEY:
+            raise ValueError("SMTP_ENCRYPTION_KEY is required in production environment")
+        return self
+
     class Config:
         env_file = str(env_file_path)
         case_sensitive = False
 
 
 settings = Settings()
-
-if settings.ENVIRONMENT == "production" and not settings.SMTP_ENCRYPTION_KEY:
-    raise ValueError("SMTP_ENCRYPTION_KEY is required in production environment")
 
 # Log which environment is being used
 print(f"🚀 Backend running in {settings.ENVIRONMENT} mode (loaded from {env_file_path})")

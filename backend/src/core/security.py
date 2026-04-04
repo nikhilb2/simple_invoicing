@@ -9,11 +9,21 @@ from cryptography.fernet import Fernet
 
 logger = logging.getLogger(__name__)
 
+_fernet_warned = False
+
 def _get_fernet() -> Fernet:
+    # NOTE: Changing SMTP_ENCRYPTION_KEY rotates the Fernet key. SMTP passwords
+    # previously encrypted with a different key (or the SECRET_KEY fallback) will
+    # fail to decrypt — re-encrypt existing records before switching keys.
+    global _fernet_warned
     if settings.SMTP_ENCRYPTION_KEY:
         key = hashlib.sha256(settings.SMTP_ENCRYPTION_KEY.encode()).digest()
     else:
-        logger.warning("SMTP_ENCRYPTION_KEY is not set. Falling back to SECRET_KEY for deriving Fernet encryption key.")
+        if not _fernet_warned:
+            logger.warning(
+                "SMTP_ENCRYPTION_KEY is not set. Falling back to SECRET_KEY for deriving Fernet encryption key."
+            )
+            _fernet_warned = True
         key = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
     return Fernet(base64.urlsafe_b64encode(key))
 
