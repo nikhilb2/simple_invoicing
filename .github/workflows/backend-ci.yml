@@ -15,6 +15,20 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout
@@ -38,6 +52,6 @@ jobs:
       - name: Validate app import
         working-directory: backend
         env:
-          DATABASE_URL: "sqlite:///./test.db"
+          DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/testdb"
           SECRET_KEY: "testing-secret-key"
         run: python -c "from app_main import app; print('FastAPI app import OK')"
