@@ -37,4 +37,7 @@ jobs:
 
       - name: Validate app import
         working-directory: backend
+        env:
+          DATABASE_URL: "sqlite:///./test.db"
+          SECRET_KEY: "testing-secret-key"
         run: python -c "from app_main import app; print('FastAPI app import OK')"
