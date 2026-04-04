@@ -15,7 +15,7 @@ def up(conn) -> None:
             username VARCHAR(255) NOT NULL,
             password TEXT NOT NULL,
             from_email VARCHAR(255) NOT NULL,
-            from_name VARCHAR(255),
+            from_name VARCHAR(255) NOT NULL,
             use_tls BOOLEAN NOT NULL DEFAULT TRUE,
             is_active BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
