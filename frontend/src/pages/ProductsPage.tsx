@@ -292,7 +292,22 @@ export default function ProductsPage() {
 
           <div className="table-list">
             {loading ? <div className="empty-state">Loading products...</div> : null}
-            {!loading && products.length === 0 ? <div className="empty-state">No products have been created yet.</div> : null}
+            {!loading && products.length === 0 && !search ? (
+              <div className="empty-state">
+                <p style={{ fontWeight: 600, marginBottom: '8px' }}>No products yet</p>
+                <p style={{ marginBottom: '16px' }}>Add your first product to start building your catalog.</p>
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={() => document.getElementById('sku')?.focus()}
+                >
+                  Create your first product
+                </button>
+              </div>
+            ) : null}
+            {!loading && products.length === 0 && search ? (
+              <div className="empty-state">No products match your search.</div>
+            ) : null}
             {!loading
               ? products.map((product) => (
                   <div key={product.id} className="table-row">

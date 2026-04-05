@@ -366,4 +366,39 @@ test.describe('Invoices', () => {
     const today = new Date().toISOString().slice(0, 10);
     expect(value).toBe(today);
   });
+
+  test('shows search-no-results message when search finds nothing', async ({ authedPage: page }) => {
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+    await page.fill('#invoice-search', 'ZZZZNONEXISTENT999');
+    await page.waitForTimeout(500);
+
+    await expect(page.locator('.empty-state')).toContainText('No invoices match your search.');
+    // CTA for truly-empty state must not appear during a search
+    await expect(page.locator('button:has-text("Create your first invoice")')).not.toBeVisible();
+  });
+
+  test('shows friendly empty state with CTA when no invoices exist', async ({ authedPage: page }) => {
+    // Mock only the invoices list to return empty so we can verify the empty-state UI
+    await page.route(/\/api\/invoices\//, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], total: 0, total_pages: 0, page: 1 }),
+      })
+    );
+
+    await page.goto('/invoices');
+    await page.waitForTimeout(500);
+
+    const emptyState = page.locator('.empty-state');
+    await expect(emptyState).toContainText('No invoices yet');
+    await expect(emptyState).toContainText('first invoice');
+
+    const ctaButton = page.locator('button:has-text("Create your first invoice")');
+    await expect(ctaButton).toBeVisible();
+    // CTA should focus the voucher type selector so the user can start filling the form
+    await ctaButton.click();
+    await expect(page.locator('#invoice-voucher-type')).toBeFocused();
+  });
 });

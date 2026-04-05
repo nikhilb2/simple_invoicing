@@ -604,9 +604,22 @@ export default function InvoicesPage() {
                 <p style={{ fontSize: '0.95rem' }}>Loading invoices...</p>
               </div>
             ) : null}
-            {!loading && invoices.length === 0 ? (
+            {!loading && invoices.length === 0 && !invoiceSearch ? (
               <div className="empty-state">
-                <p style={{ fontSize: '0.95rem' }}>No invoices created yet. Start by creating your first invoice above.</p>
+                <p style={{ fontWeight: 600, marginBottom: '8px' }}>No invoices yet</p>
+                <p style={{ marginBottom: '16px' }}>Create your first invoice to get started.</p>
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={() => document.getElementById('invoice-voucher-type')?.focus()}
+                >
+                  Create your first invoice
+                </button>
+              </div>
+            ) : null}
+            {!loading && invoices.length === 0 && invoiceSearch ? (
+              <div className="empty-state">
+                <p style={{ fontSize: '0.95rem' }}>No invoices match your search.</p>
               </div>
             ) : null}
             {!loading
