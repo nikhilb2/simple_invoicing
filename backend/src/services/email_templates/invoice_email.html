@@ -1,0 +1,73 @@
+{#
+  invoice_email.html — Email sent to a buyer when an invoice is issued.
+  Extends base.html.
+
+  Variables (in addition to base.html variables):
+    invoice_number  (str)         — Invoice identifier, e.g. "INV-2026-001"
+    invoice_date    (str)         — Human-readable invoice date, e.g. "01 Apr 2026"
+    due_date        (str|None)    — Payment due date; omitted if not provided
+    buyer_name      (str)         — Buyer / party name
+    total_amount    (str|number)  — Formatted invoice total, e.g. "12,500.00"
+    items_count     (int)         — Number of line items on the invoice
+    currency        (str)         — Currency symbol. Default: "₹"
+    message         (str|None)    — Optional custom message from the sender
+#}
+{% extends "base.html" %}
+
+{% block title %}Invoice {{ invoice_number }}{% endblock %}
+
+{% block content %}
+<h2 style="color: #2c3e50; margin-top: 0; margin-bottom: 20px; font-size: 20px;">Invoice {{ invoice_number }}</h2>
+
+<p style="margin: 0 0 16px 0;">Dear <strong>{{ buyer_name }}</strong>,</p>
+
+{% if message %}
+<p style="margin: 0 0 16px 0;">{{ message }}</p>
+{% else %}
+<p style="margin: 0 0 16px 0;">
+    Please find attached invoice <strong>{{ invoice_number }}</strong> for your reference.
+    Kindly review the details below.
+</p>
+{% endif %}
+
+<!-- Invoice Summary Table -->
+<table width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="border-collapse: collapse; margin: 24px 0; border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden;">
+    <tr style="background-color: #f8f9fa;">
+        <td style="padding: 10px 16px; font-size: 13px; color: #555555; font-weight: bold; width: 50%; border-bottom: 1px solid #e0e0e0;">Invoice Number</td>
+        <td style="padding: 10px 16px; font-size: 14px; color: #333333; border-bottom: 1px solid #e0e0e0;">{{ invoice_number }}</td>
+    </tr>
+    <tr>
+        <td style="padding: 10px 16px; font-size: 13px; color: #555555; font-weight: bold; border-bottom: 1px solid #e0e0e0;">Invoice Date</td>
+        <td style="padding: 10px 16px; font-size: 14px; color: #333333; border-bottom: 1px solid #e0e0e0;">{{ invoice_date }}</td>
+    </tr>
+    {% if due_date %}
+    <tr style="background-color: #f8f9fa;">
+        <td style="padding: 10px 16px; font-size: 13px; color: #555555; font-weight: bold; border-bottom: 1px solid #e0e0e0;">Due Date</td>
+        <td style="padding: 10px 16px; font-size: 14px; color: #c0392b; font-weight: bold; border-bottom: 1px solid #e0e0e0;">{{ due_date }}</td>
+    </tr>
+    {% endif %}
+    <tr {% if not due_date %}style="background-color: #f8f9fa;"{% endif %}>
+        <td style="padding: 10px 16px; font-size: 13px; color: #555555; font-weight: bold; border-bottom: 1px solid #e0e0e0;">Billed To</td>
+        <td style="padding: 10px 16px; font-size: 14px; color: #333333; border-bottom: 1px solid #e0e0e0;">{{ buyer_name }}</td>
+    </tr>
+    <tr {% if due_date %}style="background-color: #f8f9fa;"{% endif %}>
+        <td style="padding: 10px 16px; font-size: 13px; color: #555555; font-weight: bold; border-bottom: 1px solid #e0e0e0;">Items</td>
+        <td style="padding: 10px 16px; font-size: 14px; color: #333333; border-bottom: 1px solid #e0e0e0;">{{ items_count }} item{% if items_count != 1 %}s{% endif %}</td>
+    </tr>
+    <tr style="background-color: #2c3e50;">
+        <td style="padding: 12px 16px; font-size: 14px; color: #ffffff; font-weight: bold;">Total Amount</td>
+        <td style="padding: 12px 16px; font-size: 16px; color: #ffffff; font-weight: bold;">
+            {{ currency | default("₹") }}{{ total_amount }}
+        </td>
+    </tr>
+</table>
+
+<p style="margin: 0 0 16px 0; color: #555555; font-size: 13px;">
+    📎 The invoice PDF is attached to this email.
+</p>
+
+<p style="margin: 0;">
+    If you have any questions regarding this invoice, please don't hesitate to contact us.
+</p>
+{% endblock %}
