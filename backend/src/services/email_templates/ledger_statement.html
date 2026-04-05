@@ -1,0 +1,125 @@
+{#
+  ledger_statement.html — Summary email sent when sharing a ledger / account statement.
+  Extends base.html.
+
+  Variables (in addition to base.html variables):
+    ledger_name     (str)         — Party / ledger name
+    date_from       (str)         — Statement period start date, e.g. "01 Jan 2026"
+    date_to         (str)         — Statement period end date, e.g. "31 Mar 2026"
+    total_invoices  (str|number)  — Sum of all invoices in the period, e.g. "50,000.00"
+    total_payments  (str|number)  — Sum of all payments in the period, e.g. "42,500.00"
+    balance         (str|number)  — Net outstanding balance (invoices − payments), e.g. "7,500.00"
+    currency        (str)         — Currency symbol. Default: "₹"
+    message         (str|None)    — Optional custom message from the sender
+#}
+{% extends "base.html" %}
+
+{% block title %}Account Statement — {{ ledger_name }}{% endblock %}
+
+{% block content %}
+<h2 style="color: #2c3e50; margin-top: 0; margin-bottom: 4px; font-size: 20px;">Account Statement</h2>
+<p style="margin: 0 0 20px 0; font-size: 13px; color: #777777;">
+    {{ date_from }} &ndash; {{ date_to }}
+</p>
+
+<p style="margin: 0 0 16px 0;">Dear <strong>{{ ledger_name }}</strong>,</p>
+
+{% if message %}
+<p style="margin: 0 0 16px 0;">{{ message }}</p>
+{% else %}
+<p style="margin: 0 0 16px 0;">
+    Please find below the account statement for the period
+    <strong>{{ date_from }}</strong> to <strong>{{ date_to }}</strong>.
+    A detailed PDF statement is attached for your records.
+</p>
+{% endif %}
+
+<!-- Summary Cards -->
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 20px 0;">
+    <tr>
+        <!-- Total Invoiced -->
+        <td width="33%" style="padding: 0 6px 0 0; vertical-align: top;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="background-color: #eaf4fb; border: 1px solid #aed6f1; border-radius: 6px;">
+                <tr>
+                    <td style="padding: 14px 16px; text-align: center;">
+                        <p style="margin: 0; font-size: 11px; color: #1a5276; text-transform: uppercase; letter-spacing: 0.5px;">Invoiced</p>
+                        <p style="margin: 6px 0 0 0; font-size: 18px; font-weight: bold; color: #1a5276;">
+                            {{ currency | default("₹") }}{{ total_invoices }}
+                        </p>
+                    </td>
+                </tr>
+            </table>
+        </td>
+        <!-- Total Payments -->
+        <td width="33%" style="padding: 0 3px; vertical-align: top;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="background-color: #eafaf1; border: 1px solid #a9dfbf; border-radius: 6px;">
+                <tr>
+                    <td style="padding: 14px 16px; text-align: center;">
+                        <p style="margin: 0; font-size: 11px; color: #145a32; text-transform: uppercase; letter-spacing: 0.5px;">Received</p>
+                        <p style="margin: 6px 0 0 0; font-size: 18px; font-weight: bold; color: #145a32;">
+                            {{ currency | default("₹") }}{{ total_payments }}
+                        </p>
+                    </td>
+                </tr>
+            </table>
+        </td>
+        <!-- Balance -->
+        <td width="33%" style="padding: 0 0 0 6px; vertical-align: top;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="background-color: #fdedec; border: 1px solid #f1948a; border-radius: 6px;">
+                <tr>
+                    <td style="padding: 14px 16px; text-align: center;">
+                        <p style="margin: 0; font-size: 11px; color: #78281f; text-transform: uppercase; letter-spacing: 0.5px;">Balance Due</p>
+                        <p style="margin: 6px 0 0 0; font-size: 18px; font-weight: bold; color: #c0392b;">
+                            {{ currency | default("₹") }}{{ balance }}
+                        </p>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+
+<!-- Statement Details -->
+<table width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="border-collapse: collapse; border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; margin: 8px 0 24px 0;">
+    <tr style="background-color: #f8f9fa;">
+        <td style="padding: 10px 16px; font-size: 13px; color: #555555; font-weight: bold; width: 50%; border-bottom: 1px solid #e0e0e0;">Period</td>
+        <td style="padding: 10px 16px; font-size: 14px; color: #333333; border-bottom: 1px solid #e0e0e0;">
+            {{ date_from }} &ndash; {{ date_to }}
+        </td>
+    </tr>
+    <tr>
+        <td style="padding: 10px 16px; font-size: 13px; color: #555555; font-weight: bold; border-bottom: 1px solid #e0e0e0;">Account Name</td>
+        <td style="padding: 10px 16px; font-size: 14px; color: #333333; border-bottom: 1px solid #e0e0e0;">{{ ledger_name }}</td>
+    </tr>
+    <tr style="background-color: #f8f9fa;">
+        <td style="padding: 10px 16px; font-size: 13px; color: #555555; font-weight: bold; border-bottom: 1px solid #e0e0e0;">Total Invoiced</td>
+        <td style="padding: 10px 16px; font-size: 14px; color: #333333; border-bottom: 1px solid #e0e0e0;">
+            {{ currency | default("₹") }}{{ total_invoices }}
+        </td>
+    </tr>
+    <tr>
+        <td style="padding: 10px 16px; font-size: 13px; color: #555555; font-weight: bold; border-bottom: 1px solid #e0e0e0;">Total Payments</td>
+        <td style="padding: 10px 16px; font-size: 14px; color: #27ae60; font-weight: bold; border-bottom: 1px solid #e0e0e0;">
+            {{ currency | default("₹") }}{{ total_payments }}
+        </td>
+    </tr>
+    <tr style="background-color: #2c3e50;">
+        <td style="padding: 12px 16px; font-size: 14px; color: #ffffff; font-weight: bold;">Balance Due</td>
+        <td style="padding: 12px 16px; font-size: 16px; color: #ffffff; font-weight: bold;">
+            {{ currency | default("₹") }}{{ balance }}
+        </td>
+    </tr>
+</table>
+
+<p style="margin: 0 0 16px 0; color: #555555; font-size: 13px;">
+    📎 A detailed PDF statement is attached to this email.
+</p>
+
+<p style="margin: 0;">
+    If you have any queries regarding this statement, please contact us and we will be happy to assist.
+</p>
+{% endblock %}

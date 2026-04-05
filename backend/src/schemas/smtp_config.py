@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -27,6 +28,12 @@ class SmtpConfigUpdate(BaseModel):
 class SmtpConfigTest(BaseModel):
     id: int
     to: EmailStr
+
+
+class SmtpConfigTestTemplate(BaseModel):
+    id: int
+    to: EmailStr
+    template_name: Literal["invoice_email", "payment_reminder", "ledger_statement"]
 
 
 class SmtpConfigResponse(BaseModel):

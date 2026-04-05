@@ -1,0 +1,58 @@
+{#
+  base.html — Shared layout for all email templates.
+
+  Variables:
+    company_name   (str)  — Sender company name shown in the header. Default: "Your Company"
+    company_email  (str)  — Contact email shown in the footer. Default: omitted
+    company_phone  (str)  — Contact phone shown in the footer. Default: omitted
+    company_address (str) — Mailing address shown in the footer. Default: omitted
+#}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Email{% endblock %}</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333333; background-color: #f4f4f4; margin: 0; padding: 0;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f4f4f4;">
+        <tr>
+            <td align="center" style="padding: 20px 10px;">
+                <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background-color: #2c3e50; color: #ffffff; padding: 30px 20px; text-align: center;">
+                            {% block header %}
+                            <h1 style="font-size: 24px; font-weight: bold; margin: 0; color: #ffffff;">
+                                {{ company_name | default("Your Company") }}
+                            </h1>
+                            {% endblock %}
+                        </td>
+                    </tr>
+
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 30px 20px;">
+                            {% block content %}{% endblock %}
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #ecf0f1; color: #7f8c8d; padding: 20px; text-align: center; font-size: 12px; border-top: 1px solid #bdc3c7;">
+                            {% block footer %}
+                            <p style="margin: 0;">
+                                <strong>{{ company_name | default("Your Company") }}</strong><br>
+                                {% if company_email %}Email: {{ company_email }}<br>{% endif %}
+                                {% if company_phone %}Phone: {{ company_phone }}<br>{% endif %}
+                                {% if company_address %}{{ company_address }}{% endif %}
+                            </p>
+                            {% endblock %}
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

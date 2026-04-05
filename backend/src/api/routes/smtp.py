@@ -1,13 +1,73 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from src.models.user import User, UserRole
-from src.models.smtp_config import SMTPConfig
-from src.db.session import get_db
-from src.schemas.smtp_config import SmtpConfigResponse, SmtpConfigCreate, SmtpConfigUpdate, SmtpConfigTest
-from src.api.deps import require_roles
+from pathlib import Path
 import smtplib
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+from fastapi import APIRouter, Depends, HTTPException
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from sqlalchemy.orm import Session
+
+from src.api.deps import require_roles
+from src.db.session import get_db
+from src.models.smtp_config import SMTPConfig
+from src.models.user import User, UserRole
+from src.schemas.smtp_config import (
+    SmtpConfigCreate,
+    SmtpConfigResponse,
+    SmtpConfigTest,
+    SmtpConfigTestTemplate,
+    SmtpConfigUpdate,
+)
+
+_TEMPLATE_DIR = Path(__file__).parent.parent.parent / "services" / "email_templates"
+_jinja_env = Environment(
+    loader=FileSystemLoader(str(_TEMPLATE_DIR)),
+    autoescape=select_autoescape(["html"]),
+)
+
+_TEMPLATE_MOCK_DATA: dict[str, dict] = {
+    "invoice_email": {
+        "company_name": "Acme Corp",
+        "company_email": "billing@acme.com",
+        "company_phone": "+91 98765 43210",
+        "invoice_number": "INV-2026-001",
+        "invoice_date": "01 Apr 2026",
+        "due_date": "15 Apr 2026",
+        "buyer_name": "Test Buyer",
+        "total_amount": "12,500.00",
+        "items_count": 3,
+        "currency": "\u20b9",
+    },
+    "payment_reminder": {
+        "company_name": "Acme Corp",
+        "company_email": "billing@acme.com",
+        "buyer_name": "Test Buyer",
+        "outstanding_balance": "8,750.00",
+        "last_payment_date": "20 Mar 2026",
+        "currency": "\u20b9",
+        "unpaid_invoices": [
+            {"invoice_number": "INV-2026-001", "invoice_date": "01 Mar 2026", "due_date": "15 Mar 2026", "amount": "5,000.00"},
+            {"invoice_number": "INV-2026-002", "invoice_date": "10 Mar 2026", "due_date": None, "amount": "3,750.00"},
+        ],
+    },
+    "ledger_statement": {
+        "company_name": "Acme Corp",
+        "company_email": "billing@acme.com",
+        "ledger_name": "Test Buyer",
+        "date_from": "01 Jan 2026",
+        "date_to": "31 Mar 2026",
+        "total_invoices": "50,000.00",
+        "total_payments": "42,500.00",
+        "balance": "7,500.00",
+        "currency": "\u20b9",
+    },
+}
+
+_TEMPLATE_SUBJECTS = {
+    "invoice_email": "[Test] Invoice Email — INV-2026-001",
+    "payment_reminder": "[Test] Payment Reminder",
+    "ledger_statement": "[Test] Account Statement — Jan–Mar 2026",
+}
 
 router = APIRouter()
 
@@ -153,3 +213,39 @@ def test_smtp_config(
         return {"detail": "Test email sent successfully"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to send test email: {str(e)}")
+
+
+@router.post("/test-template", response_model=dict)
+def test_smtp_template(
+    payload: SmtpConfigTestTemplate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.admin)),
+):
+    """Send a test email rendered from one of the Jinja2 HTML templates using mock data."""
+    config = db.query(SMTPConfig).filter(SMTPConfig.id == payload.id).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="SMTP configuration not found")
+
+    context = _TEMPLATE_MOCK_DATA[payload.template_name]
+    html_body = _jinja_env.get_template(f"{payload.template_name}.html").render(**context)
+    subject = _TEMPLATE_SUBJECTS[payload.template_name]
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["From"] = f"{config.from_name} <{config.from_email}>"
+        msg["To"] = payload.to
+        msg["Subject"] = subject
+        msg.attach(MIMEText(html_body, "html"))
+
+        if config.use_tls:
+            server = smtplib.SMTP(config.host, config.port)
+            server.starttls()
+        else:
+            server = smtplib.SMTP_SSL(config.host, config.port)
+
+        server.login(config.username, config.password)
+        server.send_message(msg)
+        server.quit()
+        return {"detail": f"Test template email '{payload.template_name}' sent successfully to {payload.to}"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to send template test email: {str(e)}")

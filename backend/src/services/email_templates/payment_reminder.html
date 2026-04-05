@@ -1,0 +1,89 @@
+{#
+  payment_reminder.html — Polite payment reminder sent to a buyer with outstanding dues.
+  Extends base.html.
+
+  Variables (in addition to base.html variables):
+    buyer_name          (str)         — Buyer / party name
+    outstanding_balance (str|number)  — Total outstanding amount, e.g. "8,750.00"
+    currency            (str)         — Currency symbol. Default: "₹"
+    last_payment_date   (str|None)    — Date of the most recent payment; omitted if none
+    message             (str|None)    — Optional custom message from the sender
+    unpaid_invoices     (list)        — List of dicts with keys:
+                                          invoice_number (str)
+                                          invoice_date   (str)
+                                          due_date       (str|None)
+                                          amount         (str|number)
+#}
+{% extends "base.html" %}
+
+{% block title %}Payment Reminder{% endblock %}
+
+{% block content %}
+<h2 style="color: #2c3e50; margin-top: 0; margin-bottom: 20px; font-size: 20px;">Payment Reminder</h2>
+
+<p style="margin: 0 0 16px 0;">Dear <strong>{{ buyer_name }}</strong>,</p>
+
+{% if message %}
+<p style="margin: 0 0 16px 0;">{{ message }}</p>
+{% else %}
+<p style="margin: 0 0 16px 0;">
+    This is a gentle reminder that you have an outstanding balance on your account.
+    We would appreciate your prompt attention to settle the dues at your earliest convenience.
+</p>
+{% endif %}
+
+<!-- Outstanding Balance Banner -->
+<table width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background-color: #fef9e7; border: 1px solid #f39c12; border-radius: 6px; margin: 16px 0;">
+    <tr>
+        <td style="padding: 16px 20px;">
+            <p style="margin: 0; font-size: 13px; color: #7f6000;">Outstanding Balance</p>
+            <p style="margin: 4px 0 0 0; font-size: 26px; font-weight: bold; color: #c0392b;">
+                {{ currency | default("₹") }}{{ outstanding_balance }}
+            </p>
+            {% if last_payment_date %}
+            <p style="margin: 8px 0 0 0; font-size: 12px; color: #7f6000;">
+                Last payment received on {{ last_payment_date }}
+            </p>
+            {% endif %}
+        </td>
+    </tr>
+</table>
+
+{% if unpaid_invoices %}
+<!-- Unpaid Invoices Table -->
+<h3 style="color: #2c3e50; font-size: 15px; margin: 24px 0 12px 0;">Unpaid Invoices</h3>
+<table width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="border-collapse: collapse; border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden;">
+    <!-- Table header -->
+    <tr style="background-color: #2c3e50;">
+        <td style="padding: 10px 14px; font-size: 12px; color: #ffffff; font-weight: bold;">Invoice #</td>
+        <td style="padding: 10px 14px; font-size: 12px; color: #ffffff; font-weight: bold;">Date</td>
+        <td style="padding: 10px 14px; font-size: 12px; color: #ffffff; font-weight: bold;">Due Date</td>
+        <td style="padding: 10px 14px; font-size: 12px; color: #ffffff; font-weight: bold; text-align: right;">Amount</td>
+    </tr>
+    {% for inv in unpaid_invoices %}
+    <tr style="background-color: {% if loop.index is odd %}#ffffff{% else %}#f8f9fa{% endif %};">
+        <td style="padding: 10px 14px; font-size: 13px; color: #333333; border-bottom: 1px solid #e0e0e0;">
+            {{ inv.invoice_number }}
+        </td>
+        <td style="padding: 10px 14px; font-size: 13px; color: #555555; border-bottom: 1px solid #e0e0e0;">
+            {{ inv.invoice_date }}
+        </td>
+        <td style="padding: 10px 14px; font-size: 13px; border-bottom: 1px solid #e0e0e0;
+                   {% if inv.due_date %}color: #c0392b; font-weight: bold;{% else %}color: #aaaaaa;{% endif %}">
+            {{ inv.due_date if inv.due_date else "—" }}
+        </td>
+        <td style="padding: 10px 14px; font-size: 13px; color: #333333; border-bottom: 1px solid #e0e0e0; text-align: right;">
+            {{ currency | default("₹") }}{{ inv.amount }}
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% endif %}
+
+<p style="margin: 24px 0 0 0;">
+    If you have already made the payment, please disregard this message. Should you have any questions,
+    feel free to reach out to us.
+</p>
+{% endblock %}
