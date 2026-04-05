@@ -190,4 +190,38 @@ test.describe('Ledgers CRUD', () => {
     await expect(page.locator('.table-row', { hasText: nameB })).toBeVisible();
     await expect(page.locator('.table-row', { hasText: nameA })).not.toBeVisible();
   });
+
+  test('shows search-no-results message when search finds nothing', async ({ authedPage: page }) => {
+    await page.click('[href="/ledgers"]');
+    await page.fill('#ledger-search', 'ZZZZNONEXISTENT999');
+    await page.waitForTimeout(500);
+
+    await expect(page.locator('.empty-state')).toContainText('No ledgers match your search.');
+    // CTA for truly-empty state must not appear during a search
+    await expect(page.locator('button:has-text("Create your first ledger")')).not.toBeVisible();
+  });
+
+  test('shows friendly empty state with CTA that navigates to create form', async ({ authedPage: page }) => {
+    // Mock the ledgers list to return empty so we can verify the empty-state UI
+    await page.route(/\/api\/ledgers\//, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], total: 0, total_pages: 0, page: 1 }),
+      })
+    );
+
+    await page.goto('/ledgers');
+
+    const emptyState = page.locator('.empty-state');
+    await expect(emptyState).toContainText('No ledgers yet');
+    await expect(emptyState).toContainText('first ledger');
+
+    const ctaButton = page.locator('button:has-text("Create your first ledger")');
+    await expect(ctaButton).toBeVisible();
+    // CTA should navigate to the ledger create form
+    await page.unroute(/\/api\/ledgers\//); // unblock navigation target
+    await ctaButton.click();
+    await expect(page).toHaveURL('/ledgers/new', { timeout: 5_000 });
+  });
 });

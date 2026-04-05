@@ -137,9 +137,9 @@ test.describe('Products CRUD', () => {
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: sku });
     await expect(row).toBeVisible({ timeout: 10_000 });
-    page.on('dialog', (dialog) => dialog.accept());
-    // Wait for old banner to disappear then the new one to appear
+    // Delete it — click Delete row button, then confirm in the custom dialog
     await row.locator('button:has-text("Delete")').click();
+    await page.locator('.modal-overlay button:has-text("Delete")').click();
     await expect(page.locator('.toast--success')).toContainText('Product deleted', { timeout: 10_000 });
 
     // Should no longer appear
@@ -167,5 +167,38 @@ test.describe('Products CRUD', () => {
       .locator('button:has-text("Create product")')
       .isVisible();
     expect(errorVisible || stillOnForm).toBeTruthy();
+  });
+
+  test('shows search-no-results message when search finds nothing', async ({ authedPage: page }) => {
+    await page.click('[href="/products"]');
+    await page.fill('#product-search', 'ZZZZNONEXISTENT999');
+    await page.waitForTimeout(500);
+
+    await expect(page.locator('.empty-state')).toContainText('No products match your search.');
+    // CTA for truly-empty state must not appear during a search
+    await expect(page.locator('button:has-text("Create your first product")')).not.toBeVisible();
+  });
+
+  test('shows friendly empty state with CTA when no products exist', async ({ authedPage: page }) => {
+    // Mock the products list to return empty so we can verify the empty-state UI
+    await page.route(/\/api\/products\//, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], total: 0, total_pages: 0, page: 1 }),
+      })
+    );
+
+    await page.goto('/products');
+
+    const emptyState = page.locator('.empty-state');
+    await expect(emptyState).toContainText('No products yet');
+    await expect(emptyState).toContainText('first product');
+
+    const ctaButton = page.locator('button:has-text("Create your first product")');
+    await expect(ctaButton).toBeVisible();
+    // CTA should focus the SKU input so the user can start filling the form
+    await ctaButton.click();
+    await expect(page.locator('#sku')).toBeFocused();
   });
 });

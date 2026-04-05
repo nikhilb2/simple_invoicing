@@ -124,7 +124,22 @@ export default function LedgersPage() {
 
           <div className="table-list">
             {loading ? <div className="empty-state">Loading ledgers...</div> : null}
-            {!loading && ledgers.length === 0 ? <div className="empty-state">No ledgers have been created yet.</div> : null}
+            {!loading && ledgers.length === 0 && !search ? (
+              <div className="empty-state">
+                <p style={{ fontWeight: 600, marginBottom: '8px' }}>No ledgers yet</p>
+                <p style={{ marginBottom: '16px' }}>Create your first ledger to start tracking buyers and suppliers.</p>
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={() => navigate('/ledgers/new')}
+                >
+                  Create your first ledger
+                </button>
+              </div>
+            ) : null}
+            {!loading && ledgers.length === 0 && search ? (
+              <div className="empty-state">No ledgers match your search.</div>
+            ) : null}
             {!loading
               ? ledgers.map((ledger) => (
                   <div key={ledger.id} className="table-row">
