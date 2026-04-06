@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, Ledger, LedgerStatement } from '../types/api';
 import formatCurrency from '../utils/formatting';
+import SendEmailModal from './SendEmailModal';
 
 type StatementPreviewProps = {
   ledger: Ledger;
@@ -12,6 +14,7 @@ type StatementPreviewProps = {
 };
 
 export default function StatementPreview({ ledger, statement, company, currencyCode, onClose, onError }: StatementPreviewProps) {
+  const [showEmailModal, setShowEmailModal] = useState(false);
   const companyDetails = [
     company?.gst ? `GST: ${company.gst}` : '',
     company?.phone_number ? `Phone: ${company.phone_number}` : '',
@@ -59,6 +62,15 @@ export default function StatementPreview({ ledger, statement, company, currencyC
               }}
             >
               Download PDF
+            </button>
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => setShowEmailModal(true)}
+              title="Email statement"
+              aria-label="Email statement"
+            >
+              Email Statement
             </button>
             <button type="button" className="button button--ghost" onClick={onClose} title="Close statement preview" aria-label="Close statement preview">
               Close
@@ -167,6 +179,21 @@ export default function StatementPreview({ ledger, statement, company, currencyC
           </section>
         </article>
       </div>
+
+      {showEmailModal && (
+        <SendEmailModal
+          type="statement"
+          entityId={ledger.id}
+          defaultTo={ledger.email || ''}
+          defaultSubject={`Account Statement from ${company?.name || 'Company'}`}
+          onClose={() => setShowEmailModal(false)}
+          onSuccess={(message) => {
+            setShowEmailModal(false);
+            // Could show success toast here if needed
+          }}
+          onError={(message) => onError?.(message)}
+        />
+      )}
     </div>
   );
 }

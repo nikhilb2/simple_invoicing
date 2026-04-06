@@ -6,6 +6,7 @@ import InvoicePreview from '../components/InvoicePreview';
 import StatementPreview from '../components/StatementPreview';
 import StatusToasts from '../components/StatusToasts';
 import CreateInvoiceModal from '../components/CreateInvoiceModal';
+import SendEmailModal from '../components/SendEmailModal';
 import formatCurrency from '../utils/formatting';
 
 function defaultDateRange() {
@@ -43,6 +44,7 @@ export default function LedgerViewPage() {
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [showStatementPreview, setShowStatementPreview] = useState(false);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -174,6 +176,9 @@ export default function LedgerViewPage() {
         </button>
         <button type="button" className="button button--primary" onClick={() => setShowPaymentForm(true)} title="Record receipt or payment" aria-label="Record receipt or payment">
           Record Receipt / Payment
+        </button>
+        <button type="button" className="button button--primary" onClick={() => setShowEmailModal(true)} title="Send payment reminder" aria-label="Send payment reminder">
+          Send Reminder
         </button>
         <button type="button" className="button button--primary" onClick={() => setShowInvoiceModal(true)} title="Create invoice" aria-label="Create invoice">
           Create Invoice
@@ -408,6 +413,22 @@ export default function LedgerViewPage() {
           onError={(msg) => setError(msg)}
         />
       ) : null}
+
+      {showEmailModal && (
+        <SendEmailModal
+          type="reminder"
+          entityId={ledgerId}
+          defaultTo={ledger?.email || ''}
+          defaultSubject={`Payment Reminder from ${company?.name || 'Company'}`}
+          onClose={() => setShowEmailModal(false)}
+          onSuccess={(message) => {
+            setShowEmailModal(false);
+            setError('');
+            // Could show success message here
+          }}
+          onError={(message) => setError(message)}
+        />
+      )}
     </div>
   );
 }

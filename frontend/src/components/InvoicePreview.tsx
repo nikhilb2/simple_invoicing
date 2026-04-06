@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import type { Invoice, Product } from '../types/api';
 import formatCurrency from '../utils/formatting';
+import SendEmailModal from './SendEmailModal';
 
 function getPreviewLineItems(invoice: Invoice, products: Product[]) {
   return (invoice.items || []).map((item) => {
@@ -30,6 +32,7 @@ type InvoicePreviewProps = {
 };
 
 export default function InvoicePreview({ invoice, products, currencyCode, onClose, onError }: InvoicePreviewProps) {
+  const [showEmailModal, setShowEmailModal] = useState(false);
   const previewCurrencyCode = invoice.company_currency_code || currencyCode;
 
   useEscapeClose(onClose);
@@ -68,6 +71,15 @@ export default function InvoicePreview({ invoice, products, currencyCode, onClos
               }}
             >
               Download PDF
+            </button>
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => setShowEmailModal(true)}
+              title="Email invoice"
+              aria-label="Email invoice"
+            >
+              Email Invoice
             </button>
             <button type="button" className="button button--ghost" onClick={onClose} title="Close invoice preview" aria-label="Close invoice preview">
               Close
@@ -167,6 +179,21 @@ export default function InvoicePreview({ invoice, products, currencyCode, onClos
           </section>
         </article>
       </div>
+
+      {showEmailModal && (
+        <SendEmailModal
+          type="invoice"
+          entityId={invoice.id}
+          defaultTo={invoice.ledger?.email || ''}
+          defaultSubject={`Invoice ${invoice.invoice_number || `#${invoice.id}`} from ${invoice.company_name || 'Company'}`}
+          onClose={() => setShowEmailModal(false)}
+          onSuccess={(message) => {
+            setShowEmailModal(false);
+            // Could show success toast here if needed
+          }}
+          onError={(message) => onError?.(message)}
+        />
+      )}
     </div>
   );
 }
