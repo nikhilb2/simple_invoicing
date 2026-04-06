@@ -12,6 +12,8 @@ type SendEmailModalProps = {
   onClose: () => void;
   onSuccess: (message: string) => void;
   onError: (message: string) => void;
+  fromDate?: string;
+  toDate?: string;
 };
 
 export default function SendEmailModal({
@@ -22,6 +24,8 @@ export default function SendEmailModal({
   onClose,
   onSuccess,
   onError,
+  fromDate,
+  toDate,
 }: SendEmailModalProps) {
   const [to, setTo] = useState(defaultTo);
   const [cc, setCc] = useState('');
@@ -54,12 +58,17 @@ export default function SendEmailModal({
 
     setSending(true);
     try {
-      await api.post(getEndpoint(), {
+      const payload: any = {
         to: to.trim(),
         cc: cc.trim() || undefined,
         subject: subject.trim(),
         message: message.trim() || undefined,
-      });
+      };
+      if (type === 'statement' && fromDate && toDate) {
+        payload.from_date = fromDate;
+        payload.to_date = toDate;
+      }
+      await api.post(getEndpoint(), payload);
       onSuccess('Email sent successfully');
       onClose();
     } catch (err) {

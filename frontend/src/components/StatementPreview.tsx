@@ -186,6 +186,8 @@ export default function StatementPreview({ ledger, statement, company, currencyC
           entityId={ledger.id}
           defaultTo={ledger.email || ''}
           defaultSubject={`Account Statement from ${company?.name || 'Company'}`}
+          fromDate={statement.from_date}
+          toDate={statement.to_date}
           onClose={() => setShowEmailModal(false)}
           onSuccess={(message) => {
             setShowEmailModal(false);
