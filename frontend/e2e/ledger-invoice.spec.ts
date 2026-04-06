@@ -53,7 +53,7 @@ test.describe('Create Invoice from Ledger View', () => {
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: ledgerName });
     await expect(row).toBeVisible({ timeout: 10_000 });
-    await row.locator('button:has-text("View")').click();
+    await row.locator('[aria-label^="View ledger"]').click();
     await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
 
     return { sku, productName, ledgerName };
@@ -63,7 +63,8 @@ test.describe('Create Invoice from Ledger View', () => {
     const { sku, ledgerName } = await seedAndNavigateToLedger(page);
 
     // Open the Create Invoice modal
-    await page.click('button:has-text("Create Invoice")');
+    await page.click('[aria-label="More ledger actions"]');
+    await page.click('[role="menuitem"][aria-label="Create Invoice"]');
     const modal = page.locator('.modal-overlay');
     await expect(modal).toBeVisible({ timeout: 5_000 });
 
@@ -108,7 +109,8 @@ test.describe('Create Invoice from Ledger View', () => {
     const { sku } = await seedAndNavigateToLedger(page);
 
     // Open the Create Invoice modal
-    await page.click('button:has-text("Create Invoice")');
+    await page.click('[aria-label="More ledger actions"]');
+    await page.click('[role="menuitem"][aria-label="Create Invoice"]');
     const modal = page.locator('.modal-overlay');
     await expect(modal).toBeVisible({ timeout: 5_000 });
 
@@ -144,12 +146,75 @@ test.describe('Create Invoice from Ledger View', () => {
   test('can close modal without creating invoice', async ({ authedPage: page }) => {
     await seedAndNavigateToLedger(page);
 
-    await page.click('button:has-text("Create Invoice")');
+    await page.click('[aria-label="More ledger actions"]');
+    await page.click('[role="menuitem"][aria-label="Create Invoice"]');
     const modal = page.locator('.modal-overlay');
     await expect(modal).toBeVisible({ timeout: 5_000 });
 
     // Click cancel
     await modal.locator('button:has-text("Cancel")').click();
     await expect(modal).not.toBeVisible({ timeout: 3_000 });
+  });
+});
+
+test.describe('Ledger View Actions Dropdown', () => {
+  test('dropdown opens on caret click and shows both actions', async ({ authedPage: page }) => {
+    // Create a minimal ledger and navigate to its view page
+    await page.click('[href="/ledgers"]');
+    await page.click('button:has-text("Create ledger")');
+    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: 10_000 });
+    const ledgerName = `DropdownLedger-${Date.now().toString(36)}`;
+    await page.fill('#ledger-name', ledgerName);
+    await page.fill('#ledger-address', '1 Dropdown Rd');
+    await page.fill('#ledger-gst', uniqueGstin());
+    await page.fill('#ledger-phone', '+91 1111111111');
+    await page.click('button:has-text("Create ledger")');
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+
+    await page.fill('#ledger-search', ledgerName);
+    await page.waitForTimeout(500);
+    const row = page.locator('.table-row', { hasText: ledgerName });
+    await expect(row).toBeVisible({ timeout: 10_000 });
+    await row.locator('[aria-label^="View ledger"]').click();
+    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
+
+    // Dropdown is closed initially
+    await expect(page.locator('[role="menuitem"][aria-label="Send Reminder"]')).not.toBeVisible();
+    await expect(page.locator('[role="menuitem"][aria-label="Create Invoice"]')).not.toBeVisible();
+
+    // Open dropdown via caret button
+    await page.click('[aria-label="More ledger actions"]');
+
+    // Both menu items should now be visible
+    await expect(page.locator('[role="menuitem"][aria-label="Send Reminder"]')).toBeVisible({ timeout: 3_000 });
+    await expect(page.locator('[role="menuitem"][aria-label="Create Invoice"]')).toBeVisible({ timeout: 3_000 });
+  });
+
+  test('dropdown closes when clicking outside', async ({ authedPage: page }) => {
+    await page.click('[href="/ledgers"]');
+    await page.click('button:has-text("Create ledger")');
+    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: 10_000 });
+    const ledgerName = `DropdownClose-${Date.now().toString(36)}`;
+    await page.fill('#ledger-name', ledgerName);
+    await page.fill('#ledger-address', '2 Close Rd');
+    await page.fill('#ledger-gst', uniqueGstin());
+    await page.fill('#ledger-phone', '+91 2222222222');
+    await page.click('button:has-text("Create ledger")');
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+
+    await page.fill('#ledger-search', ledgerName);
+    await page.waitForTimeout(500);
+    const row = page.locator('.table-row', { hasText: ledgerName });
+    await expect(row).toBeVisible({ timeout: 10_000 });
+    await row.locator('[aria-label^="View ledger"]').click();
+    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
+
+    // Open dropdown
+    await page.click('[aria-label="More ledger actions"]');
+    await expect(page.locator('[role="menuitem"][aria-label="Send Reminder"]')).toBeVisible({ timeout: 3_000 });
+
+    // Click outside — click on the page heading
+    await page.click('h1');
+    await expect(page.locator('[role="menuitem"][aria-label="Send Reminder"]')).not.toBeVisible({ timeout: 3_000 });
   });
 });

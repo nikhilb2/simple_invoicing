@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, PaginatedProducts, Product, ProductCreate } from '../types/api';
 import StatusToasts from '../components/StatusToasts';
@@ -309,18 +310,25 @@ export default function ProductsPage() {
                     </div>
                     <span className="table-row__price">{formatCurrency(product.price, activeCurrencyCode)}</span>
                     <div className="table-row__actions">
-                      <button type="button" className="button button--ghost" onClick={() => startEditProduct(product)} disabled={submitting} title={`Edit product ${product.name}`} aria-label={`Edit product ${product.name}`}>
-                        Edit
+                      <button
+                        type="button"
+                        className="button button--ghost button--icon"
+                        onClick={() => startEditProduct(product)}
+                        disabled={submitting}
+                        title={`Edit product ${product.name}`}
+                        aria-label={`Edit product ${product.name}`}
+                      >
+                        <Pencil size={16} />
                       </button>
                       <button
                         type="button"
-                        className="button button--danger"
+                        className="button button--danger button--icon"
                         onClick={() => handleDeleteProduct(product.id)}
                         disabled={deletingProductId === product.id}
                         title={`Delete product ${product.name}`}
                         aria-label={`Delete product ${product.name}`}
                       >
-                        {deletingProductId === product.id ? 'Deleting...' : 'Delete'}
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   </div>

@@ -28,7 +28,7 @@ async function createLedgerAndNavigateToView(
   await page.waitForTimeout(500);
   const row = page.locator('.table-row', { hasText: ledgerName });
   await expect(row).toBeVisible({ timeout: 10_000 });
-  await row.locator('button:has-text("View")').click();
+  await row.locator('[aria-label^="View ledger"]').click();
   await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
 }
 
@@ -38,7 +38,8 @@ test.describe('Send Email Modal', () => {
       const ledgerName = `EmailLedger-${Date.now().toString(36)}`;
       await createLedgerAndNavigateToView(page, ledgerName);
 
-      await page.click('button:has-text("Send Reminder")');
+      await page.click('[aria-label="More ledger actions"]');
+      await page.click('[role="menuitem"][aria-label="Send Reminder"]');
 
       const modal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
       await expect(modal).toBeVisible({ timeout: 5_000 });
@@ -64,7 +65,8 @@ test.describe('Send Email Modal', () => {
       const ledgerName = `EmailLedger-${Date.now().toString(36)}`;
       await createLedgerAndNavigateToView(page, ledgerName);
 
-      await page.click('button:has-text("Send Reminder")');
+      await page.click('[aria-label="More ledger actions"]');
+      await page.click('[role="menuitem"][aria-label="Send Reminder"]');
       const modal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
       await expect(modal).toBeVisible({ timeout: 5_000 });
 
@@ -76,7 +78,8 @@ test.describe('Send Email Modal', () => {
       const ledgerName = `EmailLedger-${Date.now().toString(36)}`;
       await createLedgerAndNavigateToView(page, ledgerName);
 
-      await page.click('button:has-text("Send Reminder")');
+      await page.click('[aria-label="More ledger actions"]');
+      await page.click('[role="menuitem"][aria-label="Send Reminder"]');
       const modal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
       await expect(modal).toBeVisible({ timeout: 5_000 });
 
@@ -88,7 +91,8 @@ test.describe('Send Email Modal', () => {
       const ledgerName = `EmailLedger-${Date.now().toString(36)}`;
       await createLedgerAndNavigateToView(page, ledgerName);
 
-      await page.click('button:has-text("Send Reminder")');
+      await page.click('[aria-label="More ledger actions"]');
+      await page.click('[role="menuitem"][aria-label="Send Reminder"]');
       const modal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
       await expect(modal).toBeVisible({ timeout: 5_000 });
 
@@ -101,7 +105,8 @@ test.describe('Send Email Modal', () => {
       const ledgerName = `EmailLedger-${Date.now().toString(36)}`;
       await createLedgerAndNavigateToView(page, ledgerName);
 
-      await page.click('button:has-text("Send Reminder")');
+      await page.click('[aria-label="More ledger actions"]');
+      await page.click('[role="menuitem"][aria-label="Send Reminder"]');
       const modal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
       await expect(modal).toBeVisible({ timeout: 5_000 });
 
@@ -113,7 +118,8 @@ test.describe('Send Email Modal', () => {
       const ledgerName = `EmailLedger-${Date.now().toString(36)}`;
       await createLedgerAndNavigateToView(page, ledgerName);
 
-      await page.click('button:has-text("Send Reminder")');
+      await page.click('[aria-label="More ledger actions"]');
+      await page.click('[role="menuitem"][aria-label="Send Reminder"]');
       const modal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
       await expect(modal).toBeVisible({ timeout: 5_000 });
 
@@ -214,7 +220,7 @@ test.describe('Send Email Modal', () => {
       // Open preview of the first invoice matching the ledger
       const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
       await expect(invoiceRow).toBeVisible({ timeout: 10_000 });
-      await invoiceRow.locator('button:has-text("Preview")').click();
+      await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
 
       const preview = page.locator('.modal-panel--invoice-preview');
       await expect(preview).toBeVisible({ timeout: 5_000 });
@@ -333,7 +339,7 @@ test.describe('Send Email Modal', () => {
       await page.waitForTimeout(500);
       const row = page.locator('.table-row', { hasText: ledgerName });
       await expect(row).toBeVisible({ timeout: 10_000 });
-      await row.locator('button:has-text("View")').click();
+      await row.locator('[aria-label^="View ledger"]').click();
       await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
 
       // Wait for statement to load with today's date range (default)

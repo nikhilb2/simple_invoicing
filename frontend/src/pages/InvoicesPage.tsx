@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Eye, Pencil, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerCreate, PaginatedInvoices, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
@@ -666,21 +667,34 @@ export default function InvoicesPage() {
                       </div>
 
                       <div className="invoice-row__actions">
-                        <button type="button" className="button button--ghost button--small" onClick={() => setPreviewInvoice(invoice)} title="Preview invoice" aria-label={`Preview invoice ${invoice.invoice_number || invoice.id}`}>
-                          Preview
-                        </button>
-                        <button type="button" className="button button--ghost button--small" onClick={() => startEditingInvoice(invoice)} disabled={submitting} title="Edit invoice" aria-label={`Edit invoice ${invoice.invoice_number || invoice.id}`}>
-                          Edit
+                        <button
+                          type="button"
+                          className="button button--ghost button--icon"
+                          onClick={() => setPreviewInvoice(invoice)}
+                          title="Preview invoice"
+                          aria-label={`Preview invoice ${invoice.invoice_number || invoice.id}`}
+                        >
+                          <Eye size={16} />
                         </button>
                         <button
                           type="button"
-                          className="button button--danger button--small"
+                          className="button button--ghost button--icon"
+                          onClick={() => startEditingInvoice(invoice)}
+                          disabled={submitting}
+                          title="Edit invoice"
+                          aria-label={`Edit invoice ${invoice.invoice_number || invoice.id}`}
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--danger button--icon"
                           onClick={() => void handleDeleteInvoice(invoice.id)}
                           disabled={deletingInvoiceId === invoice.id}
                           title="Delete invoice"
                           aria-label={`Delete invoice ${invoice.invoice_number || invoice.id}`}
                         >
-                          {deletingInvoiceId === invoice.id ? 'Deleting...' : 'Delete'}
+                          <Trash2 size={16} />
                         </button>
                       </div>
                     </div>

@@ -22,7 +22,7 @@ test.describe('Ledger Statement', () => {
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: ledgerName });
     await expect(row).toBeVisible({ timeout: 10_000 });
-    await row.locator('button:has-text("View")').click();
+    await row.locator('[aria-label^="View ledger"]').click();
     await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
 
     // Check for period selection inputs
@@ -124,7 +124,7 @@ test.describe('Ledger Statement', () => {
     await page.waitForTimeout(500);
     const ledgerRow = page.locator('.table-row', { hasText: ledgerName });
     await expect(ledgerRow).toBeVisible({ timeout: 10_000 });
-    await ledgerRow.locator('button:has-text("View")').click();
+    await ledgerRow.locator('[aria-label^="View ledger"]').click();
     await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
 
     // Set date range covering today

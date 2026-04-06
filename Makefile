@@ -1,9 +1,13 @@
 SHELL := /bin/bash
 
-.PHONY: help dev prod down logs seed migrate migrate-up migrate-down migrate-down-all migrate-status migrate-create backend-shell frontend-shell test lint
+.PHONY: help dev prod down logs seed migrate migrate-up migrate-down migrate-down-all migrate-status migrate-create backend-shell frontend-shell test lint build install install-backend install-frontend
 
 help:
 	@echo "Available commands:"
+	@echo "  make build            - Rebuild dev images (use after changing Dockerfiles or system deps)"
+	@echo "  make install          - Install backend + frontend deps in running containers"
+	@echo "  make install-backend  - pip install -r requirements.txt in running backend-dev"
+	@echo "  make install-frontend - npm install in running frontend-dev"
 	@echo "  make dev              - Start development profile (backend-dev, frontend-dev, db)"
 	@echo "  make prod             - Start production profile (backend, frontend, db)"
 	@echo "  make down             - Stop all containers"
@@ -64,3 +68,14 @@ test:
 lint:
 	docker-compose --profile dev exec backend-dev python -m compileall .
 	docker-compose --profile dev exec frontend-dev npm run build
+
+build:
+	docker-compose --profile dev build backend-dev frontend-dev
+
+install: install-backend install-frontend
+
+install-backend:
+	docker-compose --profile dev exec backend-dev pip install -r requirements.txt
+
+install-frontend:
+	docker-compose --profile dev exec frontend-dev npm install

@@ -394,6 +394,84 @@ textarea {
   transform: translateY(-1px);
 }
 
+/* Icon-only square button */
+.button--icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Split button group: primary action + caret dropdown trigger */
+.split-button {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 16px;
+}
+
+.split-button__main {
+  border-radius: 16px 0 0 16px !important;
+  gap: 6px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.split-button__caret {
+  border-radius: 0 16px 16px 0 !important;
+  border-left: 1px solid rgba(5, 45, 42, 0.25) !important;
+  width: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Dropdown menu */
+.action-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.action-dropdown__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 200px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 6px;
+  display: grid;
+  gap: 2px;
+  z-index: 200;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.action-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text);
+  text-align: left;
+  transition: background 140ms ease;
+  width: 100%;
+}
+
+.action-dropdown__item:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
 .toast-stack {
   position: fixed;
   top: 24px;

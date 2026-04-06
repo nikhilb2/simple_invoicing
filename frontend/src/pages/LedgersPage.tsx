@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { Eye, Pencil, Plus, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import type { Ledger, PaginatedLedgers } from '../types/api';
@@ -90,7 +91,14 @@ export default function LedgersPage() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div className="status-chip">{total} ledgers listed</div>
-          <button className="button button--primary" onClick={() => navigate('/ledgers/new')} title="Create ledger" aria-label="Create ledger">
+          <button
+            className="button button--primary"
+            onClick={() => navigate('/ledgers/new')}
+            title="Create ledger"
+            aria-label="Create ledger"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Plus size={16} />
             Create ledger
           </button>
         </div>
@@ -166,21 +174,33 @@ export default function LedgersPage() {
                     </div>
                     <span className="table-subtext text-right">Ledger #{ledger.id}</span>
                     <div className="table-row__actions">
-                      <button type="button" className="button button--ghost" onClick={() => navigate(`/ledgers/${ledger.id}`)} title={`View ledger ${ledger.name}`} aria-label={`View ledger ${ledger.name}`}>
-                        View
-                      </button>
-                      <button type="button" className="button button--ghost" onClick={() => navigate(`/ledgers/${ledger.id}/edit`)} title={`Edit ledger ${ledger.name}`} aria-label={`Edit ledger ${ledger.name}`}>
-                        Edit
+                      <button
+                        type="button"
+                        className="button button--ghost button--icon"
+                        onClick={() => navigate(`/ledgers/${ledger.id}`)}
+                        title={`View ledger ${ledger.name}`}
+                        aria-label={`View ledger ${ledger.name}`}
+                      >
+                        <Eye size={16} />
                       </button>
                       <button
                         type="button"
-                        className="button button--danger"
+                        className="button button--ghost button--icon"
+                        onClick={() => navigate(`/ledgers/${ledger.id}/edit`)}
+                        title={`Edit ledger ${ledger.name}`}
+                        aria-label={`Edit ledger ${ledger.name}`}
+                      >
+                        <Pencil size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        className="button button--danger button--icon"
                         onClick={() => handleDeleteLedger(ledger.id)}
                         disabled={deletingLedgerId === ledger.id}
                         title={`Delete ledger ${ledger.name}`}
                         aria-label={`Delete ledger ${ledger.name}`}
                       >
-                        {deletingLedgerId === ledger.id ? 'Deleting...' : 'Delete'}
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   </div>

@@ -71,7 +71,7 @@ test.describe('Ledgers CRUD', () => {
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: name });
     await expect(row).toBeVisible({ timeout: 10_000 });
-    await row.locator('button:has-text("Edit")').click();
+    await row.locator('[aria-label^="Edit ledger"]').click();
     await expect(page.locator('h1')).toContainText('Edit ledger', { timeout: 10_000 });
 
     // Update the name
@@ -105,7 +105,7 @@ test.describe('Ledgers CRUD', () => {
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: name });
     await expect(row).toBeVisible({ timeout: 10_000 });
-    await row.locator('button:has-text("Delete")').click();
+    await row.locator('[aria-label^="Delete ledger"]').click();
     await page.locator('.modal-overlay button:has-text("Delete")').click();
     await expect(page.locator('.toast--success')).toContainText('Ledger deleted', { timeout: 10_000 });
     await expect(page.locator('.table-row', { hasText: name })).not.toBeVisible();
@@ -130,7 +130,7 @@ test.describe('Ledgers CRUD', () => {
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: name });
     await expect(row).toBeVisible({ timeout: 10_000 });
-    await row.locator('button:has-text("View")').click();
+    await row.locator('[aria-label^="View ledger"]').click();
 
     // Should navigate to ledger view page
     await expect(page.locator('h1')).toContainText(name, { timeout: 10_000 });
@@ -138,7 +138,7 @@ test.describe('Ledgers CRUD', () => {
     await expect(page.locator('#statement-to')).toBeVisible();
 
     // Back to ledgers
-    await page.click('button:has-text("Back to ledgers")');
+    await page.click('[aria-label="Back to ledgers"]');
     await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
   });
 

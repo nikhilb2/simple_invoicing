@@ -287,7 +287,7 @@ test.describe('Invoices', () => {
 
     // Delete the invoice — click Delete row button, then confirm in the custom dialog
     const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await invoiceRow.locator('button:has-text("Delete")').click();
+    await invoiceRow.locator('[aria-label^="Delete invoice"]').click();
     await page.locator('.modal-overlay button:has-text("Delete")').click();
     await expect(page.locator('.toast--success')).toContainText('deleted', { timeout: 10_000 });
   });

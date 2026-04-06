@@ -20,7 +20,7 @@ test.describe('Payments (Receipt / Payment)', () => {
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: ledgerName });
     await expect(row).toBeVisible({ timeout: 10_000 });
-    await row.locator('button:has-text("View")').click();
+    await row.locator('[aria-label^="View ledger"]').click();
     await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
 
     // 3. Open payment form
@@ -68,7 +68,7 @@ test.describe('Payments (Receipt / Payment)', () => {
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: ledgerName });
     await expect(row).toBeVisible({ timeout: 10_000 });
-    await row.locator('button:has-text("View")').click();
+    await row.locator('[aria-label^="View ledger"]').click();
     await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
 
     // 3. Open payment form and record a payment (money paid out)
@@ -110,7 +110,7 @@ test.describe('Payments (Receipt / Payment)', () => {
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: ledgerName });
     await expect(row).toBeVisible({ timeout: 10_000 });
-    await row.locator('button:has-text("View")').click();
+    await row.locator('[aria-label^="View ledger"]').click();
     await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
 
     await page.click('button:has-text("Record Receipt / Payment")');

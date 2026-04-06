@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, ChevronDown, FileText, FilePlus, Mail, Pencil, ReceiptText } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, Invoice, Ledger, LedgerStatement, PaymentCreate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
@@ -45,6 +46,19 @@ export default function LedgerViewPage() {
   const [showStatementPreview, setShowStatementPreview] = useState(false);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showActionsDropdown, setShowActionsDropdown] = useState(false);
+  const actionsDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showActionsDropdown) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (actionsDropdownRef.current && !actionsDropdownRef.current.contains(e.target as Node)) {
+        setShowActionsDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showActionsDropdown]);
 
   useEffect(() => {
     let cancelled = false;
@@ -171,18 +185,69 @@ export default function LedgerViewPage() {
             {ledger.email ? ` · ${ledger.email}` : ''}
           </p>
         </div>
-        <button type="button" className="button button--secondary" onClick={() => navigate('/ledgers')} title="Back to ledgers" aria-label="Back to ledgers">
-          Back to ledgers
-        </button>
-        <button type="button" className="button button--primary" onClick={() => setShowPaymentForm(true)} title="Record receipt or payment" aria-label="Record receipt or payment">
-          Record Receipt / Payment
-        </button>
-        <button type="button" className="button button--primary" onClick={() => setShowEmailModal(true)} title="Send payment reminder" aria-label="Send payment reminder">
-          Send Reminder
-        </button>
-        <button type="button" className="button button--primary" onClick={() => setShowInvoiceModal(true)} title="Create invoice" aria-label="Create invoice">
-          Create Invoice
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            type="button"
+            className="button button--ghost"
+            onClick={() => navigate('/ledgers')}
+            title="Back to ledgers"
+            aria-label="Back to ledgers"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <ArrowLeft size={16} />
+            Back
+          </button>
+
+          <div className="split-button">
+            <button
+              type="button"
+              className="button button--primary split-button__main"
+              onClick={() => setShowPaymentForm(true)}
+              title="Record receipt or payment"
+              aria-label="Record Receipt / Payment"
+            >
+              <ReceiptText size={16} />
+              Record Receipt / Payment
+            </button>
+            <div className="action-dropdown" ref={actionsDropdownRef}>
+              <button
+                type="button"
+                className="button button--primary split-button__caret"
+                onClick={() => setShowActionsDropdown((v) => !v)}
+                aria-label="More ledger actions"
+                aria-haspopup="true"
+                aria-expanded={showActionsDropdown}
+                title="More actions"
+              >
+                <ChevronDown size={14} />
+              </button>
+              {showActionsDropdown ? (
+                <div className="action-dropdown__menu" role="menu">
+                  <button
+                    type="button"
+                    className="action-dropdown__item"
+                    role="menuitem"
+                    aria-label="Send Reminder"
+                    onClick={() => { setShowActionsDropdown(false); setShowEmailModal(true); }}
+                  >
+                    <Mail size={16} />
+                    Send Reminder
+                  </button>
+                  <button
+                    type="button"
+                    className="action-dropdown__item"
+                    role="menuitem"
+                    aria-label="Create Invoice"
+                    onClick={() => { setShowActionsDropdown(false); setShowInvoiceModal(true); }}
+                  >
+                    <FilePlus size={16} />
+                    Create Invoice
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
       </section>
 
       <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
@@ -194,8 +259,14 @@ export default function LedgerViewPage() {
               <p className="eyebrow">Ledger details</p>
               <h2 className="nav-panel__title">Account info</h2>
             </div>
-            <button type="button" className="button button--ghost" onClick={() => navigate(`/ledgers/${ledgerId}/edit`)} title="Edit ledger" aria-label="Edit ledger">
-              Edit
+            <button
+              type="button"
+              className="button button--ghost button--icon"
+              onClick={() => navigate(`/ledgers/${ledgerId}/edit`)}
+              title="Edit ledger"
+              aria-label="Edit ledger"
+            >
+              <Pencil size={16} />
             </button>
           </div>
 
@@ -219,7 +290,15 @@ export default function LedgerViewPage() {
               <h2 className="nav-panel__title">Period view</h2>
             </div>
             {statement && statement.entries.length > 0 ? (
-              <button type="button" className="button button--secondary" onClick={() => setShowStatementPreview(true)} title="Preview statement PDF" aria-label="Preview statement PDF">
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => setShowStatementPreview(true)}
+                title="Preview statement PDF"
+                aria-label="Preview statement PDF"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                <FileText size={15} />
                 Preview / PDF
               </button>
             ) : null}

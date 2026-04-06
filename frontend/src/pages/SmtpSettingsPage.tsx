@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { CheckCircle, Pencil, Plus, Send, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { SmtpConfig, SmtpConfigCreate, SmtpConfigUpdate } from '../types/api';
 import StatusToasts from '../components/StatusToasts';
@@ -403,7 +404,12 @@ export default function SmtpSettingsPage() {
           <h1 className="page-title">SMTP settings</h1>
           <p className="section-copy">Manage outgoing email configurations used for invoices, statements, and reminders.</p>
         </div>
-        <button className="button button--primary" onClick={openAdd}>
+        <button
+          className="button button--primary"
+          onClick={openAdd}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+        >
+          <Plus size={16} />
           Add configuration
         </button>
       </section>
@@ -458,35 +464,39 @@ export default function SmtpSettingsPage() {
                 <div className="button-row" style={{ gap: '8px', flexShrink: 0 }}>
                   {!config.is_active && (
                     <button
-                      className="button button--secondary"
+                      className="button button--ghost button--icon"
                       onClick={() => void handleActivate(config)}
                       disabled={activatingId === config.id}
                       title="Set as active configuration"
+                      aria-label="Set active"
                     >
-                      {activatingId === config.id ? 'Activating…' : 'Set active'}
+                      <CheckCircle size={16} />
                     </button>
                   )}
                   <button
-                    className="button button--secondary"
+                    className="button button--ghost button--icon"
                     onClick={() => setTestingConfig(config)}
                     title="Send a test email"
+                    aria-label="Test email"
                   >
-                    Test email
+                    <Send size={16} />
                   </button>
                   <button
-                    className="button button--secondary"
+                    className="button button--ghost button--icon"
                     onClick={() => openEdit(config)}
                     title="Edit this configuration"
+                    aria-label="Edit configuration"
                   >
-                    Edit
+                    <Pencil size={16} />
                   </button>
                   <button
-                    className="button button--danger"
+                    className="button button--danger button--icon"
                     onClick={() => setPendingDeleteId(config.id)}
                     disabled={deletingId === config.id || config.is_active}
                     title={config.is_active ? 'Cannot delete active configuration' : 'Delete this configuration'}
+                    aria-label="Delete configuration"
                   >
-                    {deletingId === config.id ? 'Deleting…' : 'Delete'}
+                    <Trash2 size={16} />
                   </button>
                 </div>
               </div>

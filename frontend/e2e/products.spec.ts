@@ -104,7 +104,7 @@ test.describe('Products CRUD', () => {
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: sku });
     await expect(row).toBeVisible({ timeout: 10_000 });
-    await row.locator('button:has-text("Edit")').click();
+    await row.locator('[aria-label^="Edit product"]').click();
 
     // Form should show "Editing product" heading
     await expect(page.getByRole('heading', { name: /Editing product/ })).toBeVisible();
@@ -138,7 +138,7 @@ test.describe('Products CRUD', () => {
     const row = page.locator('.table-row', { hasText: sku });
     await expect(row).toBeVisible({ timeout: 10_000 });
     // Delete it — click Delete row button, then confirm in the custom dialog
-    await row.locator('button:has-text("Delete")').click();
+    await row.locator('[aria-label^="Delete product"]').click();
     await page.locator('.modal-overlay button:has-text("Delete")').click();
     await expect(page.locator('.toast--success')).toContainText('Product deleted', { timeout: 10_000 });
 
