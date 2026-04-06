@@ -1,6 +1,5 @@
 export default function formatCurrency(value: number, currencyCode = 'USD') {
-    const isUSD = currencyCode === 'USD';
-    const locale = isUSD ? 'en-US' : 'en-IN';
+    const locale = currencyCode === 'INR' ? 'en-IN' : 'en-US';
     try {
         return new Intl.NumberFormat(locale, {
             style: 'currency',
@@ -8,7 +7,7 @@ export default function formatCurrency(value: number, currencyCode = 'USD') {
             maximumFractionDigits: 2,
         }).format(value);
     } catch {
-        return new Intl.NumberFormat(locale, {
+        return new Intl.NumberFormat('en-US', {
             style: 'currency',
             currency: 'USD',
             maximumFractionDigits: 2,
