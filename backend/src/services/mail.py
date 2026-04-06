@@ -4,7 +4,6 @@ import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
-from functools import partial
 from sqlalchemy.orm import Session
 from src.models.smtp_config import SMTPConfig
 
@@ -12,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def _get_active_smtp_config(db: Session) -> SMTPConfig:
     """Fetches and returns the active SMTP configuration from the database."""
-    config = db.query(SMTPConfig).filter(SMTPConfig.is_active == True).first()
+    config = db.query(SMTPConfig).filter(SMTPConfig.is_active.is_(True)).first()
     if config is None:
         logger.error("No active SMTP configuration found in database")
         raise RuntimeError("No active SMTP configuration found")
@@ -42,7 +41,9 @@ def _build_message(
     # Add attachments if any
     if attachments:
         for content, filename in attachments:
-            part = MIMEApplication(content)
+            # Main use case is PDFs; add _subtype for correct content-type header
+            subtype = 'pdf' if filename.lower().endswith('.pdf') else 'octet-stream'
+            part = MIMEApplication(content, _subtype=subtype)
             part.add_header("Content-Disposition", "attachment", filename=filename)
             msg.attach(part)
 
@@ -50,24 +51,23 @@ def _build_message(
 
 def _send_sync(config: SMTPConfig, msg: MIMEMultipart) -> None:
     """Synchronous function to send email via smtplib."""
+    # Recipients include 'To' and 'Cc'
+    recipients = [msg["To"]]
+    if "Cc" in msg:
+        recipients.extend([email.strip() for email in msg["Cc"].split(",")])
+
     try:
         if config.use_tls:
-            server = smtplib.SMTP(config.host, config.port, timeout=10)
-            server.starttls()
+            with smtplib.SMTP(config.host, config.port, timeout=10) as server:
+                server.starttls()
+                server.login(config.username, config.password)
+                server.send_message(msg, to_addrs=recipients)
         else:
-            server = smtplib.SMTP_SSL(config.host, config.port, timeout=10)
-
-        server.login(config.username, config.password)
-        
-        # Recipients include 'To' and 'Cc'
-        recipients = [msg["To"]]
-        if "Cc" in msg:
-            recipients.extend([email.strip() for email in msg["Cc"].split(",")])
-            
-        server.send_message(msg, to_addrs=recipients)
-        server.quit()
-    except Exception as e:
-        logger.exception(f"Failed to send email via SMTP {config.host}")
+            with smtplib.SMTP_SSL(config.host, config.port, timeout=10) as server:
+                server.login(config.username, config.password)
+                server.send_message(msg, to_addrs=recipients)
+    except Exception:
+        logger.exception("Failed to send email via SMTP %s", config.host)
         raise
 
 async def send_email(
@@ -93,5 +93,4 @@ async def send_email(
         cc=cc
     )
 
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, partial(_send_sync, config, msg))
+    await asyncio.to_thread(_send_sync, config, msg)
