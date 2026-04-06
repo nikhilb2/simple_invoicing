@@ -79,22 +79,22 @@ export default function DashboardPage() {
       <section className="stats-grid">
         <article className="stat-card">
           <p className="eyebrow">Catalog</p>
-          <p className="stat-card__value">{loading ? '...' : state.products.length}</p>
+          <p className="stat-card__value">{loading ? <div className="skeleton" style={{ width: '60px', height: '38px', display: 'inline-block' }} /> : state.products.length}</p>
           <p className="muted-text">Products available for quoting and invoicing.</p>
         </article>
         <article className="stat-card">
           <p className="eyebrow">Stock units</p>
-          <p className="stat-card__value">{loading ? '...' : totalInventoryUnits}</p>
+          <p className="stat-card__value">{loading ? <div className="skeleton" style={{ width: '80px', height: '38px', display: 'inline-block' }} /> : totalInventoryUnits}</p>
           <p className="muted-text">Total quantity currently registered across inventory rows.</p>
         </article>
         <article className="stat-card">
           <p className="eyebrow">Low stock</p>
-          <p className="stat-card__value">{loading ? '...' : lowStockCount}</p>
+          <p className="stat-card__value">{loading ? <div className="skeleton" style={{ width: '40px', height: '38px', display: 'inline-block' }} /> : lowStockCount}</p>
           <p className="muted-text">Rows at 5 units or less that likely need replenishment.</p>
         </article>
         <article className="stat-card">
           <p className="eyebrow">Invoice value</p>
-          <p className="stat-card__value">{loading ? '...' : formatCurrency(invoiceRevenue, activeCurrencyCode)}</p>
+          <p className="stat-card__value">{loading ? <div className="skeleton" style={{ width: '120px', height: '38px', display: 'inline-block' }} /> : formatCurrency(invoiceRevenue, activeCurrencyCode)}</p>
           <p className="muted-text">Combined gross amount from currently listed invoices.</p>
         </article>
       </section>
@@ -110,7 +110,13 @@ export default function DashboardPage() {
           </div>
 
           <div className="table-list">
-            {loading ? <div className="empty-state">Loading inventory...</div> : null}
+            {loading ? (
+              <>
+                <div className="table-row skeleton" style={{ height: '76px', border: 'transparent' }}></div>
+                <div className="table-row skeleton" style={{ height: '76px', border: 'transparent' }}></div>
+                <div className="table-row skeleton" style={{ height: '76px', border: 'transparent' }}></div>
+              </>
+            ) : null}
             {!loading && state.inventory.length === 0 ? <div className="empty-state">No inventory rows yet.</div> : null}
             {!loading
               ? state.inventory
@@ -140,7 +146,13 @@ export default function DashboardPage() {
           </div>
 
           <div className="invoice-list">
-            {loading ? <div className="empty-state">Loading invoices...</div> : null}
+            {loading ? (
+              <>
+                <div className="invoice-row skeleton" style={{ height: '88px', border: 'transparent' }}></div>
+                <div className="invoice-row skeleton" style={{ height: '88px', border: 'transparent' }}></div>
+                <div className="invoice-row skeleton" style={{ height: '88px', border: 'transparent' }}></div>
+              </>
+            ) : null}
             {!loading && state.invoices.length === 0 ? <div className="empty-state">No invoices have been created yet.</div> : null}
             {!loading
               ? state.invoices.slice(0, 6).map((invoice) => (
