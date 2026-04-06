@@ -22,9 +22,6 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     DEBUG: bool = False
     ENVIRONMENT: str = ENVIRONMENT
-    N8N_EMAIL_WEBHOOK_URL: str = "https://n8n.nikhilbhatia.com/webhook/mail"
-    N8N_EMAIL_WEBHOOK_USER: str = ""
-    N8N_EMAIL_WEBHOOK_PASS: str = ""
     SMTP_ENCRYPTION_KEY: str | None = None
 
     @model_validator(mode="after")

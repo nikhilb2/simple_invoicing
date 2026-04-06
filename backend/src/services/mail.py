@@ -1,30 +1,97 @@
-import httpx
+import smtplib
+import asyncio
+import logging
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
+from functools import partial
+from sqlalchemy.orm import Session
+from src.models.smtp_config import SMTPConfig
 
-from src.core.config import settings
+logger = logging.getLogger(__name__)
 
-TIMEOUT = 10.0
+def _get_active_smtp_config(db: Session) -> SMTPConfig:
+    """Fetches and returns the active SMTP configuration from the database."""
+    config = db.query(SMTPConfig).filter(SMTPConfig.is_active == True).first()
+    if config is None:
+        logger.error("No active SMTP configuration found in database")
+        raise RuntimeError("No active SMTP configuration found")
+    return config
 
+def _build_message(
+    to: str,
+    subject: str,
+    html_body: str,
+    from_email: str,
+    from_name: str,
+    attachments: list[tuple[bytes, str]] | None = None,
+    cc: list[str] | None = None,
+) -> MIMEMultipart:
+    """Builds a multipart MIME message with HTML and optional attachments."""
+    msg = MIMEMultipart()
+    msg["Subject"] = subject
+    msg["From"] = f"{from_name} <{from_email}>"
+    msg["To"] = to
+    
+    if cc:
+        msg["Cc"] = ", ".join(cc)
 
-def send_email(to: str, subject: str, body: str) -> dict:
-    """Send an email via the n8n webhook.
+    # Attach HTML body
+    msg.attach(MIMEText(html_body, "html"))
 
-    Args:
-        to: Recipient email address.
-        subject: Email subject line.
-        body: Email body (plain text or HTML).
+    # Add attachments if any
+    if attachments:
+        for content, filename in attachments:
+            part = MIMEApplication(content)
+            part.add_header("Content-Disposition", "attachment", filename=filename)
+            msg.attach(part)
 
-    Returns:
-        The JSON response from the webhook.
+    return msg
 
-    Raises:
-        httpx.HTTPStatusError: If the webhook returns a non-2xx status.
+def _send_sync(config: SMTPConfig, msg: MIMEMultipart) -> None:
+    """Synchronous function to send email via smtplib."""
+    try:
+        if config.use_tls:
+            server = smtplib.SMTP(config.host, config.port, timeout=10)
+            server.starttls()
+        else:
+            server = smtplib.SMTP_SSL(config.host, config.port, timeout=10)
+
+        server.login(config.username, config.password)
+        
+        # Recipients include 'To' and 'Cc'
+        recipients = [msg["To"]]
+        if "Cc" in msg:
+            recipients.extend([email.strip() for email in msg["Cc"].split(",")])
+            
+        server.send_message(msg, to_addrs=recipients)
+        server.quit()
+    except Exception as e:
+        logger.exception(f"Failed to send email via SMTP {config.host}")
+        raise
+
+async def send_email(
+    db: Session,
+    to: str,
+    subject: str,
+    html_body: str,
+    attachments: list[tuple[bytes, str]] | None = None,
+    cc: list[str] | None = None,
+) -> None:
     """
-    auth = (settings.N8N_EMAIL_WEBHOOK_USER, settings.N8N_EMAIL_WEBHOOK_PASS) if settings.N8N_EMAIL_WEBHOOK_USER else None
-    response = httpx.post(
-        settings.N8N_EMAIL_WEBHOOK_URL,
-        json={"to": to, "subject": subject, "body": body},
-        auth=auth,
-        timeout=TIMEOUT,
+    Asynchronously sends an email by running the blocking SMTP operations 
+    in a thread executor.
+    """
+    config = _get_active_smtp_config(db)
+    msg = _build_message(
+        to=to,
+        subject=subject,
+        html_body=html_body,
+        from_email=config.from_email,
+        from_name=config.from_name,
+        attachments=attachments,
+        cc=cc
     )
-    response.raise_for_status()
-    return response.json() if response.text else {"status": response.status_code}
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, partial(_send_sync, config, msg))
