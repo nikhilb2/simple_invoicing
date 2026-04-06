@@ -240,3 +240,46 @@ export type PaymentCreate = {
   reference?: string;
   notes?: string;
 };
+
+export type UserProfile = {
+  id: number;
+  email: string;
+  full_name: string;
+  role: 'admin' | 'manager' | 'staff';
+};
+
+export type SmtpConfig = {
+  id: number;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  from_email: string;
+  from_name: string;
+  use_tls: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SmtpConfigCreate = {
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  from_email: string;
+  from_name: string;
+  use_tls: boolean;
+};
+
+export type SmtpConfigUpdate = {
+  name?: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  from_email?: string;
+  from_name?: string;
+  use_tls?: boolean;
+};

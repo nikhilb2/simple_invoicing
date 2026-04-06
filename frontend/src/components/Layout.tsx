@@ -3,7 +3,7 @@ import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  const { logout, userEmail } = useAuth();
+  const { logout, userEmail, isAdmin } = useAuth();
   const location = useLocation();
 
   const navItems = [
@@ -14,6 +14,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/day-book', label: 'Day Book' },
     { to: '/invoices', label: 'Invoices' },
     { to: '/company', label: 'Company' },
+    ...(isAdmin ? [{ to: '/smtp-settings', label: 'SMTP Settings' }] : []),
   ];
 
   return (

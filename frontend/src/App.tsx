@@ -10,6 +10,7 @@ import LedgerCreatePage from './pages/LedgerCreatePage';
 import LedgerViewPage from './pages/LedgerViewPage';
 import DayBookPage from './pages/DayBookPage';
 import CompanyPage from './pages/CompanyPage';
+import SmtpSettingsPage from './pages/SmtpSettingsPage';
 import Layout from './components/Layout';
 
 function Protected({ children }: { children: React.ReactNode }) {
@@ -26,6 +27,16 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
 
   if (isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+}
+
+function AdminOnly({ children }: { children: React.ReactNode }) {
+  const { isAdmin } = useAuth();
+
+  if (!isAdmin) {
     return <Navigate to="/" replace />;
   }
 
@@ -53,6 +64,7 @@ function AppRoutes() {
       <Route path="/day-book" element={<Protected><Layout><DayBookPage /></Layout></Protected>} />
       <Route path="/invoices" element={<Protected><Layout><InvoicesPage /></Layout></Protected>} />
       <Route path="/company" element={<Protected><Layout><CompanyPage /></Layout></Protected>} />
+      <Route path="/smtp-settings" element={<Protected><AdminOnly><Layout><SmtpSettingsPage /></Layout></AdminOnly></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

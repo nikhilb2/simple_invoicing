@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import api from '../api/client';
-import type { AuthToken } from '../types/api';
+import type { AuthToken, UserProfile } from '../types/api';
 
 type AuthContextType = {
   token: string | null;
   userEmail: string | null;
+  userRole: UserProfile['role'] | null;
+  isAdmin: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
@@ -29,15 +31,30 @@ function decodeEmailFromToken(token: string | null) {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [userEmail, setUserEmail] = useState<string | null>(() => decodeEmailFromToken(localStorage.getItem('token')));
+  const [userRole, setUserRole] = useState<UserProfile['role'] | null>(null);
 
   useEffect(() => {
     setUserEmail(decodeEmailFromToken(token));
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) {
+      setUserRole(null);
+      return;
+    }
+    api.get<UserProfile>('/auth/me').then((res) => {
+      setUserRole(res.data.role);
+    }).catch(() => {
+      setUserRole(null);
+    });
   }, [token]);
 
   const value = useMemo(
     () => ({
       token,
       userEmail,
+      userRole,
+      isAdmin: userRole === 'admin',
       isAuthenticated: Boolean(token),
       login: async (email: string, password: string) => {
         const res = await api.post<AuthToken>('/auth/login', { email, password });
@@ -50,9 +67,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('refresh_token');
         setToken(null);
         setUserEmail(null);
+        setUserRole(null);
       },
     }),
-    [token, userEmail]
+    [token, userEmail, userRole]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
