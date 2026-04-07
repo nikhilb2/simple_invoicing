@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
+import { useShallow } from 'zustand/shallow';
 import api from '../api/client';
 import { useAuth } from './AuthContext';
 import { ACTION_KEYS, DEFAULT_SHORTCUTS, type ActionKey } from '../utils/shortcutDefaults';
@@ -92,9 +93,9 @@ export function ShortcutsProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useShortcuts() {
-  return useShortcutsStore((s) => ({
+  return useShortcutsStore(useShallow((s) => ({
     shortcutFor: s.shortcutFor,
     registerAction: s.registerAction,
     refetchShortcuts: s.refetchShortcuts,
-  }));
+  })));
 }
