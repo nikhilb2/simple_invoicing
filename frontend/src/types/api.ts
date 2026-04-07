@@ -283,3 +283,12 @@ export type SmtpConfigUpdate = {
   from_name?: string;
   use_tls?: boolean;
 };
+
+export type UserShortcut = {
+  action_key: string;
+  shortcut_key: string;
+};
+
+export type UserShortcutsResponse = {
+  shortcuts: UserShortcut[];
+};
