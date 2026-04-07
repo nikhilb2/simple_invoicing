@@ -51,8 +51,12 @@ export default function InventoryPage() {
         quantity: Number(form.quantity),
       };
 
-      await api.post('/inventory/adjust', payload);
-      setSuccess('Inventory updated successfully.');
+      const response = await api.post<{ message: string }>('/inventory/adjust', payload);
+      setSuccess(
+        response.data.message === 'Inventory updated with negative balance warning'
+          ? 'Inventory updated successfully. Negative inventory warning.'
+          : 'Inventory updated successfully.'
+      );
       setForm((current) => ({ ...current, quantity: '1' }));
       await loadInventoryData();
     } catch (err) {
@@ -114,7 +118,7 @@ export default function InventoryPage() {
                   onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))}
                   required
                 />
-                <span className="field-hint">Use negative values to deduct stock. The API blocks negative ending balances.</span>
+                <span className="field-hint">Use negative values to deduct stock. Inventory can go negative, but the system will warn you when it does.</span>
               </div>
             </div>
 

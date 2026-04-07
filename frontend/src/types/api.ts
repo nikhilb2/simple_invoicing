@@ -149,6 +149,7 @@ export type Invoice = {
   invoice_date: string;
   due_date: string | null;
   created_at: string;
+  warning_message?: string | null;
   items: InvoiceItem[];
 };
 

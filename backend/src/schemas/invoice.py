@@ -62,6 +62,7 @@ class InvoiceOut(BaseModel):
     total_amount: float
     invoice_date: datetime
     created_at: datetime
+    warning_message: str | None = None
     items: list[InvoiceItemOut] = Field(default_factory=list)
 
     class Config:

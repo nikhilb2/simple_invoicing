@@ -209,11 +209,14 @@ export default function InvoicesPage() {
         await api.put<Invoice>(`/invoices/${editingInvoiceId}`, payload);
         setSuccess('Invoice updated successfully. Inventory has been recalculated.');
       } else {
-        await api.post<Invoice>('/invoices/', payload);
+        const response = await api.post<Invoice>('/invoices/', payload);
+        const baseMessage = voucherType === 'sales'
+          ? 'Sales invoice created. Inventory has been reduced.'
+          : 'Purchase invoice created. Inventory has been increased.';
         setSuccess(
-          voucherType === 'sales'
-            ? 'Sales invoice created. Inventory has been reduced.'
-            : 'Purchase invoice created. Inventory has been increased.'
+          response.data.warning_message
+            ? `${baseMessage} ${response.data.warning_message}`
+            : baseMessage
         );
       }
 

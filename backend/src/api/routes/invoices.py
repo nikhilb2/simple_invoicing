@@ -46,7 +46,14 @@ def _require_ledger(db: Session, ledger_id: int) -> Ledger:
     return ledger
 
 
-def _change_inventory_quantity(db: Session, product_id: int, quantity_delta: int, *, context: str) -> None:
+def _change_inventory_quantity(
+    db: Session,
+    product_id: int,
+    quantity_delta: int,
+    *,
+    context: str,
+    allow_negative: bool = False,
+) -> None:
     inventory = db.query(Inventory).filter(Inventory.product_id == product_id).first()
     if not inventory:
         inventory = Inventory(product_id=product_id, quantity=0)
@@ -54,8 +61,14 @@ def _change_inventory_quantity(db: Session, product_id: int, quantity_delta: int
         db.flush()
 
     inventory.quantity += quantity_delta
-    if inventory.quantity < 0:
+    if inventory.quantity < 0 and not allow_negative:
         raise HTTPException(status_code=400, detail=f"Insufficient inventory while {context}")
+
+
+def _simulate_inventory_quantity(db: Session, product_id: int, quantity_delta: int) -> int:
+    inventory = db.query(Inventory).filter(Inventory.product_id == product_id).first()
+    current_quantity = inventory.quantity if inventory else 0
+    return current_quantity + quantity_delta
 
 
 def _reverse_existing_invoice_inventory(db: Session, invoice: Invoice) -> None:
@@ -66,6 +79,7 @@ def _reverse_existing_invoice_inventory(db: Session, invoice: Invoice) -> None:
             item.product_id,
             reverse_delta,
             context=f"reversing invoice {invoice.id}",
+            allow_negative=True,
         )
 
 
@@ -120,6 +134,7 @@ def _apply_payload_to_invoice(
     cgst_total = Decimal("0")
     sgst_total = Decimal("0")
     igst_total = Decimal("0")
+    negative_inventory_products: list[str] = []
     for item in payload.items:
         if item.quantity <= 0:
             raise HTTPException(status_code=400, detail="Item quantity must be greater than zero")
@@ -128,16 +143,18 @@ def _apply_payload_to_invoice(
         if not product:
             raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
 
-        inventory = db.query(Inventory).filter(Inventory.product_id == item.product_id).first()
-        if payload.voucher_type == "sales" and (not inventory or inventory.quantity < item.quantity):
-            raise HTTPException(status_code=400, detail=f"Insufficient inventory for {product.name}")
-
         quantity_delta = -item.quantity if payload.voucher_type == "sales" else item.quantity
+        if payload.voucher_type == "sales":
+            projected_quantity = _simulate_inventory_quantity(db, item.product_id, quantity_delta)
+            if projected_quantity < 0:
+                negative_inventory_products.append(product.name)
+
         _change_inventory_quantity(
             db,
             item.product_id,
             quantity_delta,
             context=f"applying invoice {invoice.id or 'new'}",
+            allow_negative=True,
         )
 
         # Use custom unit_price if provided, otherwise use product price.
@@ -184,6 +201,15 @@ def _apply_payload_to_invoice(
     invoice.sgst_amount = float(_money(sgst_total))
     invoice.igst_amount = float(_money(igst_total))
     invoice.total_amount = float(_money(taxable_total + tax_total))
+    if negative_inventory_products:
+        unique_products = sorted(set(negative_inventory_products))
+        invoice.warning_message = (
+            "Negative inventory warning: "
+            + ", ".join(unique_products)
+            + " will fall below zero after this sales invoice."
+        )
+    else:
+        invoice.warning_message = None
 
 
 @router.post("", response_model=InvoiceOut, include_in_schema=False)
@@ -203,6 +229,8 @@ def create_invoice(
         _apply_payload_to_invoice(db, invoice, payload, created_by=current_user.id)
         db.commit()
         db.refresh(invoice)
+        if getattr(invoice, "warning_message", None):
+            invoice.warning_message = invoice.warning_message
         return invoice
     except HTTPException:
         db.rollback()

@@ -27,10 +27,10 @@ def adjust_inventory(
         db.add(inventory)
 
     inventory.quantity += payload.quantity
-    if inventory.quantity < 0:
-        raise HTTPException(status_code=400, detail="Inventory cannot be negative")
 
     db.commit()
+    if inventory.quantity < 0:
+        return {"message": "Inventory updated with negative balance warning"}
     return {"message": "Inventory updated"}
 
 

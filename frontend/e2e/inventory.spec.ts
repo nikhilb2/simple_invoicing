@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, expectError, uniqueSku } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku } from './fixtures';
 
 test.describe('Inventory Management', () => {
   test('displays stock adjustments heading', async ({ authedPage: page }) => {
@@ -97,7 +97,7 @@ test.describe('Inventory Management', () => {
     await expectSuccess(page, 'Inventory updated');
   });
 
-  test('blocks negative ending balance', async ({ authedPage: page }) => {
+  test('allows negative ending balance with warning', async ({ authedPage: page }) => {
     // Create a product with no stock
     await page.click('[href="/products"]');
     const sku = uniqueSku();
@@ -129,7 +129,7 @@ test.describe('Inventory Management', () => {
     // Try to deduct stock when there is none
     await page.fill('#inventory-quantity', '-10');
     await page.click('button:has-text("Apply adjustment")');
-    await expectError(page);
+    await expectSuccess(page, 'Negative inventory warning');
   });
 
   test('shows low stock indicator for qty <= 5', async ({

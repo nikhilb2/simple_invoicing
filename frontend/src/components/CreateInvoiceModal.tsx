@@ -114,11 +114,11 @@ export default function CreateInvoiceModal({
           unit_price: item.unit_price ? Number(item.unit_price) : undefined,
         })),
       };
-      await api.post('/invoices/', payload);
+      const response = await api.post<{ warning_message?: string | null }>('/invoices/', payload);
       const msg = voucherType === 'sales'
         ? 'Sales invoice created. Inventory has been reduced.'
         : 'Purchase invoice created. Inventory has been increased.';
-      onCreated(msg);
+      onCreated(response.data.warning_message ? `${msg} ${response.data.warning_message}` : msg);
     } catch (err) {
       onError(getApiErrorMessage(err, 'Unable to create invoice'));
     } finally {

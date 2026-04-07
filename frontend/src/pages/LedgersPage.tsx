@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Eye, Pencil, Plus, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
@@ -21,6 +21,7 @@ export default function LedgersPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const pageSize = 20;
+  const loadRequestId = useRef(0);
 
   useEffect(() => {
     const state = location.state as { success?: string } | null;
@@ -31,18 +32,22 @@ export default function LedgersPage() {
   }, [location.state]);
 
   async function loadLedgers(currentPage: number, currentSearch: string) {
+    const requestId = ++loadRequestId.current;
     try {
       setLoading(true);
       setError('');
       const res = await api.get<PaginatedLedgers>('/ledgers/', {
         params: { page: currentPage, page_size: pageSize, search: currentSearch },
       });
+      if (requestId !== loadRequestId.current) return;
       setLedgers(res.data.items);
       setTotal(res.data.total);
       setTotalPages(res.data.total_pages);
     } catch (err) {
+      if (requestId !== loadRequestId.current) return;
       setError(getApiErrorMessage(err, 'Unable to load ledgers'));
     } finally {
+      if (requestId !== loadRequestId.current) return;
       setLoading(false);
     }
   }
