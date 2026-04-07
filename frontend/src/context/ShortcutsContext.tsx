@@ -94,6 +94,7 @@ export function ShortcutsProvider({ children }: { children: React.ReactNode }) {
 
 export function useShortcuts() {
   return useShortcutsStore(useShallow((s) => ({
+    shortcutsMap: s.shortcutsMap,
     shortcutFor: s.shortcutFor,
     registerAction: s.registerAction,
     refetchShortcuts: s.refetchShortcuts,

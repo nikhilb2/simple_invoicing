@@ -32,6 +32,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/invoices', label: 'Invoices' },
     { to: '/company', label: 'Company' },
     ...(isAdmin ? [{ to: '/smtp-settings', label: 'SMTP Settings' }] : []),
+    { to: '/keyboard-shortcuts', label: 'Keyboard Shortcuts' },
   ];
 
   return (
