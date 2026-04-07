@@ -57,13 +57,14 @@ def _send_sync(config: SMTPConfig, msg: MIMEMultipart) -> None:
         recipients.extend([email.strip() for email in msg["Cc"].split(",")])
 
     try:
-        if config.use_tls:
-            with smtplib.SMTP(config.host, config.port, timeout=10) as server:
-                server.starttls()
+        # Port 465 = implicit SSL; port 587 (or use_tls=True) = STARTTLS
+        if config.port == 465 or not config.use_tls:
+            with smtplib.SMTP_SSL(config.host, config.port, timeout=10) as server:
                 server.login(config.username, config.password)
                 server.send_message(msg, to_addrs=recipients)
         else:
-            with smtplib.SMTP_SSL(config.host, config.port, timeout=10) as server:
+            with smtplib.SMTP(config.host, config.port, timeout=10) as server:
+                server.starttls()
                 server.login(config.username, config.password)
                 server.send_message(msg, to_addrs=recipients)
     except Exception:
