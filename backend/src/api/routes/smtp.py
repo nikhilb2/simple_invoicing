@@ -200,12 +200,12 @@ def test_smtp_config(
         msg['Subject'] = "Test Email from Invoicing System"
         msg.attach(MIMEText("This is a test email to verify SMTP configuration.", 'plain'))
 
-        # Connect to the SMTP server and send the email
-        if config.use_tls:
+        # Port 465 = implicit SSL; port 587 (or use_tls=True) = STARTTLS
+        if config.port == 465 or not config.use_tls:
+            server = smtplib.SMTP_SSL(config.host, config.port)
+        else:
             server = smtplib.SMTP(config.host, config.port)
             server.starttls()
-        else:
-            server = smtplib.SMTP_SSL(config.host, config.port)
 
         server.login(config.username, config.password)
         server.send_message(msg)
@@ -237,11 +237,11 @@ def test_smtp_template(
         msg["Subject"] = subject
         msg.attach(MIMEText(html_body, "html"))
 
-        if config.use_tls:
+        if config.port == 465 or not config.use_tls:
+            server = smtplib.SMTP_SSL(config.host, config.port)
+        else:
             server = smtplib.SMTP(config.host, config.port)
             server.starttls()
-        else:
-            server = smtplib.SMTP_SSL(config.host, config.port)
 
         server.login(config.username, config.password)
         server.send_message(msg)
