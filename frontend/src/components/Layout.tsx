@@ -1,10 +1,15 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import StatusToasts from './StatusToasts';
+import ShortcutLauncher from './ShortcutLauncher';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { logout, userEmail, isAdmin } = useAuth();
   const location = useLocation();
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const navItems = [
     { to: '/', label: 'Overview' },
@@ -29,6 +34,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </p>
         </div>
         <div className="topbar__session">
+          <ShortcutLauncher onError={setError} onSuccess={setSuccess} />
           <div>
             <p className="eyebrow">Signed in as</p>
             <p className="session-email">{userEmail ?? 'Active user'}</p>
@@ -58,6 +64,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           ))}
         </div>
       </nav>
+
+      <StatusToasts
+        error={error}
+        success={success}
+        onClearError={() => setError('')}
+        onClearSuccess={() => setSuccess('')}
+      />
 
       <motion.main
         key={location.pathname}

@@ -1,4 +1,5 @@
 SHELL := /bin/bash
+COMPOSE := $(shell command -v docker-compose 2>/dev/null || echo "docker compose")
 
 .PHONY: help dev prod down logs seed migrate migrate-up migrate-down migrate-down-all migrate-status migrate-create backend-shell frontend-shell test lint build install install-backend install-frontend
 
@@ -25,57 +26,57 @@ help:
 	@echo "  make lint             - Run lightweight backend/frontend checks"
 
 dev:
-	docker-compose --profile dev up -d
+	$(COMPOSE) --profile dev up -d
 
 prod:
-	docker-compose --profile prod up -d
+	$(COMPOSE) --profile prod up -d
 
 down:
-	docker-compose down
+	$(COMPOSE) down
 
 logs:
-	docker-compose logs -f
+	$(COMPOSE) logs -f
 
 seed:
-	docker-compose --profile dev exec backend-dev python seed_admin.py
+	$(COMPOSE) --profile dev exec backend-dev python seed_admin.py
 
 migrate: migrate-up
 
 migrate-up:
-	docker-compose --profile dev exec backend-dev python migrate.py up
+	$(COMPOSE) --profile dev exec backend-dev python migrate.py up
 
 migrate-down:
-	docker-compose --profile dev exec backend-dev python migrate.py down
+	$(COMPOSE) --profile dev exec backend-dev python migrate.py down
 
 migrate-down-all:
-	docker-compose --profile dev exec backend-dev python migrate.py down --all
+	$(COMPOSE) --profile dev exec backend-dev python migrate.py down --all
 
 migrate-status:
-	docker-compose --profile dev exec backend-dev python migrate.py status
+	$(COMPOSE) --profile dev exec backend-dev python migrate.py status
 
 migrate-create:
-	docker-compose --profile dev exec backend-dev python migrate.py create "$(name)"
+	$(COMPOSE) --profile dev exec backend-dev python migrate.py create "$(name)"
 
 backend-shell:
-	docker-compose --profile dev exec backend-dev /bin/sh
+	$(COMPOSE) --profile dev exec backend-dev /bin/sh
 
 frontend-shell:
-	docker-compose --profile dev exec frontend-dev /bin/sh
+	$(COMPOSE) --profile dev exec frontend-dev /bin/sh
 
 test:
-	docker-compose --profile dev exec frontend-dev npm run test:e2e
+	$(COMPOSE) --profile dev exec frontend-dev npm run test:e2e
 
 lint:
-	docker-compose --profile dev exec backend-dev python -m compileall .
-	docker-compose --profile dev exec frontend-dev npm run build
+	$(COMPOSE) --profile dev exec backend-dev python -m compileall .
+	$(COMPOSE) --profile dev exec frontend-dev npm run build
 
 build:
-	docker-compose --profile dev build backend-dev frontend-dev
+	$(COMPOSE) --profile dev build backend-dev frontend-dev
 
 install: install-backend install-frontend
 
 install-backend:
-	docker-compose --profile dev exec backend-dev pip install -r requirements.txt
+	$(COMPOSE) --profile dev exec backend-dev pip install -r requirements.txt
 
 install-frontend:
-	docker-compose --profile dev exec frontend-dev npm install
+	$(COMPOSE) --profile dev exec frontend-dev npm install

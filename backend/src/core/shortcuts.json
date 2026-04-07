@@ -1,0 +1,65 @@
+[
+  {
+    "key": "open-dashboard",
+    "label": "Open Dashboard",
+    "kind": "navigate",
+    "path": "/",
+    "description": "Jump to the main dashboard."
+  },
+  {
+    "key": "open-invoices",
+    "label": "Open Invoices",
+    "kind": "navigate",
+    "path": "/invoices",
+    "description": "Open the invoices workspace."
+  },
+  {
+    "key": "open-products",
+    "label": "Open Products",
+    "kind": "navigate",
+    "path": "/products",
+    "description": "Open the product catalog."
+  },
+  {
+    "key": "open-inventory",
+    "label": "Open Inventory",
+    "kind": "navigate",
+    "path": "/inventory",
+    "description": "Open the inventory screen."
+  },
+  {
+    "key": "open-ledgers",
+    "label": "Open Ledgers",
+    "kind": "navigate",
+    "path": "/ledgers",
+    "description": "Open the ledger list."
+  },
+  {
+    "key": "new-ledger",
+    "label": "New Ledger",
+    "kind": "navigate",
+    "path": "/ledgers/new",
+    "description": "Start a new ledger entry."
+  },
+  {
+    "key": "open-day-book",
+    "label": "Open Day Book",
+    "kind": "navigate",
+    "path": "/day-book",
+    "description": "Open the daily book view."
+  },
+  {
+    "key": "open-company",
+    "label": "Open Company",
+    "kind": "navigate",
+    "path": "/company",
+    "description": "Open company settings."
+  },
+  {
+    "key": "open-smtp-settings",
+    "label": "Open SMTP Settings",
+    "kind": "navigate",
+    "path": "/smtp-settings",
+    "description": "Open email configuration for admins."
+  }
+]

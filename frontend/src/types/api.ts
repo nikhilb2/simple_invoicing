@@ -218,6 +218,21 @@ export type DayBook = {
   entries: DayBookEntry[];
 };
 
+export type ShortcutAction = {
+  key: string;
+  label: string;
+  kind: string;
+  path: string | null;
+  description: string;
+};
+
+export type ShortcutExecuteResponse = {
+  key: string;
+  status: string;
+  path: string | null;
+  message: string;
+};
+
 export type Payment = {
   id: number;
   ledger_id: number;
