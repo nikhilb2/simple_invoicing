@@ -125,6 +125,22 @@ textarea {
   color: var(--muted);
 }
 
+.shortcut-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.shortcut-list div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 184, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .empty-state {
   padding: 48px 20px;
   text-align: center;

@@ -43,6 +43,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div>
           <p className="eyebrow">Navigation</p>
           <p className="nav-panel__title">Control room</p>
+          <p className="field-hint">Use the invoice shortcuts from the composer to move faster.</p>
         </div>
         <div className="nav-panel__links">
           {navItems.map((item) => (

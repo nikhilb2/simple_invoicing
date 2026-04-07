@@ -35,6 +35,7 @@ export default function InvoicesPage() {
   const [showLedgerModal, setShowLedgerModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
   const [showStockModal, setShowStockModal] = useState(false);
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false);
 
   useEscapeClose(() => {
     if (showStockModal) setShowStockModal(false);
@@ -117,6 +118,64 @@ export default function InvoicesPage() {
   useEffect(() => {
     void loadInvoicePageData();
   }, [invoicePage, invoiceSearch]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const isTypingField =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.tagName === 'SELECT' ||
+        target?.isContentEditable;
+
+      if (showShortcutHelp && event.key === 'Escape') {
+        setShowShortcutHelp(false);
+        return;
+      }
+
+      if (isTypingField && !((event.ctrlKey || event.metaKey) && event.key === 'Enter')) {
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        event.preventDefault();
+        const form = document.querySelector<HTMLFormElement>('[data-invoice-form]');
+        form?.requestSubmit();
+        return;
+      }
+
+      if (!event.ctrlKey && !event.metaKey && event.shiftKey) {
+        switch (event.key.toLowerCase()) {
+          case 'a':
+            event.preventDefault();
+            addItem();
+            return;
+          case 'l':
+            event.preventDefault();
+            setShowLedgerModal(true);
+            return;
+          case 'p':
+            event.preventDefault();
+            setShowProductModal(true);
+            return;
+          case 's':
+            event.preventDefault();
+            setShowStockModal(true);
+            return;
+          default:
+            break;
+        }
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key === '/') {
+        event.preventDefault();
+        setShowShortcutHelp((current) => !current);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [addItem, showShortcutHelp]);
 
   const totalAmount = items.reduce((sum, item) => {
     const product = products.find((entry) => entry.id === Number(item.productId));
@@ -376,8 +435,17 @@ export default function InvoicesPage() {
             <div>
               <p className="eyebrow">Create invoice</p>
               <h2 className="nav-panel__title">{editingInvoiceId ? `Editing invoice #${editingInvoiceId}` : 'Order entry'}</h2>
+              <p className="field-hint">
+                Shortcuts: <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>Enter</kbd> submit, <kbd>Shift</kbd> + <kbd>A</kbd> add line item,{' '}
+                <kbd>Shift</kbd> + <kbd>L</kbd> add ledger, <kbd>Shift</kbd> + <kbd>P</kbd> add product, <kbd>Shift</kbd> + <kbd>S</kbd> stock.
+              </p>
             </div>
-            <div className="status-chip">Projected total {formatCurrency(totalAmount, activeCurrencyCode)}</div>
+            <div className="button-row">
+              <button type="button" className="button button--secondary" onClick={() => setShowShortcutHelp(true)}>
+                Shortcuts
+              </button>
+              <div className="status-chip">Projected total {formatCurrency(totalAmount, activeCurrencyCode)}</div>
+            </div>
           </div>
 
           <div className="summary-box">
@@ -407,7 +475,7 @@ export default function InvoicesPage() {
             ) : null}
           </div>
 
-          <form className="stack" onSubmit={handleSubmitInvoice}>
+          <form className="stack" onSubmit={handleSubmitInvoice} data-invoice-form>
             <div className="field-grid">
               <div className="field">
                 <label htmlFor="invoice-voucher-type">Voucher type</label>
@@ -1021,6 +1089,30 @@ export default function InvoicesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {showShortcutHelp ? (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="shortcut-help-title" onClick={() => setShowShortcutHelp(false)}>
+          <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="panel__header">
+              <div>
+                <p className="eyebrow">Keyboard shortcuts</p>
+                <h2 id="shortcut-help-title" className="nav-panel__title">Invoice composer shortcuts</h2>
+              </div>
+              <button type="button" className="button button--secondary" onClick={() => setShowShortcutHelp(false)}>
+                Close
+              </button>
+            </div>
+            <div className="shortcut-list">
+              <div><kbd>Ctrl/Cmd</kbd> + <kbd>Enter</kbd> submit invoice</div>
+              <div><kbd>Shift</kbd> + <kbd>A</kbd> add line item</div>
+              <div><kbd>Shift</kbd> + <kbd>L</kbd> add ledger</div>
+              <div><kbd>Shift</kbd> + <kbd>P</kbd> add product</div>
+              <div><kbd>Shift</kbd> + <kbd>S</kbd> update stock</div>
+              <div><kbd>Ctrl/Cmd</kbd> + <kbd>/</kbd> toggle this help</div>
+            </div>
           </div>
         </div>
       ) : null}
