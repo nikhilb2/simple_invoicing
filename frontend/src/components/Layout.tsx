@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { loadCustomShortcuts, matchesBinding } from '../utils/shortcutPreferences';
+import { loadCustomShortcuts, matchesBinding, normalizePagePath } from '../utils/shortcutPreferences';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { logout, userEmail, isAdmin } = useAuth();
@@ -28,7 +28,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       }
 
       event.preventDefault();
-      navigate(customShortcut.page);
+      navigate(normalizePagePath(customShortcut.page));
     }
 
     window.addEventListener('keydown', handleKeyDown);

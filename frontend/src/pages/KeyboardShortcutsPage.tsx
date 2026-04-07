@@ -3,9 +3,10 @@ import type { KeyboardEvent } from 'react';
 import {
   bindingToDisplay,
   defaultShortcutPreferences,
+  bindingsEqual,
   loadCustomShortcuts,
   loadShortcutPreferences,
-  matchesBinding,
+  normalizePagePath,
   saveShortcutPreferences,
   saveCustomShortcuts,
   type CustomShortcut,
@@ -44,6 +45,7 @@ export default function KeyboardShortcutsPage() {
   const [customRecording, setCustomRecording] = useState(false);
   const [customBinding, setCustomBinding] = useState(defaultShortcutPreferences.submit_invoice);
   const [recordingAction, setRecordingAction] = useState<ShortcutAction | null>(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     setPreferences(loadShortcutPreferences());
@@ -118,13 +120,21 @@ export default function KeyboardShortcutsPage() {
 
   function handleSaveCustomShortcut() {
     if (!customTitle.trim()) {
+      setError('Please add a title.');
+      return;
+    }
+
+    const normalizedPage = normalizePagePath(customPage);
+    const duplicate = customShortcuts.some((shortcut) => bindingsEqual(shortcut.binding, customBinding));
+    if (duplicate) {
+      setError('This shortcut combination is already in use.');
       return;
     }
 
     const nextShortcut: CustomShortcut = {
       id: `${Date.now()}`,
       title: customTitle.trim(),
-      page: customPage.trim() || '/',
+      page: normalizedPage,
       binding: customBinding,
     };
 
@@ -136,6 +146,7 @@ export default function KeyboardShortcutsPage() {
     setCustomBinding(defaultShortcutPreferences.submit_invoice);
     setCustomRecording(false);
     setShowCustomForm(false);
+    setError('');
   }
 
   function handleDeleteCustomShortcut(id: string) {
@@ -225,6 +236,8 @@ export default function KeyboardShortcutsPage() {
           {customShortcuts.length === 0 ? <div className="field-hint">No custom page shortcuts yet.</div> : null}
         </div>
       </section>
+
+      {error ? <div className="status-banner status-banner--error">{error}</div> : null}
 
       {showCustomForm ? (
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="custom-shortcut-title">

@@ -16,6 +16,12 @@ export type CustomShortcut = {
   binding: ShortcutBinding;
 };
 
+export type ShortcutDescriptor = {
+  title: string;
+  page: string;
+  binding: ShortcutBinding;
+};
+
 export const shortcutActionLabels: Record<ShortcutAction, string> = {
   submit_invoice: 'Submit invoice',
   add_line_item: 'Add line item',
@@ -95,5 +101,29 @@ export function matchesBinding(binding: ShortcutBinding, event: KeyboardEvent): 
     binding.shift === event.shiftKey &&
     binding.alt === event.altKey &&
     binding.key.toUpperCase() === key.toUpperCase()
+  );
+}
+
+export function normalizePagePath(page: string) {
+  const value = page.trim();
+  if (!value) return '/';
+
+  try {
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return new URL(value).pathname || '/';
+    }
+  } catch {
+    return value.startsWith('/') ? value : `/${value}`;
+  }
+
+  return value.startsWith('/') ? value : `/${value}`;
+}
+
+export function bindingsEqual(left: ShortcutBinding, right: ShortcutBinding) {
+  return (
+    left.ctrlOrCmd === right.ctrlOrCmd &&
+    left.shift === right.shift &&
+    left.alt === right.alt &&
+    left.key.toUpperCase() === right.key.toUpperCase()
   );
 }
