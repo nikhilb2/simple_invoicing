@@ -12,3 +12,7 @@
 - Created branch `feature/keyboard-shortcuts`.
 - Added global invoice composer shortcuts for submit, add line item, add ledger, add product, update stock, and open help.
 - Added a keyboard-shortcut help modal and a visible hint in the layout.
+
+## 2026-04-07 - Navigation tab
+- Added a `Keyboard Shortcuts` entry to the primary navigation.
+- Added a dedicated shortcuts reference page for quick lookup.

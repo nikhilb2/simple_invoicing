@@ -141,6 +141,29 @@ textarea {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.shortcut-list strong {
+  min-width: 160px;
+}
+
+.shortcut-edit-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) repeat(3, auto) minmax(160px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.shortcut-edit-control {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.shortcut-edit-control--key {
+  min-width: 180px;
+}
+
 .empty-state {
   padding: 48px 20px;
   text-align: center;

@@ -14,6 +14,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/day-book', label: 'Day Book' },
     { to: '/invoices', label: 'Invoices' },
     { to: '/company', label: 'Company' },
+    { to: '/keyboard-shortcuts', label: 'Keyboard Shortcuts' },
     ...(isAdmin ? [{ to: '/smtp-settings', label: 'SMTP Settings' }] : []),
   ];
 
@@ -43,7 +44,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div>
           <p className="eyebrow">Navigation</p>
           <p className="nav-panel__title">Control room</p>
-          <p className="field-hint">Use the invoice shortcuts from the composer to move faster.</p>
+          <p className="field-hint">Open the keyboard shortcuts page for a quick reference list.</p>
         </div>
         <div className="nav-panel__links">
           {navItems.map((item) => (

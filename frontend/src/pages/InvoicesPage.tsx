@@ -7,6 +7,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import StatusToasts from '../components/StatusToasts';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import formatCurrency from '../utils/formatting';
+import { loadShortcutPreferences, type ShortcutAction, type ShortcutPreferences } from '../utils/shortcutPreferences';
 
 type InvoiceFormItem = {
   id: number;
@@ -77,6 +78,7 @@ export default function InvoicesPage() {
   const [invoiceTotal, setInvoiceTotal] = useState(0);
   const [invoiceSearch, setInvoiceSearch] = useState('');
   const invoicePageSize = 20;
+  const [shortcutPreferences, setShortcutPreferences] = useState<ShortcutPreferences>(() => loadShortcutPreferences());
 
   async function loadInvoicePageData() {
     try {
@@ -120,6 +122,19 @@ export default function InvoicesPage() {
   }, [invoicePage, invoiceSearch]);
 
   useEffect(() => {
+    function handleShortcutPreferencesUpdated() {
+      setShortcutPreferences(loadShortcutPreferences());
+    }
+
+    window.addEventListener('storage', handleShortcutPreferencesUpdated);
+    window.addEventListener('shortcut-preferences-updated', handleShortcutPreferencesUpdated as EventListener);
+    return () => {
+      window.removeEventListener('storage', handleShortcutPreferencesUpdated);
+      window.removeEventListener('shortcut-preferences-updated', handleShortcutPreferencesUpdated as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
       const isTypingField =
@@ -137,37 +152,47 @@ export default function InvoicesPage() {
         return;
       }
 
-      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      const matches = (action: ShortcutAction) => {
+        const binding = shortcutPreferences[action];
+        const key = event.key.length === 1 ? event.key.toUpperCase() : event.key;
+        return (
+          binding &&
+          binding.ctrlOrCmd === (event.ctrlKey || event.metaKey) &&
+          binding.shift === event.shiftKey &&
+          binding.alt === event.altKey &&
+          binding.key.toUpperCase() === key.toUpperCase()
+        );
+      };
+
+      if (matches('submit_invoice')) {
         event.preventDefault();
         const form = document.querySelector<HTMLFormElement>('[data-invoice-form]');
         form?.requestSubmit();
         return;
       }
 
-      if (!event.ctrlKey && !event.metaKey && event.shiftKey) {
-        switch (event.key.toLowerCase()) {
-          case 'a':
-            event.preventDefault();
-            addItem();
-            return;
-          case 'l':
-            event.preventDefault();
-            setShowLedgerModal(true);
-            return;
-          case 'p':
-            event.preventDefault();
-            setShowProductModal(true);
-            return;
-          case 's':
-            event.preventDefault();
-            setShowStockModal(true);
-            return;
-          default:
-            break;
-        }
+      if (matches('add_line_item')) {
+        event.preventDefault();
+        addItem();
+        return;
+      }
+      if (matches('add_ledger')) {
+        event.preventDefault();
+        setShowLedgerModal(true);
+        return;
+      }
+      if (matches('add_product')) {
+        event.preventDefault();
+        setShowProductModal(true);
+        return;
+      }
+      if (matches('update_stock')) {
+        event.preventDefault();
+        setShowStockModal(true);
+        return;
       }
 
-      if ((event.ctrlKey || event.metaKey) && event.key === '/') {
+      if (matches('toggle_help')) {
         event.preventDefault();
         setShowShortcutHelp((current) => !current);
       }
@@ -175,7 +200,7 @@ export default function InvoicesPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [addItem, showShortcutHelp]);
+  }, [addItem, shortcutPreferences, showShortcutHelp]);
 
   const totalAmount = items.reduce((sum, item) => {
     const product = products.find((entry) => entry.id === Number(item.productId));

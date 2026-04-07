@@ -11,6 +11,7 @@ import LedgerViewPage from './pages/LedgerViewPage';
 import DayBookPage from './pages/DayBookPage';
 import CompanyPage from './pages/CompanyPage';
 import SmtpSettingsPage from './pages/SmtpSettingsPage';
+import KeyboardShortcutsPage from './pages/KeyboardShortcutsPage';
 import Layout from './components/Layout';
 
 function Protected({ children }: { children: React.ReactNode }) {
@@ -64,6 +65,7 @@ function AppRoutes() {
       <Route path="/day-book" element={<Protected><Layout><DayBookPage /></Layout></Protected>} />
       <Route path="/invoices" element={<Protected><Layout><InvoicesPage /></Layout></Protected>} />
       <Route path="/company" element={<Protected><Layout><CompanyPage /></Layout></Protected>} />
+      <Route path="/keyboard-shortcuts" element={<Protected><Layout><KeyboardShortcutsPage /></Layout></Protected>} />
       <Route path="/smtp-settings" element={<Protected><AdminOnly><Layout><SmtpSettingsPage /></Layout></AdminOnly></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
