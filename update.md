@@ -16,3 +16,7 @@
 ## 2026-04-07 - Navigation tab
 - Added a `Keyboard Shortcuts` entry to the primary navigation.
 - Added a dedicated shortcuts reference page for quick lookup.
+
+## 2026-04-07 - Shortcut recorder
+- Replaced manual shortcut key entry with keyboard capture on the shortcuts page.
+- Users can now click a shortcut row and press the desired combination to record it.

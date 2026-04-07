@@ -164,6 +164,15 @@ textarea {
   min-width: 180px;
 }
 
+.shortcut-edit-control--key input[readonly] {
+  cursor: pointer;
+}
+
+.shortcut-capture-button {
+  text-align: left;
+  min-height: 46px;
+}
+
 .empty-state {
   padding: 48px 20px;
   text-align: center;

@@ -1,10 +1,39 @@
 import { motion } from 'framer-motion';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { loadCustomShortcuts, matchesBinding } from '../utils/shortcutPreferences';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { logout, userEmail, isAdmin } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const isTypingField =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.tagName === 'SELECT' ||
+        target?.isContentEditable;
+
+      if (isTypingField) {
+        return;
+      }
+
+      const customShortcut = loadCustomShortcuts().find((shortcut) => matchesBinding(shortcut.binding, event));
+      if (!customShortcut) {
+        return;
+      }
+
+      event.preventDefault();
+      navigate(customShortcut.page);
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigate]);
 
   const navItems = [
     { to: '/', label: 'Overview' },

@@ -9,6 +9,13 @@ export type ShortcutBinding = {
 
 export type ShortcutPreferences = Record<ShortcutAction, ShortcutBinding>;
 
+export type CustomShortcut = {
+  id: string;
+  title: string;
+  page: string;
+  binding: ShortcutBinding;
+};
+
 export const shortcutActionLabels: Record<ShortcutAction, string> = {
   submit_invoice: 'Submit invoice',
   add_line_item: 'Add line item',
@@ -28,6 +35,7 @@ export const defaultShortcutPreferences: ShortcutPreferences = {
 };
 
 const STORAGE_KEY = 'simple-invoicing.shortcut-preferences';
+const CUSTOM_STORAGE_KEY = 'simple-invoicing.custom-shortcuts';
 
 export function bindingToDisplay(binding: ShortcutBinding) {
   const parts: string[] = [];
@@ -60,4 +68,32 @@ export function loadShortcutPreferences(): ShortcutPreferences {
 export function saveShortcutPreferences(preferences: ShortcutPreferences) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
   window.dispatchEvent(new CustomEvent('shortcut-preferences-updated'));
+}
+
+export function loadCustomShortcuts(): CustomShortcut[] {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as CustomShortcut[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomShortcuts(shortcuts: CustomShortcut[]) {
+  window.localStorage.setItem(CUSTOM_STORAGE_KEY, JSON.stringify(shortcuts));
+  window.dispatchEvent(new CustomEvent('shortcut-preferences-updated'));
+}
+
+export function matchesBinding(binding: ShortcutBinding, event: KeyboardEvent): boolean {
+  const key = event.key.length === 1 ? event.key.toUpperCase() : event.key;
+  return (
+    binding.ctrlOrCmd === (event.ctrlKey || event.metaKey) &&
+    binding.shift === event.shiftKey &&
+    binding.alt === event.altKey &&
+    binding.key.toUpperCase() === key.toUpperCase()
+  );
 }
