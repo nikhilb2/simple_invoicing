@@ -1,10 +1,27 @@
+import { useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useShortcuts } from '../context/ShortcutsContext';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { logout, userEmail, isAdmin } = useAuth();
   const location = useLocation();
+  const { registerAction } = useShortcuts();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const cleanups = [
+      registerAction('go_invoices',  () => navigate('/invoices')),
+      registerAction('go_ledgers',   () => navigate('/ledgers')),
+      registerAction('go_products',  () => navigate('/products')),
+      registerAction('go_inventory', () => navigate('/inventory')),
+      registerAction('go_day_book',  () => navigate('/day-book')),
+      registerAction('open_reports', () => navigate('/day-book')),
+      registerAction('new_customer', () => navigate('/ledgers/new')),
+    ];
+    return () => cleanups.forEach(fn => fn());
+  }, [registerAction, navigate]);
 
   const navItems = [
     { to: '/', label: 'Overview' },
