@@ -14,6 +14,7 @@ class InvoiceCreate(BaseModel):
     ledger_id: int
     voucher_type: Literal["sales", "purchase"] = "sales"
     invoice_date: Optional[date] = None
+    due_date: Optional[date] = None
     items: List[InvoiceItemCreate]
 
 
@@ -61,6 +62,7 @@ class InvoiceOut(BaseModel):
     igst_amount: float
     total_amount: float
     invoice_date: datetime
+    due_date: datetime | None = None
     created_at: datetime
     items: list[InvoiceItemOut] = Field(default_factory=list)
 
