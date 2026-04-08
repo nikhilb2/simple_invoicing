@@ -14,7 +14,7 @@ class SMTPConfig(Base):
     _password = Column("password", Text, nullable=False)  # stores ciphertext
     from_email = Column(String(255), nullable=False)
     from_name = Column(String(255), nullable=False)
-    use_tls = Column(Boolean, default=True)
+    use_starttls = Column(Boolean, default=True)
     is_active = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

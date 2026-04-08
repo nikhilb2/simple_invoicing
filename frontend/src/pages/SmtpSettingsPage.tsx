@@ -101,7 +101,7 @@ const EMPTY_FORM: SmtpConfigCreate = {
   password: '',
   from_email: '',
   from_name: '',
-  use_tls: true,
+  use_starttls: true,
 };
 
 type SmtpFormModalProps = {
@@ -122,7 +122,7 @@ function SmtpFormModal({ editing, onClose, onSaved, onError }: SmtpFormModalProp
           password: '',
           from_email: editing.from_email,
           from_name: editing.from_name,
-          use_tls: editing.use_tls,
+          use_starttls: editing.use_starttls,
         }
       : EMPTY_FORM
   );
@@ -150,7 +150,7 @@ function SmtpFormModal({ editing, onClose, onSaved, onError }: SmtpFormModalProp
           username: form.username.trim(),
           from_email: form.from_email.trim(),
           from_name: form.from_name.trim(),
-          use_tls: form.use_tls,
+          use_starttls: form.use_starttls,
         };
         if (form.password) {
           payload.password = form.password;
@@ -284,8 +284,8 @@ function SmtpFormModal({ editing, onClose, onSaved, onError }: SmtpFormModalProp
           <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
             <input
               type="checkbox"
-              checked={form.use_tls}
-              onChange={(e) => set('use_tls', e.target.checked)}
+              checked={form.use_starttls}
+              onChange={(e) => set('use_starttls', e.target.checked)}
               style={{ width: '16px', height: '16px', cursor: 'pointer' }}
             />
             <span>Use TLS (STARTTLS)</span>
@@ -456,7 +456,7 @@ export default function SmtpSettingsPage() {
                     </div>
                     <p style={{ fontSize: '0.875rem', opacity: 0.65, marginTop: '2px' }}>
                       {config.host}:{config.port} · {config.from_email}
-                      {config.use_tls ? ' · TLS' : ' · No TLS'}
+                      {config.use_starttls ? ' · STARTTLS' : ' · SSL/TLS'}
                     </p>
                   </div>
                 </div>

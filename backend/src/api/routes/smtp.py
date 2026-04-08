@@ -89,7 +89,7 @@ def create_smtp_config(
         password=payload.password,
         from_email=payload.from_email,
         from_name=payload.from_name.strip(),
-        use_tls=payload.use_tls,
+        use_starttls=payload.use_starttls,
         is_active=False,  # New configs are inactive by default
     )
     db.add(config)
@@ -142,8 +142,8 @@ def update_smtp_config(
         config.from_email = payload.from_email
     if payload.from_name is not None:
         config.from_name = payload.from_name.strip()
-    if payload.use_tls is not None:
-        config.use_tls = payload.use_tls
+    if payload.use_starttls is not None:
+        config.use_starttls = payload.use_starttls
     db.commit()
     db.refresh(config)
     return config
@@ -200,8 +200,9 @@ def test_smtp_config(
         msg['Subject'] = "Test Email from Invoicing System"
         msg.attach(MIMEText("This is a test email to verify SMTP configuration.", 'plain'))
 
-        # Port 465 = implicit SSL; port 587 (or use_tls=True) = STARTTLS
-        if config.port == 465 or not config.use_tls:
+        # use_starttls=True  → STARTTLS (typically port 587)
+        # use_starttls=False → Implicit SSL/TLS (typically port 465)
+        if config.port == 465 or not config.use_starttls:
             server = smtplib.SMTP_SSL(config.host, config.port)
         else:
             server = smtplib.SMTP(config.host, config.port)
@@ -237,7 +238,7 @@ def test_smtp_template(
         msg["Subject"] = subject
         msg.attach(MIMEText(html_body, "html"))
 
-        if config.port == 465 or not config.use_tls:
+        if config.port == 465 or not config.use_starttls:
             server = smtplib.SMTP_SSL(config.host, config.port)
         else:
             server = smtplib.SMTP(config.host, config.port)
