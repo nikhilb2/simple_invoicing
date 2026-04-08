@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, expectError, uniqueSku } from './fixtures';
+import { test, expect, expectSuccess, expectError, uniqueSku, selectComboboxOption } from './fixtures';
 
 test.describe('Inventory Management', () => {
   test('displays stock adjustments heading', async ({ authedPage: page }) => {
@@ -27,25 +27,7 @@ test.describe('Inventory Management', () => {
     await page.waitForTimeout(500);
 
     // Select product and add stock
-    const productSelect = page.locator('#inventory-product');
-    // Wait for options to load
-    await expect(productSelect.locator('option')).not.toHaveCount(0, {
-      timeout: 5_000,
-    });
-    // Select by visible text that contains our product
-    const options = productSelect.locator('option');
-    const count = await options.count();
-    let targetValue = '';
-    for (let i = 0; i < count; i++) {
-      const text = await options.nth(i).textContent();
-      if (text?.includes(sku)) {
-        targetValue = (await options.nth(i).getAttribute('value')) || '';
-        break;
-      }
-    }
-    if (targetValue) {
-      await productSelect.selectOption(targetValue);
-    }
+    await selectComboboxOption(page, 'inventory-product', sku);
 
     await page.fill('#inventory-quantity', '25');
     await page.click('button:has-text("Apply adjustment")');
@@ -70,28 +52,13 @@ test.describe('Inventory Management', () => {
     // Add stock
     await page.click('[href="/inventory"]');
     await page.waitForTimeout(500);
-    const productSelect = page.locator('#inventory-product');
-    const options = productSelect.locator('option');
-    const count = await options.count();
-    let targetValue = '';
-    for (let i = 0; i < count; i++) {
-      const text = await options.nth(i).textContent();
-      if (text?.includes(sku)) {
-        targetValue = (await options.nth(i).getAttribute('value')) || '';
-        break;
-      }
-    }
-    if (targetValue) {
-      await productSelect.selectOption(targetValue);
-    }
+    await selectComboboxOption(page, 'inventory-product', sku);
     await page.fill('#inventory-quantity', '20');
     await page.click('button:has-text("Apply adjustment")');
     await expectSuccess(page, 'Inventory updated');
 
     // Deduct some stock
-    if (targetValue) {
-      await productSelect.selectOption(targetValue);
-    }
+    await selectComboboxOption(page, 'inventory-product', sku);
     await page.fill('#inventory-quantity', '-5');
     await page.click('button:has-text("Apply adjustment")');
     await expectSuccess(page, 'Inventory updated');
@@ -111,20 +78,7 @@ test.describe('Inventory Management', () => {
     await page.click('[href="/inventory"]');
     await page.waitForTimeout(500);
 
-    const productSelect = page.locator('#inventory-product');
-    const options = productSelect.locator('option');
-    const count = await options.count();
-    let targetValue = '';
-    for (let i = 0; i < count; i++) {
-      const text = await options.nth(i).textContent();
-      if (text?.includes(sku)) {
-        targetValue = (await options.nth(i).getAttribute('value')) || '';
-        break;
-      }
-    }
-    if (targetValue) {
-      await productSelect.selectOption(targetValue);
-    }
+    await selectComboboxOption(page, 'inventory-product', sku);
 
     // Try to deduct stock when there is none
     await page.fill('#inventory-quantity', '-10');
@@ -147,20 +101,7 @@ test.describe('Inventory Management', () => {
     // Add just 3 units
     await page.click('[href="/inventory"]');
     await page.waitForTimeout(500);
-    const productSelect = page.locator('#inventory-product');
-    const options = productSelect.locator('option');
-    const count = await options.count();
-    let targetValue = '';
-    for (let i = 0; i < count; i++) {
-      const text = await options.nth(i).textContent();
-      if (text?.includes(sku)) {
-        targetValue = (await options.nth(i).getAttribute('value')) || '';
-        break;
-      }
-    }
-    if (targetValue) {
-      await productSelect.selectOption(targetValue);
-    }
+    await selectComboboxOption(page, 'inventory-product', sku);
     await page.fill('#inventory-quantity', '3');
     await page.click('button:has-text("Apply adjustment")');
     await expectSuccess(page, 'Inventory updated');

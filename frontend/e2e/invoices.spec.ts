@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption } from './fixtures';
 
 test.describe('Invoices', () => {
   /**
@@ -22,20 +22,7 @@ test.describe('Invoices', () => {
     // 2. Add inventory
     await page.click('[href="/inventory"]');
     await page.waitForTimeout(500);
-    const productSelect = page.locator('#inventory-product');
-    const options = productSelect.locator('option');
-    const count = await options.count();
-    let targetValue = '';
-    for (let i = 0; i < count; i++) {
-      const text = await options.nth(i).textContent();
-      if (text?.includes(sku)) {
-        targetValue = (await options.nth(i).getAttribute('value')) || '';
-        break;
-      }
-    }
-    if (targetValue) {
-      await productSelect.selectOption(targetValue);
-    }
+    await selectComboboxOption(page, 'inventory-product', sku);
     await page.fill('#inventory-quantity', '50');
     await page.click('button:has-text("Apply adjustment")');
     await expectSuccess(page, 'Inventory updated');
@@ -67,29 +54,10 @@ test.describe('Invoices', () => {
     // Create a sales invoice so there's at least one in the list
     await page.selectOption('#invoice-voucher-type', 'sales');
 
-    const ledgerSelect = page.locator('#invoice-ledger');
-    const ledgerOptions = ledgerSelect.locator('option');
-    const ledgerCount = await ledgerOptions.count();
-    for (let i = 0; i < ledgerCount; i++) {
-      const text = await ledgerOptions.nth(i).textContent();
-      if (text?.includes(ledgerName)) {
-        const val = (await ledgerOptions.nth(i).getAttribute('value')) || '';
-        await ledgerSelect.selectOption(val);
-        break;
-      }
-    }
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 
-    const productSelect = page.locator('[id^="invoice-product-"]').first();
-    const prodOptions = productSelect.locator('option');
-    const prodCount = await prodOptions.count();
-    for (let i = 0; i < prodCount; i++) {
-      const text = await prodOptions.nth(i).textContent();
-      if (text?.includes(sku)) {
-        const val = (await prodOptions.nth(i).getAttribute('value')) || '';
-        await productSelect.selectOption(val);
-        break;
-      }
-    }
+    const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId, sku);
     await page.locator('[id^="invoice-quantity-"]').first().fill('2');
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'invoice created');
@@ -120,36 +88,11 @@ test.describe('Invoices', () => {
     await page.selectOption('#invoice-voucher-type', 'sales');
 
     // Select ledger
-    const ledgerSelect = page.locator('#invoice-ledger');
-    const ledgerOptions = ledgerSelect.locator('option');
-    const ledgerCount = await ledgerOptions.count();
-    let ledgerValue = '';
-    for (let i = 0; i < ledgerCount; i++) {
-      const text = await ledgerOptions.nth(i).textContent();
-      if (text?.includes(ledgerName)) {
-        ledgerValue = (await ledgerOptions.nth(i).getAttribute('value')) || '';
-        break;
-      }
-    }
-    if (ledgerValue) {
-      await ledgerSelect.selectOption(ledgerValue);
-    }
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 
     // Select product in line item
-    const productSelect = page.locator('[id^="invoice-product-"]').first();
-    const prodOptions = productSelect.locator('option');
-    const prodCount = await prodOptions.count();
-    let prodValue = '';
-    for (let i = 0; i < prodCount; i++) {
-      const text = await prodOptions.nth(i).textContent();
-      if (text?.includes(sku)) {
-        prodValue = (await prodOptions.nth(i).getAttribute('value')) || '';
-        break;
-      }
-    }
-    if (prodValue) {
-      await productSelect.selectOption(prodValue);
-    }
+    const productInputId1 = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId1, sku);
 
     // Set quantity
     await page.locator('[id^="invoice-quantity-"]').first().fill('5');
@@ -170,36 +113,11 @@ test.describe('Invoices', () => {
     await page.selectOption('#invoice-voucher-type', 'purchase');
 
     // Select ledger
-    const ledgerSelect = page.locator('#invoice-ledger');
-    const ledgerOptions = ledgerSelect.locator('option');
-    const ledgerCount = await ledgerOptions.count();
-    let ledgerValue = '';
-    for (let i = 0; i < ledgerCount; i++) {
-      const text = await ledgerOptions.nth(i).textContent();
-      if (text?.includes(ledgerName)) {
-        ledgerValue = (await ledgerOptions.nth(i).getAttribute('value')) || '';
-        break;
-      }
-    }
-    if (ledgerValue) {
-      await ledgerSelect.selectOption(ledgerValue);
-    }
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 
     // Select product
-    const productSelect = page.locator('[id^="invoice-product-"]').first();
-    const prodOptions = productSelect.locator('option');
-    const prodCount = await prodOptions.count();
-    let prodValue = '';
-    for (let i = 0; i < prodCount; i++) {
-      const text = await prodOptions.nth(i).textContent();
-      if (text?.includes(sku)) {
-        prodValue = (await prodOptions.nth(i).getAttribute('value')) || '';
-        break;
-      }
-    }
-    if (prodValue) {
-      await productSelect.selectOption(prodValue);
-    }
+    const productInputId2 = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId2, sku);
 
     await page.locator('[id^="invoice-quantity-"]').first().fill('10');
 
@@ -216,17 +134,7 @@ test.describe('Invoices', () => {
     await page.selectOption('#invoice-voucher-type', 'sales');
 
     // Select ledger
-    const ledgerSelect = page.locator('#invoice-ledger');
-    const ledgerOptions = ledgerSelect.locator('option');
-    const ledgerCount = await ledgerOptions.count();
-    for (let i = 0; i < ledgerCount; i++) {
-      const text = await ledgerOptions.nth(i).textContent();
-      if (text?.includes(ledgerName)) {
-        const val = (await ledgerOptions.nth(i).getAttribute('value')) || '';
-        await ledgerSelect.selectOption(val);
-        break;
-      }
-    }
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 
     // Add a second line item
     await page.click('button:has-text("Add line item")');
@@ -258,29 +166,10 @@ test.describe('Invoices', () => {
 
     // Create invoice first
     await page.selectOption('#invoice-voucher-type', 'sales');
-    const ledgerSelect = page.locator('#invoice-ledger');
-    const ledgerOptions = ledgerSelect.locator('option');
-    const ledgerCount = await ledgerOptions.count();
-    for (let i = 0; i < ledgerCount; i++) {
-      const text = await ledgerOptions.nth(i).textContent();
-      if (text?.includes(ledgerName)) {
-        const val = (await ledgerOptions.nth(i).getAttribute('value')) || '';
-        await ledgerSelect.selectOption(val);
-        break;
-      }
-    }
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 
-    const productSelect = page.locator('[id^="invoice-product-"]').first();
-    const prodOptions = productSelect.locator('option');
-    const prodCount = await prodOptions.count();
-    for (let i = 0; i < prodCount; i++) {
-      const text = await prodOptions.nth(i).textContent();
-      if (text?.includes(sku)) {
-        const val = (await prodOptions.nth(i).getAttribute('value')) || '';
-        await productSelect.selectOption(val);
-        break;
-      }
-    }
+    const productInputId3 = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId3, sku);
     await page.locator('[id^="invoice-quantity-"]').first().fill('3');
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'invoice created');
@@ -311,34 +200,15 @@ test.describe('Invoices', () => {
     await page.selectOption('#invoice-voucher-type', 'sales');
 
     // Select ledger
-    const ledgerSelect = page.locator('#invoice-ledger');
-    const ledgerOptions = ledgerSelect.locator('option');
-    const ledgerCount = await ledgerOptions.count();
-    for (let i = 0; i < ledgerCount; i++) {
-      const text = await ledgerOptions.nth(i).textContent();
-      if (text?.includes(ledgerName)) {
-        const val = (await ledgerOptions.nth(i).getAttribute('value')) || '';
-        await ledgerSelect.selectOption(val);
-        break;
-      }
-    }
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
 
     // Set a past invoice date
     const pastDate = '2025-06-15';
     await page.fill('#invoice-date', pastDate);
 
     // Select product in line item
-    const productSelect = page.locator('[id^="invoice-product-"]').first();
-    const prodOptions = productSelect.locator('option');
-    const prodCount = await prodOptions.count();
-    for (let i = 0; i < prodCount; i++) {
-      const text = await prodOptions.nth(i).textContent();
-      if (text?.includes(sku)) {
-        const val = (await prodOptions.nth(i).getAttribute('value')) || '';
-        await productSelect.selectOption(val);
-        break;
-      }
-    }
+    const productInputId4 = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId4, sku);
     await page.locator('[id^="invoice-quantity-"]').first().fill('2');
 
     await page.click('button:has-text("Create invoice")');

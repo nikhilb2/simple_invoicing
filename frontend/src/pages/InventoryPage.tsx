@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
+import ProductCombobox from '../components/ProductCombobox';
 import type { InventoryAdjust, InventoryRow, Product } from '../types/api';
 
 export default function InventoryPage() {
@@ -88,20 +89,13 @@ export default function InventoryPage() {
             <div className="field-grid">
               <div className="field field--full">
                 <label htmlFor="inventory-product">Product</label>
-                <select
+                <ProductCombobox
                   id="inventory-product"
-                  className="select"
+                  products={products}
                   value={form.productId}
-                  onChange={(event) => setForm((current) => ({ ...current, productId: event.target.value }))}
+                  onChange={(productId) => setForm((current) => ({ ...current, productId }))}
                   required
-                >
-                  {products.length === 0 ? <option value="">No products available</option> : null}
-                  {products.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name} ({product.sku})
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
               <div className="field field--full">
                 <label htmlFor="inventory-quantity">Quantity delta</label>

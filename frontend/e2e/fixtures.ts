@@ -22,6 +22,21 @@ export const test = base.extend<{ authedPage: Page }>({
 
 export { expect };
 
+/**
+ * Helper: select an option from a combobox (ProductCombobox / LedgerCombobox).
+ * Clears the input, types the search text, waits for a matching listbox option,
+ * then clicks it.
+ */
+export async function selectComboboxOption(page: Page, inputId: string, searchText: string) {
+  const input = page.locator(`#${inputId}`);
+  await input.click();
+  await input.selectText();
+  await input.fill(searchText);
+  const option = page.locator(`#${inputId}-listbox [role="option"]`, { hasText: searchText }).first();
+  await expect(option).toBeVisible({ timeout: 5_000 });
+  await option.click();
+}
+
 /** Helper: wait for a success toast to appear and contain text. */
 export async function expectSuccess(page: Page, substring: string) {
   const banner = page.locator('.toast--success');
