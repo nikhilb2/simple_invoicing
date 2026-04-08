@@ -162,6 +162,12 @@ POSTGRES_USER=simple_user
 POSTGRES_PASSWORD=simple_password
 POSTGRES_DB=simple_invoicing
 COMPOSE_PROJECT_NAME=simple_invoicing
+
+# Host-side port mappings (optional — override if a port is already in use)
+DB_HOST_PORT=5432
+BACKEND_HOST_PORT=8000
+FRONTEND_HOST_PORT=80
+FRONTEND_DEV_HOST_PORT=5173
 ```
 
 **When to use**: Setting up Docker Compose environment
@@ -196,7 +202,26 @@ COMPOSE_PROJECT_NAME=simple_invoicing
 | `POSTGRES_PASSWORD` | PostgreSQL password |
 | `POSTGRES_DB` | Default database name |
 | `POSTGRES_PORT` | PostgreSQL port (5432) |
+### Docker Host Port Variables
 
+These control which **host** port each container is exposed on. They only affect how you access services from your machine — internal container-to-container communication is unaffected.
+
+| Variable | Default | Maps to | Purpose |
+|----------|---------|---------|----------|
+| `DB_HOST_PORT` | `5432` | container port `5432` | Host port for the PostgreSQL service |
+| `BACKEND_HOST_PORT` | `8000` | container port `8000` | Host port for the FastAPI backend |
+| `FRONTEND_HOST_PORT` | `80` | container port `80` | Host port for the production frontend (Nginx) |
+| `FRONTEND_DEV_HOST_PORT` | `5173` | container port `5173` | Host port for the Vite dev server |
+
+**Override locally** when a port is already in use on your machine. Add the variable to your local `.env` file (never commit your `.env`):
+
+```dotenv
+# .env (local overrides — git-ignored)
+FRONTEND_DEV_HOST_PORT=5174
+DB_HOST_PORT=5433
+```
+
+All variables use Docker Compose's `${VAR:-default}` syntax, so omitting a variable from `.env` falls back silently to the default — no breakage for anyone who hasn't set them.
 ## How to Generate a Secure SECRET_KEY
 
 For production, generate a cryptographically strong secret:
