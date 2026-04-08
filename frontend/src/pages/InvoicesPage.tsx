@@ -342,7 +342,7 @@ export default function InvoicesPage() {
 
       const payload = {
         product_id: Number(stockForm.productId),
-        adjustment: Number(stockForm.adjustment),
+        quantity: Number(stockForm.adjustment),
       };
 
       await api.post('/inventory/adjust', payload);
