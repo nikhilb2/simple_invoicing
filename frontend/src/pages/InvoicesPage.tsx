@@ -1002,6 +1002,7 @@ export default function InvoicesPage() {
                   id="modal-stock-adjustment"
                   className="input"
                   type="number"
+                  step="1"
                   value={stockForm.adjustment}
                   onChange={(event) => setStockForm((current) => ({ ...current, adjustment: event.target.value }))}
                   placeholder="e.g., +10 to add, -5 to remove"
