@@ -11,7 +11,7 @@ class SmtpConfigCreate(BaseModel):
     password: str = Field(min_length=1)
     from_email: EmailStr
     from_name: str = Field(min_length=1)
-    use_tls: bool = True
+    use_starttls: bool = True
 
 
 class SmtpConfigUpdate(BaseModel):
@@ -22,7 +22,7 @@ class SmtpConfigUpdate(BaseModel):
     password: str | None = None
     from_email: EmailStr | None = None
     from_name: str | None = None
-    use_tls: bool | None = None
+    use_starttls: bool | None = None
 
 
 class SmtpConfigTest(BaseModel):
@@ -44,7 +44,7 @@ class SmtpConfigResponse(BaseModel):
     username: str
     from_email: str
     from_name: str
-    use_tls: bool
+    use_starttls: bool
     created_at: datetime
     updated_at: datetime
     is_active: bool

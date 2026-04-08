@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 import asyncio
-from src.services.mail import send_email, _get_active_smtp_config, _build_message
+from src.services.mail import send_email, _get_active_smtp_config, _build_message, _send_sync
 from src.models.smtp_config import SMTPConfig
 
 @pytest.fixture
@@ -21,7 +21,7 @@ def active_config():
     config.username = "user"
     config.from_email = "from@example.com"
     config.from_name = "Sender"
-    config.use_tls = True
+    config.use_starttls = True
     return config
 
 def test_get_active_smtp_config_success(mock_db, active_config):
@@ -67,3 +67,102 @@ async def test_send_email_orchestration(mock_db, active_config):
         # Verify the first argument to _send_sync was indeed our config
         args, _ = mock_send_sync.call_args
         assert args[0] == active_config
+
+
+# ---------------------------------------------------------------------------
+# _send_sync tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def smtp_cfg():
+    """Minimal MagicMock config for _send_sync tests (avoids encrypt/decrypt)."""
+    cfg = MagicMock()
+    cfg.host = "smtp.example.com"
+    cfg.port = 587
+    cfg.username = "user"
+    cfg.password = "secret"
+    cfg.use_starttls = True
+    return cfg
+
+
+@pytest.fixture
+def simple_msg():
+    from email.mime.multipart import MIMEMultipart
+    msg = MIMEMultipart()
+    msg["To"] = "to@example.com"
+    msg["Subject"] = "Test"
+    return msg
+
+
+def test_send_sync_uses_smtp_and_calls_starttls(smtp_cfg, simple_msg):
+    """use_starttls=True on a non-465 port uses smtplib.SMTP and calls starttls()."""
+    smtp_cfg.use_starttls = True
+    smtp_cfg.port = 587
+
+    with patch("smtplib.SMTP") as mock_smtp_cls, \
+         patch("smtplib.SMTP_SSL") as mock_smtp_ssl_cls:
+        mock_server = mock_smtp_cls.return_value.__enter__.return_value
+
+        _send_sync(smtp_cfg, simple_msg)
+
+        mock_smtp_cls.assert_called_once_with(smtp_cfg.host, smtp_cfg.port, timeout=10)
+        mock_smtp_ssl_cls.assert_not_called()
+        mock_server.starttls.assert_called_once()
+        mock_server.login.assert_called_once_with(smtp_cfg.username, smtp_cfg.password)
+        mock_server.send_message.assert_called_once_with(simple_msg, to_addrs=["to@example.com"])
+
+
+def test_send_sync_uses_smtp_ssl_when_use_starttls_false(smtp_cfg, simple_msg):
+    """use_starttls=False uses smtplib.SMTP_SSL and does not call starttls()."""
+    smtp_cfg.use_starttls = False
+    smtp_cfg.port = 587
+
+    with patch("smtplib.SMTP") as mock_smtp_cls, \
+         patch("smtplib.SMTP_SSL") as mock_smtp_ssl_cls:
+        mock_server = mock_smtp_ssl_cls.return_value.__enter__.return_value
+
+        _send_sync(smtp_cfg, simple_msg)
+
+        mock_smtp_ssl_cls.assert_called_once_with(smtp_cfg.host, smtp_cfg.port, timeout=10)
+        mock_smtp_cls.assert_not_called()
+        mock_server.starttls.assert_not_called()
+        mock_server.login.assert_called_once_with(smtp_cfg.username, smtp_cfg.password)
+        mock_server.send_message.assert_called_once_with(simple_msg, to_addrs=["to@example.com"])
+
+
+def test_send_sync_uses_smtp_ssl_for_port_465(smtp_cfg, simple_msg):
+    """Port 465 triggers smtplib.SMTP_SSL even when use_starttls=True."""
+    smtp_cfg.use_starttls = True
+    smtp_cfg.port = 465
+
+    with patch("smtplib.SMTP") as mock_smtp_cls, \
+         patch("smtplib.SMTP_SSL") as mock_smtp_ssl_cls:
+        mock_server = mock_smtp_ssl_cls.return_value.__enter__.return_value
+
+        _send_sync(smtp_cfg, simple_msg)
+
+        mock_smtp_ssl_cls.assert_called_once_with(smtp_cfg.host, smtp_cfg.port, timeout=10)
+        mock_smtp_cls.assert_not_called()
+        mock_server.starttls.assert_not_called()
+        mock_server.login.assert_called_once_with(smtp_cfg.username, smtp_cfg.password)
+        mock_server.send_message.assert_called_once_with(simple_msg, to_addrs=["to@example.com"])
+
+
+def test_send_sync_includes_cc_in_recipients(smtp_cfg):
+    """Cc addresses are included in the to_addrs passed to send_message."""
+    from email.mime.multipart import MIMEMultipart
+    msg = MIMEMultipart()
+    msg["To"] = "to@example.com"
+    msg["Cc"] = "cc1@example.com, cc2@example.com"
+    msg["Subject"] = "Test"
+
+    smtp_cfg.use_starttls = True
+    smtp_cfg.port = 587
+
+    with patch("smtplib.SMTP") as mock_smtp_cls:
+        mock_server = mock_smtp_cls.return_value.__enter__.return_value
+
+        _send_sync(smtp_cfg, msg)
+
+        _, kwargs = mock_server.send_message.call_args
+        assert kwargs["to_addrs"] == ["to@example.com", "cc1@example.com", "cc2@example.com"]

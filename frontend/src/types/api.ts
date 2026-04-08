@@ -256,7 +256,7 @@ export type SmtpConfig = {
   username: string;
   from_email: string;
   from_name: string;
-  use_tls: boolean;
+  use_starttls: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -270,7 +270,7 @@ export type SmtpConfigCreate = {
   password: string;
   from_email: string;
   from_name: string;
-  use_tls: boolean;
+  use_starttls: boolean;
 };
 
 export type SmtpConfigUpdate = {
@@ -281,7 +281,7 @@ export type SmtpConfigUpdate = {
   password?: string;
   from_email?: string;
   from_name?: string;
-  use_tls?: boolean;
+  use_starttls?: boolean;
 };
 
 export type UserShortcut = {

@@ -57,8 +57,9 @@ def _send_sync(config: SMTPConfig, msg: MIMEMultipart) -> None:
         recipients.extend([email.strip() for email in msg["Cc"].split(",")])
 
     try:
-        # Port 465 = implicit SSL; port 587 (or use_tls=True) = STARTTLS
-        if config.port == 465 or not config.use_tls:
+        # use_starttls=True  → STARTTLS (typically port 587)
+        # use_starttls=False → Implicit SSL/TLS (typically port 465)
+        if config.port == 465 or not config.use_starttls:
             with smtplib.SMTP_SSL(config.host, config.port, timeout=10) as server:
                 server.login(config.username, config.password)
                 server.send_message(msg, to_addrs=recipients)
