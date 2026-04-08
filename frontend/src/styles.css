@@ -186,6 +186,81 @@ textarea {
   flex-wrap: wrap;
 }
 
+/* topbar__top is transparent on desktop — children participate in topbar's flex */
+.topbar__top {
+  display: contents;
+}
+
+.burger-btn {
+  display: none;
+}
+
+/* Drawer — hidden on md+ via media query below */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 200;
+}
+
+.drawer-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(300px, 85vw);
+  z-index: 201;
+  background: var(--bg-card);
+  border-right: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+  display: flex;
+  flex-direction: column;
+  padding: 24px 16px;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.drawer-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.drawer-panel__header .nav-panel__title {
+  margin: 0;
+}
+
+.drawer-panel__links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.drawer-close {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 6px 10px;
+  border-radius: 8px;
+  line-height: 1;
+  transition: 180ms ease;
+}
+
+.drawer-close:hover {
+  background: rgba(87, 209, 201, 0.1);
+  border-color: rgba(87, 209, 201, 0.2);
+}
+
+@media (min-width: 721px) {
+  .drawer-backdrop,
+  .drawer-panel {
+    display: none !important;
+  }
+}
+
 .nav-link {
   display: inline-flex;
   align-items: center;
@@ -1089,6 +1164,39 @@ textarea {
 }
 
 @media (max-width: 720px) {
+  .nav-panel {
+    display: none;
+  }
+
+  .topbar__top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+  }
+
+  .burger-btn {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    border: 1px solid var(--line);
+    cursor: pointer;
+    padding: 10px 12px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+
+  .burger-btn__bar {
+    display: block;
+    width: 20px;
+    height: 2px;
+    background: var(--text);
+    border-radius: 2px;
+  }
+
   .app-shell {
     padding: 20px 14px 32px;
   }

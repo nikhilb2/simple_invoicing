@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useShortcuts } from '../context/ShortcutsContext';
@@ -9,6 +9,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const { registerAction } = useShortcuts();
   const navigate = useNavigate();
+
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
     const cleanups = [
@@ -22,6 +24,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     ];
     return () => cleanups.forEach(fn => fn());
   }, [registerAction, navigate]);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setDrawerOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [drawerOpen]);
 
   const navItems = [
     { to: '/', label: 'Overview' },
@@ -40,11 +49,22 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <div className="app-shell__backdrop app-shell__backdrop--left" />
       <div className="app-shell__backdrop app-shell__backdrop--right" />
       <header className="topbar">
-        <div>
-          <Link to="/" className="brand-mark">Simple Invoicing</Link>
-          <p className="topbar__subtitle">
-            Stock, billing, and operator workflows in one place.
-          </p>
+        <div className="topbar__top">
+          <div>
+            <Link to="/" className="brand-mark">Simple Invoicing</Link>
+            <p className="topbar__subtitle">
+              Stock, billing, and operator workflows in one place.
+            </p>
+          </div>
+          <button
+            className="burger-btn"
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open navigation"
+          >
+            <span className="burger-btn__bar" />
+            <span className="burger-btn__bar" />
+            <span className="burger-btn__bar" />
+          </button>
         </div>
         <div className="topbar__session">
           <div>
@@ -76,6 +96,56 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           ))}
         </div>
       </nav>
+
+      <AnimatePresence>
+        {drawerOpen && (
+          <>
+            <motion.div
+              className="drawer-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              onClick={() => setDrawerOpen(false)}
+              aria-hidden="true"
+            />
+            <motion.nav
+              className="drawer-panel"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Navigation drawer"
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ duration: 0.28, ease: 'easeOut' }}
+            >
+              <div className="drawer-panel__header">
+                <p className="nav-panel__title">Control room</p>
+                <button
+                  className="drawer-close"
+                  onClick={() => setDrawerOpen(false)}
+                  aria-label="Close navigation"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="drawer-panel__links">
+                {navItems.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.to === '/'}
+                    className={({ isActive }) => `nav-link${isActive ? ' nav-link--active' : ''}`}
+                    onClick={() => setDrawerOpen(false)}
+                  >
+                    <span>{item.label}</span>
+                  </NavLink>
+                ))}
+              </div>
+            </motion.nav>
+          </>
+        )}
+      </AnimatePresence>
 
       <motion.main
         key={location.pathname}
