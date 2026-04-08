@@ -3,6 +3,8 @@ import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import type { InvoiceCreate, Ledger, Product } from '../types/api';
 import formatCurrency from '../utils/formatting';
+import ProductCombobox from './ProductCombobox';
+import LedgerCombobox from './LedgerCombobox';
 
 type InvoiceFormItem = {
   id: number;
@@ -162,19 +164,14 @@ export default function CreateInvoiceModal({
 
               <div className="field">
                 <label htmlFor="modal-inv-ledger">Ledger</label>
-                <select
+                <LedgerCombobox
                   id="modal-inv-ledger"
-                  className="select"
+                  ledgers={ledgers}
                   value={selectedLedgerId}
-                  onChange={(e) => setSelectedLedgerId(e.target.value)}
+                  onChange={setSelectedLedgerId}
                   required
                   disabled={!!preselectedLedgerId}
-                >
-                  {ledgers.length === 0 ? <option value="">No ledgers available</option> : null}
-                  {ledgers.map((l) => (
-                    <option key={l.id} value={l.id}>{l.name} ({l.gst})</option>
-                  ))}
-                </select>
+                />
               </div>
 
               <div className="field">
@@ -203,22 +200,16 @@ export default function CreateInvoiceModal({
                   <div key={item.id} className="line-item">
                     <div className="field">
                       <label htmlFor={`modal-inv-product-${item.id}`}>Line {index + 1}</label>
-                      <select
+                      <ProductCombobox
                         id={`modal-inv-product-${item.id}`}
-                        className="select"
+                        products={products}
                         value={item.productId}
-                        onChange={(e) => {
-                          updateItem(item.id, 'productId', e.target.value);
-                          const newProduct = products.find((p) => p.id === Number(e.target.value));
-                          if (newProduct) updateItem(item.id, 'unit_price', String(newProduct.price));
+                        onChange={(productId, newProduct) => {
+                          updateItem(item.id, 'productId', productId);
+                          updateItem(item.id, 'unit_price', String(newProduct.price));
                         }}
                         required
-                      >
-                        {products.length === 0 ? <option value="">No products available</option> : null}
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
-                        ))}
-                      </select>
+                      />
                     </div>
 
                     <div className="field">

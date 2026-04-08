@@ -5,6 +5,8 @@ import type { CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerCreate, Pagi
 import InvoicePreview from '../components/InvoicePreview';
 import ConfirmDialog from '../components/ConfirmDialog';
 import StatusToasts from '../components/StatusToasts';
+import ProductCombobox from '../components/ProductCombobox';
+import LedgerCombobox from '../components/LedgerCombobox';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import formatCurrency from '../utils/formatting';
 
@@ -424,20 +426,13 @@ export default function InvoicesPage() {
 
               <div className="field">
                 <label htmlFor="invoice-ledger">Ledger</label>
-                <select
+                <LedgerCombobox
                   id="invoice-ledger"
-                  className="select"
+                  ledgers={ledgers}
                   value={selectedLedgerId}
-                  onChange={(event) => setSelectedLedgerId(event.target.value)}
+                  onChange={setSelectedLedgerId}
                   required
-                >
-                  {ledgers.length === 0 ? <option value="">No ledgers available</option> : null}
-                  {ledgers.map((ledger) => (
-                    <option key={ledger.id} value={ledger.id}>
-                      {ledger.name} ({ledger.gst})
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
 
               <div className="field">
@@ -478,26 +473,16 @@ export default function InvoicesPage() {
                   <div key={item.id} className="line-item">
                     <div className="field">
                       <label htmlFor={`invoice-product-${item.id}`}>Line {index + 1}</label>
-                      <select
+                      <ProductCombobox
                         id={`invoice-product-${item.id}`}
-                        className="select"
+                        products={products}
                         value={item.productId}
-                        onChange={(event) => {
-                          updateItem(item.id, 'productId', event.target.value);
-                          const newProduct = products.find((p) => p.id === Number(event.target.value));
-                          if (newProduct) {
-                            updateItem(item.id, 'unit_price', String(newProduct.price));
-                          }
+                        onChange={(productId, newProduct) => {
+                          updateItem(item.id, 'productId', productId);
+                          updateItem(item.id, 'unit_price', String(newProduct.price));
                         }}
                         required
-                      >
-                        {products.length === 0 ? <option value="">No products available</option> : null}
-                        {products.map((product) => (
-                          <option key={product.id} value={product.id}>
-                            {product.name} ({product.sku})
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </div>
 
                     <div className="field">
@@ -981,20 +966,13 @@ export default function InvoicesPage() {
             <form className="stack" onSubmit={handleUpdateStock}>
               <div className="field">
                 <label htmlFor="modal-stock-product">Product</label>
-                <select
+                <ProductCombobox
                   id="modal-stock-product"
-                  className="select"
+                  products={products}
                   value={stockForm.productId}
-                  onChange={(event) => setStockForm((current) => ({ ...current, productId: event.target.value }))}
+                  onChange={(productId) => setStockForm((current) => ({ ...current, productId }))}
                   required
-                >
-                  <option value="">Select a product</option>
-                  {products.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name} ({product.sku})
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
               <div className="field">
                 <label htmlFor="modal-stock-adjustment">Quantity adjustment</label>
