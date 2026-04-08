@@ -67,7 +67,7 @@ function AppRoutes() {
       <Route path="/invoices" element={<Protected><Layout><InvoicesPage /></Layout></Protected>} />
       <Route path="/company" element={<Protected><Layout><CompanyPage /></Layout></Protected>} />
       <Route path="/smtp-settings" element={<Protected><AdminOnly><Layout><SmtpSettingsPage /></Layout></AdminOnly></Protected>} />
-      <Route path="/keyboard-shortcuts" element={<Protected><Layout><KeyboardShortcutsPage /></Layout></Protected>} />
+      <Route path="/shortcuts" element={<Protected><Layout><KeyboardShortcutsPage /></Layout></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
