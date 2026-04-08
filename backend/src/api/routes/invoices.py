@@ -102,6 +102,9 @@ def _apply_payload_to_invoice(
     if payload.invoice_date is not None:
         invoice.invoice_date = datetime.combine(payload.invoice_date, datetime.min.time())
 
+    if payload.due_date is not None:
+        invoice.due_date = datetime.combine(payload.due_date, datetime.min.time())
+
     invoice.invoice_number = _generate_invoice_number(invoice.id)
 
     if not invoice.company_gst or not invoice.ledger_gst:
