@@ -54,7 +54,8 @@ test.describe('Mobile nav drawer', () => {
   test('closes drawer when backdrop is tapped', async ({ authedPage: page }) => {
     await page.click('.burger-btn');
     await expect(page.locator('.drawer-panel')).toBeVisible();
-    await page.locator('.drawer-backdrop').click({ position: { x: 5, y: 5 } });
+    // Click the visible portion of the backdrop (to the right of the 300px drawer)
+    await page.locator('.drawer-backdrop').click({ position: { x: 360, y: 400 } });
     await expect(page.locator('.drawer-panel')).not.toBeAttached();
   });
 
