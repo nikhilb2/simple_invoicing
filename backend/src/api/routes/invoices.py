@@ -122,6 +122,7 @@ def _apply_payload_to_invoice(
     invoice.company_account_number = company.account_number if company else None
     invoice.company_ifsc_code = company.ifsc_code if company else None
     invoice.voucher_type = payload.voucher_type
+    invoice.supplier_invoice_number = payload.supplier_invoice_number
     if created_by is not None:
         invoice.created_by = created_by
 
