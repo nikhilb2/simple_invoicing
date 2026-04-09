@@ -33,6 +33,7 @@ export default function InvoicesPage() {
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [selectedLedgerId, setSelectedLedgerId] = useState('');
   const [voucherType, setVoucherType] = useState<'sales' | 'purchase'>('sales');
+  const [taxInclusive, setTaxInclusive] = useState(false);
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [showLedgerModal, setShowLedgerModal] = useState(false);
@@ -136,6 +137,9 @@ export default function InvoicesPage() {
       return sum;
     }
 
+    if (taxInclusive) {
+      return sum + unitPrice * quantity;
+    }
     const taxableAmount = unitPrice * quantity;
     const taxAmount = taxableAmount * gstRate / 100;
     return sum + taxableAmount + taxAmount;
@@ -160,6 +164,7 @@ export default function InvoicesPage() {
   function resetInvoiceForm() {
     setEditingInvoiceId(null);
     setSupplierInvoiceNumber('');
+    setTaxInclusive(false);
     const defaultProduct = products[0];
     setItems([createItem(1, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))]);
     setNextItemId(2);
@@ -182,6 +187,7 @@ export default function InvoicesPage() {
     setEditingInvoiceId(invoice.id);
     setVoucherType(invoice.voucher_type);
     setSupplierInvoiceNumber(invoice.supplier_invoice_number ?? '');
+    setTaxInclusive(invoice.tax_inclusive ?? false);
     setSelectedLedgerId(String(invoice.ledger_id));
     setInvoiceDate(invoice.invoice_date ? invoice.invoice_date.slice(0, 10) : new Date().toISOString().slice(0, 10));
 
@@ -209,6 +215,7 @@ export default function InvoicesPage() {
         voucher_type: voucherType,
         invoice_date: invoiceDate,
         supplier_invoice_number: voucherType === 'purchase' ? (supplierInvoiceNumber.trim() || null) : null,
+        tax_inclusive: taxInclusive,
         items: items.map((item) => ({
           product_id: Number(item.productId),
           quantity: Number(item.quantity),
@@ -532,14 +539,31 @@ export default function InvoicesPage() {
               </div>
             </div>
 
+            <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input
+                id="invoice-tax-inclusive"
+                type="checkbox"
+                checked={taxInclusive}
+                onChange={(event) => setTaxInclusive(event.target.checked)}
+              />
+              <label htmlFor="invoice-tax-inclusive" style={{ marginBottom: 0, cursor: 'pointer' }}>Prices include GST</label>
+            </div>
+
             <div className="stack">
               {items.map((item, index) => {
                 const selectedProduct = products.find((product) => product.id === Number(item.productId));
                 const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
                 const gstRate = selectedProduct?.gst_rate || 0;
-                const taxableAmount = unitPrice * Number(item.quantity || 0);
-                const taxAmount = taxableAmount * gstRate / 100;
-                const lineTotal = taxableAmount + taxAmount;
+                let lineTotal: number;
+                let taxAmount: number;
+                if (taxInclusive) {
+                  lineTotal = unitPrice * Number(item.quantity || 0);
+                  taxAmount = lineTotal - lineTotal / (1 + gstRate / 100);
+                } else {
+                  const taxableAmount = unitPrice * Number(item.quantity || 0);
+                  taxAmount = taxableAmount * gstRate / 100;
+                  lineTotal = taxableAmount + taxAmount;
+                }
 
                 return (
                   <div key={item.id} className="line-item">
@@ -572,7 +596,7 @@ export default function InvoicesPage() {
                     </div>
 
                     <div className="field">
-                      <label htmlFor={`invoice-price-${item.id}`}>Price</label>
+                      <label htmlFor={`invoice-price-${item.id}`}>{taxInclusive ? 'Amount (incl. GST)' : 'Price'}</label>
                       <input
                         id={`invoice-price-${item.id}`}
                         className="input"

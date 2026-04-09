@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, ForeignKey, DateTime, Numeric, String
+from sqlalchemy import Boolean, Column, Integer, ForeignKey, DateTime, Numeric, String
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.db.base import Base
@@ -38,6 +38,7 @@ class Invoice(Base):
     total_amount = Column(Numeric(10, 2), nullable=False)
     invoice_date = Column(DateTime, nullable=False, default=datetime.utcnow)
     due_date = Column(DateTime, nullable=True)
+    tax_inclusive = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     ledger = relationship("Buyer", back_populates="invoices")
