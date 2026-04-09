@@ -1,0 +1,17 @@
+from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from datetime import datetime
+from src.db.base import Base
+
+
+class InvoiceSeries(Base):
+    __tablename__ = "invoice_series"
+
+    id = Column(Integer, primary_key=True, index=True)
+    voucher_type = Column(String, nullable=False, unique=True)  # sales | purchase | payment
+    prefix = Column(String, nullable=False)
+    include_year = Column(Boolean, default=True, nullable=False)
+    year_format = Column(String, default="YYYY", nullable=False)  # 'YYYY' or 'MM-YYYY'
+    separator = Column(String, default="-", nullable=False)
+    next_sequence = Column(Integer, default=1, nullable=False)
+    pad_digits = Column(Integer, default=3, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

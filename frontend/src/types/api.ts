@@ -292,3 +292,23 @@ export type UserShortcut = {
 export type UserShortcutsResponse = {
   shortcuts: UserShortcut[];
 };
+
+export type InvoiceSeries = {
+  id: number;
+  voucher_type: string;
+  prefix: string;
+  include_year: boolean;
+  year_format: 'YYYY' | 'MM-YYYY';
+  separator: string;
+  next_sequence: number;
+  pad_digits: 2 | 3 | 4;
+  created_at: string | null;
+};
+
+export type InvoiceSeriesUpdate = {
+  prefix: string;
+  include_year: boolean;
+  year_format: 'YYYY' | 'MM-YYYY';
+  separator: string;
+  pad_digits: 2 | 3 | 4;
+};
