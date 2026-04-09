@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Eye, Pencil, Trash2 } from 'lucide-react';
+import { Eye, Pencil, Trash2, RotateCcw } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerCreate, PaginatedInvoices, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
@@ -69,6 +69,11 @@ export default function InvoicesPage() {
   const [deletingInvoiceId, setDeletingInvoiceId] = useState<number | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [pendingDeleteInvoiceId, setPendingDeleteInvoiceId] = useState<number | null>(null);
+  const [cancellingInvoiceId, setCancellingInvoiceId] = useState<number | null>(null);
+  const [restoringInvoiceId, setRestoringInvoiceId] = useState<number | null>(null);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [pendingCancelInvoiceId, setPendingCancelInvoiceId] = useState<number | null>(null);
+  const [showCancelled, setShowCancelled] = useState(false);
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -88,7 +93,7 @@ export default function InvoicesPage() {
         api.get<{ items: Product[] }>('/products/', { params: { page_size: 500 } }),
         api.get<{ items: Ledger[] }>('/ledgers/', { params: { page_size: 500 } }),
         api.get<PaginatedInvoices>('/invoices/', {
-          params: { page: invoicePage, page_size: invoicePageSize, search: invoiceSearch },
+          params: { page: invoicePage, page_size: invoicePageSize, search: invoiceSearch, show_cancelled: showCancelled },
         }),
         api.get<CompanyProfile>('/company/'),
       ]);
@@ -119,7 +124,7 @@ export default function InvoicesPage() {
 
   useEffect(() => {
     void loadInvoicePageData();
-  }, [invoicePage, invoiceSearch]);
+  }, [invoicePage, invoiceSearch, showCancelled]);
 
   const totalAmount = items.reduce((sum, item) => {
     const product = products.find((entry) => entry.id === Number(item.productId));
@@ -263,6 +268,55 @@ export default function InvoicesPage() {
     } finally {
       setDeletingInvoiceId(null);
       setPendingDeleteInvoiceId(null);
+    }
+  }
+
+  async function handleCancelInvoice(invoiceId: number) {
+    setPendingCancelInvoiceId(invoiceId);
+    setShowCancelDialog(true);
+  }
+
+  function dismissCancelDialog() {
+    setShowCancelDialog(false);
+    setPendingCancelInvoiceId(null);
+  }
+
+  async function confirmCancelInvoice() {
+    if (pendingCancelInvoiceId === null) return;
+    setShowCancelDialog(false);
+
+    try {
+      setCancellingInvoiceId(pendingCancelInvoiceId);
+      setError('');
+      setSuccess('');
+      await api.delete(`/invoices/${pendingCancelInvoiceId}`);
+
+      if (editingInvoiceId === pendingCancelInvoiceId) {
+        resetInvoiceForm();
+      }
+
+      setSuccess('Invoice cancelled. Inventory has been reversed.');
+      await loadInvoicePageData();
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to cancel invoice'));
+    } finally {
+      setCancellingInvoiceId(null);
+      setPendingCancelInvoiceId(null);
+    }
+  }
+
+  async function handleRestoreInvoice(invoiceId: number) {
+    try {
+      setRestoringInvoiceId(invoiceId);
+      setError('');
+      setSuccess('');
+      await api.post(`/invoices/${invoiceId}/restore`);
+      setSuccess('Invoice restored. Inventory has been re-applied.');
+      await loadInvoicePageData();
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to restore invoice'));
+    } finally {
+      setRestoringInvoiceId(null);
     }
   }
 
@@ -589,6 +643,18 @@ export default function InvoicesPage() {
             />
           </div>
 
+          <div className="button-row">
+            <button
+              type="button"
+              id="toggle-show-cancelled"
+              className={`button ${showCancelled ? 'button--primary' : 'button--secondary'}`}
+              onClick={() => { setShowCancelled((v) => !v); setInvoicePage(1); }}
+              aria-pressed={showCancelled}
+            >
+              {showCancelled ? 'Hide Cancelled' : 'Show Cancelled'}
+            </button>
+          </div>
+
           <div className="invoice-list">
             {loading ? (
               <div className="empty-state">
@@ -625,9 +691,13 @@ export default function InvoicesPage() {
                             <span className="invoice-row__invoice-id">Supplier Ref: {invoice.supplier_invoice_number}</span>
                           ) : null}
                         </div>
-                        <span className={`invoice-type-badge invoice-type-badge--${invoice.voucher_type}`}>
-                          {invoice.voucher_type === 'sales' ? 'Sales' : 'Purchase'}
-                        </span>
+                        {invoice.status === 'cancelled' ? (
+                          <span className="invoice-type-badge" style={{ background: '#fee2e2', color: '#b91c1c' }}>Cancelled</span>
+                        ) : (
+                          <span className={`invoice-type-badge invoice-type-badge--${invoice.voucher_type}`}>
+                            {invoice.voucher_type === 'sales' ? 'Sales' : 'Purchase'}
+                          </span>
+                        )}
                       </div>
 
                       <div className="invoice-row__chips">
@@ -682,26 +752,41 @@ export default function InvoicesPage() {
                         >
                           <Eye size={16} />
                         </button>
-                        <button
-                          type="button"
-                          className="button button--ghost button--icon"
-                          onClick={() => startEditingInvoice(invoice)}
-                          disabled={submitting}
-                          title="Edit invoice"
-                          aria-label={`Edit invoice ${invoice.invoice_number || invoice.id}`}
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          type="button"
-                          className="button button--danger button--icon"
-                          onClick={() => void handleDeleteInvoice(invoice.id)}
-                          disabled={deletingInvoiceId === invoice.id}
-                          title="Delete invoice"
-                          aria-label={`Delete invoice ${invoice.invoice_number || invoice.id}`}
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        {invoice.status !== 'cancelled' ? (
+                          <button
+                            type="button"
+                            className="button button--ghost button--icon"
+                            onClick={() => startEditingInvoice(invoice)}
+                            disabled={submitting}
+                            title="Edit invoice"
+                            aria-label={`Edit invoice ${invoice.invoice_number || invoice.id}`}
+                          >
+                            <Pencil size={16} />
+                          </button>
+                        ) : null}
+                        {invoice.status === 'cancelled' ? (
+                          <button
+                            type="button"
+                            className="button button--ghost button--icon"
+                            onClick={() => void handleRestoreInvoice(invoice.id)}
+                            disabled={restoringInvoiceId === invoice.id}
+                            title="Restore invoice"
+                            aria-label={`Restore invoice ${invoice.invoice_number || invoice.id}`}
+                          >
+                            <RotateCcw size={16} />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="button button--danger button--icon"
+                            onClick={() => void handleCancelInvoice(invoice.id)}
+                            disabled={cancellingInvoiceId === invoice.id}
+                            title="Cancel invoice"
+                            aria-label={`Cancel invoice ${invoice.invoice_number || invoice.id}`}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1034,6 +1119,18 @@ export default function InvoicesPage() {
           danger={true}
           onConfirm={() => void confirmDeleteInvoice()}
           onCancel={cancelDeleteInvoice}
+        />
+      ) : null}
+
+      {showCancelDialog ? (
+        <ConfirmDialog
+          message={`Are you sure you want to cancel invoice #${pendingCancelInvoiceId}? Inventory will be reversed. The invoice will remain visible when showing cancelled invoices.`}
+          title="Cancel invoice"
+          confirmText="Cancel invoice"
+          cancelText="Keep"
+          danger={true}
+          onConfirm={() => void confirmCancelInvoice()}
+          onCancel={dismissCancelDialog}
         />
       ) : null}
     </div>
