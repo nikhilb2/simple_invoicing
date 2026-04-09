@@ -1024,6 +1024,44 @@ textarea {
   text-align: right;
 }
 
+.invoice-sheet__header-right {
+  text-align: right;
+}
+
+.invoice-sheet__header-right h3 {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.invoice-sheet__titleblock {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: white;
+  border: 1px solid #d9e2f2;
+  border-radius: 14px;
+}
+
+.invoice-sheet__titleblock h2 {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.invoice-sheet__titleblock p {
+  margin-left: auto;
+}
+
+.invoice-sheet__supplierref {
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+.invoice-sheet__supplierref-value {
+  font-weight: 600;
+  margin-left: 4px;
+}
+
 .invoice-badge {
   display: inline-block;
   padding: 6px 10px;
@@ -1032,6 +1070,12 @@ textarea {
   color: #1d4ed8;
   font-weight: 700;
   margin-bottom: 8px;
+}
+
+.invoice-badge--purchase {
+  background: #d1fae5;
+  color: #065f46;
+  margin-bottom: 0;
 }
 
 .invoice-sheet__billto {

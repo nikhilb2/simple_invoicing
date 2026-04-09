@@ -482,4 +482,211 @@ test.describe('Invoices', () => {
     await page.waitForTimeout(500);
     await expect(page.locator('#invoice-tax-inclusive')).not.toBeChecked();
   });
+
+  // ---------------------------------------------------------------------------
+  // Purchase invoice PDF layout (#186)
+  // ---------------------------------------------------------------------------
+
+  test('purchase invoice preview shows supplier on left and company on right', async ({ authedPage: page }) => {
+    const { sku, ledgerName } = await seedInvoiceData(page);
+
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
+    const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId, sku);
+    await page.locator('[id^="invoice-quantity-"]').first().fill('1');
+    await page.click('button:has-text("Create invoice")');
+    await expectSuccess(page, 'Purchase invoice created');
+
+    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
+    await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
+
+    const modal = page.locator('[role="dialog"]');
+    await expect(modal).toBeVisible();
+
+    // Left column: Supplier eyebrow + ledger name as supplier name
+    await expect(modal.locator('.invoice-sheet__header .eyebrow').first()).toContainText('Supplier');
+    await expect(modal.locator('.invoice-sheet__header h3').first()).toContainText(ledgerName);
+
+    // Right column: "Bill To" eyebrow
+    await expect(modal.locator('.invoice-sheet__header-right .eyebrow')).toContainText('Bill To');
+
+    // Purchase-specific title block with green badge
+    await expect(modal.locator('.invoice-badge--purchase')).toBeVisible();
+    await expect(modal.locator('.invoice-badge--purchase')).toContainText('Purchase Invoice');
+
+    // Sales-specific header must NOT appear
+    await expect(modal.locator('.eyebrow:text("Billed by")')).not.toBeVisible();
+  });
+
+  test('purchase invoice preview shows supplier ref when provided', async ({ authedPage: page }) => {
+    const { sku, ledgerName } = await seedInvoiceData(page);
+    const supplierRef = `SP-${Date.now().toString(36).toUpperCase()}`;
+
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
+    const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId, sku);
+    await page.locator('[id^="invoice-quantity-"]').first().fill('1');
+    await page.fill('#invoice-supplier-ref', supplierRef);
+    await page.click('button:has-text("Create invoice")');
+    await expectSuccess(page, 'Purchase invoice created');
+
+    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
+    await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
+
+    const modal = page.locator('[role="dialog"]');
+    await expect(modal).toBeVisible();
+
+    const supplierRefSection = modal.locator('.invoice-sheet__supplierref');
+    await expect(supplierRefSection).toBeVisible();
+    await expect(supplierRefSection).toContainText('Supplier Ref:');
+    await expect(supplierRefSection).toContainText(supplierRef);
+  });
+
+  test('purchase invoice preview without supplier ref hides supplier ref row', async ({ authedPage: page }) => {
+    const { sku, ledgerName } = await seedInvoiceData(page);
+
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
+    const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId, sku);
+    await page.locator('[id^="invoice-quantity-"]').first().fill('1');
+    // No supplier ref filled
+    await page.click('button:has-text("Create invoice")');
+    await expectSuccess(page, 'Purchase invoice created');
+
+    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
+    await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
+
+    const modal = page.locator('[role="dialog"]');
+    await expect(modal).toBeVisible();
+    await expect(modal.locator('.invoice-sheet__supplierref')).not.toBeVisible();
+  });
+
+  test('purchase invoice preview has no bank details and shows tax breakup', async ({ authedPage: page }) => {
+    const { sku, ledgerName } = await seedInvoiceData(page);
+
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
+    const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId, sku);
+    await page.locator('[id^="invoice-quantity-"]').first().fill('1');
+    await page.click('button:has-text("Create invoice")');
+    await expectSuccess(page, 'Purchase invoice created');
+
+    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
+    await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
+
+    const modal = page.locator('[role="dialog"]');
+    await expect(modal).toBeVisible();
+
+    // No bank/payment details section
+    await expect(modal.locator('.invoice-sheet__bank')).not.toBeVisible();
+
+    // Tax breakup still present
+    await expect(modal.locator('.invoice-sheet__totals')).toBeVisible();
+    await expect(modal.locator('.invoice-sheet__totals')).toContainText('Tax breakup');
+  });
+
+  test('sales invoice preview layout is unchanged', async ({ authedPage: page }) => {
+    const { sku, ledgerName } = await seedInvoiceData(page);
+
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    await page.selectOption('#invoice-voucher-type', 'sales');
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
+    const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId, sku);
+    await page.locator('[id^="invoice-quantity-"]').first().fill('1');
+    await page.click('button:has-text("Create invoice")');
+    await expectSuccess(page, 'Sales invoice created');
+
+    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
+    await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
+
+    const modal = page.locator('[role="dialog"]');
+    await expect(modal).toBeVisible();
+
+    // Sales layout: "Billed by" on the left
+    await expect(modal.locator('.invoice-sheet__header .eyebrow').first()).toContainText('Billed by');
+
+    // Bank / payment details block present
+    await expect(modal.locator('.invoice-sheet__bank')).toBeVisible();
+    await expect(modal.locator('.invoice-sheet__bank')).toContainText('Payment details');
+
+    // No purchase-specific badge
+    await expect(modal.locator('.invoice-badge--purchase')).not.toBeVisible();
+  });
+
+  test('purchase invoice PDF endpoint returns 200 and application/pdf', async ({ authedPage: page }) => {
+    const { sku, ledgerName } = await seedInvoiceData(page);
+
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
+    const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId, sku);
+    await page.locator('[id^="invoice-quantity-"]').first().fill('1');
+    await page.fill('#invoice-supplier-ref', 'SP-E2E-PDF');
+    await page.click('button:has-text("Create invoice")');
+    await expectSuccess(page, 'Purchase invoice created');
+
+    // Open preview and click Download PDF — intercept the network request
+    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
+    await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
+
+    const modal = page.locator('[role="dialog"]');
+    await expect(modal).toBeVisible();
+
+    const [pdfResponse] = await Promise.all([
+      page.waitForResponse(res => res.url().includes('/invoices/') && res.url().endsWith('/pdf')),
+      modal.locator('[aria-label="Download invoice PDF"]').click(),
+    ]);
+    expect(pdfResponse.status()).toBe(200);
+    expect(pdfResponse.headers()['content-type']).toContain('application/pdf');
+  });
+
+  test('sales invoice PDF endpoint returns 200 and application/pdf', async ({ authedPage: page }) => {
+    const { sku, ledgerName } = await seedInvoiceData(page);
+
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    await page.selectOption('#invoice-voucher-type', 'sales');
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
+    const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId, sku);
+    await page.locator('[id^="invoice-quantity-"]').first().fill('1');
+    await page.click('button:has-text("Create invoice")');
+    await expectSuccess(page, 'Sales invoice created');
+
+    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
+    await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
+
+    const modal = page.locator('[role="dialog"]');
+    await expect(modal).toBeVisible();
+
+    const [pdfResponse] = await Promise.all([
+      page.waitForResponse(res => res.url().includes('/invoices/') && res.url().endsWith('/pdf')),
+      modal.locator('[aria-label="Download invoice PDF"]').click(),
+    ]);
+    expect(pdfResponse.status()).toBe(200);
+    expect(pdfResponse.headers()['content-type']).toContain('application/pdf');
+  });
 });
