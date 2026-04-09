@@ -132,6 +132,7 @@ def _apply_payload_to_invoice(
     if payload.due_date is not None:
         invoice.due_date = datetime.combine(payload.due_date, datetime.min.time())
 
+    invoice.tax_inclusive = payload.tax_inclusive
     invoice.invoice_number = _generate_next_number(db, invoice.voucher_type)
 
     if not invoice.company_gst or not invoice.ledger_gst:
@@ -174,9 +175,16 @@ def _apply_payload_to_invoice(
         # GST rate is snapshotted from the product at invoice time.
         unit_price = Decimal(str(item.unit_price)) if item.unit_price is not None else Decimal(str(product.price))
         gst_rate = Decimal(str(product.gst_rate or 0))
-        taxable_amount = _money(unit_price * Decimal(item.quantity))
-        tax_amount = _money(taxable_amount * gst_rate / Decimal("100"))
-        line_total = _money(taxable_amount + tax_amount)
+
+        if payload.tax_inclusive:
+            # Entered price already includes tax; back-calculate taxable amount
+            line_total = _money(unit_price * Decimal(item.quantity))
+            taxable_amount = _money(line_total / (1 + gst_rate / Decimal("100")))
+            tax_amount = _money(line_total - taxable_amount)
+        else:
+            taxable_amount = _money(unit_price * Decimal(item.quantity))
+            tax_amount = _money(taxable_amount * gst_rate / Decimal("100"))
+            line_total = _money(taxable_amount + tax_amount)
 
         if interstate_supply:
             igst_amount = tax_amount

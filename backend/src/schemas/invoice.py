@@ -16,6 +16,7 @@ class InvoiceCreate(BaseModel):
     invoice_date: Optional[date] = None
     due_date: Optional[date] = None
     supplier_invoice_number: str | None = None
+    tax_inclusive: bool = False
     items: List[InvoiceItemCreate]
 
 
@@ -66,6 +67,7 @@ class InvoiceOut(BaseModel):
     total_amount: float
     invoice_date: datetime
     due_date: datetime | None = None
+    tax_inclusive: bool = False
     created_at: datetime
     items: list[InvoiceItemOut] = Field(default_factory=list)
 

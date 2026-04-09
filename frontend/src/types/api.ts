@@ -140,6 +140,7 @@ export type Invoice = {
   company_ifsc_code: string | null;
   voucher_type: 'sales' | 'purchase';
   status: 'active' | 'cancelled';
+  tax_inclusive: boolean;
   supplier_invoice_number?: string | null;
   ledger: Ledger | null;
   taxable_amount: number;
@@ -178,6 +179,7 @@ export type InvoiceCreate = {
   invoice_date?: string;
   due_date?: string;
   supplier_invoice_number?: string | null;
+  tax_inclusive?: boolean;
   items: InvoiceItemInput[];
 };
 
