@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Eye, Pencil, Trash2, RotateCcw } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
-import type { CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerCreate, PaginatedInvoices, Product } from '../types/api';
+import type { CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerCreate, PaginatedInvoices, Payment, PaymentCreate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
 import ConfirmDialog from '../components/ConfirmDialog';
 import StatusToasts from '../components/StatusToasts';
@@ -32,9 +32,15 @@ export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [selectedLedgerId, setSelectedLedgerId] = useState('');
-  const [voucherType, setVoucherType] = useState<'sales' | 'purchase'>('sales');
+  const [voucherType, setVoucherType] = useState<'sales' | 'purchase' | 'payment'>('sales');
   const [taxInclusive, setTaxInclusive] = useState(false);
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
+  const [paymentMode, setPaymentMode] = useState('cash');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [listTab, setListTab] = useState<'invoices' | 'payments'>('invoices');
+  const [loadingPayments, setLoadingPayments] = useState(false);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [showLedgerModal, setShowLedgerModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
@@ -123,6 +129,18 @@ export default function InvoicesPage() {
     }
   }
 
+  async function loadPayments() {
+    try {
+      setLoadingPayments(true);
+      const res = await api.get<Payment[]>('/payments/');
+      setPayments(res.data);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to load payment vouchers'));
+    } finally {
+      setLoadingPayments(false);
+    }
+  }
+
   useEffect(() => {
     void loadInvoicePageData();
   }, [invoicePage, invoiceSearch, showCancelled]);
@@ -165,6 +183,9 @@ export default function InvoicesPage() {
     setEditingInvoiceId(null);
     setSupplierInvoiceNumber('');
     setTaxInclusive(false);
+    setPaymentMode('cash');
+    setPaymentReference('');
+    setPaymentAmount('');
     const defaultProduct = products[0];
     setItems([createItem(1, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))]);
     setNextItemId(2);
@@ -204,6 +225,35 @@ export default function InvoicesPage() {
 
   async function handleSubmitInvoice(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (voucherType === 'payment') {
+      try {
+        setSubmitting(true);
+        setError('');
+        setSuccess('');
+
+        const payload: PaymentCreate = {
+          ledger_id: Number(selectedLedgerId),
+          voucher_type: 'payment',
+          amount: Number(paymentAmount),
+          date: invoiceDate ? new Date(invoiceDate).toISOString() : undefined,
+          mode: paymentMode || undefined,
+          reference: paymentReference.trim() || undefined,
+        };
+
+        await api.post<Payment>('/payments/', payload);
+        setSuccess('Payment voucher created successfully.');
+        resetInvoiceForm();
+        if (listTab === 'payments') {
+          await loadPayments();
+        }
+      } catch (err) {
+        setError(getApiErrorMessage(err, 'Unable to create payment voucher'));
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
 
     try {
       setSubmitting(true);
@@ -482,10 +532,11 @@ export default function InvoicesPage() {
                   id="invoice-voucher-type"
                   className="select"
                   value={voucherType}
-                  onChange={(event) => setVoucherType(event.target.value as 'sales' | 'purchase')}
+                  onChange={(event) => setVoucherType(event.target.value as 'sales' | 'purchase' | 'payment')}
                 >
                   <option value="sales">Sales</option>
                   <option value="purchase">Purchase</option>
+                  <option value="payment">Payment</option>
                 </select>
               </div>
 
@@ -530,109 +581,169 @@ export default function InvoicesPage() {
                 <button type="button" className="button button--secondary" onClick={() => setShowLedgerModal(true)} title="Add ledger" aria-label="Add ledger">
                   Add ledger
                 </button>
-                <button type="button" className="button button--secondary" onClick={() => setShowProductModal(true)} title="Add product" aria-label="Add product">
-                  Add product
-                </button>
-                <button type="button" className="button button--secondary" onClick={() => setShowStockModal(true)} title="Update stock" aria-label="Update stock">
-                  Update stock
-                </button>
+                {voucherType !== 'payment' ? (
+                  <button type="button" className="button button--secondary" onClick={() => setShowProductModal(true)} title="Add product" aria-label="Add product">
+                    Add product
+                  </button>
+                ) : null}
+                {voucherType !== 'payment' ? (
+                  <button type="button" className="button button--secondary" onClick={() => setShowStockModal(true)} title="Update stock" aria-label="Update stock">
+                    Update stock
+                  </button>
+                ) : null}
               </div>
             </div>
 
-            <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input
-                id="invoice-tax-inclusive"
-                type="checkbox"
-                checked={taxInclusive}
-                onChange={(event) => setTaxInclusive(event.target.checked)}
-              />
-              <label htmlFor="invoice-tax-inclusive" style={{ marginBottom: 0, cursor: 'pointer' }}>Prices include GST</label>
-            </div>
+            {voucherType !== 'payment' ? (
+              <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  id="invoice-tax-inclusive"
+                  type="checkbox"
+                  checked={taxInclusive}
+                  onChange={(event) => setTaxInclusive(event.target.checked)}
+                />
+                <label htmlFor="invoice-tax-inclusive" style={{ marginBottom: 0, cursor: 'pointer' }}>Prices include GST</label>
+              </div>
+            ) : null}
 
-            <div className="stack">
-              {items.map((item, index) => {
-                const selectedProduct = products.find((product) => product.id === Number(item.productId));
-                const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
-                const gstRate = selectedProduct?.gst_rate || 0;
-                let lineTotal: number;
-                let taxAmount: number;
-                if (taxInclusive) {
-                  lineTotal = unitPrice * Number(item.quantity || 0);
-                  taxAmount = lineTotal - lineTotal / (1 + gstRate / 100);
-                } else {
-                  const taxableAmount = unitPrice * Number(item.quantity || 0);
-                  taxAmount = taxableAmount * gstRate / 100;
-                  lineTotal = taxableAmount + taxAmount;
-                }
+            {voucherType === 'payment' ? (
+              <div className="field-grid">
+                <div className="field">
+                  <label htmlFor="payment-mode">Payment mode</label>
+                  <select
+                    id="payment-mode"
+                    className="select"
+                    value={paymentMode}
+                    onChange={(event) => setPaymentMode(event.target.value)}
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="upi">UPI</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="payment-reference">Reference #</label>
+                  <input
+                    id="payment-reference"
+                    className="input"
+                    type="text"
+                    value={paymentReference}
+                    onChange={(event) => setPaymentReference(event.target.value)}
+                    placeholder="Cheque no. or UPI transaction ID"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="payment-amount">Amount</label>
+                  <input
+                    id="payment-amount"
+                    className="input"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={paymentAmount}
+                    onChange={(event) => setPaymentAmount(event.target.value)}
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+              </div>
+            ) : null}
 
-                return (
-                  <div key={item.id} className="line-item">
-                    <div className="field">
-                      <label htmlFor={`invoice-product-${item.id}`}>Line {index + 1}</label>
-                      <ProductCombobox
-                        id={`invoice-product-${item.id}`}
-                        products={products}
-                        value={item.productId}
-                        onChange={(productId, newProduct) => {
-                          updateItem(item.id, 'productId', productId);
-                          updateItem(item.id, 'unit_price', String(newProduct.price));
-                        }}
-                        required
-                      />
+            {voucherType !== 'payment' ? (
+              <div className="stack">
+                {items.map((item, index) => {
+                  const selectedProduct = products.find((product) => product.id === Number(item.productId));
+                  const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
+                  const gstRate = selectedProduct?.gst_rate || 0;
+                  let lineTotal: number;
+                  let taxAmount: number;
+                  if (taxInclusive) {
+                    lineTotal = unitPrice * Number(item.quantity || 0);
+                    taxAmount = lineTotal - lineTotal / (1 + gstRate / 100);
+                  } else {
+                    const taxableAmount = unitPrice * Number(item.quantity || 0);
+                    taxAmount = taxableAmount * gstRate / 100;
+                    lineTotal = taxableAmount + taxAmount;
+                  }
+
+                  return (
+                    <div key={item.id} className="line-item">
+                      <div className="field">
+                        <label htmlFor={`invoice-product-${item.id}`}>Line {index + 1}</label>
+                        <ProductCombobox
+                          id={`invoice-product-${item.id}`}
+                          products={products}
+                          value={item.productId}
+                          onChange={(productId, newProduct) => {
+                            updateItem(item.id, 'productId', productId);
+                            updateItem(item.id, 'unit_price', String(newProduct.price));
+                          }}
+                          required
+                        />
+                      </div>
+
+                      <div className="field">
+                        <label htmlFor={`invoice-quantity-${item.id}`}>Qty</label>
+                        <input
+                          id={`invoice-quantity-${item.id}`}
+                          className="input"
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={item.quantity}
+                          onChange={(event) => updateItem(item.id, 'quantity', event.target.value)}
+                          required
+                        />
+                      </div>
+
+                      <div className="field">
+                        <label htmlFor={`invoice-price-${item.id}`}>{taxInclusive ? 'Amount (incl. GST)' : 'Price'}</label>
+                        <input
+                          id={`invoice-price-${item.id}`}
+                          className="input"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={item.unit_price}
+                          onChange={(event) => updateItem(item.id, 'unit_price', event.target.value)}
+                          placeholder={selectedProduct ? String(selectedProduct.price) : '0.00'}
+                        />
+                      </div>
+
+                      <div className="line-item__price">
+                        {formatCurrency(lineTotal, activeCurrencyCode)}
+                        <div className="table-subtext">Incl GST {gstRate}% ({formatCurrency(taxAmount, activeCurrencyCode)})</div>
+                      </div>
+                      <button type="button" className="button button--danger" onClick={() => removeItem(item.id)} title={`Remove line item ${index + 1}`} aria-label={`Remove line item ${index + 1}`}>
+                        Remove
+                      </button>
                     </div>
-
-                    <div className="field">
-                      <label htmlFor={`invoice-quantity-${item.id}`}>Qty</label>
-                      <input
-                        id={`invoice-quantity-${item.id}`}
-                        className="input"
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={item.quantity}
-                        onChange={(event) => updateItem(item.id, 'quantity', event.target.value)}
-                        required
-                      />
-                    </div>
-
-                    <div className="field">
-                      <label htmlFor={`invoice-price-${item.id}`}>{taxInclusive ? 'Amount (incl. GST)' : 'Price'}</label>
-                      <input
-                        id={`invoice-price-${item.id}`}
-                        className="input"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={item.unit_price}
-                        onChange={(event) => updateItem(item.id, 'unit_price', event.target.value)}
-                        placeholder={selectedProduct ? String(selectedProduct.price) : '0.00'}
-                      />
-                    </div>
-
-                    <div className="line-item__price">
-                      {formatCurrency(lineTotal, activeCurrencyCode)}
-                      <div className="table-subtext">Incl GST {gstRate}% ({formatCurrency(taxAmount, activeCurrencyCode)})</div>
-                    </div>
-                    <button type="button" className="button button--danger" onClick={() => removeItem(item.id)} title={`Remove line item ${index + 1}`} aria-label={`Remove line item ${index + 1}`}>
-                      Remove
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            ) : null}
 
             <div className="button-row">
-              <button type="button" className="button button--ghost" onClick={addItem} disabled={products.length === 0} title="Add line item" aria-label="Add line item">
-                Add line item
-              </button>
+              {voucherType !== 'payment' ? (
+                <button type="button" className="button button--ghost" onClick={addItem} disabled={products.length === 0} title="Add line item" aria-label="Add line item">
+                  Add line item
+                </button>
+              ) : null}
               {editingInvoiceId ? (
                 <button type="button" className="button button--secondary" onClick={resetInvoiceForm} title="Cancel invoice edit" aria-label="Cancel invoice edit">
                   Cancel edit
                 </button>
               ) : null}
-              <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId} title={editingInvoiceId ? "Update invoice" : "Create invoice"} aria-label={editingInvoiceId ? "Update invoice" : "Create invoice"}>
-                {submitting ? (editingInvoiceId ? 'Updating invoice...' : 'Creating invoice...') : editingInvoiceId ? 'Update invoice' : 'Create invoice'}
-              </button>
+              {voucherType === 'payment' ? (
+                <button className="button button--primary" disabled={submitting || !selectedLedgerId || !paymentAmount} title="Create payment voucher" aria-label="Create payment voucher">
+                  {submitting ? 'Creating payment...' : 'Create payment voucher'}
+                </button>
+              ) : (
+                <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId} title={editingInvoiceId ? 'Update invoice' : 'Create invoice'} aria-label={editingInvoiceId ? 'Update invoice' : 'Create invoice'}>
+                  {submitting ? (editingInvoiceId ? 'Updating invoice...' : 'Creating invoice...') : editingInvoiceId ? 'Update invoice' : 'Create invoice'}
+                </button>
+              )}
             </div>
           </form>
         </article>
@@ -645,18 +756,41 @@ export default function InvoicesPage() {
             </div>
           </div>
 
-          <div className="summary-box">
-            <p className="eyebrow">Total listed value</p>
-            <p className="summary-box__value">
-              {formatCurrency(invoices.reduce((sum, invoice) => sum + invoice.total_amount, 0), activeCurrencyCode)}
-            </p>
+          <div className="button-row">
+            <button
+              type="button"
+              id="tab-invoices"
+              className={`button ${listTab === 'invoices' ? 'button--primary' : 'button--secondary'}`}
+              onClick={() => setListTab('invoices')}
+              aria-pressed={listTab === 'invoices'}
+            >
+              Invoices
+            </button>
+            <button
+              type="button"
+              id="tab-payments"
+              className={`button ${listTab === 'payments' ? 'button--primary' : 'button--secondary'}`}
+              onClick={() => { setListTab('payments'); void loadPayments(); }}
+              aria-pressed={listTab === 'payments'}
+            >
+              Payment Vouchers
+            </button>
           </div>
 
-          <div className="field">
-            <label htmlFor="invoice-search">Search by ledger name</label>
-            <input
-              id="invoice-search"
-              className="input"
+          {listTab === 'invoices' ? (
+            <>
+              <div className="summary-box">
+                <p className="eyebrow">Total listed value</p>
+                <p className="summary-box__value">
+                  {formatCurrency(invoices.reduce((sum, invoice) => sum + invoice.total_amount, 0), activeCurrencyCode)}
+                </p>
+              </div>
+
+              <div className="field">
+                <label htmlFor="invoice-search">Search by ledger name</label>
+                <input
+                  id="invoice-search"
+                  className="input"
               type="search"
               placeholder="Type to search invoices..."
               value={invoiceSearch}
@@ -845,6 +979,51 @@ export default function InvoicesPage() {
               </button>
             </div>
           ) : null}
+            </>
+          ) : (
+            <>
+              {loadingPayments ? (
+                <div className="empty-state">
+                  <p style={{ fontSize: '0.95rem' }}>Loading payment vouchers...</p>
+                </div>
+              ) : null}
+              {!loadingPayments && payments.length === 0 ? (
+                <div className="empty-state">
+                  <p style={{ fontWeight: 600, marginBottom: '8px' }}>No payment vouchers yet</p>
+                  <p>Select &ldquo;Payment&rdquo; in the voucher type and create one above.</p>
+                </div>
+              ) : null}
+              <div className="invoice-list">
+                {payments.map((payment) => {
+                  const payee = ledgers.find((l) => l.id === payment.ledger_id);
+                  return (
+                    <div key={payment.id} className="invoice-row invoice-row--payment">
+                      <div className="invoice-row__main">
+                        <div className="invoice-row__header">
+                          <div className="invoice-row__identity">
+                            <strong className="invoice-row__ledger-name">{payee?.name ?? `Ledger #${payment.ledger_id}`}</strong>
+                            <span className="invoice-row__invoice-id">{payment.payment_number ?? `PAY-#${payment.id}`}</span>
+                          </div>
+                          <span className="invoice-type-badge">Payment</span>
+                        </div>
+                        <div className="invoice-row__chips">
+                          <span className="invoice-meta-chip">Date {new Date(payment.date).toLocaleDateString()}</span>
+                          {payment.mode ? <span className="invoice-meta-chip">Mode: {payment.mode}</span> : null}
+                          {payment.reference ? <span className="invoice-meta-chip">Ref: {payment.reference}</span> : null}
+                        </div>
+                      </div>
+                      <div className="invoice-row__aside">
+                        <div className="invoice-row__totals">
+                          <span className="invoice-row__amount">Debit</span>
+                          <span className="invoice-row__price">{formatCurrency(payment.amount, activeCurrencyCode)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </article>
       </section>
 

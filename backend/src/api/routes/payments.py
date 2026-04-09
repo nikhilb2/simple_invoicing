@@ -9,6 +9,7 @@ from src.models.buyer import Buyer as Ledger
 from src.models.payment import Payment
 from src.models.user import User, UserRole
 from src.schemas.payment import PaymentCreate, PaymentOut
+from src.services.series import generate_next_number
 
 router = APIRouter()
 
@@ -24,6 +25,8 @@ def create_payment(
     if not ledger:
         raise HTTPException(status_code=404, detail="Ledger not found")
 
+    payment_number = generate_next_number(db, payload.voucher_type)
+
     payment = Payment(
         ledger_id=payload.ledger_id,
         voucher_type=payload.voucher_type,
@@ -32,6 +35,7 @@ def create_payment(
         mode=payload.mode.strip() if payload.mode else None,
         reference=payload.reference.strip() if payload.reference else None,
         notes=payload.notes.strip() if payload.notes else None,
+        payment_number=payment_number,
         created_by=current_user.id,
     )
     db.add(payment)
