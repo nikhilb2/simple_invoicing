@@ -271,4 +271,86 @@ test.describe('Invoices', () => {
     await ctaButton.click();
     await expect(page.locator('#invoice-voucher-type')).toBeFocused();
   });
+
+  test('supplier invoice # field is hidden for sales invoices', async ({ authedPage: page }) => {
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    await page.selectOption('#invoice-voucher-type', 'sales');
+    await expect(page.locator('#invoice-supplier-ref')).not.toBeVisible();
+  });
+
+  test('supplier invoice # field is visible for purchase invoices', async ({ authedPage: page }) => {
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await expect(page.locator('#invoice-supplier-ref')).toBeVisible();
+  });
+
+  test('creates a purchase invoice with supplier invoice number and shows it in the list', async ({ authedPage: page }) => {
+    const { sku, ledgerName } = await seedInvoiceData(page);
+    const supplierRef = `SUP-${Date.now().toString(36).toUpperCase()}`;
+
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    await page.selectOption('#invoice-voucher-type', 'purchase');
+
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
+
+    const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId, sku);
+    await page.locator('[id^="invoice-quantity-"]').first().fill('3');
+
+    await page.fill('#invoice-supplier-ref', supplierRef);
+
+    await page.click('button:has-text("Create invoice")');
+    await expectSuccess(page, 'Purchase invoice created');
+
+    // Verify supplier ref appears in the invoice list row
+    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
+    await expect(invoiceRow).toContainText(`Supplier Ref: ${supplierRef}`);
+  });
+
+  test('supplier invoice # field clears when switching from purchase to sales', async ({ authedPage: page }) => {
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await page.fill('#invoice-supplier-ref', 'TEMP-REF-123');
+
+    // Switch to sales — field should disappear
+    await page.selectOption('#invoice-voucher-type', 'sales');
+    await expect(page.locator('#invoice-supplier-ref')).not.toBeVisible();
+
+    // Switch back to purchase — field should appear empty (state preserved but not visible)
+    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await expect(page.locator('#invoice-supplier-ref')).toBeVisible();
+  });
+
+  test('edit preserves supplier invoice number for purchase invoice', async ({ authedPage: page }) => {
+    const { sku, ledgerName } = await seedInvoiceData(page);
+    const supplierRef = `EDIT-${Date.now().toString(36).toUpperCase()}`;
+
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    // Create purchase invoice with supplier ref
+    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
+    const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId, sku);
+    await page.locator('[id^="invoice-quantity-"]').first().fill('2');
+    await page.fill('#invoice-supplier-ref', supplierRef);
+    await page.click('button:has-text("Create invoice")');
+    await expectSuccess(page, 'Purchase invoice created');
+
+    // Click edit on that invoice
+    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
+    await invoiceRow.locator('[aria-label^="Edit invoice"]').click();
+
+    // Supplier ref field should be populated
+    await expect(page.locator('#invoice-supplier-ref')).toHaveValue(supplierRef);
+  });
 });

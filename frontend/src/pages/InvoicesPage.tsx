@@ -33,6 +33,7 @@ export default function InvoicesPage() {
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [selectedLedgerId, setSelectedLedgerId] = useState('');
   const [voucherType, setVoucherType] = useState<'sales' | 'purchase'>('sales');
+  const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [showLedgerModal, setShowLedgerModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
@@ -153,6 +154,7 @@ export default function InvoicesPage() {
 
   function resetInvoiceForm() {
     setEditingInvoiceId(null);
+    setSupplierInvoiceNumber('');
     const defaultProduct = products[0];
     setItems([createItem(1, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))]);
     setNextItemId(2);
@@ -174,6 +176,7 @@ export default function InvoicesPage() {
     setSuccess('');
     setEditingInvoiceId(invoice.id);
     setVoucherType(invoice.voucher_type);
+    setSupplierInvoiceNumber(invoice.supplier_invoice_number ?? '');
     setSelectedLedgerId(String(invoice.ledger_id));
     setInvoiceDate(invoice.invoice_date ? invoice.invoice_date.slice(0, 10) : new Date().toISOString().slice(0, 10));
 
@@ -200,6 +203,7 @@ export default function InvoicesPage() {
         ledger_id: Number(selectedLedgerId),
         voucher_type: voucherType,
         invoice_date: invoiceDate,
+        supplier_invoice_number: voucherType === 'purchase' ? (supplierInvoiceNumber.trim() || null) : null,
         items: items.map((item) => ({
           product_id: Number(item.productId),
           quantity: Number(item.quantity),
@@ -447,6 +451,20 @@ export default function InvoicesPage() {
                 />
               </div>
 
+              {voucherType === 'purchase' ? (
+                <div className="field">
+                  <label htmlFor="invoice-supplier-ref">Supplier Invoice #</label>
+                  <input
+                    id="invoice-supplier-ref"
+                    className="input"
+                    type="text"
+                    value={supplierInvoiceNumber}
+                    onChange={(event) => setSupplierInvoiceNumber(event.target.value)}
+                    placeholder="Supplier's invoice number"
+                  />
+                </div>
+              ) : null}
+
               <div className="button-row">
                 <button type="button" className="button button--secondary" onClick={() => setShowLedgerModal(true)} title="Add ledger" aria-label="Add ledger">
                   Add ledger
@@ -603,6 +621,9 @@ export default function InvoicesPage() {
                         <div className="invoice-row__identity">
                           <strong className="invoice-row__ledger-name">{invoice.ledger?.name || invoice.ledger_name || 'Unknown ledger'}</strong>
                           <span className="invoice-row__invoice-id">Invoice {invoice.invoice_number || `#${invoice.id}`}</span>
+                          {invoice.voucher_type === 'purchase' && invoice.supplier_invoice_number ? (
+                            <span className="invoice-row__invoice-id">Supplier Ref: {invoice.supplier_invoice_number}</span>
+                          ) : null}
                         </div>
                         <span className={`invoice-type-badge invoice-type-badge--${invoice.voucher_type}`}>
                           {invoice.voucher_type === 'sales' ? 'Sales' : 'Purchase'}

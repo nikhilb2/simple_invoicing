@@ -15,6 +15,7 @@ class InvoiceCreate(BaseModel):
     voucher_type: Literal["sales", "purchase"] = "sales"
     invoice_date: Optional[date] = None
     due_date: Optional[date] = None
+    supplier_invoice_number: str | None = None
     items: List[InvoiceItemCreate]
 
 
@@ -54,6 +55,7 @@ class InvoiceOut(BaseModel):
     company_account_number: str | None = None
     company_ifsc_code: str | None = None
     voucher_type: str
+    supplier_invoice_number: str | None = None
     ledger: LedgerOut | None = None
     taxable_amount: float
     total_tax_amount: float

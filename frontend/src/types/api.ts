@@ -139,6 +139,7 @@ export type Invoice = {
   company_account_number: string | null;
   company_ifsc_code: string | null;
   voucher_type: 'sales' | 'purchase';
+  supplier_invoice_number?: string | null;
   ledger: Ledger | null;
   taxable_amount: number;
   total_tax_amount: number;
@@ -175,6 +176,7 @@ export type InvoiceCreate = {
   ledger_id: number;
   invoice_date?: string;
   due_date?: string;
+  supplier_invoice_number?: string | null;
   items: InvoiceItemInput[];
 };
 
