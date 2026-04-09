@@ -88,38 +88,75 @@ export default function InvoicePreview({ invoice, products, currencyCode, onClos
         </div>
 
         <article className="invoice-print-root invoice-sheet">
-          <header className="invoice-sheet__header">
-            <div>
-              <p className="eyebrow">Billed by</p>
-              <h3>{invoice.company_name || 'Company not set'}</h3>
-              <p>{invoice.company_address || 'Address not provided'}</p>
-              <p>
-                {invoice.company_gst ? `GST: ${invoice.company_gst}` : ''}
-                {invoice.company_phone ? ` · Phone: ${invoice.company_phone}` : ''}
-              </p>
-              <p>
-                {invoice.company_email ? `Email: ${invoice.company_email}` : ''}
-                {invoice.company_email && invoice.company_website ? ' · ' : ''}
-                {invoice.company_website ? `Web: ${invoice.company_website}` : ''}
-              </p>
-            </div>
-            <div className="invoice-sheet__meta">
-              <span className="invoice-badge">{invoice.voucher_type === 'sales' ? 'Sales' : 'Purchase'}</span>
-              <h2>Invoice {invoice.invoice_number || `#${invoice.id}`}</h2>
-              <p>Date: {new Date(invoice.invoice_date).toLocaleDateString()}</p>
-              <p>Currency: {previewCurrencyCode}</p>
-            </div>
-          </header>
+          {invoice.voucher_type === 'purchase' ? (
+            <>
+              <header className="invoice-sheet__header">
+                <div>
+                  <p className="eyebrow">Supplier</p>
+                  <h3>{invoice.ledger?.name || invoice.ledger_name || 'Unknown supplier'}</h3>
+                  <p>{invoice.ledger?.address || invoice.ledger_address || 'Address not provided'}</p>
+                  <p>
+                    {(invoice.ledger?.gst || invoice.ledger_gst) ? `GST: ${invoice.ledger?.gst || invoice.ledger_gst}` : ''}
+                    {(invoice.ledger?.phone_number || invoice.ledger_phone) ? ` · Phone: ${invoice.ledger?.phone_number || invoice.ledger_phone}` : ''}
+                  </p>
+                </div>
+                <div className="invoice-sheet__header-right">
+                  <p className="eyebrow">Bill To</p>
+                  <h3>{invoice.company_name || 'Your company'}</h3>
+                  <p>{invoice.company_address || 'Address not provided'}</p>
+                  <p>{invoice.company_gst ? `GST: ${invoice.company_gst}` : ''}</p>
+                </div>
+              </header>
 
-          <section className="invoice-sheet__billto">
-            <p className="eyebrow">Bill to</p>
-            <h4>{invoice.ledger?.name || invoice.ledger_name || 'Unknown ledger'}</h4>
-            <p>{invoice.ledger?.address || invoice.ledger_address || 'Address not provided'}</p>
-            <p>
-              {(invoice.ledger?.gst || invoice.ledger_gst) ? `GST: ${invoice.ledger?.gst || invoice.ledger_gst}` : ''}
-              {(invoice.ledger?.phone_number || invoice.ledger_phone) ? ` · Phone: ${invoice.ledger?.phone_number || invoice.ledger_phone}` : ''}
-            </p>
-          </section>
+              <div className="invoice-sheet__titleblock">
+                <span className="invoice-badge invoice-badge--purchase">Purchase Invoice</span>
+                <h2>Invoice {invoice.invoice_number || `#${invoice.id}`}</h2>
+                <p>Date: {new Date(invoice.invoice_date).toLocaleDateString()} &nbsp;·&nbsp; Currency: {previewCurrencyCode}</p>
+              </div>
+
+              {invoice.supplier_invoice_number && (
+                <section className="invoice-sheet__supplierref">
+                  <span className="eyebrow">Supplier Ref:</span>
+                  <span className="invoice-sheet__supplierref-value">{invoice.supplier_invoice_number}</span>
+                </section>
+              )}
+            </>
+          ) : (
+            <>
+              <header className="invoice-sheet__header">
+                <div>
+                  <p className="eyebrow">Billed by</p>
+                  <h3>{invoice.company_name || 'Company not set'}</h3>
+                  <p>{invoice.company_address || 'Address not provided'}</p>
+                  <p>
+                    {invoice.company_gst ? `GST: ${invoice.company_gst}` : ''}
+                    {invoice.company_phone ? ` · Phone: ${invoice.company_phone}` : ''}
+                  </p>
+                  <p>
+                    {invoice.company_email ? `Email: ${invoice.company_email}` : ''}
+                    {invoice.company_email && invoice.company_website ? ' · ' : ''}
+                    {invoice.company_website ? `Web: ${invoice.company_website}` : ''}
+                  </p>
+                </div>
+                <div className="invoice-sheet__meta">
+                  <span className="invoice-badge">{invoice.voucher_type === 'sales' ? 'Sales' : 'Purchase'}</span>
+                  <h2>Invoice {invoice.invoice_number || `#${invoice.id}`}</h2>
+                  <p>Date: {new Date(invoice.invoice_date).toLocaleDateString()}</p>
+                  <p>Currency: {previewCurrencyCode}</p>
+                </div>
+              </header>
+
+              <section className="invoice-sheet__billto">
+                <p className="eyebrow">Bill to</p>
+                <h4>{invoice.ledger?.name || invoice.ledger_name || 'Unknown ledger'}</h4>
+                <p>{invoice.ledger?.address || invoice.ledger_address || 'Address not provided'}</p>
+                <p>
+                  {(invoice.ledger?.gst || invoice.ledger_gst) ? `GST: ${invoice.ledger?.gst || invoice.ledger_gst}` : ''}
+                  {(invoice.ledger?.phone_number || invoice.ledger_phone) ? ` · Phone: ${invoice.ledger?.phone_number || invoice.ledger_phone}` : ''}
+                </p>
+              </section>
+            </>
+          )}
 
           <section className="invoice-sheet__table-wrap">
             <table className="invoice-sheet__table">
@@ -155,14 +192,16 @@ export default function InvoicePreview({ invoice, products, currencyCode, onClos
           </section>
 
           <section className="invoice-sheet__footer">
-            <div className="invoice-sheet__bank">
-              <p className="eyebrow">Payment details</p>
-              <p>Bank: {invoice.company_bank_name || 'N/A'}</p>
-              <p>Branch: {invoice.company_branch_name || 'N/A'}</p>
-              <p>Account: {invoice.company_account_name || 'N/A'}</p>
-              <p>A/C No: {invoice.company_account_number || 'N/A'}</p>
-              <p>IFSC: {invoice.company_ifsc_code || 'N/A'}</p>
-            </div>
+            {invoice.voucher_type !== 'purchase' && (
+              <div className="invoice-sheet__bank">
+                <p className="eyebrow">Payment details</p>
+                <p>Bank: {invoice.company_bank_name || 'N/A'}</p>
+                <p>Branch: {invoice.company_branch_name || 'N/A'}</p>
+                <p>Account: {invoice.company_account_name || 'N/A'}</p>
+                <p>A/C No: {invoice.company_account_number || 'N/A'}</p>
+                <p>IFSC: {invoice.company_ifsc_code || 'N/A'}</p>
+              </div>
+            )}
             <div className="invoice-sheet__totals">
               <p className="eyebrow">Tax breakup</p>
               <p>Taxable: {formatCurrency(invoice.taxable_amount || 0, previewCurrencyCode)}</p>
@@ -174,7 +213,11 @@ export default function InvoicePreview({ invoice, products, currencyCode, onClos
               <p className="invoice-sheet__total-value">
                 {formatCurrency(invoice.total_amount, previewCurrencyCode)}
               </p>
-              <p className="muted-text">Authorized by {invoice.company_name || 'Billing company'}</p>
+              <p className="muted-text">
+                {invoice.voucher_type === 'purchase'
+                  ? `Received by ${invoice.company_name || 'Your company'}`
+                  : `Authorized by ${invoice.company_name || 'Billing company'}`}
+              </p>
             </div>
           </section>
         </article>
