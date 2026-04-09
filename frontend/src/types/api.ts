@@ -139,6 +139,7 @@ export type Invoice = {
   company_account_number: string | null;
   company_ifsc_code: string | null;
   voucher_type: 'sales' | 'purchase';
+  status: 'active' | 'cancelled';
   supplier_invoice_number?: string | null;
   ledger: Ledger | null;
   taxable_amount: number;

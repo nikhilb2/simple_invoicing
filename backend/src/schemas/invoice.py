@@ -56,6 +56,7 @@ class InvoiceOut(BaseModel):
     company_ifsc_code: str | None = None
     voucher_type: str
     supplier_invoice_number: str | None = None
+    status: str = "active"
     ledger: LedgerOut | None = None
     taxable_amount: float
     total_tax_amount: float

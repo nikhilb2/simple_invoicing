@@ -249,11 +249,14 @@ def list_invoices(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=500),
     search: str = Query(""),
+    show_cancelled: bool = Query(False),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
     try:
         base = db.query(Invoice)
+        if not show_cancelled:
+            base = base.filter(Invoice.status == "active")
         if search.strip():
             base = base.filter(Invoice.ledger_name.ilike(f"%{search.strip()}%"))
         total = base.count()
@@ -302,6 +305,12 @@ def update_invoice(
     invoice = db.query(Invoice).options(joinedload(Invoice.items)).filter(Invoice.id == invoice_id).first()
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
+
+    if invoice.status == "cancelled":
+        raise HTTPException(
+            status_code=400,
+            detail="Cancelled invoices cannot be edited. Restore the invoice first.",
+        )
 
     try:
         _reverse_existing_invoice_inventory(db, invoice)
@@ -655,8 +664,8 @@ def download_invoice_pdf(
     )
 
 
-@router.delete("/{invoice_id}")
-def delete_invoice(
+@router.delete("/{invoice_id}", response_model=InvoiceOut)
+def cancel_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
@@ -665,11 +674,50 @@ def delete_invoice(
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
 
+    if invoice.status == "cancelled":
+        raise HTTPException(status_code=400, detail="Invoice is already cancelled")
+
     try:
         _reverse_existing_invoice_inventory(db, invoice)
-        db.delete(invoice)
+        invoice.status = "cancelled"
         db.commit()
-        return {"message": "Invoice deleted"}
+        db.refresh(invoice)
+        return invoice
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{invoice_id}/restore", response_model=InvoiceOut)
+def restore_invoice(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    invoice = db.query(Invoice).options(joinedload(Invoice.items)).filter(Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
+
+    if invoice.status != "cancelled":
+        raise HTTPException(status_code=400, detail="Invoice is not cancelled")
+
+    try:
+        # Re-apply inventory changes (reverse the reversal)
+        for item in invoice.items:
+            restore_delta = -item.quantity if invoice.voucher_type == "sales" else item.quantity
+            _change_inventory_quantity(
+                db,
+                item.product_id,
+                restore_delta,
+                context=f"restoring invoice {invoice.id}",
+            )
+        invoice.status = "active"
+        db.commit()
+        db.refresh(invoice)
+        return invoice
     except HTTPException:
         db.rollback()
         raise
