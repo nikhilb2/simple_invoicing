@@ -229,6 +229,7 @@ export type Payment = {
   voucher_type: 'receipt' | 'payment';
   amount: number;
   date: string;
+  payment_number?: string | null;
   mode: string | null;
   reference: string | null;
   notes: string | null;

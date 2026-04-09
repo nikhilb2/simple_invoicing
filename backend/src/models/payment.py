@@ -12,6 +12,7 @@ class Payment(Base):
     voucher_type = Column(String, nullable=False)  # "receipt" or "payment"
     amount = Column(Numeric(10, 2), nullable=False)
     date = Column(DateTime, nullable=False, default=datetime.utcnow)
+    payment_number = Column(String, nullable=True)  # e.g. PAY-2026-001
     mode = Column(String, nullable=True)  # cash, bank, upi, cheque
     reference = Column(String, nullable=True)  # cheque no, txn id
     notes = Column(String, nullable=True)

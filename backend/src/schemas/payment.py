@@ -32,6 +32,7 @@ class PaymentOut(BaseModel):
     voucher_type: str
     amount: float
     date: datetime
+    payment_number: str | None = None
     mode: str | None = None
     reference: str | None = None
     notes: str | None = None
