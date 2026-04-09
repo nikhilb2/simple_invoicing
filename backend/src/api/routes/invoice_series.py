@@ -1,0 +1,41 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from src.api.deps import require_roles
+from src.db.session import get_db
+from src.models.invoice_series import InvoiceSeries
+from src.models.user import User, UserRole
+from src.schemas.invoice_series import InvoiceSeriesOut, InvoiceSeriesUpdate
+
+router = APIRouter()
+
+
+@router.get("", response_model=list[InvoiceSeriesOut], include_in_schema=False)
+@router.get("/", response_model=list[InvoiceSeriesOut])
+def list_invoice_series(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.admin)),
+):
+    return db.query(InvoiceSeries).order_by(InvoiceSeries.id.asc()).all()
+
+
+@router.put("/{series_id}", response_model=InvoiceSeriesOut)
+def update_invoice_series(
+    series_id: int,
+    payload: InvoiceSeriesUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.admin)),
+):
+    series = db.query(InvoiceSeries).filter(InvoiceSeries.id == series_id).first()
+    if not series:
+        raise HTTPException(status_code=404, detail=f"Invoice series {series_id} not found")
+
+    series.prefix = payload.prefix.strip().upper()
+    series.include_year = payload.include_year
+    series.year_format = payload.year_format
+    series.separator = payload.separator
+    series.pad_digits = payload.pad_digits
+
+    db.commit()
+    db.refresh(series)
+    return series

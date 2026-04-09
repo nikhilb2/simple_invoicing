@@ -1,7 +1,210 @@
 import { useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
-import type { CompanyProfile, CompanyProfileUpdate } from '../types/api';
+import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate } from '../types/api';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const VOUCHER_LABELS: Record<string, string> = {
+  sales: 'Sales',
+  purchase: 'Purchase',
+  payment: 'Payment',
+};
+
+function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number): string {
+  const sep = s.separator || '-';
+  const seq = String(nextSeq).padStart(s.pad_digits, '0');
+  if (!s.include_year) {
+    return `${s.prefix}${sep}${seq}`;
+  }
+  const now = new Date();
+  const yearPart =
+    s.year_format === 'MM-YYYY'
+      ? `${String(now.getMonth() + 1).padStart(2, '0')}${sep}${now.getFullYear()}`
+      : `${now.getFullYear()}`;
+  return `${s.prefix}${sep}${yearPart}${sep}${seq}`;
+}
+
+// ---------------------------------------------------------------------------
+// InvoiceSeriesCard
+// ---------------------------------------------------------------------------
+
+type SeriesRowState = InvoiceSeriesUpdate;
+
+function InvoiceSeriesCard() {
+  const [seriesList, setSeriesList] = useState<InvoiceSeries[]>([]);
+  const [drafts, setDrafts] = useState<Record<number, SeriesRowState>>({});
+  const [saving, setSaving] = useState<Record<number, boolean>>({});
+  const [rowError, setRowError] = useState<Record<number, string>>({});
+  const [rowSuccess, setRowSuccess] = useState<Record<number, string>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await api.get<InvoiceSeries[]>('/invoice-series/');
+        setSeriesList(res.data);
+        const initial: Record<number, SeriesRowState> = {};
+        for (const s of res.data) {
+          initial[s.id] = {
+            prefix: s.prefix,
+            include_year: s.include_year,
+            year_format: s.year_format,
+            separator: s.separator,
+            pad_digits: s.pad_digits,
+          };
+        }
+        setDrafts(initial);
+      } catch {
+        // non-admin users won't see this card
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  function patchDraft(id: number, patch: Partial<SeriesRowState>) {
+    setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  }
+
+  async function saveSeries(s: InvoiceSeries) {
+    const draft = drafts[s.id];
+    if (!draft) return;
+    setSaving((prev) => ({ ...prev, [s.id]: true }));
+    setRowError((prev) => ({ ...prev, [s.id]: '' }));
+    setRowSuccess((prev) => ({ ...prev, [s.id]: '' }));
+    try {
+      const res = await api.put<InvoiceSeries>(`/invoice-series/${s.id}`, draft);
+      setSeriesList((prev) => prev.map((x) => (x.id === s.id ? res.data : x)));
+      setRowSuccess((prev) => ({ ...prev, [s.id]: 'Saved' }));
+      setTimeout(() => setRowSuccess((prev) => ({ ...prev, [s.id]: '' })), 2500);
+    } catch (err) {
+      setRowError((prev) => ({ ...prev, [s.id]: getApiErrorMessage(err, 'Failed to save') }));
+    } finally {
+      setSaving((prev) => ({ ...prev, [s.id]: false }));
+    }
+  }
+
+  if (loading) return null;
+  if (seriesList.length === 0) return null;
+
+  return (
+    <article className="panel stack">
+      <div className="panel__header">
+        <div>
+          <p className="eyebrow">Numbering</p>
+          <h2 className="nav-panel__title">Invoice series</h2>
+        </div>
+      </div>
+      <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '8px' }}>
+        Configure the prefix, year, and sequence counter for each voucher type.
+        Changes apply to the next invoice created — existing numbers are not affected.
+      </p>
+
+      <div className="stack" style={{ gap: '24px' }}>
+        {seriesList.map((s) => {
+          const draft = drafts[s.id];
+          if (!draft) return null;
+          const preview = buildPreview(draft, s.next_sequence);
+          return (
+            <div key={s.id} className="panel" style={{ padding: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <strong style={{ textTransform: 'capitalize' }}>{VOUCHER_LABELS[s.voucher_type] ?? s.voucher_type}</strong>
+                <span style={{ fontSize: '0.8rem', opacity: 0.6 }}>Next: #{s.next_sequence}</span>
+              </div>
+
+              <div className="field-grid">
+                <div className="field">
+                  <label htmlFor={`series-prefix-${s.id}`}>Prefix</label>
+                  <input
+                    id={`series-prefix-${s.id}`}
+                    className="input"
+                    value={draft.prefix}
+                    onChange={(e) => patchDraft(s.id, { prefix: e.target.value.toUpperCase() })}
+                    placeholder="INV"
+                    style={{ textTransform: 'uppercase' }}
+                  />
+                </div>
+
+                <div className="field">
+                  <label htmlFor={`series-sep-${s.id}`}>Separator</label>
+                  <input
+                    id={`series-sep-${s.id}`}
+                    className="input"
+                    value={draft.separator}
+                    maxLength={3}
+                    onChange={(e) => patchDraft(s.id, { separator: e.target.value })}
+                    placeholder="-"
+                  />
+                </div>
+
+                <div className="field">
+                  <label htmlFor={`series-pad-${s.id}`}>Pad digits</label>
+                  <select
+                    id={`series-pad-${s.id}`}
+                    className="select"
+                    value={draft.pad_digits}
+                    onChange={(e) => patchDraft(s.id, { pad_digits: Number(e.target.value) as 2 | 3 | 4 })}
+                  >
+                    <option value={2}>2 (e.g. 01)</option>
+                    <option value={3}>3 (e.g. 001)</option>
+                    <option value={4}>4 (e.g. 0001)</option>
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label htmlFor={`series-year-fmt-${s.id}`}>Year format</label>
+                  <select
+                    id={`series-year-fmt-${s.id}`}
+                    className="select"
+                    value={draft.year_format}
+                    disabled={!draft.include_year}
+                    onChange={(e) => patchDraft(s.id, { year_format: e.target.value as 'YYYY' | 'MM-YYYY' })}
+                  >
+                    <option value="YYYY">YYYY (e.g. 2026)</option>
+                    <option value="MM-YYYY">MM-YYYY (e.g. 04-2026)</option>
+                  </select>
+                </div>
+
+                <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '22px' }}>
+                  <input
+                    id={`series-include-year-${s.id}`}
+                    type="checkbox"
+                    checked={draft.include_year}
+                    onChange={(e) => patchDraft(s.id, { include_year: e.target.checked })}
+                  />
+                  <label htmlFor={`series-include-year-${s.id}`} style={{ marginBottom: 0, cursor: 'pointer' }}>Include year</label>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.875rem', opacity: 0.7 }}>
+                  Preview: <strong>{preview}</strong>
+                </span>
+                <button
+                  className="button button--primary"
+                  style={{ marginTop: 0, padding: '6px 16px', fontSize: '0.875rem' }}
+                  disabled={saving[s.id]}
+                  onClick={() => void saveSeries(s)}
+                >
+                  {saving[s.id] ? 'Saving…' : 'Save'}
+                </button>
+                {rowSuccess[s.id] && <span style={{ color: 'var(--color-success, green)', fontSize: '0.875rem' }}>{rowSuccess[s.id]}</span>}
+                {rowError[s.id] && <span style={{ color: 'var(--color-danger, red)', fontSize: '0.875rem' }}>{rowError[s.id]}</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </article>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CompanyPage
+// ---------------------------------------------------------------------------
 
 export default function CompanyPage() {
   const [form, setForm] = useState<CompanyProfileUpdate>({
@@ -106,7 +309,6 @@ export default function CompanyPage() {
               <h2 className="nav-panel__title">Invoice header details</h2>
             </div>
           </div>
-
           {loading ? <div className="empty-state">Loading company profile...</div> : null}
 
           {!loading ? (
@@ -263,6 +465,8 @@ export default function CompanyPage() {
             </form>
           ) : null}
         </article>
+
+        <InvoiceSeriesCard />
       </section>
     </div>
   );
