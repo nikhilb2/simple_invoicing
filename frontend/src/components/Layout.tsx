@@ -12,6 +12,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSidebarOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sidebarOpen]);
 
   useEffect(() => {
     const cleanups = [
@@ -48,12 +56,28 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-shell">
       <div className="app-shell__sidebar">
-        <Sidebar />
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       </div>
+      {sidebarOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
       <div className="app-shell__main">
       <div className="app-shell__backdrop app-shell__backdrop--left" />
       <div className="app-shell__backdrop app-shell__backdrop--right" />
       <header className="page-header">
+        <button
+          className="sidebar-toggle"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="Open navigation"
+        >
+          <span className="sidebar-toggle__bar" />
+          <span className="sidebar-toggle__bar" />
+          <span className="sidebar-toggle__bar" />
+        </button>
         <div className="page-header__shortcut-hint">
           Press <kbd>?</kbd> for shortcuts
         </div>

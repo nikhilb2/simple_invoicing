@@ -7,6 +7,11 @@ import { useFY } from '../context/FYContext';
 
 type NavItem = { to: string; label: string; end?: boolean };
 
+interface SidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
 const mainGroup: NavItem[] = [
   { to: '/', label: 'Overview', end: true },
   { to: '/invoices', label: 'Invoices' },
@@ -34,7 +39,7 @@ function fyFromStartYear(year: number) {
   };
 }
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const { isAdmin, userEmail, logout } = useAuth();
   const { activeFY, fyList, switchFY, createFY } = useFY();
 
@@ -56,11 +61,28 @@ export default function Sidebar() {
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, [fyDropdownOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose?.(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
   return (
     <>
-      <aside className="sidebar">
+      <aside
+        className={`sidebar${isOpen ? ' sidebar--open' : ''}`}
+        {...(isOpen ? { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Navigation drawer' } : {})}
+      >
         <div className="sidebar__header">
-          <Link to="/" className="sidebar__brand">
+          <button
+            className="sidebar__close"
+            onClick={onClose}
+            aria-label="Close navigation"
+          >
+            ✕
+          </button>
+          <Link to="/" className="sidebar__brand" onClick={() => onClose?.()}>
             <span>⚡</span>
             <div>
               <span className="sidebar__brand-name">Simple Invoicing</span>
@@ -80,6 +102,7 @@ export default function Sidebar() {
                 className={({ isActive }) =>
                   `sidebar__link${isActive ? ' sidebar__link--active' : ''}`
                 }
+                onClick={() => onClose?.()}
               >
                 {item.label}
               </NavLink>
@@ -96,6 +119,7 @@ export default function Sidebar() {
                 className={({ isActive }) =>
                   `sidebar__link${isActive ? ' sidebar__link--active' : ''}`
                 }
+                onClick={() => onClose?.()}
               >
                 {item.label}
               </NavLink>
@@ -112,6 +136,7 @@ export default function Sidebar() {
                 className={({ isActive }) =>
                   `sidebar__link${isActive ? ' sidebar__link--active' : ''}`
                 }
+                onClick={() => onClose?.()}
               >
                 {item.label}
               </NavLink>
