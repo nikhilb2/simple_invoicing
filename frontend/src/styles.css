@@ -19,6 +19,19 @@
   --danger: #ff8b8b;
   --warning: #f6d67b;
   --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+
+  /* Sidebar tokens */
+  --sidebar-width: 240px;
+  --sidebar-bg: #0d1426;
+  --sidebar-border: rgba(148, 184, 255, 0.12);
+  --sidebar-text: #e6eefb;
+  --sidebar-muted: rgba(156, 173, 207, 0.55);
+  --sidebar-active-bg: rgba(87, 209, 201, 0.12);
+  --sidebar-active-border: rgba(87, 209, 201, 0.25);
+  --sidebar-active-text: #57d1c9;
+  --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
+  --sidebar-section-label: rgba(156, 173, 207, 0.45);
+  --sidebar-footer-bg: rgba(148, 184, 255, 0.06);
 }
 
 * {
@@ -28,7 +41,6 @@
 html {
   min-height: 100%;
   background:
-    radial-gradient(circle at top left, rgba(87, 209, 201, 0.18), transparent 28%),
     radial-gradient(circle at top right, rgba(63, 133, 255, 0.14), transparent 26%),
     linear-gradient(160deg, #050b14 0%, #08111f 50%, #0d1730 100%);
 }
