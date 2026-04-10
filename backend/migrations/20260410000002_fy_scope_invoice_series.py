@@ -25,9 +25,18 @@ def up(conn) -> None:
 
     # Add new unique constraint on (voucher_type, financial_year_id)
     conn.execute(text("""
-        ALTER TABLE invoice_series
-            ADD CONSTRAINT IF NOT EXISTS uq_invoice_series_voucher_fy
-                UNIQUE (voucher_type, financial_year_id)
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'uq_invoice_series_voucher_fy'
+            ) THEN
+                ALTER TABLE invoice_series
+                    ADD CONSTRAINT uq_invoice_series_voucher_fy
+                        UNIQUE (voucher_type, financial_year_id);
+            END IF;
+        END
+        $$
     """))
 
     # Backfill existing 3 rows to the active FY
