@@ -39,6 +39,7 @@ class Invoice(Base):
     invoice_date = Column(DateTime, nullable=False, default=datetime.utcnow)
     due_date = Column(DateTime, nullable=True)
     tax_inclusive = Column(Boolean, nullable=False, default=False)
+    financial_year_id = Column(Integer, ForeignKey("financial_years.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     ledger = relationship("Buyer", back_populates="invoices")

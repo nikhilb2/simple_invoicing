@@ -22,6 +22,7 @@ from src.models.user import User
 from src.schemas.invoice import InvoiceCreate, InvoiceOut, PaginatedInvoiceOut
 from src.api.deps import get_current_user
 from src.services.series import generate_next_number
+from src.services.financial_year import get_active_fy
 
 router = APIRouter()
 
@@ -36,8 +37,8 @@ def _is_interstate_supply(company_gst: str | None, ledger_gst: str | None) -> bo
     return company_gst[:2] != ledger_gst[:2]
 
 
-def _generate_next_number(db: Session, voucher_type: str) -> str:
-    return generate_next_number(db, voucher_type)
+def _generate_next_number(db: Session, voucher_type: str, financial_year_id: int | None = None) -> str:
+    return generate_next_number(db, voucher_type, financial_year_id)
 
 
 def _require_ledger(db: Session, ledger_id: int) -> Ledger:
@@ -75,6 +76,7 @@ def _apply_payload_to_invoice(
     invoice: Invoice,
     payload: InvoiceCreate,
     created_by: int | None = None,
+    financial_year_id: int | None = None,
 ) -> None:
     ledger = _require_ledger(db, payload.ledger_id)
     company = db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
@@ -100,6 +102,8 @@ def _apply_payload_to_invoice(
     invoice.supplier_invoice_number = payload.supplier_invoice_number
     if created_by is not None:
         invoice.created_by = created_by
+    if financial_year_id is not None:
+        invoice.financial_year_id = financial_year_id
 
     if payload.invoice_date is not None:
         invoice.invoice_date = datetime.combine(payload.invoice_date, datetime.min.time())
@@ -108,7 +112,7 @@ def _apply_payload_to_invoice(
         invoice.due_date = datetime.combine(payload.due_date, datetime.min.time())
 
     invoice.tax_inclusive = payload.tax_inclusive
-    invoice.invoice_number = _generate_next_number(db, invoice.voucher_type)
+    invoice.invoice_number = _generate_next_number(db, invoice.voucher_type, financial_year_id)
 
     if not invoice.company_gst or not invoice.ledger_gst:
         raise HTTPException(
@@ -207,16 +211,32 @@ def create_invoice(
     current_user: User = Depends(get_current_user),
 ):
     try:
+        active_fy = get_active_fy(db)
+        fy_id = active_fy.id if active_fy else None
+
         invoice = Invoice(
             total_amount=0,
             created_by=current_user.id,
         )
         db.add(invoice)
         db.flush()
-        _apply_payload_to_invoice(db, invoice, payload, created_by=current_user.id)
+        _apply_payload_to_invoice(
+            db, invoice, payload,
+            created_by=current_user.id,
+            financial_year_id=fy_id,
+        )
         db.commit()
         db.refresh(invoice)
-        return invoice
+
+        warnings: list[str] = []
+        if active_fy and payload.invoice_date:
+            inv_date = payload.invoice_date
+            if not (active_fy.start_date <= inv_date <= active_fy.end_date):
+                warnings.append("invoice_date_outside_fy")
+
+        result = InvoiceOut.model_validate(invoice)
+        result.warnings = warnings
+        return result
     except HTTPException:
         db.rollback()
         raise

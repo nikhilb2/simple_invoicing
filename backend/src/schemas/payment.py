@@ -1,5 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel, field_validator
+from typing import List, Optional
 
 
 class PaymentCreate(BaseModel):
@@ -36,6 +37,8 @@ class PaymentOut(BaseModel):
     mode: str | None = None
     reference: str | None = None
     notes: str | None = None
+    financial_year_id: Optional[int] = None
+    warnings: List[str] = []
     created_by: int
     created_at: datetime
 
