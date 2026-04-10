@@ -182,6 +182,50 @@ textarea {
   font-weight: 600;
 }
 
+.sidebar__footer {
+  margin-top: auto;
+  padding: 12px 16px;
+  border-top: 1px solid var(--sidebar-border);
+  background: var(--sidebar-footer-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sidebar__user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar__user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--sidebar-active-bg);
+  border: 1px solid var(--sidebar-active-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--sidebar-active-text);
+  flex-shrink: 0;
+}
+
+.sidebar__user-email {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--sidebar-text);
+  display: block;
+}
+
+.sidebar__user-role {
+  font-size: 0.68rem;
+  color: var(--sidebar-muted);
+  display: block;
+}
+
 .app-shell__backdrop {
   position: fixed;
   inset: auto;

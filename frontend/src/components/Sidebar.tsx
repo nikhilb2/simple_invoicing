@@ -35,7 +35,7 @@ function fyFromStartYear(year: number) {
 }
 
 export default function Sidebar() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, userEmail, logout } = useAuth();
   const { activeFY, fyList, switchFY, createFY } = useFY();
 
   const [fyDropdownOpen, setFyDropdownOpen] = useState(false);
@@ -207,6 +207,21 @@ export default function Sidebar() {
               </div>
             )}
           </div>
+        </div>
+
+        <div className="sidebar__footer">
+          <div className="sidebar__user">
+            <div className="sidebar__user-avatar">
+              {userEmail ? userEmail[0].toUpperCase() : 'U'}
+            </div>
+            <div>
+              <span className="sidebar__user-email">{userEmail ?? 'Active user'}</span>
+              <span className="sidebar__user-role">{isAdmin ? 'Admin' : 'User'}</span>
+            </div>
+          </div>
+          <button className="button button--ghost" onClick={logout}>
+            Logout
+          </button>
         </div>
       </aside>
 
