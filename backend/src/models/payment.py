@@ -16,6 +16,7 @@ class Payment(Base):
     mode = Column(String, nullable=True)  # cash, bank, upi, cheque
     reference = Column(String, nullable=True)  # cheque no, txn id
     notes = Column(String, nullable=True)
+    financial_year_id = Column(Integer, ForeignKey("financial_years.id"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 

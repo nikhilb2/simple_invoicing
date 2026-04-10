@@ -68,6 +68,8 @@ class InvoiceOut(BaseModel):
     invoice_date: datetime
     due_date: datetime | None = None
     tax_inclusive: bool = False
+    financial_year_id: Optional[int] = None
+    warnings: List[str] = Field(default_factory=list)
     created_at: datetime
     items: list[InvoiceItemOut] = Field(default_factory=list)
 
