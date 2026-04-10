@@ -70,9 +70,29 @@ textarea {
 }
 
 .app-shell {
-  position: relative;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-rows: 1fr;
+  grid-template-areas: "sidebar main";
   min-height: 100vh;
-  padding: 32px clamp(20px, 4vw, 48px) 48px;
+}
+
+.app-shell__sidebar {
+  /* left column — sidebar lives here */
+  grid-area: sidebar;
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.app-shell__main {
+  /* right column — topbar + page content */
+  grid-area: main;
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 0;               /* padding moves to inner elements */
 }
 
 .app-shell__backdrop {
@@ -319,6 +339,7 @@ textarea {
 .page-frame {
   display: grid;
   gap: 20px;
+  padding: 32px clamp(20px, 4vw, 48px) 48px;
 }
 
 .page-hero {
@@ -1274,6 +1295,20 @@ textarea {
   }
 
   .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-areas: "main";
+  }
+
+  .app-shell__sidebar {
+    display: none;
+  }
+
+  .app-shell__main {
+    grid-column: 1;
+    grid-area: main;
+  }
+
+  .page-frame {
     padding: 20px 14px 32px;
   }
 
