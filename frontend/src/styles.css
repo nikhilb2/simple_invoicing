@@ -249,6 +249,33 @@ textarea {
   background: rgba(79, 125, 255, 0.18);
 }
 
+.page-header {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 clamp(16px, 3vw, 36px);
+  border-bottom: 1px solid var(--line);
+  background: rgba(8, 17, 31, 0.75);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.page-header__shortcut-hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.page-header__shortcut-hint kbd {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.7rem;
+}
+
 .topbar,
 .page-frame,
 .section-card {

@@ -29,11 +29,11 @@ test.describe('Navigation', () => {
   test('brand link navigates to dashboard', async ({ authedPage: page }) => {
     await page.click('[href="/products"]');
     await expect(page.locator('h1')).toContainText('Catalog intake');
-    await page.locator('.brand-mark').click();
+    await page.locator('a.sidebar__brand').click();
     await expect(page.locator('h1')).toContainText('Operations dashboard');
   });
 
-  test('shows "Signed in as" in header', async ({ authedPage: page }) => {
-    await expect(page.getByText('Signed in as')).toBeVisible();
+  test('shows user info in sidebar footer', async ({ authedPage: page }) => {
+    await expect(page.locator('.sidebar__user-email')).toBeVisible();
   });
 });
