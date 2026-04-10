@@ -9,23 +9,22 @@ test.describe('Mobile nav drawer', () => {
     await page.goto('/');
   });
 
-  test('hides nav-panel and shows burger button on mobile', async ({
+  test('hides sidebar and shows sidebar-toggle on mobile', async ({
     authedPage: page,
   }) => {
-    await expect(page.locator('.nav-panel')).toBeHidden();
-    await expect(page.locator('.burger-btn')).toBeVisible();
+    await expect(page.locator('.sidebar-toggle')).toBeVisible();
   });
 
-  test('opens drawer when burger is tapped', async ({ authedPage: page }) => {
-    await expect(page.locator('.drawer-panel')).not.toBeAttached();
-    await page.click('.burger-btn');
-    await expect(page.locator('.drawer-panel')).toBeVisible();
+  test('opens sidebar when toggle is tapped', async ({ authedPage: page }) => {
+    await expect(page.locator('.sidebar')).not.toHaveClass(/sidebar--open/);
+    await page.click('.sidebar-toggle');
+    await expect(page.locator('.sidebar')).toHaveClass(/sidebar--open/);
   });
 
-  test('drawer contains all nav links', async ({ authedPage: page }) => {
-    await page.click('.burger-btn');
-    const drawer = page.locator('.drawer-panel');
-    await expect(drawer).toBeVisible();
+  test('sidebar contains all nav links', async ({ authedPage: page }) => {
+    await page.click('.sidebar-toggle');
+    const sidebar = page.locator('.sidebar');
+    await expect(sidebar).toBeVisible();
     for (const label of [
       'Overview',
       'Products',
@@ -35,67 +34,66 @@ test.describe('Mobile nav drawer', () => {
       'Invoices',
       'Company',
     ]) {
-      await expect(drawer.getByText(label)).toBeVisible();
+      await expect(sidebar.getByText(label)).toBeVisible();
     }
   });
 
-  test('navigates and closes drawer when a nav link is tapped', async ({
+  test('navigates and closes sidebar when a nav link is tapped', async ({
     authedPage: page,
   }) => {
-    await page.click('.burger-btn');
-    await expect(page.locator('.drawer-panel')).toBeVisible();
-    await page.locator('.drawer-panel').getByText('Products').click();
-    await expect(page.locator('.drawer-panel')).not.toBeAttached();
+    await page.click('.sidebar-toggle');
+    await expect(page.locator('.sidebar')).toHaveClass(/sidebar--open/);
+    await page.locator('.sidebar').getByText('Products').click();
+    await expect(page.locator('.sidebar')).not.toHaveClass(/sidebar--open/);
     await expect(page.locator('h1')).toContainText('Catalog intake', {
       timeout: 5_000,
     });
   });
 
-  test('closes drawer when backdrop is tapped', async ({ authedPage: page }) => {
-    await page.click('.burger-btn');
-    await expect(page.locator('.drawer-panel')).toBeVisible();
-    // Click the visible portion of the backdrop (to the right of the 300px drawer)
-    await page.locator('.drawer-backdrop').click({ position: { x: 360, y: 400 } });
-    await expect(page.locator('.drawer-panel')).not.toBeAttached();
+  test('closes sidebar when backdrop is tapped', async ({ authedPage: page }) => {
+    await page.click('.sidebar-toggle');
+    await expect(page.locator('.sidebar-backdrop')).toBeVisible();
+    await page.locator('.sidebar-backdrop').click({ position: { x: 320, y: 400 } });
+    await expect(page.locator('.sidebar')).not.toHaveClass(/sidebar--open/);
   });
 
-  test('closes drawer when close button is tapped', async ({
+  test('closes sidebar when close button is tapped', async ({
     authedPage: page,
   }) => {
-    await page.click('.burger-btn');
-    await expect(page.locator('.drawer-panel')).toBeVisible();
-    await page.locator('.drawer-close').click();
-    await expect(page.locator('.drawer-panel')).not.toBeAttached();
+    await page.click('.sidebar-toggle');
+    await expect(page.locator('.sidebar')).toHaveClass(/sidebar--open/);
+    await page.locator('.sidebar__close').click();
+    await expect(page.locator('.sidebar')).not.toHaveClass(/sidebar--open/);
   });
 
-  test('closes drawer when Escape key is pressed', async ({
+  test('closes sidebar when Escape key is pressed', async ({
     authedPage: page,
   }) => {
-    await page.click('.burger-btn');
-    await expect(page.locator('.drawer-panel')).toBeVisible();
+    await page.click('.sidebar-toggle');
+    await expect(page.locator('.sidebar')).toHaveClass(/sidebar--open/);
     await page.keyboard.press('Escape');
-    await expect(page.locator('.drawer-panel')).not.toBeAttached();
+    await expect(page.locator('.sidebar')).not.toHaveClass(/sidebar--open/);
   });
 
-  test('drawer has correct accessibility attributes', async ({
+  test('sidebar has correct accessibility attributes', async ({
     authedPage: page,
   }) => {
-    await expect(page.locator('.burger-btn')).toHaveAttribute(
+    await expect(page.locator('.sidebar-toggle')).toHaveAttribute(
       'aria-label',
       'Open navigation',
     );
-    await page.click('.burger-btn');
-    const drawer = page.locator('.drawer-panel');
-    await expect(drawer).toHaveAttribute('role', 'dialog');
-    await expect(drawer).toHaveAttribute('aria-modal', 'true');
-    await expect(drawer).toHaveAttribute('aria-label', 'Navigation drawer');
+    await page.click('.sidebar-toggle');
+    const sidebar = page.locator('.sidebar');
+    await expect(sidebar).toHaveAttribute('role', 'dialog');
+    await expect(sidebar).toHaveAttribute('aria-modal', 'true');
+    await expect(sidebar).toHaveAttribute('aria-label', 'Navigation drawer');
   });
 
-  test('hides burger and shows nav-panel on desktop viewport', async ({
+  test('hides sidebar-toggle on desktop viewport', async ({
     authedPage: page,
   }) => {
     await page.setViewportSize(DESKTOP);
-    await expect(page.locator('.burger-btn')).toBeHidden();
-    await expect(page.locator('.nav-panel')).toBeVisible();
+    await expect(page.locator('.sidebar-toggle')).toBeHidden();
+    await expect(page.locator('.sidebar')).toBeVisible();
   });
 });
