@@ -1324,7 +1324,7 @@ textarea {
   }
 
   .app-shell__sidebar {
-    display: none;
+    /* removed from grid flow; sidebar is fixed-positioned on mobile */
   }
 
   .app-shell__main {
