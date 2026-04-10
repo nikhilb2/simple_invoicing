@@ -33,7 +33,10 @@ export default function LedgerViewPage() {
   const [loadingStatement, setLoadingStatement] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [period, setPeriod] = useState(defaultDateRange);
+  const [period, setPeriod] = useState(() => ({
+    fromDate: activeFY?.start_date ?? defaultDateRange().fromDate,
+    toDate: activeFY?.end_date ?? defaultDateRange().toDate,
+  }));
   const [refreshKey, setRefreshKey] = useState(0);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentForm, setPaymentForm] = useState<PaymentCreate>({
@@ -108,6 +111,14 @@ export default function LedgerViewPage() {
     })();
     return () => { cancelled = true; };
   }, [ledgerId, period.fromDate, period.toDate, refreshKey]);
+
+  // Re-initialise date range when active FY changes
+  useEffect(() => {
+    setPeriod({
+      fromDate: activeFY?.start_date ?? defaultDateRange().fromDate,
+      toDate: activeFY?.end_date ?? defaultDateRange().toDate,
+    });
+  }, [activeFY]);
 
   const activeCurrencyCode = company?.currency_code || 'INR';
 

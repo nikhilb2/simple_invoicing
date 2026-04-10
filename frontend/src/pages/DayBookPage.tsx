@@ -3,6 +3,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import type { CompanyProfile, DayBook } from '../types/api';
 import formatCurrency from '../utils/formatting';
+import { useFY } from '../context/FYContext';
 
 function defaultDateRange() {
   const today = new Date();
@@ -16,7 +17,11 @@ function defaultDateRange() {
 }
 
 export default function DayBookPage() {
-  const [period, setPeriod] = useState(defaultDateRange);
+  const { activeFY } = useFY();
+  const [period, setPeriod] = useState(() => ({
+    fromDate: activeFY?.start_date ?? defaultDateRange().fromDate,
+    toDate: activeFY?.end_date ?? defaultDateRange().toDate,
+  }));
   const [dayBook, setDayBook] = useState<DayBook | null>(null);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,6 +57,14 @@ export default function DayBookPage() {
   useEffect(() => {
     void loadDayBook();
   }, [period.fromDate, period.toDate]);
+
+  // Re-initialise date range when active FY changes
+  useEffect(() => {
+    setPeriod({
+      fromDate: activeFY?.start_date ?? defaultDateRange().fromDate,
+      toDate: activeFY?.end_date ?? defaultDateRange().toDate,
+    });
+  }, [activeFY]);
 
   return (
     <div className="page-grid">
