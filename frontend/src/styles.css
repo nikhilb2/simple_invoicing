@@ -85,7 +85,7 @@ textarea {
 }
 
 .app-shell__main {
-  /* right column — topbar + page content */
+  /* right column — page-header + page content */
   grid-area: main;
   grid-column: 2;
   grid-row: 1;
@@ -329,43 +329,17 @@ textarea {
   font-size: 0.7rem;
 }
 
-.topbar,
 .page-frame,
 .section-card {
   position: relative;
   z-index: 1;
 }
 
-/* nav-panel needs a higher stacking context so dropdowns inside it
-   float above the page-frame (which is later in the DOM). */
-.nav-panel {
-  position: relative;
-  z-index: 2;
-}
-
-.topbar {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  align-items: end;
-  margin-bottom: 24px;
-}
-
-.brand-mark,
 .login-hero__title,
-.page-title,
-.nav-panel__title {
+.page-title {
   font-family: 'Space Grotesk', sans-serif;
 }
 
-.brand-mark {
-  display: inline-block;
-  font-size: clamp(1.75rem, 4vw, 2.6rem);
-  font-weight: 700;
-  letter-spacing: -0.05em;
-}
-
-.topbar__subtitle,
 .section-copy,
 .muted-text,
 .field-hint,
@@ -397,16 +371,6 @@ textarea {
   margin-top: 6px;
 }
 
-.topbar__subtitle {
-  margin: 8px 0 0;
-}
-
-.topbar__session {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
 .eyebrow {
   margin: 0 0 4px;
   font-size: 0.72rem;
@@ -416,135 +380,12 @@ textarea {
   color: rgba(156, 173, 207, 0.8);
 }
 
-.session-email {
-  margin: 0;
-  font-weight: 700;
-}
-
 .section-card {
   border: 1px solid var(--line);
   background: var(--bg-card);
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
   border-radius: 28px;
-}
-
-.nav-panel {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  align-items: center;
-  padding: 18px 20px;
-  margin-bottom: 28px;
-}
-
-.nav-panel__title {
-  margin: 0;
-  font-size: 1.35rem;
-}
-
-.nav-panel__links {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-/* topbar__top is transparent on desktop — children participate in topbar's flex */
-.topbar__top {
-  display: contents;
-}
-
-.burger-btn {
-  display: none;
-}
-
-/* Drawer — hidden on md+ via media query below */
-.drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  z-index: 200;
-}
-
-.drawer-panel {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: min(300px, 85vw);
-  z-index: 201;
-  background: var(--bg-card);
-  border-right: 1px solid var(--line);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(18px);
-  display: flex;
-  flex-direction: column;
-  padding: 24px 16px;
-  gap: 16px;
-  overflow-y: auto;
-}
-
-.drawer-panel__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.drawer-panel__header .nav-panel__title {
-  margin: 0;
-}
-
-.drawer-panel__links {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.drawer-close {
-  background: none;
-  border: 1px solid var(--line);
-  color: var(--text);
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 6px 10px;
-  border-radius: 8px;
-  line-height: 1;
-  transition: 180ms ease;
-}
-
-.drawer-close:hover {
-  background: rgba(87, 209, 201, 0.1);
-  border-color: rgba(87, 209, 201, 0.2);
-}
-
-@media (min-width: 721px) {
-  .drawer-backdrop,
-  .drawer-panel {
-    display: none !important;
-  }
-}
-
-.nav-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: 18px;
-  border: 1px solid transparent;
-  color: var(--muted);
-  transition: 180ms ease;
-}
-
-.nav-link:hover,
-.nav-link--active {
-  color: var(--text);
-  background: rgba(87, 209, 201, 0.1);
-  border-color: rgba(87, 209, 201, 0.2);
-}
-
-.nav-link__hint {
-  font-size: 0.8rem;
-  color: rgba(156, 173, 207, 0.85);
 }
 
 .page-frame {
@@ -1453,16 +1294,9 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .topbar,
-  .page-hero,
-  .nav-panel {
+  .page-hero {
     align-items: start;
     flex-direction: column;
-  }
-
-  .topbar__session {
-    width: 100%;
-    justify-content: space-between;
   }
 
   .login-card {
@@ -1524,53 +1358,6 @@ textarea {
 }
 
 @media (max-width: 720px) {
-  .nav-panel {
-    display: none;
-  }
-
-  .topbar__top {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-  }
-
-  .burger-btn {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    gap: 5px;
-    background: none;
-    border: 1px solid var(--line);
-    cursor: pointer;
-    padding: 10px 12px;
-    border-radius: 10px;
-    flex-shrink: 0;
-  }
-
-  .burger-btn__bar {
-    display: block;
-    width: 20px;
-    height: 2px;
-    background: var(--text);
-    border-radius: 2px;
-  }
-
-  .app-shell {
-    grid-template-columns: 1fr;
-    grid-template-areas: "main";
-  }
-
-  .app-shell__sidebar {
-    display: none;
-  }
-
-  .app-shell__main {
-    grid-column: 1;
-    grid-area: main;
-  }
-
   .page-frame {
     padding: 20px 14px 32px;
   }
@@ -1618,15 +1405,9 @@ textarea {
     flex: 1 1 auto;
   }
 
-  .topbar__session,
   .button-row {
     width: 100%;
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .nav-link {
-    width: 100%;
-    justify-content: space-between;
   }
 }
