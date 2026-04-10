@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
-import type { InvoiceCreate, Ledger, Product } from '../types/api';
+import type { InvoiceCreate, Invoice, Ledger, Product } from '../types/api';
+import { useFY } from '../context/FYContext';
 import formatCurrency from '../utils/formatting';
 import ProductCombobox from './ProductCombobox';
 import LedgerCombobox from './LedgerCombobox';
@@ -23,8 +24,8 @@ type CreateInvoiceModalProps = {
   /** Pre-selected voucher type */
   preselectedVoucherType?: 'sales' | 'purchase';
   onClose: () => void;
-  /** Called after a successful invoice creation with a success message */
-  onCreated: (message: string) => void;
+  /** Called after a successful invoice creation with a success message and optional FY warning */
+  onCreated: (message: string, warningMessage?: string) => void;
   onError: (message: string) => void;
 };
 
@@ -35,6 +36,7 @@ export default function CreateInvoiceModal({
   onCreated,
   onError,
 }: CreateInvoiceModalProps) {
+  const { activeFY } = useFY();
   const [products, setProducts] = useState<Product[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [selectedLedgerId, setSelectedLedgerId] = useState(preselectedLedgerId ? String(preselectedLedgerId) : '');
@@ -102,6 +104,11 @@ export default function CreateInvoiceModal({
     setItems((c) => c.map((i) => (i.id === id ? { ...i, [key]: value } : i)));
   }
 
+  const isDateOutsideFY =
+    activeFY !== null &&
+    invoiceDate !== '' &&
+    (invoiceDate < activeFY.start_date || invoiceDate > activeFY.end_date);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
@@ -116,11 +123,15 @@ export default function CreateInvoiceModal({
           unit_price: item.unit_price ? Number(item.unit_price) : undefined,
         })),
       };
-      await api.post('/invoices/', payload);
+      const res = await api.post<Invoice>('/invoices/', payload);
       const msg = voucherType === 'sales'
         ? 'Sales invoice created. Inventory has been reduced.'
         : 'Purchase invoice created. Inventory has been increased.';
-      onCreated(msg);
+      const warningMsg =
+        res.data.warnings?.includes('invoice_date_outside_fy') && activeFY
+          ? `⚠️ This date is outside the active financial year (${activeFY.label}). The invoice was still created.`
+          : undefined;
+      onCreated(msg, warningMsg);
     } catch (err) {
       onError(getApiErrorMessage(err, 'Unable to create invoice'));
     } finally {
@@ -184,6 +195,11 @@ export default function CreateInvoiceModal({
                   onChange={(e) => setInvoiceDate(e.target.value)}
                   required
                 />
+                {isDateOutsideFY && activeFY ? (
+                  <p className="field-warning">
+                    ⚠️ This date is outside the active financial year ({activeFY.label}). The invoice will still be created.
+                  </p>
+                ) : null}
               </div>
             </div>
 

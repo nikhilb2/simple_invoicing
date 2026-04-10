@@ -9,6 +9,7 @@ import ProductCombobox from '../components/ProductCombobox';
 import LedgerCombobox from '../components/LedgerCombobox';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import formatCurrency from '../utils/formatting';
+import { useFY } from '../context/FYContext';
 
 type InvoiceFormItem = {
   id: number;
@@ -27,6 +28,7 @@ function createItem(id: number, productId = '', unitPrice = ''): InvoiceFormItem
 }
 
 export default function InvoicesPage() {
+  const { activeFY } = useFY();
   const [products, setProducts] = useState<Product[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -277,12 +279,16 @@ export default function InvoicesPage() {
         await api.put<Invoice>(`/invoices/${editingInvoiceId}`, payload);
         setSuccess('Invoice updated successfully. Inventory has been recalculated.');
       } else {
-        await api.post<Invoice>('/invoices/', payload);
-        setSuccess(
+        const res = await api.post<Invoice>('/invoices/', payload);
+        const baseMsg =
           voucherType === 'sales'
             ? 'Sales invoice created. Inventory has been reduced.'
-            : 'Purchase invoice created. Inventory has been increased.'
-        );
+            : 'Purchase invoice created. Inventory has been increased.';
+        const warningNote =
+          res.data.warnings?.includes('invoice_date_outside_fy') && activeFY
+            ? ` ⚠️ Date is outside the active financial year (${activeFY.label}).`
+            : '';
+        setSuccess(baseMsg + warningNote);
       }
 
       resetInvoiceForm();
@@ -561,6 +567,13 @@ export default function InvoicesPage() {
                   onChange={(event) => setInvoiceDate(event.target.value)}
                   required
                 />
+                {activeFY !== null &&
+                  invoiceDate !== '' &&
+                  (invoiceDate < activeFY.start_date || invoiceDate > activeFY.end_date) ? (
+                  <p className="field-warning">
+                    ⚠️ This date is outside the active financial year ({activeFY.label}). The invoice will still be created.
+                  </p>
+                ) : null}
               </div>
 
               {voucherType === 'purchase' ? (
