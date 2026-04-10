@@ -17,6 +17,7 @@ from src.models.invoice import Invoice
 from src.models.payment import Payment
 from src.models.user import User, UserRole
 from src.schemas.ledger import DayBookEntry, DayBookOut, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementOut, PaginatedLedgerOut
+from src.services.financial_year import get_active_fy
 
 router = APIRouter()
 
@@ -88,11 +89,25 @@ def list_ledgers(
 
 @router.get("/day-book", response_model=DayBookOut)
 def get_day_book(
-    from_date: date = Query(...),
-    to_date: date = Query(...),
+    from_date: date | None = Query(None),
+    to_date: date | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
+    fy_label: str | None = None
+    financial_year_id: int | None = None
+    if from_date is None or to_date is None:
+        active_fy = get_active_fy(db)
+        if active_fy is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No active financial year found. Please provide from_date and to_date, or activate a financial year.",
+            )
+        from_date = active_fy.start_date
+        to_date = active_fy.end_date
+        fy_label = active_fy.label
+        financial_year_id = active_fy.id
+
     if from_date > to_date:
         raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
 
@@ -147,6 +162,8 @@ def get_day_book(
         total_debit=sum(entry.debit for entry in entries),
         total_credit=sum(entry.credit for entry in entries),
         entries=entries,
+        fy_label=fy_label,
+        financial_year_id=financial_year_id,
     )
 
 
@@ -221,11 +238,25 @@ def delete_ledger(
 @router.get("/{ledger_id}/statement", response_model=LedgerStatementOut)
 def get_ledger_statement(
     ledger_id: int,
-    from_date: date = Query(...),
-    to_date: date = Query(...),
+    from_date: date | None = Query(None),
+    to_date: date | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
+    fy_label: str | None = None
+    financial_year_id: int | None = None
+    if from_date is None or to_date is None:
+        active_fy = get_active_fy(db)
+        if active_fy is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No active financial year found. Please provide from_date and to_date, or activate a financial year.",
+            )
+        from_date = active_fy.start_date
+        to_date = active_fy.end_date
+        fy_label = active_fy.label
+        financial_year_id = active_fy.id
+
     if from_date > to_date:
         raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
 
@@ -313,6 +344,8 @@ def get_ledger_statement(
         period_credit=period_credit,
         closing_balance=closing_balance,
         entries=entries,
+        fy_label=fy_label,
+        financial_year_id=financial_year_id,
     )
 
 
