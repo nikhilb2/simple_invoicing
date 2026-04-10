@@ -153,6 +153,7 @@ export type Invoice = {
   due_date: string | null;
   created_at: string;
   items: InvoiceItem[];
+  warnings?: string[];
 };
 
 export type InvoiceItem = {
@@ -239,6 +240,7 @@ export type Payment = {
   notes: string | null;
   created_by: number;
   created_at: string;
+  warnings?: string[];
 };
 
 export type PaymentCreate = {

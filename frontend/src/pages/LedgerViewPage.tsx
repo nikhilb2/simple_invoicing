@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, FileText, FilePlus, Mail, Pencil, ReceiptText } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
-import type { CompanyProfile, Invoice, Ledger, LedgerStatement, PaymentCreate, Product } from '../types/api';
+import type { CompanyProfile, Invoice, Ledger, LedgerStatement, Payment, PaymentCreate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
 import StatementPreview from '../components/StatementPreview';
 import StatusToasts from '../components/StatusToasts';
 import CreateInvoiceModal from '../components/CreateInvoiceModal';
 import SendEmailModal from '../components/SendEmailModal';
 import formatCurrency from '../utils/formatting';
+import { useFY } from '../context/FYContext';
 
 function defaultDateRange() {
   const today = new Date();
@@ -21,6 +22,7 @@ export default function LedgerViewPage() {
   const { id } = useParams<{ id: string }>();
   const ledgerId = Number(id);
   const navigate = useNavigate();
+  const { activeFY } = useFY();
 
   const [ledger, setLedger] = useState<Ledger | null>(null);
   const [statement, setStatement] = useState<LedgerStatement | null>(null);
@@ -30,6 +32,7 @@ export default function LedgerViewPage() {
   const [loadingLedger, setLoadingLedger] = useState(true);
   const [loadingStatement, setLoadingStatement] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [period, setPeriod] = useState(defaultDateRange);
   const [refreshKey, setRefreshKey] = useState(0);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
@@ -127,7 +130,7 @@ export default function LedgerViewPage() {
     try {
       setSubmittingPayment(true);
       setError('');
-      await api.post('/payments/', paymentForm);
+      const res = await api.post<Payment>('/payments/', paymentForm);
       setShowPaymentForm(false);
       setPaymentForm({
         ledger_id: ledgerId,
@@ -140,6 +143,11 @@ export default function LedgerViewPage() {
       });
       // Refresh statement
       setRefreshKey((k) => k + 1);
+      if (res.data.warnings?.includes('invoice_date_outside_fy') && activeFY) {
+        setSuccess(
+          `⚠️ This date is outside the active financial year (${activeFY.label}). The payment was still recorded.`,
+        );
+      }
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to record payment'));
     } finally {
@@ -250,7 +258,12 @@ export default function LedgerViewPage() {
         </div>
       </section>
 
-      <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
+      <StatusToasts
+        error={error}
+        success={success}
+        onClearError={() => setError('')}
+        onClearSuccess={() => setSuccess('')}
+      />
 
       <section className="content-grid">
         <article className="panel stack">
@@ -424,6 +437,14 @@ export default function LedgerViewPage() {
                     value={paymentForm.date}
                     onChange={(e) => setPaymentForm((f) => ({ ...f, date: e.target.value }))}
                   />
+                  {activeFY !== null && paymentForm.date && (
+                    paymentForm.date.slice(0, 10) < activeFY.start_date ||
+                    paymentForm.date.slice(0, 10) > activeFY.end_date
+                  ) ? (
+                    <p className="field-warning">
+                      ⚠️ This date is outside the active financial year ({activeFY.label}). The payment will still be recorded.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="field">
                   <label htmlFor="pay-mode">Mode</label>
@@ -484,10 +505,11 @@ export default function LedgerViewPage() {
         <CreateInvoiceModal
           preselectedLedgerId={ledgerId}
           onClose={() => setShowInvoiceModal(false)}
-          onCreated={(msg) => {
+          onCreated={(_msg, warningMsg) => {
             setShowInvoiceModal(false);
             setRefreshKey((k) => k + 1);
             setError('');
+            if (warningMsg) setSuccess(warningMsg);
           }}
           onError={(msg) => setError(msg)}
         />

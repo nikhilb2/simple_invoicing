@@ -140,6 +140,20 @@ textarea {
   margin: 12px 0;
 }
 
+.field-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(246, 214, 123, 0.15);
+  border: 1px solid rgba(246, 214, 123, 0.4);
+  color: #f6d67b;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  margin-top: 6px;
+}
+
 .topbar__subtitle {
   margin: 8px 0 0;
 }
