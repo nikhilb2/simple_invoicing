@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { FYProvider } from './context/FYContext';
 import { ShortcutsProvider } from './context/ShortcutsContext';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -76,9 +77,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <ShortcutsProvider>
-        <AppRoutes />
-      </ShortcutsProvider>
+      <FYProvider>
+        <ShortcutsProvider>
+          <AppRoutes />
+        </ShortcutsProvider>
+      </FYProvider>
     </AuthProvider>
   );
 }
