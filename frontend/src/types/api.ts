@@ -202,6 +202,8 @@ export type LedgerStatement = {
   period_credit: number;
   closing_balance: number;
   entries: LedgerStatementEntry[];
+  fy_label: string | null;
+  financial_year_id: number | null;
 };
 
 export type DayBookEntry = {
@@ -221,6 +223,8 @@ export type DayBook = {
   total_debit: number;
   total_credit: number;
   entries: DayBookEntry[];
+  fy_label: string | null;
+  financial_year_id: number | null;
 };
 
 export type Payment = {

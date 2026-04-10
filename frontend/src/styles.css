@@ -88,10 +88,16 @@ textarea {
 
 .topbar,
 .page-frame,
-.nav-panel,
 .section-card {
   position: relative;
   z-index: 1;
+}
+
+/* nav-panel needs a higher stacking context so dropdowns inside it
+   float above the page-frame (which is later in the DOM). */
+.nav-panel {
+  position: relative;
+  z-index: 2;
 }
 
 .topbar {
