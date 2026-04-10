@@ -95,6 +95,46 @@ textarea {
   padding: 0;               /* padding moves to inner elements */
 }
 
+/* ── Sidebar ──────────────────────────────────────────────────────── */
+.sidebar {
+  grid-area: sidebar;
+  width: var(--sidebar-width);
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.sidebar__header {
+  padding: 20px 16px 16px;
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidebar__brand-name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--sidebar-text);
+  display: block;
+}
+
+.sidebar__brand-tagline {
+  font-size: 0.7rem;
+  color: var(--sidebar-muted);
+  display: block;
+}
+
 .app-shell__backdrop {
   position: fixed;
   inset: auto;

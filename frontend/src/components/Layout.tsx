@@ -5,6 +5,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useFY } from '../context/FYContext';
 import { useShortcuts } from '../context/ShortcutsContext';
+import Sidebar from './Sidebar';
 
 function fyFromStartYear(year: number) {
   const end = year + 1;
@@ -75,6 +76,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-shell">
+      <div className="app-shell__sidebar">
+        <Sidebar />
+      </div>
+      <div className="app-shell__main">
       <div className="app-shell__backdrop app-shell__backdrop--left" />
       <div className="app-shell__backdrop app-shell__backdrop--right" />
       <header className="topbar">
@@ -368,6 +373,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       >
         {children}
       </motion.main>
+      </div>
     </div>
   );
 }
