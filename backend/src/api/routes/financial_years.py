@@ -67,6 +67,10 @@ def create_financial_year(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
+    existing = db.query(FinancialYear).filter(FinancialYear.label == payload.label).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Financial year '{payload.label}' already exists.")
+
     fy = FinancialYear(
         label=payload.label,
         start_date=payload.start_date,

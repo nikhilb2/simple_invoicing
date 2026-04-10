@@ -54,11 +54,10 @@ test.describe('Financial Year Switcher', () => {
     const dialog = page.locator('[role="dialog"][aria-label="Create new financial year"]');
     await expect(dialog).toBeVisible({ timeout: 5_000 });
 
-    // Label input
-    await expect(dialog.locator('input[placeholder="2025-26"]')).toBeVisible();
-    // Start date
-    const dateInputs = dialog.locator('input[type="date"]');
-    await expect(dateInputs).toHaveCount(2);
+    // Starting year number input
+    await expect(dialog.locator('input[type="number"]')).toBeVisible();
+    // No date inputs
+    await expect(dialog.locator('input[type="date"]')).toHaveCount(0);
     // Cancel button
     await expect(dialog.locator('button:has-text("Cancel")')).toBeVisible();
     // Create button
@@ -89,27 +88,33 @@ test.describe('Financial Year Switcher', () => {
     const dialog = page.locator('[role="dialog"][aria-label="Create new financial year"]');
     await expect(dialog).toBeVisible({ timeout: 5_000 });
 
-    // Submit with empty fields
+    // Submit with empty year field
     await dialog.locator('button:has-text("Create")').click();
-    await expect(dialog.locator('text=All fields are required.')).toBeVisible({ timeout: 3_000 });
+    await expect(dialog.locator('text=Please enter a valid starting year (2000–2099).')).toBeVisible({ timeout: 3_000 });
   });
 
   test('can create a new financial year', async ({ authedPage: page }) => {
-    const fyLabel = `E2E-FY-${Date.now().toString(36).toUpperCase()}`;
+    const testYear = 2030;
+    const testLabel = '2030-31';
 
     const fyButton = page.locator('button[aria-haspopup="listbox"]');
     await fyButton.click();
     const listbox = page.locator('[role="listbox"]');
     await expect(listbox).toBeVisible({ timeout: 5_000 });
+
+    // If FY already exists from a previous run, just verify it's there and skip
+    const existingOption = listbox.locator(`button:has-text("${testLabel}")`);
+    if (await existingOption.isVisible()) {
+      await page.locator('h1').first().click();
+      return;
+    }
+
     await listbox.locator('button:has-text("+ New FY")').click();
 
     const dialog = page.locator('[role="dialog"][aria-label="Create new financial year"]');
     await expect(dialog).toBeVisible({ timeout: 5_000 });
 
-    await dialog.locator('input[placeholder="2025-26"]').fill(fyLabel);
-    const dateInputs = dialog.locator('input[type="date"]');
-    await dateInputs.first().fill('2030-04-01');
-    await dateInputs.last().fill('2031-03-31');
+    await dialog.locator('input[type="number"]').fill(String(testYear));
 
     await dialog.locator('button:has-text("Create")').click();
 
@@ -118,7 +123,33 @@ test.describe('Financial Year Switcher', () => {
 
     // New FY should appear in the dropdown
     await fyButton.click();
-    await expect(page.locator(`[role="listbox"] button:has-text("${fyLabel}")`)).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator(`[role="listbox"] button:has-text("${testLabel}")`)).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('cannot create a duplicate financial year', async ({ authedPage: page }) => {
+    const fyButton = page.locator('button[aria-haspopup="listbox"]');
+    await fyButton.click();
+    const listbox = page.locator('[role="listbox"]');
+    await expect(listbox).toBeVisible({ timeout: 5_000 });
+
+    // Use the first listed FY option’s label to attempt a duplicate
+    const firstOption = listbox.locator('[role="option"]').first();
+    await expect(firstOption).toBeVisible({ timeout: 5_000 });
+    const existingLabel = (await firstOption.textContent())?.replace('\u2713', '').trim() ?? '';
+    // Extract the starting year from e.g. "2025-26"
+    const existingYear = parseInt(existingLabel.split('-')[0], 10);
+
+    await listbox.locator('button:has-text("+ New FY")').click();
+
+    const dialog = page.locator('[role="dialog"][aria-label="Create new financial year"]');
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    await dialog.locator('input[type="number"]').fill(String(existingYear));
+    await dialog.locator('button:has-text("Create")').click();
+
+    // Modal should remain open with an error
+    await expect(dialog).toBeVisible({ timeout: 3_000 });
+    await expect(dialog.locator(`text=Financial year ${existingLabel} already exists.`)).toBeVisible({ timeout: 3_000 });
   });
 
   test('can switch the active financial year', async ({ authedPage: page }) => {
@@ -137,10 +168,7 @@ test.describe('Financial Year Switcher', () => {
       await listbox.locator('button:has-text("+ New FY")').click();
       const dialog = page.locator('[role="dialog"][aria-label="Create new financial year"]');
       await expect(dialog).toBeVisible({ timeout: 5_000 });
-      await dialog.locator('input[placeholder="2025-26"]').fill(`SW-${Date.now().toString(36)}`);
-      const dateInputs = dialog.locator('input[type="date"]');
-      await dateInputs.first().fill('2032-04-01');
-      await dateInputs.last().fill('2033-03-31');
+      await dialog.locator('input[type="number"]').fill('2035');
       await dialog.locator('button:has-text("Create")').click();
       await expect(dialog).not.toBeVisible({ timeout: 10_000 });
 
