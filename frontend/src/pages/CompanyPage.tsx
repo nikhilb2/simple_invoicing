@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
+import { useFY } from '../context/FYContext';
 import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate } from '../types/api';
 
 // ---------------------------------------------------------------------------
@@ -13,17 +14,21 @@ const VOUCHER_LABELS: Record<string, string> = {
   payment: 'Payment',
 };
 
-function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number): string {
+function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number, fyLabel?: string | null): string {
   const sep = s.separator || '-';
   const seq = String(nextSeq).padStart(s.pad_digits, '0');
   if (!s.include_year) {
     return `${s.prefix}${sep}${seq}`;
   }
   const now = new Date();
-  const yearPart =
-    s.year_format === 'MM-YYYY'
-      ? `${String(now.getMonth() + 1).padStart(2, '0')}${sep}${now.getFullYear()}`
-      : `${now.getFullYear()}`;
+  let yearPart: string;
+  if (s.year_format === 'FY') {
+    yearPart = fyLabel ?? 'FY';
+  } else if (s.year_format === 'MM-YYYY') {
+    yearPart = `${String(now.getMonth() + 1).padStart(2, '0')}${sep}${now.getFullYear()}`;
+  } else {
+    yearPart = `${now.getFullYear()}`;
+  }
   return `${s.prefix}${sep}${yearPart}${sep}${seq}`;
 }
 
@@ -34,6 +39,7 @@ function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number): string {
 type SeriesRowState = InvoiceSeriesUpdate;
 
 function InvoiceSeriesCard() {
+  const { activeFY } = useFY();
   const [seriesList, setSeriesList] = useState<InvoiceSeries[]>([]);
   const [drafts, setDrafts] = useState<Record<number, SeriesRowState>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
@@ -42,9 +48,12 @@ function InvoiceSeriesCard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     void (async () => {
       try {
-        const res = await api.get<InvoiceSeries[]>('/invoice-series/');
+        const params: Record<string, string | number> = {};
+        if (activeFY) params.financial_year_id = activeFY.id;
+        const res = await api.get<InvoiceSeries[]>('/invoice-series/', { params });
         setSeriesList(res.data);
         const initial: Record<number, SeriesRowState> = {};
         for (const s of res.data) {
@@ -63,7 +72,7 @@ function InvoiceSeriesCard() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [activeFY?.id]);
 
   function patchDraft(id: number, patch: Partial<SeriesRowState>) {
     setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
@@ -87,7 +96,7 @@ function InvoiceSeriesCard() {
     }
   }
 
-  if (loading) return null;
+  if (loading) return <article className="panel stack"><div className="empty-state">Loading series…</div></article>;
   if (seriesList.length === 0) return null;
 
   return (
@@ -95,7 +104,9 @@ function InvoiceSeriesCard() {
       <div className="panel__header">
         <div>
           <p className="eyebrow">Numbering</p>
-          <h2 className="nav-panel__title">Invoice series</h2>
+          <h2 className="nav-panel__title">
+            Invoice series{activeFY ? ` — FY ${activeFY.label}` : ''}
+          </h2>
         </div>
       </div>
       <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '8px' }}>
@@ -107,7 +118,7 @@ function InvoiceSeriesCard() {
         {seriesList.map((s) => {
           const draft = drafts[s.id];
           if (!draft) return null;
-          const preview = buildPreview(draft, s.next_sequence);
+          const preview = buildPreview(draft, s.next_sequence, activeFY?.label);
           return (
             <div key={s.id} className="panel" style={{ padding: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -161,10 +172,11 @@ function InvoiceSeriesCard() {
                     className="select"
                     value={draft.year_format}
                     disabled={!draft.include_year}
-                    onChange={(e) => patchDraft(s.id, { year_format: e.target.value as 'YYYY' | 'MM-YYYY' })}
+                    onChange={(e) => patchDraft(s.id, { year_format: e.target.value as 'YYYY' | 'MM-YYYY' | 'FY' })}
                   >
                     <option value="YYYY">YYYY (e.g. 2026)</option>
                     <option value="MM-YYYY">MM-YYYY (e.g. 04-2026)</option>
+                    <option value="FY">FY (e.g. 2025-26)</option>
                   </select>
                 </div>
 
