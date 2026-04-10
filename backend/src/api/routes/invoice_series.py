@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from src.api.deps import require_roles
 from src.db.session import get_db
@@ -13,10 +14,14 @@ router = APIRouter()
 @router.get("", response_model=list[InvoiceSeriesOut], include_in_schema=False)
 @router.get("/", response_model=list[InvoiceSeriesOut])
 def list_invoice_series(
+    financial_year_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.admin)),
 ):
-    return db.query(InvoiceSeries).order_by(InvoiceSeries.id.asc()).all()
+    q = db.query(InvoiceSeries)
+    if financial_year_id is not None:
+        q = q.filter(InvoiceSeries.financial_year_id == financial_year_id)
+    return q.order_by(InvoiceSeries.id.asc()).all()
 
 
 @router.put("/{series_id}", response_model=InvoiceSeriesOut)

@@ -6,6 +6,7 @@ from typing import Literal, Optional
 class InvoiceSeriesOut(BaseModel):
     id: int
     voucher_type: str
+    financial_year_id: Optional[int] = None
     prefix: str
     include_year: bool
     year_format: str
@@ -21,6 +22,6 @@ class InvoiceSeriesOut(BaseModel):
 class InvoiceSeriesUpdate(BaseModel):
     prefix: str
     include_year: bool = True
-    year_format: Literal["YYYY", "MM-YYYY"] = "YYYY"
+    year_format: Literal["YYYY", "MM-YYYY", "FY"] = "YYYY"
     separator: str = "-"
     pad_digits: Literal[2, 3, 4] = 3
