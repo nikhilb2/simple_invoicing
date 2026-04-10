@@ -71,6 +71,8 @@ class LedgerStatementOut(BaseModel):
     period_credit: float
     closing_balance: float
     entries: list[LedgerStatementEntry]
+    fy_label: str | None = None
+    financial_year_id: int | None = None
 
 
 class DayBookEntry(BaseModel):
@@ -90,3 +92,5 @@ class DayBookOut(BaseModel):
     total_debit: float
     total_credit: float
     entries: list[DayBookEntry]
+    fy_label: str | None = None
+    financial_year_id: int | None = None
