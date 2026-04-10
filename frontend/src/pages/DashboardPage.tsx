@@ -16,6 +16,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const activeCurrencyCode = company?.currency_code || 'USD';
+  const LOW_STOCK_THRESHOLD = 5;
 
   useEffect(() => {
     let active = true;
@@ -60,7 +61,7 @@ export default function DashboardPage() {
   }, []);
 
   const totalInventoryUnits = state.inventory.reduce((sum, row) => sum + row.quantity, 0);
-  const lowStockCount = state.inventory.filter((row) => row.quantity <= 5).length;
+  const lowStockCount = state.inventory.filter((row) => row.quantity <= LOW_STOCK_THRESHOLD).length;
   const invoiceRevenue = state.invoices.reduce((sum, invoice) => sum + invoice.total_amount, 0);
 
   return (
@@ -129,8 +130,8 @@ export default function DashboardPage() {
                         <strong>{row.product_name}</strong>
                         <span className="table-subtext">Product ID #{row.product_id}</span>
                       </div>
-                      <span className={`pill ${row.quantity <= 5 ? 'pill--low' : 'pill--ok'}`}>{row.quantity} units</span>
-                      <span className="table-subtext text-right">{row.quantity <= 5 ? 'Needs attention' : 'Stable'}</span>
+                      <span className={`pill ${row.quantity <= LOW_STOCK_THRESHOLD ? 'pill--low' : 'pill--ok'}`}>{row.quantity} units</span>
+                      <span className="table-subtext text-right">{row.quantity <= LOW_STOCK_THRESHOLD ? 'Needs attention' : 'Stable'}</span>
                     </div>
                   ))
               : null}
