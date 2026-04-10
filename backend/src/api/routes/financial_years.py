@@ -4,11 +4,52 @@ from sqlalchemy.orm import Session
 from src.api.deps import get_current_user
 from src.db.session import get_db
 from src.models.financial_year import FinancialYear
+from src.models.invoice_series import InvoiceSeries
 from src.models.user import User
 from src.schemas.financial_year import FinancialYearCreate, FinancialYearOut
-from src.services.financial_year import activate_fy
+from src.services.financial_year import activate_fy, get_active_fy
 
 router = APIRouter()
+
+
+def _seed_series_for_fy(db: Session, new_fy_id: int) -> None:
+    """Clone the 3 core series rows from the active FY into the new FY."""
+    active_fy = get_active_fy(db)
+    if active_fy is None:
+        # No active FY to clone from; seed bare defaults
+        for vtype, prefix in [("sales", "INV"), ("purchase", "PINV"), ("payment", "PAY")]:
+            db.add(InvoiceSeries(
+                voucher_type=vtype,
+                financial_year_id=new_fy_id,
+                prefix=prefix,
+                include_year=True,
+                year_format="YYYY",
+                separator="-",
+                next_sequence=1,
+                pad_digits=3,
+            ))
+        return
+
+    source_rows = (
+        db.query(InvoiceSeries)
+        .filter(
+            InvoiceSeries.financial_year_id == active_fy.id,
+            InvoiceSeries.voucher_type.in_(["sales", "purchase", "payment"]),
+        )
+        .all()
+    )
+
+    for src in source_rows:
+        db.add(InvoiceSeries(
+            voucher_type=src.voucher_type,
+            financial_year_id=new_fy_id,
+            prefix=src.prefix,
+            include_year=src.include_year,
+            year_format=src.year_format,
+            separator=src.separator,
+            next_sequence=1,
+            pad_digits=src.pad_digits,
+        ))
 
 
 @router.get("", response_model=list[FinancialYearOut], include_in_schema=False)
@@ -33,6 +74,8 @@ def create_financial_year(
         is_active=False,
     )
     db.add(fy)
+    db.flush()  # get fy.id before committing
+    _seed_series_for_fy(db, fy.id)
     db.commit()
     db.refresh(fy)
     return fy
