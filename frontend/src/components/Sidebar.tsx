@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { AnimatePresence, motion } from 'framer-motion';
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useFY } from '../context/FYContext';
 
@@ -60,13 +60,13 @@ export default function Sidebar() {
     <>
       <aside className="sidebar">
         <div className="sidebar__header">
-          <div className="sidebar__brand">
+          <Link to="/" className="sidebar__brand">
             <span>⚡</span>
             <div>
               <span className="sidebar__brand-name">Simple Invoicing</span>
               <span className="sidebar__brand-tagline">Stock &amp; billing</span>
             </div>
-          </div>
+          </Link>
         </div>
 
         <nav className="sidebar__nav" aria-label="Sidebar navigation">

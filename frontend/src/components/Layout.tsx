@@ -6,7 +6,7 @@ import { useShortcuts } from '../context/ShortcutsContext';
 import Sidebar from './Sidebar';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  const { logout, userEmail, isAdmin } = useAuth();
+  const { isAdmin } = useAuth();
   const location = useLocation();
   const { registerAction } = useShortcuts();
   const navigate = useNavigate();
@@ -53,32 +53,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <div className="app-shell__main">
       <div className="app-shell__backdrop app-shell__backdrop--left" />
       <div className="app-shell__backdrop app-shell__backdrop--right" />
-      <header className="topbar">
-        <div className="topbar__top">
-          <div>
-            <Link to="/" className="brand-mark">Simple Invoicing</Link>
-            <p className="topbar__subtitle">
-              Stock, billing, and operator workflows in one place.
-            </p>
-          </div>
-          <button
-            className="burger-btn"
-            onClick={() => setDrawerOpen(true)}
-            aria-label="Open navigation"
-          >
-            <span className="burger-btn__bar" />
-            <span className="burger-btn__bar" />
-            <span className="burger-btn__bar" />
-          </button>
-        </div>
-        <div className="topbar__session">
-          <div>
-            <p className="eyebrow">Signed in as</p>
-            <p className="session-email">{userEmail ?? 'Active user'}</p>
-          </div>
-          <button className="button button--ghost" onClick={logout} title="Logout" aria-label="Logout">
-            Logout
-          </button>
+      <header className="page-header">
+        <div className="page-header__shortcut-hint">
+          Press <kbd>?</kbd> for shortcuts
         </div>
       </header>
 
