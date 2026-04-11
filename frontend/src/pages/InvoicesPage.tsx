@@ -82,6 +82,7 @@ export default function InvoicesPage() {
   const [restoringInvoiceId, setRestoringInvoiceId] = useState<number | null>(null);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [pendingCancelInvoiceId, setPendingCancelInvoiceId] = useState<number | null>(null);
+  const [pendingCancelInvoiceNumber, setPendingCancelInvoiceNumber] = useState<string | null>(null);
   const [showCancelled, setShowCancelled] = useState(false);
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
@@ -334,14 +335,16 @@ export default function InvoicesPage() {
     }
   }
 
-  async function handleCancelInvoice(invoiceId: number) {
+  async function handleCancelInvoice(invoiceId: number, invoiceNumber: string | null) {
     setPendingCancelInvoiceId(invoiceId);
+    setPendingCancelInvoiceNumber(invoiceNumber);
     setShowCancelDialog(true);
   }
 
   function dismissCancelDialog() {
     setShowCancelDialog(false);
     setPendingCancelInvoiceId(null);
+    setPendingCancelInvoiceNumber(null);
   }
 
   async function confirmCancelInvoice() {
@@ -950,7 +953,7 @@ export default function InvoicesPage() {
                           <button
                             type="button"
                             className="button button--danger button--icon"
-                            onClick={() => void handleCancelInvoice(invoice.id)}
+                            onClick={() => void handleCancelInvoice(invoice.id, invoice.invoice_number)}
                             disabled={cancellingInvoiceId === invoice.id}
                             title="Cancel invoice"
                             aria-label={`Cancel invoice ${invoice.invoice_number || invoice.id}`}
@@ -1340,7 +1343,7 @@ export default function InvoicesPage() {
 
       {showCancelDialog ? (
         <ConfirmDialog
-          message={`Are you sure you want to cancel invoice #${pendingCancelInvoiceId}? Inventory will be reversed. The invoice will remain visible when showing cancelled invoices.`}
+          message={`Are you sure you want to cancel invoice ${pendingCancelInvoiceNumber ?? `#${pendingCancelInvoiceId}`}? Inventory will be reversed. The invoice will remain visible when showing cancelled invoices.`}
           title="Cancel invoice"
           confirmText="Cancel invoice"
           cancelText="Keep"
