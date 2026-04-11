@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, FileText, FilePlus, Mail, Pencil, ReceiptText } from 'lucide-react';
+import { ArrowLeft, ChevronDown, FileText, FilePlus, Mail, Pencil, ReceiptText, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
-import type { CompanyProfile, Invoice, Ledger, LedgerStatement, Payment, PaymentCreate, Product } from '../types/api';
+import type { CompanyProfile, Invoice, Ledger, LedgerStatement, Payment, PaymentCreate, PaymentUpdate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
 import StatementPreview from '../components/StatementPreview';
 import StatusToasts from '../components/StatusToasts';
 import CreateInvoiceModal from '../components/CreateInvoiceModal';
 import SendEmailModal from '../components/SendEmailModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 import formatCurrency from '../utils/formatting';
 import { useFY } from '../context/FYContext';
 
@@ -54,6 +55,18 @@ export default function LedgerViewPage() {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showActionsDropdown, setShowActionsDropdown] = useState(false);
   const actionsDropdownRef = useRef<HTMLDivElement>(null);
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+  const [editPaymentForm, setEditPaymentForm] = useState<PaymentUpdate>({
+    voucher_type: 'receipt',
+    amount: 0,
+    date: new Date().toISOString().slice(0, 16),
+    mode: '',
+    reference: '',
+    notes: '',
+  });
+  const [submittingEditPayment, setSubmittingEditPayment] = useState(false);
+  const [confirmDeletePaymentId, setConfirmDeletePaymentId] = useState<number | null>(null);
+  const [deletingPayment, setDeletingPayment] = useState(false);
 
   useEffect(() => {
     if (!showActionsDropdown) return;
@@ -163,6 +176,59 @@ export default function LedgerViewPage() {
       setError(getApiErrorMessage(err, 'Unable to record payment'));
     } finally {
       setSubmittingPayment(false);
+    }
+  }
+
+  async function handleLoadEditPayment(paymentId: number) {
+    try {
+      setError('');
+      const res = await api.get<Payment>(`/payments/${paymentId}`);
+      setEditingPayment(res.data);
+      setEditPaymentForm({
+        voucher_type: res.data.voucher_type,
+        amount: res.data.amount,
+        date: res.data.date.slice(0, 16),
+        mode: res.data.mode || '',
+        reference: res.data.reference || '',
+        notes: res.data.notes || '',
+      });
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to load payment'));
+    }
+  }
+
+  async function handleUpdatePayment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingPayment) return;
+    if ((editPaymentForm.amount ?? 0) <= 0) {
+      setError('Amount must be greater than 0');
+      return;
+    }
+    try {
+      setSubmittingEditPayment(true);
+      setError('');
+      await api.put<Payment>(`/payments/${editingPayment.id}`, editPaymentForm);
+      setEditingPayment(null);
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to update payment'));
+    } finally {
+      setSubmittingEditPayment(false);
+    }
+  }
+
+  async function handleConfirmDeletePayment() {
+    if (confirmDeletePaymentId === null) return;
+    try {
+      setDeletingPayment(true);
+      setError('');
+      await api.delete(`/payments/${confirmDeletePaymentId}`);
+      setConfirmDeletePaymentId(null);
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to cancel payment'));
+    } finally {
+      setDeletingPayment(false);
     }
   }
 
@@ -386,7 +452,28 @@ export default function LedgerViewPage() {
                       >
                         View
                       </button>
-                    ) : null}
+                    ) : (
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={() => void handleLoadEditPayment(entry.entry_id)}
+                          title="Edit payment"
+                          aria-label="Edit payment"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={() => setConfirmDeletePaymentId(entry.entry_id)}
+                          title="Cancel payment"
+                          aria-label="Cancel payment"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))
               : null}
@@ -541,6 +628,115 @@ export default function LedgerViewPage() {
           onError={(message) => setError(message)}
         />
       )}
+
+      {editingPayment ? (
+        <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setEditingPayment(null)}>
+          <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="panel stack">
+              <div className="panel__header">
+                <h2 className="nav-panel__title">Edit Payment #{editingPayment.id}</h2>
+                <button type="button" className="button button--ghost" onClick={() => setEditingPayment(null)} title="Close" aria-label="Close">✕</button>
+              </div>
+              <form onSubmit={(e) => void handleUpdatePayment(e)} className="stack">
+                <div className="field">
+                  <label htmlFor="edit-pay-type">Type</label>
+                  <select
+                    id="edit-pay-type"
+                    className="input"
+                    value={editPaymentForm.voucher_type}
+                    onChange={(e) => setEditPaymentForm((f) => ({ ...f, voucher_type: e.target.value as 'receipt' | 'payment' }))}
+                  >
+                    <option value="receipt">Receipt (money received)</option>
+                    <option value="payment">Payment (money paid)</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="edit-pay-amount">Amount</label>
+                  <input
+                    id="edit-pay-amount"
+                    className="input"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={editPaymentForm.amount || ''}
+                    onChange={(e) => setEditPaymentForm((f) => ({ ...f, amount: parseFloat(e.target.value) || 0 }))}
+                    required
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="edit-pay-date">Date</label>
+                  <input
+                    id="edit-pay-date"
+                    className="input"
+                    type="datetime-local"
+                    value={editPaymentForm.date}
+                    onChange={(e) => setEditPaymentForm((f) => ({ ...f, date: e.target.value }))}
+                  />
+                  {activeFY !== null && editPaymentForm.date && (
+                    editPaymentForm.date.slice(0, 10) < activeFY.start_date ||
+                    editPaymentForm.date.slice(0, 10) > activeFY.end_date
+                  ) ? (
+                    <p className="field-warning">
+                      ⚠️ This date is outside the active financial year ({activeFY.label}). The payment will still be saved.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="field">
+                  <label htmlFor="edit-pay-mode">Mode</label>
+                  <select
+                    id="edit-pay-mode"
+                    className="input"
+                    value={editPaymentForm.mode}
+                    onChange={(e) => setEditPaymentForm((f) => ({ ...f, mode: e.target.value }))}
+                  >
+                    <option value="">Select mode</option>
+                    <option value="cash">Cash</option>
+                    <option value="bank">Bank Transfer</option>
+                    <option value="upi">UPI</option>
+                    <option value="cheque">Cheque</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="edit-pay-ref">Reference (optional)</label>
+                  <input
+                    id="edit-pay-ref"
+                    className="input"
+                    type="text"
+                    placeholder="Cheque no, txn ID..."
+                    value={editPaymentForm.reference}
+                    onChange={(e) => setEditPaymentForm((f) => ({ ...f, reference: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="edit-pay-notes">Notes (optional)</label>
+                  <input
+                    id="edit-pay-notes"
+                    className="input"
+                    type="text"
+                    value={editPaymentForm.notes}
+                    onChange={(e) => setEditPaymentForm((f) => ({ ...f, notes: e.target.value }))}
+                  />
+                </div>
+                <button type="submit" className="button button--primary" disabled={submittingEditPayment} title="Update payment" aria-label="Update payment">
+                  {submittingEditPayment ? 'Saving...' : 'Update'}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmDeletePaymentId !== null ? (
+        <ConfirmDialog
+          title="Cancel payment?"
+          message="This will mark the payment as cancelled and remove it from the ledger balance. This cannot be undone."
+          confirmText={deletingPayment ? 'Cancelling...' : 'Cancel Payment'}
+          cancelText="Keep"
+          danger
+          onConfirm={() => void handleConfirmDeletePayment()}
+          onCancel={() => setConfirmDeletePaymentId(null)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -8,7 +8,7 @@ from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
 from src.models.payment import Payment
 from src.models.user import User, UserRole
-from src.schemas.payment import PaymentCreate, PaymentOut
+from src.schemas.payment import PaymentCreate, PaymentOut, PaymentUpdate
 from src.services.series import generate_next_number
 from src.services.financial_year import get_active_fy
 
@@ -64,12 +64,15 @@ def create_payment(
 @router.get("/", response_model=list[PaymentOut])
 def list_payments(
     ledger_id: int | None = Query(None),
+    include_cancelled: bool = Query(False),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
     query = db.query(Payment)
     if ledger_id is not None:
         query = query.filter(Payment.ledger_id == ledger_id)
+    if not include_cancelled:
+        query = query.filter(Payment.status == "active")
     return query.order_by(Payment.date.desc()).all()
 
 
@@ -85,15 +88,39 @@ def get_payment(
     return payment
 
 
+@router.put("/{payment_id}", response_model=PaymentOut)
+def update_payment(
+    payment_id: int,
+    payload: PaymentUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    payment = db.query(Payment).filter(Payment.id == payment_id, Payment.status == "active").first()
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    payment.voucher_type = payload.voucher_type
+    payment.amount = payload.amount
+    if payload.date is not None:
+        payment.date = payload.date
+    payment.mode = payload.mode.strip() if payload.mode else None
+    payment.reference = payload.reference.strip() if payload.reference else None
+    payment.notes = payload.notes.strip() if payload.notes else None
+    db.commit()
+    db.refresh(payment)
+    result = PaymentOut.model_validate(payment)
+    return result
+
+
 @router.delete("/{payment_id}")
 def delete_payment(
     payment_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(get_current_user),
 ):
-    payment = db.query(Payment).filter(Payment.id == payment_id).first()
+    payment = db.query(Payment).filter(Payment.id == payment_id, Payment.status == "active").first()
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
-    db.delete(payment)
+    payment.status = "cancelled"
     db.commit()
-    return {"message": "Payment deleted"}
+    return {"message": "Payment cancelled"}
