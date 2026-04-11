@@ -238,9 +238,19 @@ export type Payment = {
   mode: string | null;
   reference: string | null;
   notes: string | null;
+  status: string;
   created_by: number;
   created_at: string;
   warnings?: string[];
+};
+
+export type PaymentUpdate = {
+  voucher_type: 'receipt' | 'payment';
+  amount: number;
+  date?: string;
+  mode?: string;
+  reference?: string;
+  notes?: string;
 };
 
 export type PaymentCreate = {

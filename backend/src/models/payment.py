@@ -19,5 +19,6 @@ class Payment(Base):
     financial_year_id = Column(Integer, ForeignKey("financial_years.id"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    status = Column(String, nullable=False, default="active")  # "active" | "cancelled"
 
     ledger = relationship("Buyer", backref="payments")
