@@ -22,7 +22,7 @@ from src.models.user import User
 from src.schemas.invoice import InvoiceCreate, InvoiceOut, PaginatedInvoiceOut
 from src.api.deps import get_current_user
 from src.services.series import generate_next_number
-from src.services.financial_year import get_active_fy
+from src.services.financial_year import get_active_fy, get_fy_for_date
 
 router = APIRouter()
 
@@ -37,8 +37,14 @@ def _is_interstate_supply(company_gst: str | None, ledger_gst: str | None) -> bo
     return company_gst[:2] != ledger_gst[:2]
 
 
-def _generate_next_number(db: Session, voucher_type: str, financial_year_id: int | None = None) -> str:
-    return generate_next_number(db, voucher_type, financial_year_id)
+def _generate_next_number(
+    db: Session,
+    voucher_type: str,
+    financial_year_id: int | None = None,
+    invoice_date: date | None = None,
+    active_financial_year_id: int | None = None,
+) -> str:
+    return generate_next_number(db, voucher_type, financial_year_id, invoice_date, active_financial_year_id)
 
 
 def _require_ledger(db: Session, ledger_id: int) -> Ledger:
@@ -77,6 +83,7 @@ def _apply_payload_to_invoice(
     payload: InvoiceCreate,
     created_by: int | None = None,
     financial_year_id: int | None = None,
+    active_financial_year_id: int | None = None,
     regenerate_number: bool = True,
 ) -> None:
     ledger = _require_ledger(db, payload.ledger_id)
@@ -114,7 +121,10 @@ def _apply_payload_to_invoice(
 
     invoice.tax_inclusive = payload.tax_inclusive
     if regenerate_number:
-        invoice.invoice_number = _generate_next_number(db, invoice.voucher_type, financial_year_id)
+        invoice.invoice_number = _generate_next_number(
+            db, invoice.voucher_type, financial_year_id, payload.invoice_date,
+            active_financial_year_id,
+        )
 
     if not invoice.company_gst or not invoice.ledger_gst:
         raise HTTPException(
@@ -214,7 +224,15 @@ def create_invoice(
 ):
     try:
         active_fy = get_active_fy(db)
-        fy_id = active_fy.id if active_fy else None
+
+        # Determine which FY this invoice belongs to based on its date.
+        # If the invoice date falls within a different FY, use that FY.
+        fy_for_invoice = active_fy
+        if payload.invoice_date:
+            date_fy = get_fy_for_date(db, payload.invoice_date)
+            if date_fy is not None:
+                fy_for_invoice = date_fy
+        fy_id = fy_for_invoice.id if fy_for_invoice else None
 
         invoice = Invoice(
             total_amount=0,
@@ -226,6 +244,7 @@ def create_invoice(
             db, invoice, payload,
             created_by=current_user.id,
             financial_year_id=fy_id,
+            active_financial_year_id=active_fy.id if active_fy else None,
         )
         db.commit()
         db.refresh(invoice)
