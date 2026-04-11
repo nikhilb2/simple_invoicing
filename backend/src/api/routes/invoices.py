@@ -77,6 +77,7 @@ def _apply_payload_to_invoice(
     payload: InvoiceCreate,
     created_by: int | None = None,
     financial_year_id: int | None = None,
+    regenerate_number: bool = True,
 ) -> None:
     ledger = _require_ledger(db, payload.ledger_id)
     company = db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
@@ -112,7 +113,8 @@ def _apply_payload_to_invoice(
         invoice.due_date = datetime.combine(payload.due_date, datetime.min.time())
 
     invoice.tax_inclusive = payload.tax_inclusive
-    invoice.invoice_number = _generate_next_number(db, invoice.voucher_type, financial_year_id)
+    if regenerate_number:
+        invoice.invoice_number = _generate_next_number(db, invoice.voucher_type, financial_year_id)
 
     if not invoice.company_gst or not invoice.ledger_gst:
         raise HTTPException(
@@ -316,16 +318,30 @@ def update_invoice(
         )
 
     try:
+        active_fy = get_active_fy(db)
+
         _reverse_existing_invoice_inventory(db, invoice)
 
         for item in list(invoice.items):
             db.delete(item)
         db.flush()
 
-        _apply_payload_to_invoice(db, invoice, payload)
+        _apply_payload_to_invoice(
+            db, invoice, payload,
+            regenerate_number=False,
+        )
         db.commit()
         db.refresh(invoice)
-        return invoice
+
+        warnings: list[str] = []
+        if active_fy and payload.invoice_date:
+            inv_date = payload.invoice_date
+            if not (active_fy.start_date <= inv_date <= active_fy.end_date):
+                warnings.append("invoice_date_outside_fy")
+
+        result = InvoiceOut.model_validate(invoice)
+        result.warnings = warnings
+        return result
     except HTTPException:
         db.rollback()
         raise
