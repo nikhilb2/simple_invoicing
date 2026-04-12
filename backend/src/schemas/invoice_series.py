@@ -8,6 +8,7 @@ class InvoiceSeriesOut(BaseModel):
     voucher_type: str
     financial_year_id: Optional[int] = None
     prefix: str
+    suffix: str
     include_year: bool
     year_format: str
     separator: str
@@ -21,6 +22,7 @@ class InvoiceSeriesOut(BaseModel):
 
 class InvoiceSeriesUpdate(BaseModel):
     prefix: str
+    suffix: str = ""
     include_year: bool = True
     year_format: Literal["YYYY", "MM-YYYY", "FY"] = "YYYY"
     separator: str = "-"

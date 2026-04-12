@@ -10,7 +10,7 @@ from src.models.payment import Payment
 from src.models.user import User, UserRole
 from src.schemas.payment import PaymentCreate, PaymentOut, PaymentUpdate
 from src.services.series import generate_next_number
-from src.services.financial_year import get_active_fy
+from src.services.financial_year import get_active_fy, get_fy_for_date
 
 router = APIRouter()
 
@@ -26,12 +26,24 @@ def create_payment(
     if not ledger:
         raise HTTPException(status_code=404, detail="Ledger not found")
 
-    active_fy = get_active_fy(db)
-    fy_id = active_fy.id if active_fy else None
-
-    payment_number = generate_next_number(db, payload.voucher_type, fy_id)
-
     payment_date = payload.date or datetime.utcnow()
+    payment_day = payment_date.date() if hasattr(payment_date, "date") else payment_date
+
+    active_fy = get_active_fy(db)
+    fy_for_payment = active_fy
+    if payment_day is not None:
+        dated_fy = get_fy_for_date(db, payment_day)
+        if dated_fy is not None:
+            fy_for_payment = dated_fy
+    fy_id = fy_for_payment.id if fy_for_payment else None
+
+    payment_number = generate_next_number(
+        db,
+        "payment",
+        fy_id,
+        payment_day,
+        active_fy.id if active_fy else None,
+    )
 
     payment = Payment(
         ledger_id=payload.ledger_id,
@@ -51,7 +63,7 @@ def create_payment(
 
     warnings: list[str] = []
     if active_fy:
-        pdate = payment_date.date() if hasattr(payment_date, "date") else payment_date
+        pdate = payment_day
         if not (active_fy.start_date <= pdate <= active_fy.end_date):
             warnings.append("invoice_date_outside_fy")
 

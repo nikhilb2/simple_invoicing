@@ -161,6 +161,11 @@ class TestFormatNumber:
         s = make_series(1, year_format="FY")
         assert _format_number(s, 1, fy) == "INV-2025-26-001"
 
+    def test_appends_suffix_without_extra_separator(self):
+        fy = make_fy(1, "2025-26", date(2025, 4, 1), date(2026, 3, 31))
+        s = make_series(1, year_format="FY", suffix="/A")
+        assert _format_number(s, 1, fy) == "INV-2025-26-001/A"
+
     def test_fy_format_fallback_when_no_fy(self):
         s = make_series(1, year_format="FY")
         assert _format_number(s, 1, None) == "INV-FY-001"
@@ -190,6 +195,11 @@ class TestFormatNumber:
         s = make_series(1, include_year=False)
         result = _format_number(s, 7, None, invoice_date=date(2025, 6, 1))
         assert result == "INV-007"
+
+    def test_no_year_format_with_suffix(self):
+        s = make_series(1, include_year=False, suffix="-TAIL")
+        result = _format_number(s, 7, None, invoice_date=date(2025, 6, 1))
+        assert result == "INV-007-TAIL"
 
     def test_custom_separator_and_padding(self):
         s = make_series(1, year_format="YYYY", separator="/", pad_digits=4)
@@ -380,3 +390,16 @@ class TestGenerateNextNumber:
         )
         assert target.next_sequence == 6
         assert active.next_sequence == 1  # untouched
+
+    def test_generate_next_number_applies_suffix(self):
+        fy = make_fy(10, "2025-26", date(2025, 4, 1), date(2026, 3, 31), is_active=True)
+        target = make_series(1, financial_year_id=10, year_format="FY", suffix="/S")
+
+        db = _make_db_for_generate(target_series=target, linked_fy=fy)
+        result = generate_next_number(
+            db,
+            "sales",
+            financial_year_id=10,
+            active_financial_year_id=10,
+        )
+        assert result == "INV-2025-26-001/S"
