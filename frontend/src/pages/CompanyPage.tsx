@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import { useFY } from '../context/FYContext';
@@ -46,6 +46,7 @@ function InvoiceSeriesCard() {
   const [rowError, setRowError] = useState<Record<number, string>>({});
   const [rowSuccess, setRowSuccess] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
+  const saveInFlightRef = useRef<Record<number, boolean>>({});
 
   useEffect(() => {
     setLoading(true);
@@ -82,6 +83,8 @@ function InvoiceSeriesCard() {
   async function saveSeries(s: InvoiceSeries) {
     const draft = drafts[s.id];
     if (!draft) return;
+    if (saveInFlightRef.current[s.id]) return;
+    saveInFlightRef.current[s.id] = true;
     setSaving((prev) => ({ ...prev, [s.id]: true }));
     setRowError((prev) => ({ ...prev, [s.id]: '' }));
     setRowSuccess((prev) => ({ ...prev, [s.id]: '' }));
@@ -93,6 +96,7 @@ function InvoiceSeriesCard() {
     } catch (err) {
       setRowError((prev) => ({ ...prev, [s.id]: getApiErrorMessage(err, 'Failed to save') }));
     } finally {
+      saveInFlightRef.current[s.id] = false;
       setSaving((prev) => ({ ...prev, [s.id]: false }));
     }
   }

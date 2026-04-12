@@ -78,6 +78,28 @@ test.describe('Invoice Series', () => {
     await expect(page.locator('text=Saved').first()).toBeVisible({ timeout: 8_000 });
   });
 
+  test('rapid sequential edits save cleanly without leaving the row in an error state', async ({ authedPage: page }) => {
+    await page.click('[href="/company"]');
+    await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: 10_000 });
+
+    const prefixInput = page.locator('[id^="series-prefix-"]').first();
+    const suffixInput = page.locator('[id^="series-suffix-"]').first();
+    const saveButton = page.locator('button:has-text("Save")').first();
+
+    await prefixInput.fill('QCK');
+    await suffixInput.fill('/R1');
+    await saveButton.dblclick();
+
+    await expect(page.locator('text=Saved').first()).toBeVisible({ timeout: 8_000 });
+    await expect(page.locator('text=Failed to save')).toHaveCount(0);
+    await expect(saveButton).toBeEnabled({ timeout: 8_000 });
+
+    await prefixInput.fill('INV');
+    await suffixInput.fill('');
+    await saveButton.click();
+    await expect(page.locator('text=Saved').first()).toBeVisible({ timeout: 8_000 });
+  });
+
   test('pad digits dropdown changes preview', async ({ authedPage: page }) => {
     await page.click('[href="/company"]');
     await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: 10_000 });
