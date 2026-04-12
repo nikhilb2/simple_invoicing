@@ -15,7 +15,7 @@ const VOUCHER_LABELS: Record<string, string> = {
 };
 
 function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number, fyLabel?: string | null): string {
-  const sep = s.separator || '-';
+  const sep = s.separator ?? '-';
   const seq = String(nextSeq).padStart(s.pad_digits, '0');
   if (!s.include_year) {
     return `${s.prefix}${sep}${seq}${s.suffix}`;

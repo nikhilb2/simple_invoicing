@@ -43,6 +43,27 @@ test.describe('Invoice Series', () => {
     await expect(previewEl).toBeVisible({ timeout: 5_000 });
   });
 
+  test('clearing separator removes separator from preview', async ({ authedPage: page }) => {
+    await page.click('[href="/company"]');
+    await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: 10_000 });
+
+    const prefixInput = page.locator('[id^="series-prefix-"]').first();
+    const suffixInput = page.locator('[id^="series-suffix-"]').first();
+    const separatorInput = page.locator('[id^="series-sep-"]').first();
+    const includeYearCheckbox = page.locator('[id^="series-include-year-"]').first();
+
+    await prefixInput.fill('SEP');
+    await suffixInput.fill('');
+    if (await includeYearCheckbox.isChecked()) {
+      await includeYearCheckbox.uncheck();
+    }
+    await separatorInput.fill('');
+
+    const previewText = (await page.locator('text=Preview:').first().locator('strong').textContent()) ?? '';
+    expect(previewText).toContain('SEP');
+    expect(previewText).not.toContain('-');
+  });
+
   test('can save invoice series settings', async ({ authedPage: page }) => {
     await page.click('[href="/company"]');
     await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: 10_000 });
