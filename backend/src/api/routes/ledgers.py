@@ -17,6 +17,7 @@ from src.models.invoice import Invoice
 from src.models.payment import Payment
 from src.models.user import User, UserRole
 from src.schemas.ledger import DayBookEntry, DayBookOut, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementOut, PaginatedLedgerOut
+from src.services.credit_note_reporting import get_credit_note_ledger_summary
 from src.services.financial_year import get_active_fy
 
 router = APIRouter()
@@ -131,6 +132,12 @@ def get_day_book(
         .all()
     )
 
+    credit_note_summary = get_credit_note_ledger_summary(
+        db,
+        created_from=period_start,
+        created_to=period_end,
+    )
+
     entries = []
     for invoice in invoices:
         entries.append(DayBookEntry(
@@ -154,6 +161,17 @@ def get_day_book(
             particulars=f"{payment.voucher_type.title()} #{payment.id}" + (f" ({payment.mode})" if payment.mode else ""),
             debit=float(payment.amount) if payment.voucher_type == "payment" else 0.0,
             credit=float(payment.amount) if payment.voucher_type == "receipt" else 0.0,
+        ))
+    for credit_note_entry in credit_note_summary.entries:
+        entries.append(DayBookEntry(
+            entry_id=credit_note_entry.entry_id,
+            entry_type="credit_note",
+            date=credit_note_entry.date,
+            voucher_type=credit_note_entry.voucher_type,
+            ledger_name=credit_note_entry.ledger_name,
+            particulars=credit_note_entry.particulars,
+            debit=credit_note_entry.debit,
+            credit=credit_note_entry.credit,
         ))
     entries.sort(key=lambda e: _make_aware(e.date))
 
@@ -289,6 +307,12 @@ def get_ledger_statement(
         .one()
     )
 
+    opening_credit_note_summary = get_credit_note_ledger_summary(
+        db,
+        ledger_id=ledger_id,
+        created_before=period_start,
+    )
+
     period_invoices = (
         db.query(Invoice)
         .filter(Invoice.ledger_id == ledger_id)
@@ -306,6 +330,13 @@ def get_ledger_statement(
         .filter(Payment.status == "active")
         .order_by(Payment.date.asc(), Payment.id.asc())
         .all()
+    )
+
+    period_credit_note_summary = get_credit_note_ledger_summary(
+        db,
+        ledger_id=ledger_id,
+        created_from=period_start,
+        created_to=period_end,
     )
 
     entries = []
@@ -329,12 +360,22 @@ def get_ledger_statement(
             debit=float(payment.amount) if payment.voucher_type == "payment" else 0.0,
             credit=float(payment.amount) if payment.voucher_type == "receipt" else 0.0,
         ))
+    for credit_note_entry in period_credit_note_summary.entries:
+        entries.append(LedgerStatementEntry(
+            entry_id=credit_note_entry.entry_id,
+            entry_type="credit_note",
+            date=credit_note_entry.date,
+            voucher_type=credit_note_entry.voucher_type,
+            particulars=credit_note_entry.particulars,
+            debit=credit_note_entry.debit,
+            credit=credit_note_entry.credit,
+        ))
     entries.sort(key=lambda e: _make_aware(e.date))
 
     period_debit = sum(entry.debit for entry in entries)
     period_credit = sum(entry.credit for entry in entries)
-    opening_debit = float(opening_totals[0]) + float(opening_payment_totals[0])
-    opening_credit = float(opening_totals[1]) + float(opening_payment_totals[1])
+    opening_debit = float(opening_totals[0]) + float(opening_payment_totals[0]) + opening_credit_note_summary.purchase_credit_total
+    opening_credit = float(opening_totals[1]) + float(opening_payment_totals[1]) + opening_credit_note_summary.sales_credit_total
     opening_balance = opening_debit - opening_credit
     closing_balance = opening_balance + period_debit - period_credit
 

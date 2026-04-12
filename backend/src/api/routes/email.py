@@ -19,6 +19,7 @@ from src.models.payment import Payment
 from src.models.product import Product
 from src.models.user import User, UserRole
 from src.schemas.ledger import LedgerStatementEntry
+from src.services.credit_note_reporting import get_credit_note_ledger_summary
 from src.services.mail import send_email
 
 router = APIRouter()
@@ -314,18 +315,20 @@ async def send_payment_reminder_email(
     company = db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
     currency_code = company.currency_code if company and company.currency_code else "INR"
 
-    # Outstanding balance = all-time sales invoices − all-time receipts for this ledger
+    credit_note_summary = get_credit_note_ledger_summary(db, ledger_id=ledger_id)
+
+    # Outstanding balance = active sales invoices − active sales credit notes − active receipts for this ledger
     total_sales = float(
         db.query(func.coalesce(func.sum(Invoice.total_amount), 0))
-        .filter(Invoice.ledger_id == ledger_id, Invoice.voucher_type == "sales")
+        .filter(Invoice.ledger_id == ledger_id, Invoice.voucher_type == "sales", Invoice.status == "active")
         .scalar()
     )
     total_receipts = float(
         db.query(func.coalesce(func.sum(Payment.amount), 0))
-        .filter(Payment.ledger_id == ledger_id, Payment.voucher_type == "receipt")
+        .filter(Payment.ledger_id == ledger_id, Payment.voucher_type == "receipt", Payment.status == "active")
         .scalar()
     )
-    outstanding_balance = total_sales - total_receipts
+    outstanding_balance = total_sales - credit_note_summary.sales_credit_total - total_receipts
 
     last_payment = (
         db.query(Payment)
@@ -337,19 +340,23 @@ async def send_payment_reminder_email(
 
     sales_invoices = (
         db.query(Invoice)
-        .filter(Invoice.ledger_id == ledger_id, Invoice.voucher_type == "sales")
+        .filter(Invoice.ledger_id == ledger_id, Invoice.voucher_type == "sales", Invoice.status == "active")
         .order_by(Invoice.invoice_date.asc(), Invoice.id.asc())
         .all()
     )
-    unpaid_invoices = [
-        {
-            "invoice_number": inv.invoice_number or f"#{inv.id}",
-            "invoice_date": inv.invoice_date.strftime("%d %b %Y") if inv.invoice_date else "N/A",
-            "due_date": None,  # due_date column is not yet mapped in the Python Invoice model
-            "amount": _fmt(float(inv.total_amount)),
-        }
-        for inv in sales_invoices
-    ]
+    unpaid_invoices = []
+    for inv in sales_invoices:
+        net_amount = float(inv.total_amount) - credit_note_summary.sales_credit_by_invoice.get(inv.id, 0.0)
+        if net_amount <= 0:
+            continue
+        unpaid_invoices.append(
+            {
+                "invoice_number": inv.invoice_number or f"#{inv.id}",
+                "invoice_date": inv.invoice_date.strftime("%d %b %Y") if inv.invoice_date else "N/A",
+                "due_date": inv.due_date.strftime("%d %b %Y") if inv.due_date else None,
+                "amount": _fmt(net_amount),
+            }
+        )
 
     template = _jinja_env.get_template("payment_reminder.html")
     html_body = template.render(

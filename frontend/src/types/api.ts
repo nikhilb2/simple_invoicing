@@ -244,7 +244,7 @@ export type InvoiceCreate = {
 
 export type LedgerStatementEntry = {
   entry_id: number;
-  entry_type: 'invoice' | 'payment';
+  entry_type: 'invoice' | 'payment' | 'credit_note';
   date: string;
   voucher_type: string;
   particulars: string;
@@ -267,7 +267,7 @@ export type LedgerStatement = {
 
 export type DayBookEntry = {
   entry_id: number;
-  entry_type: 'invoice' | 'payment';
+  entry_type: 'invoice' | 'payment' | 'credit_note';
   date: string;
   voucher_type: string;
   ledger_name: string;
