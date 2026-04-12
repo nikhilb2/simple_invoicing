@@ -30,6 +30,19 @@ test.describe('Invoice Series', () => {
     await expect(previewEl).toBeVisible({ timeout: 5_000 });
   });
 
+  test('shows live preview that updates with suffix changes', async ({ authedPage: page }) => {
+    await page.click('[href="/company"]');
+    await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: 10_000 });
+
+    const suffixInputs = page.locator('[id^="series-suffix-"]');
+    await expect(suffixInputs.first()).toBeVisible({ timeout: 5_000 });
+
+    await suffixInputs.first().fill('/Q1');
+
+    const previewEl = page.locator('strong').filter({ hasText: /\/Q1$/ }).first();
+    await expect(previewEl).toBeVisible({ timeout: 5_000 });
+  });
+
   test('can save invoice series settings', async ({ authedPage: page }) => {
     await page.click('[href="/company"]');
     await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: 10_000 });
@@ -44,6 +57,24 @@ test.describe('Invoice Series', () => {
     await saveButtons.first().click();
 
     // Success indicator
+    await expect(page.locator('text=Saved').first()).toBeVisible({ timeout: 8_000 });
+  });
+
+  test('can save invoice series suffix settings', async ({ authedPage: page }) => {
+    await page.click('[href="/company"]');
+    await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: 10_000 });
+
+    const suffixInputs = page.locator('[id^="series-suffix-"]');
+    await expect(suffixInputs.first()).toBeVisible({ timeout: 5_000 });
+    await suffixInputs.first().fill('/SUF');
+
+    const saveButtons = page.locator('button:has-text("Save")');
+    await saveButtons.first().click();
+
+    await expect(page.locator('text=Saved').first()).toBeVisible({ timeout: 8_000 });
+
+    await suffixInputs.first().fill('');
+    await saveButtons.first().click();
     await expect(page.locator('text=Saved').first()).toBeVisible({ timeout: 8_000 });
   });
 

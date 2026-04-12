@@ -319,6 +319,7 @@ export type InvoiceSeries = {
   id: number;
   voucher_type: string;
   prefix: string;
+  suffix: string;
   include_year: boolean;
   year_format: 'YYYY' | 'MM-YYYY' | 'FY';
   separator: string;
@@ -329,6 +330,7 @@ export type InvoiceSeries = {
 
 export type InvoiceSeriesUpdate = {
   prefix: string;
+  suffix: string;
   include_year: boolean;
   year_format: 'YYYY' | 'MM-YYYY' | 'FY';
   separator: string;
