@@ -16,6 +16,7 @@ DEFAULT_SERIES_CONFIGS = {
     "sales": {"prefix": "INV", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
     "purchase": {"prefix": "PINV", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
     "payment": {"prefix": "PAY", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
+    "credit_note": {"prefix": "CN", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
 }
 
 
