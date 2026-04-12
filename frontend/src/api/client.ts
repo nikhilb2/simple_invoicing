@@ -1,4 +1,4 @@
-import axios, { InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -97,6 +97,27 @@ export function getApiErrorMessage(error: unknown, fallback = 'Something went wr
   }
 
   return fallback;
+}
+
+export function cleanParams(params: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(params).filter(([, value]) => {
+      if (value === undefined || value === null || value === '') {
+        return false;
+      }
+      if (Array.isArray(value)) {
+        return value.length > 0;
+      }
+      return true;
+    })
+  );
+}
+
+export function withParams<T>(config: AxiosRequestConfig<T>, params: Record<string, unknown>): AxiosRequestConfig<T> {
+  return {
+    ...config,
+    params: cleanParams(params),
+  };
 }
 
 export default api;

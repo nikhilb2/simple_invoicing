@@ -29,6 +29,7 @@ class Invoice(Base):
     voucher_type = Column(String, nullable=False, default="sales")
     supplier_invoice_number = Column(String, nullable=True)
     status = Column(String, nullable=False, default="active")
+    credit_status = Column(String, nullable=False, default="not_credited")
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     taxable_amount = Column(Numeric(10, 2), nullable=False, default=0)
     total_tax_amount = Column(Numeric(10, 2), nullable=False, default=0)

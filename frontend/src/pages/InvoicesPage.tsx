@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Eye, Pencil, Trash2, RotateCcw } from 'lucide-react';
+import { Eye, FileText, Pencil, Trash2, RotateCcw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerCreate, PaginatedInvoices, Payment, PaymentCreate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
@@ -27,8 +28,15 @@ function createItem(id: number, productId = '', unitPrice = ''): InvoiceFormItem
   };
 }
 
+const creditStatusMeta: Record<Invoice['credit_status'], { label: string; background: string; color: string }> = {
+  not_credited: { label: 'Not credited', background: '#e0f2fe', color: '#075985' },
+  partially_credited: { label: 'Partially credited', background: '#fef3c7', color: '#92400e' },
+  fully_credited: { label: 'Fully credited', background: '#dcfce7', color: '#166534' },
+};
+
 export default function InvoicesPage() {
   const { activeFY } = useFY();
+  const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -868,9 +876,21 @@ export default function InvoicesPage() {
                         {invoice.status === 'cancelled' ? (
                           <span className="invoice-type-badge" style={{ background: '#fee2e2', color: '#b91c1c' }}>Cancelled</span>
                         ) : (
-                          <span className={`invoice-type-badge invoice-type-badge--${invoice.voucher_type}`}>
-                            {invoice.voucher_type === 'sales' ? 'Sales' : 'Purchase'}
-                          </span>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                            <span className={`invoice-type-badge invoice-type-badge--${invoice.voucher_type}`}>
+                              {invoice.voucher_type === 'sales' ? 'Sales' : 'Purchase'}
+                            </span>
+                            <span style={{
+                              padding: '4px 10px',
+                              borderRadius: '999px',
+                              background: creditStatusMeta[invoice.credit_status].background,
+                              color: creditStatusMeta[invoice.credit_status].color,
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                            }}>
+                              {creditStatusMeta[invoice.credit_status].label}
+                            </span>
+                          </div>
                         )}
                       </div>
 
@@ -926,6 +946,17 @@ export default function InvoicesPage() {
                         >
                           <Eye size={16} />
                         </button>
+                        {invoice.status !== 'cancelled' && invoice.ledger_id ? (
+                          <button
+                            type="button"
+                            className="button button--ghost button--icon"
+                            onClick={() => navigate(`/credit-notes?ledger=${invoice.ledger_id}&invoice=${invoice.id}`)}
+                            title="Create credit note"
+                            aria-label={`Create credit note for invoice ${invoice.invoice_number || invoice.id}`}
+                          >
+                            <FileText size={16} />
+                          </button>
+                        ) : null}
                         {invoice.status !== 'cancelled' ? (
                           <button
                             type="button"

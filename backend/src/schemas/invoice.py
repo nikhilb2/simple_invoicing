@@ -58,6 +58,7 @@ class InvoiceOut(BaseModel):
     voucher_type: str
     supplier_invoice_number: str | None = None
     status: str = "active"
+    credit_status: str = "not_credited"
     ledger: LedgerOut | None = None
     taxable_amount: float
     total_tax_amount: float

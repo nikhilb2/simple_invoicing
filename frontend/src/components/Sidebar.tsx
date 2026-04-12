@@ -15,6 +15,7 @@ interface SidebarProps {
 const mainGroup: NavItem[] = [
   { to: '/', label: 'Overview', end: true },
   { to: '/invoices', label: 'Invoices' },
+  { to: '/credit-notes', label: 'Credit Notes' },
   { to: '/day-book', label: 'Day Book' },
 ];
 

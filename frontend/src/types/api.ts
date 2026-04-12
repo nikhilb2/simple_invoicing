@@ -87,6 +87,9 @@ export type PaginatedInvoices = {
   total_pages: number;
 };
 
+export type CreditNoteType = 'return' | 'discount' | 'adjustment';
+export type CreditNoteStatus = 'active' | 'cancelled';
+
 export type CompanyProfile = {
   id: number;
   name: string;
@@ -145,6 +148,7 @@ export type Invoice = {
   ledger: Ledger | null;
   taxable_amount: number;
   total_tax_amount: number;
+  credit_status: 'not_credited' | 'partially_credited' | 'fully_credited';
   cgst_amount: number;
   sgst_amount: number;
   igst_amount: number;
@@ -172,6 +176,60 @@ export type InvoiceItemInput = {
   product_id: number;
   quantity: number;
   unit_price?: number;
+};
+
+export type CreditNoteItem = {
+  id: number;
+  invoice_id: number | null;
+  invoice_item_id: number | null;
+  product_id: number | null;
+  quantity: number;
+  unit_price: number;
+  gst_rate: number;
+  taxable_amount: number;
+  tax_amount: number;
+  line_total: number;
+};
+
+export type CreditNote = {
+  id: number;
+  credit_note_number: string;
+  ledger_id: number;
+  financial_year_id: number | null;
+  credit_note_type: CreditNoteType;
+  reason: string | null;
+  status: CreditNoteStatus;
+  taxable_amount: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  total_amount: number;
+  created_at: string;
+  cancelled_at: string | null;
+  invoice_ids: number[];
+  items: CreditNoteItem[];
+};
+
+export type CreditNoteItemCreate = {
+  invoice_id: number;
+  invoice_item_id: number;
+  quantity: number;
+};
+
+export type CreditNoteCreate = {
+  ledger_id: number;
+  invoice_ids: number[];
+  credit_note_type: CreditNoteType;
+  reason?: string | null;
+  items: CreditNoteItemCreate[];
+};
+
+export type PaginatedCreditNotes = {
+  items: CreditNote[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
 };
 
 export type InvoiceCreate = {

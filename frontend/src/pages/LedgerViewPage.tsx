@@ -328,6 +328,16 @@ export default function LedgerViewPage() {
                     <FilePlus size={16} />
                     Create Invoice
                   </button>
+                  <button
+                    type="button"
+                    className="action-dropdown__item"
+                    role="menuitem"
+                    aria-label="Create Credit Note"
+                    onClick={() => { setShowActionsDropdown(false); navigate(`/credit-notes?ledger=${ledgerId}`); }}
+                  >
+                    <FileText size={16} />
+                    Create Credit Note
+                  </button>
                 </div>
               ) : null}
             </div>
