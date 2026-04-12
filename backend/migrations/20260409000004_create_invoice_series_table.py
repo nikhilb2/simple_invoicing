@@ -13,6 +13,7 @@ def up(conn) -> None:
             id           SERIAL PRIMARY KEY,
             voucher_type VARCHAR NOT NULL,
             prefix       VARCHAR NOT NULL,
+            suffix       VARCHAR NOT NULL DEFAULT '',
             include_year BOOLEAN DEFAULT TRUE,
             year_format  VARCHAR DEFAULT 'YYYY',
             separator    VARCHAR DEFAULT '-',
@@ -24,12 +25,12 @@ def up(conn) -> None:
 
     # Seed defaults (skip if already present)
     conn.execute(text("""
-        INSERT INTO invoice_series (voucher_type, prefix, include_year, year_format, separator, next_sequence, pad_digits)
-        SELECT voucher_type, prefix, include_year, year_format, separator, next_sequence, pad_digits FROM (VALUES
-            ('sales',    'INV',  TRUE, 'YYYY', '-', 1, 3),
-            ('purchase', 'PINV', TRUE, 'YYYY', '-', 1, 3),
-            ('payment',  'PAY',  TRUE, 'YYYY', '-', 1, 3)
-        ) AS seeds(voucher_type, prefix, include_year, year_format, separator, next_sequence, pad_digits)
+        INSERT INTO invoice_series (voucher_type, prefix, suffix, include_year, year_format, separator, next_sequence, pad_digits)
+        SELECT voucher_type, prefix, suffix, include_year, year_format, separator, next_sequence, pad_digits FROM (VALUES
+            ('sales',    'INV',  '', TRUE, 'YYYY', '-', 1, 3),
+            ('purchase', 'PINV', '', TRUE, 'YYYY', '-', 1, 3),
+            ('payment',  'PAY',  '', TRUE, 'YYYY', '-', 1, 3)
+        ) AS seeds(voucher_type, prefix, suffix, include_year, year_format, separator, next_sequence, pad_digits)
         WHERE NOT EXISTS (
             SELECT 1 FROM invoice_series WHERE voucher_type = seeds.voucher_type
         )

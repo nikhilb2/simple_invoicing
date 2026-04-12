@@ -73,3 +73,22 @@ DATABASE_URL='postgresql://admin:<password>@127.0.0.1:15432/invoicing_db' python
 - Migration files are idempotent by convention — use `IF NOT EXISTS` / `IF EXISTS` guards in SQL.
 - Never edit a migration that has already been applied. Create a new one instead.
 - Keep migrations small and focused — one concern per file.
+- Startup order matters: `Base.metadata.create_all()` can create a table with newer columns before older migrations execute. Write seed `INSERT` statements to include all current required columns (or explicit defaults), not just the columns that existed when the migration was first written.
+
+## Common CI failure: `invoice_series.suffix` NOT NULL
+
+If CI fails with:
+
+```text
+null value in column "suffix" of relation "invoice_series" violates not-null constraint
+```
+
+Root cause:
+
+- `invoice_series` may already exist from model metadata with `suffix VARCHAR NOT NULL DEFAULT ''`.
+- Older seed SQL in `20260409000004_create_invoice_series_table.py` inserts rows without `suffix`, causing a NOT NULL violation.
+
+Prevention pattern:
+
+- Keep seed inserts forward-compatible by explicitly including newly required columns.
+- Example: include `suffix` in both the column list and seed values (`''` for defaults).
