@@ -15,6 +15,7 @@ def _format_number(
 ) -> str:
     sep = series.separator
     seq_str = str(seq).zfill(series.pad_digits)
+    suffix = series.suffix or ""
 
     if series.include_year:
         if series.year_format == "FY":
@@ -25,9 +26,9 @@ def _format_number(
         else:
             ref = invoice_date if invoice_date is not None else datetime.utcnow().date()
             year_part = str(ref.year)
-        return f"{series.prefix}{sep}{year_part}{sep}{seq_str}"
+        return f"{series.prefix}{sep}{year_part}{sep}{seq_str}{suffix}"
     else:
-        return f"{series.prefix}{sep}{seq_str}"
+        return f"{series.prefix}{sep}{seq_str}{suffix}"
 
 
 def generate_next_number(
@@ -54,6 +55,7 @@ def generate_next_number(
     """
     # Import here to avoid circular imports
     from src.models.invoice import Invoice  # noqa: PLC0415
+    from src.models.payment import Payment  # noqa: PLC0415
 
     series = None
 
@@ -120,9 +122,12 @@ def generate_next_number(
         seq = series.next_sequence
         series.next_sequence = seq + 1
         number = _format_number(format_series, seq, linked_fy, invoice_date)
-        existing = db.query(Invoice.id).filter(Invoice.invoice_number == number).first()
+        if voucher_type == "payment":
+            existing = db.query(Payment.id).filter(Payment.payment_number == number).first()
+        else:
+            existing = db.query(Invoice.id).filter(Invoice.invoice_number == number).first()
         if existing is None:
             return number
 
     # Extremely unlikely: return a timestamped fallback so creation still succeeds
-    return f"{series.prefix}-{int(datetime.utcnow().timestamp())}"
+    return f"{series.prefix}-{int(datetime.utcnow().timestamp())}{series.suffix or ''}"

@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.api.routes.financial_years import _seed_series_for_fy
 from src.services.financial_year import get_fy_for_date
 from src.services.series import _format_number, generate_next_number
 from src.models.financial_year import FinancialYear
@@ -34,6 +35,7 @@ def make_series(
     voucher_type: str = "sales",
     financial_year_id: int | None = None,
     prefix: str = "INV",
+    suffix: str = "",
     include_year: bool = True,
     year_format: str = "FY",
     separator: str = "-",
@@ -45,12 +47,77 @@ def make_series(
     s.voucher_type = voucher_type
     s.financial_year_id = financial_year_id
     s.prefix = prefix
+    s.suffix = suffix
     s.include_year = include_year
     s.year_format = year_format
     s.separator = separator
     s.next_sequence = next_sequence
     s.pad_digits = pad_digits
     return s
+
+
+class TestSeedSeriesForFy:
+    def test_seeds_all_default_voucher_types_when_no_active_fy(self):
+        db = MagicMock()
+
+        with patch("src.api.routes.financial_years.get_active_fy", return_value=None):
+            _seed_series_for_fy(db, new_fy_id=77)
+
+        added = [call.args[0] for call in db.add.call_args_list]
+        assert [row.voucher_type for row in added] == ["sales", "purchase", "payment"]
+        assert all(row.financial_year_id == 77 for row in added)
+        assert all(row.next_sequence == 1 for row in added)
+        assert all(row.suffix == "" for row in added)
+
+    def test_clones_series_config_and_resets_sequence(self):
+        db = MagicMock()
+        active_fy = make_fy(10, "2025-26", date(2025, 4, 1), date(2026, 3, 31), is_active=True)
+        source_rows = [
+            make_series(1, voucher_type="sales", financial_year_id=10, prefix="RES", suffix="-A", year_format="FY", next_sequence=12, pad_digits=4),
+            make_series(2, voucher_type="purchase", financial_year_id=10, prefix="PUR", suffix="", include_year=False, next_sequence=8, pad_digits=2),
+            make_series(3, voucher_type="payment", financial_year_id=10, prefix="PAY", suffix="/RCPT", year_format="YYYY", next_sequence=3, pad_digits=3),
+        ]
+        db.query().filter().all.return_value = source_rows
+
+        with patch("src.api.routes.financial_years.get_active_fy", return_value=active_fy):
+            _seed_series_for_fy(db, new_fy_id=88)
+
+        added = [call.args[0] for call in db.add.call_args_list]
+        assert len(added) == 3
+
+        sales = next(row for row in added if row.voucher_type == "sales")
+        assert sales.prefix == "RES"
+        assert sales.suffix == "-A"
+        assert sales.year_format == "FY"
+        assert sales.next_sequence == 1
+        assert sales.pad_digits == 4
+
+        purchase = next(row for row in added if row.voucher_type == "purchase")
+        assert purchase.include_year is False
+        assert purchase.next_sequence == 1
+
+        payment = next(row for row in added if row.voucher_type == "payment")
+        assert payment.suffix == "/RCPT"
+        assert payment.next_sequence == 1
+
+    def test_backfills_missing_voucher_type_from_defaults(self):
+        db = MagicMock()
+        active_fy = make_fy(10, "2025-26", date(2025, 4, 1), date(2026, 3, 31), is_active=True)
+        db.query().filter().all.return_value = [
+            make_series(1, voucher_type="sales", financial_year_id=10, prefix="SLS", suffix="-NEW", year_format="FY"),
+            make_series(2, voucher_type="purchase", financial_year_id=10, prefix="BUY", include_year=False),
+        ]
+
+        with patch("src.api.routes.financial_years.get_active_fy", return_value=active_fy):
+            _seed_series_for_fy(db, new_fy_id=99)
+
+        added = [call.args[0] for call in db.add.call_args_list]
+        payment = next(row for row in added if row.voucher_type == "payment")
+        assert payment.prefix == "PAY"
+        assert payment.suffix == ""
+        assert payment.include_year is True
+        assert payment.year_format == "YYYY"
+        assert payment.next_sequence == 1
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -94,6 +161,11 @@ class TestFormatNumber:
         s = make_series(1, year_format="FY")
         assert _format_number(s, 1, fy) == "INV-2025-26-001"
 
+    def test_appends_suffix_without_extra_separator(self):
+        fy = make_fy(1, "2025-26", date(2025, 4, 1), date(2026, 3, 31))
+        s = make_series(1, year_format="FY", suffix="/A")
+        assert _format_number(s, 1, fy) == "INV-2025-26-001/A"
+
     def test_fy_format_fallback_when_no_fy(self):
         s = make_series(1, year_format="FY")
         assert _format_number(s, 1, None) == "INV-FY-001"
@@ -123,6 +195,11 @@ class TestFormatNumber:
         s = make_series(1, include_year=False)
         result = _format_number(s, 7, None, invoice_date=date(2025, 6, 1))
         assert result == "INV-007"
+
+    def test_no_year_format_with_suffix(self):
+        s = make_series(1, include_year=False, suffix="-TAIL")
+        result = _format_number(s, 7, None, invoice_date=date(2025, 6, 1))
+        assert result == "INV-007-TAIL"
 
     def test_custom_separator_and_padding(self):
         s = make_series(1, year_format="YYYY", separator="/", pad_digits=4)
@@ -313,3 +390,16 @@ class TestGenerateNextNumber:
         )
         assert target.next_sequence == 6
         assert active.next_sequence == 1  # untouched
+
+    def test_generate_next_number_applies_suffix(self):
+        fy = make_fy(10, "2025-26", date(2025, 4, 1), date(2026, 3, 31), is_active=True)
+        target = make_series(1, financial_year_id=10, year_format="FY", suffix="/S")
+
+        db = _make_db_for_generate(target_series=target, linked_fy=fy)
+        result = generate_next_number(
+            db,
+            "sales",
+            financial_year_id=10,
+            active_financial_year_id=10,
+        )
+        assert result == "INV-2025-26-001/S"

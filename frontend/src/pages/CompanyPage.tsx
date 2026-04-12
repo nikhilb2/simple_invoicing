@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import { useFY } from '../context/FYContext';
@@ -15,10 +15,10 @@ const VOUCHER_LABELS: Record<string, string> = {
 };
 
 function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number, fyLabel?: string | null): string {
-  const sep = s.separator || '-';
+  const sep = s.separator ?? '-';
   const seq = String(nextSeq).padStart(s.pad_digits, '0');
   if (!s.include_year) {
-    return `${s.prefix}${sep}${seq}`;
+    return `${s.prefix}${sep}${seq}${s.suffix}`;
   }
   const now = new Date();
   let yearPart: string;
@@ -29,7 +29,7 @@ function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number, fyLabel?: string 
   } else {
     yearPart = `${now.getFullYear()}`;
   }
-  return `${s.prefix}${sep}${yearPart}${sep}${seq}`;
+  return `${s.prefix}${sep}${yearPart}${sep}${seq}${s.suffix}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -46,6 +46,7 @@ function InvoiceSeriesCard() {
   const [rowError, setRowError] = useState<Record<number, string>>({});
   const [rowSuccess, setRowSuccess] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
+  const saveInFlightRef = useRef<Record<number, boolean>>({});
 
   useEffect(() => {
     setLoading(true);
@@ -59,6 +60,7 @@ function InvoiceSeriesCard() {
         for (const s of res.data) {
           initial[s.id] = {
             prefix: s.prefix,
+            suffix: s.suffix,
             include_year: s.include_year,
             year_format: s.year_format,
             separator: s.separator,
@@ -81,6 +83,8 @@ function InvoiceSeriesCard() {
   async function saveSeries(s: InvoiceSeries) {
     const draft = drafts[s.id];
     if (!draft) return;
+    if (saveInFlightRef.current[s.id]) return;
+    saveInFlightRef.current[s.id] = true;
     setSaving((prev) => ({ ...prev, [s.id]: true }));
     setRowError((prev) => ({ ...prev, [s.id]: '' }));
     setRowSuccess((prev) => ({ ...prev, [s.id]: '' }));
@@ -92,6 +96,7 @@ function InvoiceSeriesCard() {
     } catch (err) {
       setRowError((prev) => ({ ...prev, [s.id]: getApiErrorMessage(err, 'Failed to save') }));
     } finally {
+      saveInFlightRef.current[s.id] = false;
       setSaving((prev) => ({ ...prev, [s.id]: false }));
     }
   }
@@ -110,7 +115,7 @@ function InvoiceSeriesCard() {
         </div>
       </div>
       <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '8px' }}>
-        Configure the prefix, year, and sequence counter for each voucher type.
+        Configure the prefix, suffix, year, and sequence counter for each voucher type.
         Changes apply to the next invoice created — existing numbers are not affected.
       </p>
 
@@ -135,6 +140,18 @@ function InvoiceSeriesCard() {
                     value={draft.prefix}
                     onChange={(e) => patchDraft(s.id, { prefix: e.target.value.toUpperCase() })}
                     placeholder="INV"
+                    style={{ textTransform: 'uppercase' }}
+                  />
+                </div>
+
+                <div className="field">
+                  <label htmlFor={`series-suffix-${s.id}`}>Suffix</label>
+                  <input
+                    id={`series-suffix-${s.id}`}
+                    className="input"
+                    value={draft.suffix}
+                    onChange={(e) => patchDraft(s.id, { suffix: e.target.value.toUpperCase() })}
+                    placeholder="/A"
                     style={{ textTransform: 'uppercase' }}
                   />
                 </div>

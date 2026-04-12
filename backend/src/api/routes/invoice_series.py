@@ -36,6 +36,7 @@ def update_invoice_series(
         raise HTTPException(status_code=404, detail=f"Invoice series {series_id} not found")
 
     series.prefix = payload.prefix.strip().upper()
+    series.suffix = payload.suffix.strip().upper()
     series.include_year = payload.include_year
     series.year_format = payload.year_format
     series.separator = payload.separator

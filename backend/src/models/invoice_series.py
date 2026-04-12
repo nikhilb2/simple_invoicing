@@ -10,6 +10,7 @@ class InvoiceSeries(Base):
     voucher_type = Column(String, nullable=False)  # sales | purchase | payment
     financial_year_id = Column(Integer, ForeignKey("financial_years.id"), nullable=True)
     prefix = Column(String, nullable=False)
+    suffix = Column(String, default="", nullable=False)
     include_year = Column(Boolean, default=True, nullable=False)
     year_format = Column(String, default="YYYY", nullable=False)  # 'YYYY' or 'MM-YYYY'
     separator = Column(String, default="-", nullable=False)

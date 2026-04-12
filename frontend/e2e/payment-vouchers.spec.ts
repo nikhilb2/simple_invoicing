@@ -117,6 +117,45 @@ test.describe('Payment Vouchers from Invoices Page', () => {
     await expect(voucherNumber).toContainText(/PAY-\d{4}-\d+/);
   });
 
+  test('payment number reflects saved series suffix', async ({ authedPage: page }) => {
+    const ledgerName = await createLedger(page, '-suffix');
+
+    await page.click('[href="/company"]');
+    await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: 10_000 });
+
+    const paymentSeriesRow = page.locator('xpath=//strong[normalize-space()="Payment"]/ancestor::div[contains(@class,"panel")][1]');
+    const suffixInput = paymentSeriesRow.locator('[id^="series-suffix-"]');
+    await expect(suffixInput).toBeVisible({ timeout: 5_000 });
+    await suffixInput.fill('/PV');
+    await paymentSeriesRow.locator('button:has-text("Save")').click();
+    await expect(page.locator('text=Saved').first()).toBeVisible({ timeout: 8_000 });
+
+    await page.click('[href="/invoices"]');
+    await expect(page.locator('h1')).toContainText('Invoice composer', { timeout: 10_000 });
+
+    await page.selectOption('#invoice-voucher-type', 'payment');
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
+    await page.selectOption('#payment-mode', 'cash');
+    await page.fill('#payment-amount', '1000');
+
+    await page.click('button:has-text("Create payment voucher")');
+    await expectSuccess(page, 'Payment voucher created');
+
+    await page.click('#tab-payments');
+    await page.waitForTimeout(1_000);
+
+    const createdPaymentRow = page.locator('.invoice-row', { hasText: ledgerName });
+    await expect(createdPaymentRow.first()).toBeVisible({ timeout: 10_000 });
+    await expect(createdPaymentRow.first().locator('.invoice-row__invoice-id')).toContainText(/\/PV$/);
+
+    await page.click('[href="/company"]');
+    await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: 10_000 });
+    const resetPaymentSeriesRow = page.locator('xpath=//strong[normalize-space()="Payment"]/ancestor::div[contains(@class,"panel")][1]');
+    await resetPaymentSeriesRow.locator('[id^="series-suffix-"]').fill('');
+    await resetPaymentSeriesRow.locator('button:has-text("Save")').click();
+    await expect(page.locator('text=Saved').first()).toBeVisible({ timeout: 8_000 });
+  });
+
   test('payment amount validation prevents zero amount', async ({ authedPage: page }) => {
     const ledgerName = await createLedger(page, '-val');
 
