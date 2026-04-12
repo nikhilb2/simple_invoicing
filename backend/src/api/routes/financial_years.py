@@ -12,21 +12,28 @@ from src.services.financial_year import activate_fy, get_active_fy
 router = APIRouter()
 
 
+DEFAULT_SERIES_CONFIGS = {
+    "sales": {"prefix": "INV", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
+    "purchase": {"prefix": "PINV", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
+    "payment": {"prefix": "PAY", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
+}
+
+
 def _seed_series_for_fy(db: Session, new_fy_id: int) -> None:
-    """Clone the 3 core series rows from the active FY into the new FY."""
+    """Create FY-scoped series rows with reset counters and complete voucher coverage."""
     active_fy = get_active_fy(db)
     if active_fy is None:
-        # No active FY to clone from; seed bare defaults
-        for vtype, prefix in [("sales", "INV"), ("purchase", "PINV"), ("payment", "PAY")]:
+        for voucher_type, config in DEFAULT_SERIES_CONFIGS.items():
             db.add(InvoiceSeries(
-                voucher_type=vtype,
+                voucher_type=voucher_type,
                 financial_year_id=new_fy_id,
-                prefix=prefix,
-                include_year=True,
-                year_format="YYYY",
-                separator="-",
+                prefix=config["prefix"],
+                suffix=config["suffix"],
+                include_year=config["include_year"],
+                year_format=config["year_format"],
+                separator=config["separator"],
                 next_sequence=1,
-                pad_digits=3,
+                pad_digits=config["pad_digits"],
             ))
         return
 
@@ -34,21 +41,24 @@ def _seed_series_for_fy(db: Session, new_fy_id: int) -> None:
         db.query(InvoiceSeries)
         .filter(
             InvoiceSeries.financial_year_id == active_fy.id,
-            InvoiceSeries.voucher_type.in_(["sales", "purchase", "payment"]),
+            InvoiceSeries.voucher_type.in_(list(DEFAULT_SERIES_CONFIGS)),
         )
         .all()
     )
+    source_by_type = {row.voucher_type: row for row in source_rows}
 
-    for src in source_rows:
+    for voucher_type, default_config in DEFAULT_SERIES_CONFIGS.items():
+        src = source_by_type.get(voucher_type)
         db.add(InvoiceSeries(
-            voucher_type=src.voucher_type,
+            voucher_type=voucher_type,
             financial_year_id=new_fy_id,
-            prefix=src.prefix,
-            include_year=src.include_year,
-            year_format=src.year_format,
-            separator=src.separator,
+            prefix=src.prefix if src else default_config["prefix"],
+            suffix=src.suffix if src else default_config["suffix"],
+            include_year=src.include_year if src else default_config["include_year"],
+            year_format=src.year_format if src else default_config["year_format"],
+            separator=src.separator if src else default_config["separator"],
             next_sequence=1,
-            pad_digits=src.pad_digits,
+            pad_digits=src.pad_digits if src else default_config["pad_digits"],
         ))
 
 
