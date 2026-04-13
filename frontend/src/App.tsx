@@ -7,6 +7,7 @@ import DashboardPage from './pages/DashboardPage';
 import ProductsPage from './pages/ProductsPage';
 import InventoryPage from './pages/InventoryPage';
 import InvoicesPage from './pages/InvoicesPage';
+import InvoicesAdvancedView from './pages/InvoicesAdvancedView';
 import CreditNotesPage from './pages/CreditNotesPage';
 import LedgersPage from './pages/LedgersPage';
 import LedgerCreatePage from './pages/LedgerCreatePage';
@@ -67,6 +68,7 @@ function AppRoutes() {
       <Route path="/ledgers/:id/edit" element={<Protected><Layout><LedgerCreatePage /></Layout></Protected>} />
       <Route path="/day-book" element={<Protected><Layout><DayBookPage /></Layout></Protected>} />
       <Route path="/invoices" element={<Protected><Layout><InvoicesPage /></Layout></Protected>} />
+        <Route path="/invoices-view" element={<Protected><Layout><InvoicesAdvancedView /></Layout></Protected>} />
       <Route path="/credit-notes" element={<Protected><Layout><CreditNotesPage /></Layout></Protected>} />
       <Route path="/company" element={<Protected><Layout><CompanyPage /></Layout></Protected>} />
       <Route path="/smtp-settings" element={<Protected><AdminOnly><Layout><SmtpSettingsPage /></Layout></AdminOnly></Protected>} />
