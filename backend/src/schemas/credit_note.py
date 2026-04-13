@@ -7,7 +7,8 @@ from pydantic import BaseModel, Field, model_validator
 class CreditNoteItemCreate(BaseModel):
     invoice_id: int
     invoice_item_id: int
-    quantity: int = Field(..., gt=0)
+    quantity: Optional[int] = Field(default=None, gt=0)
+    discount_amount_inclusive: Optional[Decimal] = Field(default=None, gt=0)
 
 
 class CreditNoteCreate(BaseModel):
@@ -25,6 +26,21 @@ class CreditNoteCreate(BaseModel):
                 raise ValueError(
                     f"Item invoice_id {item.invoice_id} is not in the provided invoice_ids list"
                 )
+
+            if self.credit_note_type == "discount":
+                if item.discount_amount_inclusive is None:
+                    raise ValueError(
+                        "discount_amount_inclusive is required for discount credit note items"
+                    )
+                if item.quantity is not None:
+                    raise ValueError("quantity is not allowed for discount credit note items")
+            else:
+                if item.quantity is None:
+                    raise ValueError("quantity is required for return/adjustment credit note items")
+                if item.discount_amount_inclusive is not None:
+                    raise ValueError(
+                        "discount_amount_inclusive is only allowed for discount credit note items"
+                    )
         return self
 
 
