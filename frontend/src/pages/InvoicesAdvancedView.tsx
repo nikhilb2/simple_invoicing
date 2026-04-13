@@ -11,7 +11,7 @@ import InvoicePreview from '../components/InvoicePreview';
 import type { Product } from '../types/api';
 import { useInvoiceFeedViewStore } from '../store/useInvoiceFeedViewStore';
 import { useInvoiceModalStore } from '../store/useInvoiceModalStore';
-import { fetchCompanyProfile, fetchInvoicePage, fetchInvoiceSummaryPages, fetchProducts } from '../features/invoices/api';
+import { fetchCompanyProfile, fetchInvoicePage, fetchProducts } from '../features/invoices/api';
 import { invoiceQueryKeys } from '../features/invoices/queryKeys';
 
 type ViewType = 'card' | 'table';
@@ -83,36 +83,6 @@ export default function InvoicesAdvancedView() {
     queryFn: fetchProducts,
   });
 
-  const summaryRowsQuery = useQuery({
-    queryKey: invoiceQueryKeys.summary(
-      page,
-      pageSize,
-      invoiceSearch,
-      showCancelled,
-      financialYearId,
-      invoicesQuery.data?.total_pages,
-    ),
-    queryFn: async () => {
-      const pageData = invoicesQuery.data;
-      if (!pageData) {
-        return [] as Invoice[];
-      }
-
-      return fetchInvoiceSummaryPages(
-        {
-          pageSize,
-          search: invoiceSearch,
-          showCancelled,
-          financialYearId,
-        },
-        pageData.total_pages,
-        page,
-        pageData.items,
-      );
-    },
-    enabled: isFYReady && !fyLoading && Boolean(invoicesQuery.data),
-  });
-
   useEffect(() => {
     resetPage();
   }, [invoiceSearch, showCancelled, allowAllFY, activeFY?.id]);
@@ -126,21 +96,28 @@ export default function InvoicesAdvancedView() {
     fyLoading ||
     invoicesQuery.isLoading ||
     companyQuery.isLoading ||
-    productsQuery.isLoading ||
-    summaryRowsQuery.isLoading;
+    productsQuery.isLoading;
 
   const error = useMemo(() => {
     if (invoicesQuery.error) return getApiErrorMessage(invoicesQuery.error, 'Unable to load invoices');
     if (companyQuery.error) return getApiErrorMessage(companyQuery.error, 'Unable to load company profile');
     if (productsQuery.error) return getApiErrorMessage(productsQuery.error, 'Unable to load products');
-    if (summaryRowsQuery.error) return getApiErrorMessage(summaryRowsQuery.error, 'Unable to load invoice summary');
     return '';
-  }, [companyQuery.error, invoicesQuery.error, productsQuery.error, summaryRowsQuery.error]);
+  }, [companyQuery.error, invoicesQuery.error, productsQuery.error]);
 
-  const allPagesBreakdown = useMemo(
-    () => calculateBreakdown(summaryRowsQuery.data ?? invoices),
-    [summaryRowsQuery.data, invoices],
-  );
+  const allPagesBreakdown = useMemo(() => {
+    const summary = invoicesQuery.data?.summary;
+    if (!summary) {
+      return calculateBreakdown(invoices);
+    }
+
+    return {
+      total: summary.total_listed,
+      credit: summary.credit_total,
+      debit: summary.debit_total,
+      cancelled: summary.cancelled_total,
+    };
+  }, [invoicesQuery.data?.summary, invoices]);
   const currentPageBreakdown = useMemo(() => calculateBreakdown(invoices), [invoices]);
 
   if (fyLoading || (!shouldUseAllFY && !activeFY) || !company) {

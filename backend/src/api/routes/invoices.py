@@ -4,6 +4,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 from decimal import Decimal, ROUND_HALF_UP
@@ -274,6 +275,7 @@ def list_invoices(
     page_size: int = Query(20, ge=1, le=500),
     search: str = Query(""),
     show_cancelled: bool = Query(False),
+  financial_year_id: int | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -281,8 +283,26 @@ def list_invoices(
         base = db.query(Invoice)
         if not show_cancelled:
             base = base.filter(Invoice.status == "active")
+        if financial_year_id is not None:
+          base = base.filter(Invoice.financial_year_id == financial_year_id)
         if search.strip():
             base = base.filter(Invoice.ledger_name.ilike(f"%{search.strip()}%"))
+
+        summary_row = base.with_entities(
+          func.coalesce(func.sum(Invoice.total_amount), 0),
+          func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", Invoice.total_amount), else_=0)), 0),
+          func.coalesce(func.sum(case((Invoice.voucher_type == "sales", Invoice.total_amount), else_=0)), 0),
+          func.coalesce(func.sum(case((Invoice.status == "cancelled", Invoice.total_amount), else_=0)), 0),
+          func.coalesce(func.sum(case((Invoice.status == "active", Invoice.total_amount), else_=0)), 0),
+        ).one()
+
+        total_listed = Decimal(summary_row[0] or 0)
+        credit_total = Decimal(summary_row[1] or 0)
+        debit_total = Decimal(summary_row[2] or 0)
+        cancelled_total = Decimal(summary_row[3] or 0)
+        active_total = Decimal(summary_row[4] or 0)
+        others_total = total_listed - (credit_total + debit_total + cancelled_total)
+
         total = base.count()
         items = (
             base.options(joinedload(Invoice.ledger), joinedload(Invoice.items))
@@ -291,12 +311,28 @@ def list_invoices(
             .limit(page_size)
             .all()
         )
+
+        visible_page_total = sum((Decimal(item.total_amount or 0) for item in items), Decimal("0"))
+
         return PaginatedInvoiceOut(
             items=items,
             total=total,
             page=page,
             page_size=page_size,
             total_pages=(total + page_size - 1) // page_size if total > 0 else 1,
+          summary=PaginatedInvoiceOut.SummaryMeta(
+            total_listed=float(total_listed),
+            credit_total=float(credit_total),
+            debit_total=float(debit_total),
+            cancelled_total=float(cancelled_total),
+            active_total=float(active_total),
+            others_total=float(others_total),
+            visible_page_total=float(visible_page_total),
+            visible_page_count=len(items),
+            filtered_count=total,
+            include_cancelled=show_cancelled,
+            financial_year_id=financial_year_id,
+          ),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

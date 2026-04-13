@@ -33,27 +33,20 @@ export async function fetchInvoicePage(filters: InvoiceFilters): Promise<Paginat
 
 export async function fetchInvoiceSummaryPages(
   baseFilters: Omit<InvoiceFilters, 'page'>,
-  totalPages: number,
-  currentPage: number,
+  totalItems: number,
   currentItems: Invoice[]
 ): Promise<Invoice[]> {
-  if (totalPages <= 1) {
+  if (totalItems <= currentItems.length) {
     return currentItems;
   }
 
-  const rows: Invoice[] = [...currentItems];
-  const requests: Promise<PaginatedInvoices>[] = [];
+  const response = await fetchInvoicePage({
+    ...baseFilters,
+    page: 1,
+    pageSize: totalItems,
+  });
 
-  for (let page = 1; page <= totalPages; page += 1) {
-    if (page === currentPage) {
-      continue;
-    }
-    requests.push(fetchInvoicePage({ ...baseFilters, page }));
-  }
-
-  const results = await Promise.all(requests);
-  results.forEach((entry) => rows.push(...entry.items));
-  return rows;
+  return response.items;
 }
 
 export async function fetchCompanyProfile(): Promise<CompanyProfile> {

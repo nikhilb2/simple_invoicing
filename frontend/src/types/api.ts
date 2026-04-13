@@ -85,6 +85,19 @@ export type PaginatedInvoices = {
   page: number;
   page_size: number;
   total_pages: number;
+  summary?: {
+    total_listed: number;
+    credit_total: number;
+    debit_total: number;
+    cancelled_total: number;
+    active_total: number;
+    others_total: number;
+    visible_page_total: number;
+    visible_page_count: number;
+    filtered_count: number;
+    include_cancelled: boolean;
+    financial_year_id: number | null;
+  };
 };
 
 export type CreditNoteType = 'return' | 'discount' | 'adjustment';

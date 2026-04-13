@@ -79,8 +79,22 @@ class InvoiceOut(BaseModel):
 
 
 class PaginatedInvoiceOut(BaseModel):
+    class SummaryMeta(BaseModel):
+        total_listed: float
+        credit_total: float
+        debit_total: float
+        cancelled_total: float
+        active_total: float
+        others_total: float
+        visible_page_total: float
+        visible_page_count: int
+        filtered_count: int
+        include_cancelled: bool
+        financial_year_id: int | None = None
+
     items: list[InvoiceOut]
     total: int
     page: int
     page_size: int
     total_pages: int
+    summary: SummaryMeta
