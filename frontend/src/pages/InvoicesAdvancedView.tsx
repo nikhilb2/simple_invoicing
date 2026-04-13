@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { LayoutGrid, Table as TableIcon } from 'lucide-react';
 import { getApiErrorMessage } from '../api/client';
@@ -10,6 +10,7 @@ import InvoicesTotalBreakdown from '../components/InvoicesTotalBreakdown';
 import InvoicePreview from '../components/InvoicePreview';
 import type { Product } from '../types/api';
 import { useInvoiceFeedViewStore } from '../store/useInvoiceFeedViewStore';
+import { useInvoiceModalStore } from '../store/useInvoiceModalStore';
 import { fetchCompanyProfile, fetchInvoicePage, fetchInvoiceSummaryPages, fetchProducts } from '../features/invoices/api';
 import { invoiceQueryKeys } from '../features/invoices/queryKeys';
 
@@ -54,7 +55,7 @@ export default function InvoicesAdvancedView() {
     setPage,
     resetPage,
   } = useInvoiceFeedViewStore();
-  const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
+  const { previewInvoice, openPreview, closePreview } = useInvoiceModalStore();
   const pageSize = 20;
   const shouldUseAllFY = allowAllFY;
   const isFYReady = shouldUseAllFY || Boolean(activeFY);
@@ -248,14 +249,14 @@ export default function InvoicesAdvancedView() {
                 <InvoicesCompactCard
                   key={invoice.id}
                   invoice={invoice}
-                  onPreview={setPreviewInvoice}
+                  onPreview={openPreview}
                 />
               ))}
           </div>
         ) : (
           <InvoicesTable
             invoices={invoices}
-            onRowClick={setPreviewInvoice}
+            onRowClick={openPreview}
           />
         )}
       </section>
@@ -297,7 +298,7 @@ export default function InvoicesAdvancedView() {
           invoice={previewInvoice}
            products={products}
            currencyCode={company?.currency_code ?? ''}
-          onClose={() => setPreviewInvoice(null)}
+          onClose={closePreview}
         />
       )}
     </div>
