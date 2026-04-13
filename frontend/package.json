@@ -13,6 +13,7 @@
     "test:e2e:report": "npx playwright show-report"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.99.0",
     "axios": "^1.7.7",
     "framer-motion": "^11.11.9",
     "lucide-react": "^1.7.0",
