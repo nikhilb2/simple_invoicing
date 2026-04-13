@@ -425,6 +425,10 @@ textarea {
   align-items: start;
 }
 
+.content-grid--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .two-column-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from src.models.buyer import Buyer as Ledger
 from src.models.credit_note import CreditNote, CreditNoteInvoiceRef, CreditNoteItem
+from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
 from src.schemas.credit_note import CreditNoteCreate
 from src.services.financial_year import get_active_fy, get_fy_for_date
@@ -23,6 +24,18 @@ def _is_interstate(company_gst: Optional[str], ledger_gst: Optional[str]) -> boo
     if len(company_gst) < 2 or len(ledger_gst) < 2:
         return False
     return company_gst[:2] != ledger_gst[:2]
+
+
+def _change_inventory_quantity(db: Session, product_id: int, quantity_delta: int, *, context: str) -> None:
+    inventory = db.query(Inventory).filter(Inventory.product_id == product_id).first()
+    if not inventory:
+        inventory = Inventory(product_id=product_id, quantity=0)
+        db.add(inventory)
+        db.flush()
+
+    inventory.quantity += quantity_delta
+    if inventory.quantity < 0:
+        raise HTTPException(status_code=400, detail=f"Insufficient inventory while {context}")
 
 
 def _recompute_credit_status(invoice_id: int, db: Session) -> None:
@@ -113,7 +126,7 @@ def create_credit_note(
                 status_code=400,
                 detail=f"Invoice item {cn_item.invoice_item_id} does not belong to invoice {cn_item.invoice_id}",
             )
-        if cn_item.quantity > ii.quantity:
+        if payload.credit_note_type != "discount" and cn_item.quantity > ii.quantity:
             raise HTTPException(
                 status_code=400,
                 detail=f"Credit quantity {cn_item.quantity} exceeds original quantity {ii.quantity} for item {cn_item.invoice_item_id}",
@@ -123,26 +136,27 @@ def create_credit_note(
     from sqlalchemy import func
     from src.models.credit_note import CreditNote as CN
 
-    for cn_item in payload.items:
-        already_credited = (
-            db.query(func.sum(CreditNoteItem.quantity))
-            .join(CN, CN.id == CreditNoteItem.credit_note_id)
-            .filter(
-                CreditNoteItem.invoice_item_id == cn_item.invoice_item_id,
-                CN.status == "active",
-            )
-            .scalar()
-        ) or 0
+    if payload.credit_note_type != "discount":
+        for cn_item in payload.items:
+            already_credited = (
+                db.query(func.sum(CreditNoteItem.quantity))
+                .join(CN, CN.id == CreditNoteItem.credit_note_id)
+                .filter(
+                    CreditNoteItem.invoice_item_id == cn_item.invoice_item_id,
+                    CN.status == "active",
+                )
+                .scalar()
+            ) or 0
 
-        original_qty = invoice_item_map[cn_item.invoice_item_id].quantity
-        if already_credited + cn_item.quantity > original_qty:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Total credited quantity ({already_credited + cn_item.quantity}) "
-                    f"exceeds original quantity ({original_qty}) for item {cn_item.invoice_item_id}"
-                ),
-            )
+            original_qty = invoice_item_map[cn_item.invoice_item_id].quantity
+            if already_credited + cn_item.quantity > original_qty:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Total credited quantity ({already_credited + cn_item.quantity}) "
+                        f"exceeds original quantity ({original_qty}) for item {cn_item.invoice_item_id}"
+                    ),
+                )
 
     # ── 4. Resolve financial year ────────────────────────────────────────────
     active_fy = get_active_fy(db)
@@ -176,10 +190,22 @@ def create_credit_note(
     for cn_item in payload.items:
         ii = invoice_item_map[cn_item.invoice_item_id]
         gst_rate = Decimal(str(ii.gst_rate or 0))
-        unit_price = Decimal(str(ii.unit_price))
-        taxable = _money(unit_price * cn_item.quantity)
-        tax = _money(taxable * gst_rate / Decimal("100"))
-        line_total = _money(taxable + tax)
+        if payload.credit_note_type == "discount":
+            line_total = _money(Decimal(str(cn_item.discount_amount_inclusive or 0)))
+            if gst_rate > 0:
+                taxable = _money(line_total / (Decimal("1") + (gst_rate / Decimal("100"))))
+                tax = _money(line_total - taxable)
+            else:
+                taxable = line_total
+                tax = Decimal("0")
+            unit_price = taxable
+            quantity = 1
+        else:
+            quantity = int(cn_item.quantity or 0)
+            unit_price = Decimal(str(ii.unit_price))
+            taxable = _money(unit_price * quantity)
+            tax = _money(taxable * gst_rate / Decimal("100"))
+            line_total = _money(taxable + tax)
 
         if interstate:
             igst = tax
@@ -200,7 +226,7 @@ def create_credit_note(
             "invoice_id": cn_item.invoice_id,
             "invoice_item_id": cn_item.invoice_item_id,
             "product_id": ii.product_id,
-            "quantity": cn_item.quantity,
+            "quantity": quantity,
             "unit_price": unit_price,
             "gst_rate": gst_rate,
             "taxable_amount": taxable,
@@ -236,6 +262,15 @@ def create_credit_note(
     for item_data in built_items:
         db.add(CreditNoteItem(credit_note_id=cn.id, **item_data))
 
+    if payload.credit_note_type == "return":
+        for item_data in built_items:
+            _change_inventory_quantity(
+                db,
+                item_data["product_id"],
+                item_data["quantity"],
+                context=f"creating return credit note {cn.id}",
+            )
+
     db.flush()
 
     # ── 10. Recompute credit_status for all referenced invoices ──────────────
@@ -259,6 +294,17 @@ def cancel_credit_note(cn_id: int, db: Session) -> CreditNote:
 
     cn.status = "cancelled"
     cn.cancelled_at = datetime.utcnow()
+
+    if cn.credit_note_type == "return":
+        for item in cn.items:
+            if item.product_id and item.quantity:
+                _change_inventory_quantity(
+                    db,
+                    item.product_id,
+                    -item.quantity,
+                    context=f"cancelling return credit note {cn.id}",
+                )
+
     db.flush()
 
     for inv_id in affected_invoice_ids:

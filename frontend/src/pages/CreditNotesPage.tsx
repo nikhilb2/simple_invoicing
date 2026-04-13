@@ -38,6 +38,11 @@ const creditNoteTypeLabels: Record<CreditNoteType, string> = {
   adjustment: 'Adjustment',
 };
 
+const createCreditNoteTypeLabels: Record<'return' | 'discount', string> = {
+  return: 'Return',
+  discount: 'Discount',
+};
+
 function createQuantityKey(invoiceId: number, invoiceItemId: number) {
   return `${invoiceId}:${invoiceItemId}`;
 }
@@ -45,6 +50,10 @@ function createQuantityKey(invoiceId: number, invoiceItemId: number) {
 function formatDate(value: string | null | undefined) {
   if (!value) return 'N/A';
   return new Date(value).toLocaleDateString();
+}
+
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 export default function CreditNotesPage() {
@@ -60,9 +69,10 @@ export default function CreditNotesPage() {
 
   const [selectedLedgerId, setSelectedLedgerId] = useState(queryLedgerId);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<number[]>([]);
-  const [creditNoteType, setCreditNoteType] = useState<CreditNoteType>('return');
+  const [creditNoteType, setCreditNoteType] = useState<'return' | 'discount'>('return');
   const [reason, setReason] = useState('');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [discountAmounts, setDiscountAmounts] = useState<Record<string, string>>({});
 
   const [loadingBootstrap, setLoadingBootstrap] = useState(true);
   const [loadingCreditNotes, setLoadingCreditNotes] = useState(true);
@@ -201,6 +211,12 @@ export default function CreditNotesPage() {
       );
       return Object.fromEntries(Object.entries(current).filter(([key]) => allowedKeys.has(key)));
     });
+    setDiscountAmounts((current) => {
+      const allowedKeys = new Set(
+        filteredInvoices.flatMap((invoice) => invoice.items.map((item) => createQuantityKey(invoice.id, item.id)))
+      );
+      return Object.fromEntries(Object.entries(current).filter(([key]) => allowedKeys.has(key)));
+    });
   }, [filteredInvoices, selectedLedgerId]);
 
   useEffect(() => {
@@ -242,6 +258,16 @@ export default function CreditNotesPage() {
   }, [filteredInvoices, products, selectedInvoiceMap]);
 
   const payloadItems = useMemo(() => {
+    if (creditNoteType === 'discount') {
+      return selectedLineItems
+        .map((line) => ({
+          invoice_id: line.invoice.id,
+          invoice_item_id: line.item.id,
+          discount_amount_inclusive: Number(discountAmounts[line.quantityKey] || 0),
+        }))
+        .filter((line) => Number.isFinite(line.discount_amount_inclusive) && line.discount_amount_inclusive > 0);
+    }
+
     return selectedLineItems
       .map((line) => ({
         invoice_id: line.invoice.id,
@@ -249,9 +275,19 @@ export default function CreditNotesPage() {
         quantity: Number(quantities[line.quantityKey] || 0),
       }))
       .filter((line) => Number.isInteger(line.quantity) && line.quantity > 0);
-  }, [quantities, selectedLineItems]);
+  }, [creditNoteType, discountAmounts, quantities, selectedLineItems]);
 
   const previewTotal = useMemo(() => {
+    if (creditNoteType === 'discount') {
+      return selectedLineItems.reduce((sum, line) => {
+        const discount = Number(discountAmounts[line.quantityKey] || 0);
+        if (!Number.isFinite(discount) || discount <= 0) {
+          return sum;
+        }
+        return sum + discount;
+      }, 0);
+    }
+
     return selectedLineItems.reduce((sum, line) => {
       const quantity = Number(quantities[line.quantityKey] || 0);
       if (!Number.isFinite(quantity) || quantity <= 0) {
@@ -260,12 +296,35 @@ export default function CreditNotesPage() {
       const ratio = quantity / Math.max(line.item.quantity, 1);
       return sum + (line.item.line_total * ratio);
     }, 0);
-  }, [quantities, selectedLineItems]);
+  }, [creditNoteType, discountAmounts, quantities, selectedLineItems]);
+
+  const discountPreviewSplit = useMemo(() => {
+    if (creditNoteType !== 'discount') {
+      return { taxable: 0, tax: 0 };
+    }
+
+    return selectedLineItems.reduce((acc, line) => {
+      const discount = Number(discountAmounts[line.quantityKey] || 0);
+      if (!Number.isFinite(discount) || discount <= 0) {
+        return acc;
+      }
+
+      const gstRate = Number(line.item.gst_rate || 0);
+      const taxable = gstRate > 0 ? roundMoney(discount / (1 + (gstRate / 100))) : roundMoney(discount);
+      const tax = roundMoney(discount - taxable);
+
+      return {
+        taxable: roundMoney(acc.taxable + taxable),
+        tax: roundMoney(acc.tax + tax),
+      };
+    }, { taxable: 0, tax: 0 });
+  }, [creditNoteType, discountAmounts, selectedLineItems]);
 
   function handleLedgerChange(nextLedgerId: string) {
     setSelectedLedgerId(nextLedgerId);
     setSelectedInvoiceIds([]);
     setQuantities({});
+    setDiscountAmounts({});
     setReason('');
   }
 
@@ -273,6 +332,13 @@ export default function CreditNotesPage() {
     setSelectedInvoiceIds((current) => {
       if (current.includes(invoiceId)) {
         setQuantities((existing) => {
+          const next = { ...existing };
+          Object.keys(next)
+            .filter((key) => key.startsWith(`${invoiceId}:`))
+            .forEach((key) => delete next[key]);
+          return next;
+        });
+        setDiscountAmounts((existing) => {
           const next = { ...existing };
           Object.keys(next)
             .filter((key) => key.startsWith(`${invoiceId}:`))
@@ -297,7 +363,7 @@ export default function CreditNotesPage() {
       return;
     }
     if (payloadItems.length === 0) {
-      setError('Enter at least one credited quantity.');
+      setError(creditNoteType === 'discount' ? 'Enter at least one discount amount.' : 'Enter at least one credited quantity.');
       return;
     }
 
@@ -316,6 +382,7 @@ export default function CreditNotesPage() {
       setReason('');
       setSelectedInvoiceIds([]);
       setQuantities({});
+      setDiscountAmounts({});
       setRefreshKey((value) => value + 1);
 
       const [creditNotesRes, invoicesRes] = await Promise.all([
@@ -399,9 +466,14 @@ export default function CreditNotesPage() {
                   <select
                     className="select"
                     value={creditNoteType}
-                    onChange={(event) => setCreditNoteType(event.target.value as CreditNoteType)}
+                    onChange={(event) => {
+                      const nextType = event.target.value as 'return' | 'discount';
+                      setCreditNoteType(nextType);
+                      setQuantities({});
+                      setDiscountAmounts({});
+                    }}
                   >
-                    {Object.entries(creditNoteTypeLabels).map(([value, label]) => (
+                    {Object.entries(createCreditNoteTypeLabels).map(([value, label]) => (
                       <option key={value} value={value}>{label}</option>
                     ))}
                   </select>
@@ -415,7 +487,7 @@ export default function CreditNotesPage() {
                   rows={3}
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
-                  placeholder="Optional narrative for return, discount, or adjustment"
+                  placeholder="Optional narrative for return or discount"
                 />
               </label>
 
@@ -485,15 +557,29 @@ export default function CreditNotesPage() {
                   <div className="panel__header">
                     <div>
                       <p className="eyebrow">Step 2</p>
-                      <h3 className="nav-panel__title" style={{ fontSize: '1rem' }}>Choose credited quantities</h3>
+                      <h3 className="nav-panel__title" style={{ fontSize: '1rem' }}>
+                        {creditNoteType === 'discount' ? 'Enter discount amount (tax inclusive)' : 'Choose credited quantities'}
+                      </h3>
                     </div>
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{payloadItems.length} lines selected</span>
                   </div>
 
+                  {creditNoteType === 'discount' ? (
+                    <p style={{ margin: '0 0 8px', color: 'var(--text-muted)' }}>
+                      Auto split: Taxable {formatCurrency(discountPreviewSplit.taxable, currencyCode)} + Tax {formatCurrency(discountPreviewSplit.tax, currencyCode)}
+                    </p>
+                  ) : null}
+
                   {selectedLineItems.length === 0 ? <div className="empty-state">Pick one or more invoices to expose their line items.</div> : null}
 
                   <div className="stack" style={{ gap: '10px' }}>
-                    {selectedLineItems.map((line) => (
+                    {selectedLineItems.map((line) => {
+                      const discountAmount = Number(discountAmounts[line.quantityKey] || 0);
+                      const gstRate = Number(line.item.gst_rate || 0);
+                      const taxableSplit = gstRate > 0 ? roundMoney(discountAmount / (1 + (gstRate / 100))) : roundMoney(discountAmount);
+                      const taxSplit = roundMoney(discountAmount - taxableSplit);
+
+                      return (
                       <div
                         key={line.quantityKey}
                         style={{
@@ -515,24 +601,43 @@ export default function CreditNotesPage() {
                         <div>
                           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Line total</p>
                           <strong>{formatCurrency(line.item.line_total, line.invoice.company_currency_code || currencyCode)}</strong>
+                          {creditNoteType === 'discount' && discountAmount > 0 ? (
+                            <p style={{ margin: '6px 0 0', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                              Split {formatCurrency(taxableSplit, line.invoice.company_currency_code || currencyCode)} + {formatCurrency(taxSplit, line.invoice.company_currency_code || currencyCode)}
+                            </p>
+                          ) : null}
                         </div>
                         <label>
-                          <span style={{ display: 'block', marginBottom: '4px' }}>Credit qty</span>
+                          <span style={{ display: 'block', marginBottom: '4px' }}>
+                            {creditNoteType === 'discount' ? 'Discount (incl tax)' : 'Credit qty'}
+                          </span>
                           <input
                             className="input"
                             type="number"
-                            min="0"
-                            max={line.item.quantity}
-                            value={quantities[line.quantityKey] || ''}
-                            onChange={(event) => setQuantities((current) => ({
-                              ...current,
-                              [line.quantityKey]: event.target.value,
-                            }))}
+                            min={0}
+                            max={creditNoteType === 'discount' ? undefined : line.item.quantity}
+                            step={creditNoteType === 'discount' ? '0.01' : '1'}
+                            value={creditNoteType === 'discount' ? (discountAmounts[line.quantityKey] || '') : (quantities[line.quantityKey] || '')}
+                            onChange={(event) => {
+                              if (creditNoteType === 'discount') {
+                                setDiscountAmounts((current) => ({
+                                  ...current,
+                                  [line.quantityKey]: event.target.value,
+                                }));
+                                return;
+                              }
+
+                              setQuantities((current) => ({
+                                ...current,
+                                [line.quantityKey]: event.target.value,
+                              }));
+                            }}
                             placeholder="0"
                           />
                         </label>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -548,6 +653,7 @@ export default function CreditNotesPage() {
                   onClick={() => {
                     setSelectedInvoiceIds([]);
                     setQuantities({});
+                    setDiscountAmounts({});
                     setReason('');
                     setCreditNoteType('return');
                   }}

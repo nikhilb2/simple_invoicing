@@ -226,7 +226,8 @@ export type CreditNote = {
 export type CreditNoteItemCreate = {
   invoice_id: number;
   invoice_item_id: number;
-  quantity: number;
+  quantity?: number;
+  discount_amount_inclusive?: number;
 };
 
 export type CreditNoteCreate = {
