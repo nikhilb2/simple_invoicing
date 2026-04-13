@@ -36,7 +36,7 @@ function calculateBreakdown(rows: Invoice[]): Breakdown {
 }
 
 export default function InvoicesAdvancedView() {
-  const { activeFY } = useFY();
+  const { activeFY, loading: fyLoading } = useFY();
   const [viewType, setViewType] = useState<ViewType>('card');
   const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [products, setProducts] = useState<Product[]>([]);
@@ -52,16 +52,25 @@ export default function InvoicesAdvancedView() {
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [allPagesBreakdown, setAllPagesBreakdown] = useState<Breakdown>({ credit: 0, debit: 0, cancelled: 0, total: 0 });
   const pageSize = 20;
+  const shouldUseAllFY = allowAllFY;
+  const isFYReady = shouldUseAllFY || Boolean(activeFY);
 
   // Build query params based on FY filter
   const getFYParams = () => {
-    if (allowAllFY || !activeFY) {
+    if (shouldUseAllFY) {
+      return {};
+    }
+    if (!activeFY) {
       return {};
     }
     return { financial_year_id: activeFY.id };
   };
 
   async function loadData() {
+    if (!isFYReady) {
+      return;
+    }
+
     try {
       setLoading(true);
       setError('');
@@ -87,7 +96,11 @@ export default function InvoicesAdvancedView() {
 
       // Build summary for all pages (same filters, all matching entries)
       const summaryRows: Invoice[] = [...invoicesRes.data.items];
-      for (let nextPage = 2; nextPage <= invoicesRes.data.total_pages; nextPage += 1) {
+      for (let nextPage = 1; nextPage <= invoicesRes.data.total_pages; nextPage += 1) {
+        if (nextPage === page) {
+          continue;
+        }
+
         const nextRes = await api.get<PaginatedInvoices>('/invoices/', {
           params: {
             page: nextPage,
@@ -109,15 +122,19 @@ export default function InvoicesAdvancedView() {
 
   useEffect(() => {
     setPage(1); // Reset to first page when search, filters change
-  }, [invoiceSearch, showCancelled, allowAllFY]);
+  }, [invoiceSearch, showCancelled, allowAllFY, activeFY?.id]);
 
   useEffect(() => {
+    if (!isFYReady || fyLoading) {
+      return;
+    }
+
     void loadData();
-  }, [page, invoiceSearch, showCancelled, allowAllFY]);
+  }, [page, invoiceSearch, showCancelled, allowAllFY, activeFY?.id, fyLoading]);
 
   const currentPageBreakdown = calculateBreakdown(invoices);
 
-  if (!company) {
+  if (fyLoading || (!shouldUseAllFY && !activeFY) || !company) {
     return <div className="p-8 text-center">Loading...</div>;
   }
 
