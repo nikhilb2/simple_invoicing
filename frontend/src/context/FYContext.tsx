@@ -1,6 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { activateFinancialYear, createFinancialYear, getFinancialYears, type FinancialYear } from '../api/financialYears';
+import { useEffect, useMemo } from 'react';
+import { useShallow } from 'zustand/shallow';
+import type { FinancialYear } from '../api/financialYears';
 import { useAuth } from './AuthContext';
+import { useFYStore } from '../store/useFYStore';
 
 type FYContextType = {
   activeFY: FinancialYear | null;
@@ -11,70 +13,46 @@ type FYContextType = {
   refreshFYList: () => Promise<void>;
 };
 
-const FYContext = createContext<FYContextType | undefined>(undefined);
-
 export function FYProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
-  const [fyList, setFyList] = useState<FinancialYear[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const refreshFYList = useCallback(async () => {
-    setLoading(true);
-    try {
-      const list = await getFinancialYears();
-      setFyList(list);
-    } catch {
-      // leave existing list on error
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const { refreshFYList, clearFYList } = useFYStore(useShallow((s) => ({
+    refreshFYList: s.refreshFYList,
+    clearFYList: s.clearFYList,
+  })));
 
   useEffect(() => {
     if (isAuthenticated) {
-      refreshFYList();
+      void refreshFYList();
     } else {
-      setFyList([]);
+      clearFYList();
     }
-  }, [isAuthenticated, refreshFYList]);
+  }, [isAuthenticated, refreshFYList, clearFYList]);
+
+  return <>{children}</>;
+}
+
+export function useFY(): FYContextType {
+  const { fyList, loading, switchFY, createFY, refreshFYList } = useFYStore(
+    useShallow((s) => ({
+      fyList: s.fyList,
+      loading: s.loading,
+      switchFY: s.switchFY,
+      createFY: s.createFY,
+      refreshFYList: s.refreshFYList,
+    })),
+  );
 
   const activeFY = useMemo(
     () => fyList.find((fy) => fy.is_active) ?? null,
     [fyList],
   );
 
-  const switchFY = useCallback(async (id: number) => {
-    // Optimistic update
-    setFyList((prev) =>
-      prev.map((fy) => ({ ...fy, is_active: fy.id === id })),
-    );
-    try {
-      await activateFinancialYear(id);
-      await refreshFYList();
-    } catch {
-      // Roll back optimistic update
-      await refreshFYList();
-    }
-  }, [refreshFYList]);
-
-  const createFY = useCallback(
-    async (label: string, startDate: string, endDate: string) => {
-      await createFinancialYear({ label, start_date: startDate, end_date: endDate });
-      await refreshFYList();
-    },
-    [refreshFYList],
-  );
-
-  const value = useMemo(
-    () => ({ activeFY, fyList, loading, switchFY, createFY, refreshFYList }),
-    [activeFY, fyList, loading, switchFY, createFY, refreshFYList],
-  );
-
-  return <FYContext.Provider value={value}>{children}</FYContext.Provider>;
-}
-
-export function useFY(): FYContextType {
-  const ctx = useContext(FYContext);
-  if (!ctx) throw new Error('useFY must be used inside <FYProvider>');
-  return ctx;
+  return {
+    activeFY,
+    fyList,
+    loading,
+    switchFY,
+    createFY,
+    refreshFYList,
+  };
 }

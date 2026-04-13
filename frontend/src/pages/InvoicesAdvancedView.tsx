@@ -1,13 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { LayoutGrid, Table as TableIcon } from 'lucide-react';
-import api, { getApiErrorMessage } from '../api/client';
-import type { Invoice, PaginatedInvoices, CompanyProfile } from '../types/api';
+import { getApiErrorMessage } from '../api/client';
+import type { Invoice } from '../types/api';
 import { useFY } from '../context/FYContext';
 import InvoicesTable from '../components/InvoicesTable';
 import InvoicesCompactCard from '../components/InvoicesCompactCard';
 import InvoicesTotalBreakdown from '../components/InvoicesTotalBreakdown';
 import InvoicePreview from '../components/InvoicePreview';
 import type { Product } from '../types/api';
+import { useInvoiceFeedViewStore } from '../store/useInvoiceFeedViewStore';
+import { useInvoiceModalStore } from '../store/useInvoiceModalStore';
+import { fetchCompanyProfile, fetchInvoicePage, fetchProducts } from '../features/invoices/api';
+import { invoiceQueryKeys } from '../features/invoices/queryKeys';
 
 type ViewType = 'card' | 'table';
 
@@ -37,102 +42,83 @@ function calculateBreakdown(rows: Invoice[]): Breakdown {
 
 export default function InvoicesAdvancedView() {
   const { activeFY, loading: fyLoading } = useFY();
-  const [viewType, setViewType] = useState<ViewType>('card');
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-    const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [invoiceSearch, setInvoiceSearch] = useState('');
-  const [showCancelled, setShowCancelled] = useState(false);
-  const [allowAllFY, setAllowAllFY] = useState(false);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
-  const [company, setCompany] = useState<CompanyProfile | null>(null);
-  const [allPagesBreakdown, setAllPagesBreakdown] = useState<Breakdown>({ credit: 0, debit: 0, cancelled: 0, total: 0 });
+  const {
+    viewType,
+    invoiceSearch,
+    showCancelled,
+    allowAllFY,
+    page,
+    setViewType,
+    setInvoiceSearch,
+    setShowCancelled,
+    setAllowAllFY,
+    setPage,
+    resetPage,
+  } = useInvoiceFeedViewStore();
+  const { previewInvoice, openPreview, closePreview } = useInvoiceModalStore();
   const pageSize = 20;
   const shouldUseAllFY = allowAllFY;
   const isFYReady = shouldUseAllFY || Boolean(activeFY);
+  const financialYearId = shouldUseAllFY ? undefined : activeFY?.id;
 
-  // Build query params based on FY filter
-  const getFYParams = () => {
-    if (shouldUseAllFY) {
-      return {};
-    }
-    if (!activeFY) {
-      return {};
-    }
-    return { financial_year_id: activeFY.id };
-  };
+  const invoicesQuery = useQuery({
+    queryKey: invoiceQueryKeys.list(page, pageSize, invoiceSearch, showCancelled, financialYearId),
+    queryFn: () => fetchInvoicePage({
+      page,
+      pageSize,
+      search: invoiceSearch,
+      showCancelled,
+      financialYearId,
+    }),
+    enabled: isFYReady && !fyLoading,
+  });
 
-  async function loadData() {
-    if (!isFYReady) {
-      return;
-    }
+  const companyQuery = useQuery({
+    queryKey: invoiceQueryKeys.company,
+    queryFn: fetchCompanyProfile,
+  });
 
-    try {
-      setLoading(true);
-      setError('');
-      const [invoicesRes, companyRes, productsRes] = await Promise.all([
-        api.get<PaginatedInvoices>('/invoices/', {
-          params: { 
-            page, 
-            page_size: pageSize, 
-            search: invoiceSearch, 
-            show_cancelled: showCancelled,
-            ...getFYParams(),
-          },
-        }),
-        api.get<CompanyProfile>('/company/'),
-        api.get<{ items: Product[] }>('/products/', { params: { page_size: 500 } }),
-      ]);
-
-      setInvoices(invoicesRes.data.items);
-      setTotal(invoicesRes.data.total);
-      setTotalPages(invoicesRes.data.total_pages);
-      setCompany(companyRes.data);
-      setProducts(productsRes.data.items);
-
-      // Build summary for all pages (same filters, all matching entries)
-      const summaryRows: Invoice[] = [...invoicesRes.data.items];
-      for (let nextPage = 1; nextPage <= invoicesRes.data.total_pages; nextPage += 1) {
-        if (nextPage === page) {
-          continue;
-        }
-
-        const nextRes = await api.get<PaginatedInvoices>('/invoices/', {
-          params: {
-            page: nextPage,
-            page_size: pageSize,
-            search: invoiceSearch,
-            show_cancelled: showCancelled,
-            ...getFYParams(),
-          },
-        });
-        summaryRows.push(...nextRes.data.items);
-      }
-      setAllPagesBreakdown(calculateBreakdown(summaryRows));
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to load invoices'));
-    } finally {
-      setLoading(false);
-    }
-  }
+  const productsQuery = useQuery<Product[]>({
+    queryKey: invoiceQueryKeys.products,
+    queryFn: fetchProducts,
+  });
 
   useEffect(() => {
-    setPage(1); // Reset to first page when search, filters change
+    resetPage();
   }, [invoiceSearch, showCancelled, allowAllFY, activeFY?.id]);
 
-  useEffect(() => {
-    if (!isFYReady || fyLoading) {
-      return;
+  const invoices = invoicesQuery.data?.items ?? [];
+  const totalPages = invoicesQuery.data?.total_pages ?? 1;
+  const company = companyQuery.data ?? null;
+  const products = productsQuery.data ?? [];
+
+  const loading =
+    fyLoading ||
+    invoicesQuery.isLoading ||
+    companyQuery.isLoading ||
+    productsQuery.isLoading;
+
+  const error = useMemo(() => {
+    if (invoicesQuery.error) return getApiErrorMessage(invoicesQuery.error, 'Unable to load invoices');
+    if (companyQuery.error) return getApiErrorMessage(companyQuery.error, 'Unable to load company profile');
+    if (productsQuery.error) return getApiErrorMessage(productsQuery.error, 'Unable to load products');
+    return '';
+  }, [companyQuery.error, invoicesQuery.error, productsQuery.error]);
+
+  const allPagesBreakdown = useMemo(() => {
+    const summary = invoicesQuery.data?.summary;
+    if (!summary) {
+      return calculateBreakdown(invoices);
     }
 
-    void loadData();
-  }, [page, invoiceSearch, showCancelled, allowAllFY, activeFY?.id, fyLoading]);
-
-  const currentPageBreakdown = calculateBreakdown(invoices);
+    return {
+      total: summary.total_listed,
+      credit: summary.credit_total,
+      debit: summary.debit_total,
+      cancelled: summary.cancelled_total,
+    };
+  }, [invoicesQuery.data?.summary, invoices]);
+  const currentPageBreakdown = useMemo(() => calculateBreakdown(invoices), [invoices]);
 
   if (fyLoading || (!shouldUseAllFY && !activeFY) || !company) {
     return <div className="p-8 text-center">Loading...</div>;
@@ -240,14 +226,14 @@ export default function InvoicesAdvancedView() {
                 <InvoicesCompactCard
                   key={invoice.id}
                   invoice={invoice}
-                  onPreview={setPreviewInvoice}
+                  onPreview={openPreview}
                 />
               ))}
           </div>
         ) : (
           <InvoicesTable
             invoices={invoices}
-            onRowClick={setPreviewInvoice}
+            onRowClick={openPreview}
           />
         )}
       </section>
@@ -289,7 +275,7 @@ export default function InvoicesAdvancedView() {
           invoice={previewInvoice}
            products={products}
            currencyCode={company?.currency_code ?? ''}
-          onClose={() => setPreviewInvoice(null)}
+          onClose={closePreview}
         />
       )}
     </div>
