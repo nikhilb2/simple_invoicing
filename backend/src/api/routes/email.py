@@ -1,16 +1,16 @@
-from datetime import date, datetime, time
+from datetime import date
 from pathlib import Path
 
 import weasyprint
 from fastapi import APIRouter, Body, Depends, HTTPException
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel
-from sqlalchemy import case, func
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from src.api.deps import require_roles
 from src.api.routes.invoices import _build_invoice_pdf
-from src.api.routes.ledgers import _build_statement_html, _make_aware
+from src.api.routes.ledgers import _build_ledger_statement_data, _build_statement_html
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
 from src.models.company import CompanyProfile
@@ -18,7 +18,6 @@ from src.models.invoice import Invoice
 from src.models.payment import Payment
 from src.models.product import Product
 from src.models.user import User, UserRole
-from src.schemas.ledger import LedgerStatementEntry
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
 from src.services.mail import send_email
 
@@ -162,94 +161,25 @@ async def send_ledger_statement_email(
     company = db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
     currency_code = company.currency_code if company and company.currency_code else "INR"
 
-    period_start = datetime.combine(payload.from_date, time.min)
-    period_end = datetime.combine(payload.to_date, time.max)
-
-    opening_totals = (
-        db.query(
-            func.coalesce(func.sum(case((Invoice.voucher_type == "sales", Invoice.total_amount), else_=0)), 0),
-            func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", Invoice.total_amount), else_=0)), 0),
-        )
-        .filter(Invoice.ledger_id == ledger_id)
-        .filter(Invoice.invoice_date < period_start)
-        .one()
-    )
-
-    opening_payment_totals = (
-        db.query(
-            func.coalesce(func.sum(case((Payment.voucher_type == "payment", Payment.amount), else_=0)), 0),
-            func.coalesce(func.sum(case((Payment.voucher_type == "receipt", Payment.amount), else_=0)), 0),
-        )
-        .filter(Payment.ledger_id == ledger_id)
-        .filter(Payment.date < period_start)
-        .one()
-    )
-
-    period_invoices = (
-        db.query(Invoice)
-        .filter(Invoice.ledger_id == ledger_id)
-        .filter(Invoice.invoice_date >= period_start)
-        .filter(Invoice.invoice_date <= period_end)
-        .order_by(Invoice.invoice_date.asc(), Invoice.id.asc())
-        .all()
-    )
-
-    period_payments = (
-        db.query(Payment)
-        .filter(Payment.ledger_id == ledger_id)
-        .filter(Payment.date >= period_start)
-        .filter(Payment.date <= period_end)
-        .order_by(Payment.date.asc(), Payment.id.asc())
-        .all()
-    )
-
-    entries: list[LedgerStatementEntry] = []
-    for inv in period_invoices:
-        entries.append(LedgerStatementEntry(
-            entry_id=inv.id,
-            entry_type="invoice",
-            date=inv.invoice_date,
-            voucher_type=inv.voucher_type.title(),
-            particulars=inv.ledger_name or ledger.name,
-            debit=float(inv.total_amount) if inv.voucher_type == "sales" else 0.0,
-            credit=float(inv.total_amount) if inv.voucher_type == "purchase" else 0.0,
-        ))
-    for pmt in period_payments:
-        entries.append(LedgerStatementEntry(
-            entry_id=pmt.id,
-            entry_type="payment",
-            date=pmt.date,
-            voucher_type=pmt.voucher_type.title(),
-            particulars=f"{pmt.voucher_type.title()}" + (f" ({pmt.mode})" if pmt.mode else ""),
-            debit=float(pmt.amount) if pmt.voucher_type == "payment" else 0.0,
-            credit=float(pmt.amount) if pmt.voucher_type == "receipt" else 0.0,
-        ))
-    entries.sort(key=lambda e: _make_aware(e.date))
-
-    period_debit = sum(e.debit for e in entries)
-    period_credit = sum(e.credit for e in entries)
-    opening_debit = float(opening_totals[0]) + float(opening_payment_totals[0])
-    opening_credit = float(opening_totals[1]) + float(opening_payment_totals[1])
-    opening_balance = opening_debit - opening_credit
-    closing_balance = opening_balance + period_debit - period_credit
+    statement_data = _build_ledger_statement_data(db, ledger, payload.from_date, payload.to_date)
 
     html_pdf = _build_statement_html(
         ledger=ledger,
         company=company,
         from_date=payload.from_date,
         to_date=payload.to_date,
-        opening_balance=opening_balance,
-        period_debit=period_debit,
-        period_credit=period_credit,
-        closing_balance=closing_balance,
-        entries=entries,
+        opening_balance=statement_data.opening_balance,
+        period_debit=statement_data.period_debit,
+        period_credit=statement_data.period_credit,
+        closing_balance=statement_data.closing_balance,
+        entries=statement_data.entries,
         currency=currency_code,
     )
     pdf_bytes: bytes = weasyprint.HTML(string=html_pdf).write_pdf() or b""
 
     # Summarise invoice debits and payment credits separately for the email body
-    total_invoiced = sum(e.debit for e in entries if e.entry_type == "invoice")
-    total_received = sum(e.credit for e in entries if e.entry_type == "payment")
+    total_invoiced = sum(entry.debit for entry in statement_data.entries if entry.entry_type == "invoice")
+    total_received = sum(entry.credit for entry in statement_data.entries if entry.entry_type == "payment")
 
     template = _jinja_env.get_template("ledger_statement.html")
     html_body = template.render(
@@ -262,7 +192,7 @@ async def send_ledger_statement_email(
         date_to=payload.to_date.strftime("%d %b %Y"),
         total_invoices=_fmt(total_invoiced),
         total_payments=_fmt(total_received),
-        balance=_fmt(closing_balance),
+        balance=_fmt(statement_data.closing_balance),
         currency=_symbol(currency_code),
         message=payload.message,
     )
@@ -332,7 +262,7 @@ async def send_payment_reminder_email(
 
     last_payment = (
         db.query(Payment)
-        .filter(Payment.ledger_id == ledger_id)
+        .filter(Payment.ledger_id == ledger_id, Payment.status == "active")
         .order_by(Payment.date.desc())
         .first()
     )

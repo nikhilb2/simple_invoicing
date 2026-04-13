@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
 from html import escape
 from io import BytesIO
@@ -23,11 +24,139 @@ from src.services.financial_year import get_active_fy
 router = APIRouter()
 
 
+@dataclass
+class LedgerStatementData:
+    opening_balance: float
+    period_debit: float
+    period_credit: float
+    closing_balance: float
+    entries: list[LedgerStatementEntry]
+
+
 def _make_aware(dt: datetime) -> datetime:
     """Ensure a datetime is timezone-aware (UTC) for consistent sorting."""
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt
+
+
+def _active_invoices_query(db: Session):
+    return db.query(Invoice).filter(Invoice.status == "active")
+
+
+def _active_payments_query(db: Session):
+    return db.query(Payment).filter(Payment.status == "active")
+
+
+def _build_ledger_statement_data(
+    db: Session,
+    ledger: Ledger,
+    from_date: date,
+    to_date: date,
+) -> LedgerStatementData:
+    period_start = datetime.combine(from_date, time.min)
+    period_end = datetime.combine(to_date, time.max)
+
+    opening_totals = (
+        _active_invoices_query(db)
+        .with_entities(
+            func.coalesce(func.sum(case((Invoice.voucher_type == "sales", Invoice.total_amount), else_=0)), 0),
+            func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", Invoice.total_amount), else_=0)), 0),
+        )
+        .filter(Invoice.ledger_id == ledger.id)
+        .filter(Invoice.invoice_date < period_start)
+        .one()
+    )
+
+    opening_payment_totals = (
+        _active_payments_query(db)
+        .with_entities(
+            func.coalesce(func.sum(case((Payment.voucher_type == "payment", Payment.amount), else_=0)), 0),
+            func.coalesce(func.sum(case((Payment.voucher_type == "receipt", Payment.amount), else_=0)), 0),
+        )
+        .filter(Payment.ledger_id == ledger.id)
+        .filter(Payment.date < period_start)
+        .one()
+    )
+
+    opening_credit_note_summary = get_credit_note_ledger_summary(
+        db,
+        ledger_id=ledger.id,
+        created_before=period_start,
+    )
+
+    period_invoices = (
+        _active_invoices_query(db)
+        .filter(Invoice.ledger_id == ledger.id)
+        .filter(Invoice.invoice_date >= period_start)
+        .filter(Invoice.invoice_date <= period_end)
+        .order_by(Invoice.invoice_date.asc(), Invoice.id.asc())
+        .all()
+    )
+
+    period_payments = (
+        _active_payments_query(db)
+        .filter(Payment.ledger_id == ledger.id)
+        .filter(Payment.date >= period_start)
+        .filter(Payment.date <= period_end)
+        .order_by(Payment.date.asc(), Payment.id.asc())
+        .all()
+    )
+
+    period_credit_note_summary = get_credit_note_ledger_summary(
+        db,
+        ledger_id=ledger.id,
+        created_from=period_start,
+        created_to=period_end,
+    )
+
+    entries: list[LedgerStatementEntry] = []
+    for invoice in period_invoices:
+        entries.append(LedgerStatementEntry(
+            entry_id=invoice.id,
+            entry_type="invoice",
+            date=invoice.invoice_date,
+            voucher_type=invoice.voucher_type.title(),
+            particulars=invoice.ledger_name or ledger.name,
+            debit=float(invoice.total_amount) if invoice.voucher_type == "sales" else 0.0,
+            credit=float(invoice.total_amount) if invoice.voucher_type == "purchase" else 0.0,
+        ))
+    for payment in period_payments:
+        entries.append(LedgerStatementEntry(
+            entry_id=payment.id,
+            entry_type="payment",
+            date=payment.date,
+            voucher_type=payment.voucher_type.title(),
+            particulars=f"{payment.voucher_type.title()}" + (f" ({payment.mode})" if payment.mode else ""),
+            debit=float(payment.amount) if payment.voucher_type == "payment" else 0.0,
+            credit=float(payment.amount) if payment.voucher_type == "receipt" else 0.0,
+        ))
+    for credit_note_entry in period_credit_note_summary.entries:
+        entries.append(LedgerStatementEntry(
+            entry_id=credit_note_entry.entry_id,
+            entry_type="credit_note",
+            date=credit_note_entry.date,
+            voucher_type=credit_note_entry.voucher_type,
+            particulars=credit_note_entry.particulars,
+            debit=credit_note_entry.debit,
+            credit=credit_note_entry.credit,
+        ))
+    entries.sort(key=lambda entry: _make_aware(entry.date))
+
+    period_debit = sum(entry.debit for entry in entries)
+    period_credit = sum(entry.credit for entry in entries)
+    opening_debit = float(opening_totals[0]) + float(opening_payment_totals[0]) + opening_credit_note_summary.purchase_credit_total
+    opening_credit = float(opening_totals[1]) + float(opening_payment_totals[1]) + opening_credit_note_summary.sales_credit_total
+    opening_balance = opening_debit - opening_credit
+    closing_balance = opening_balance + period_debit - period_credit
+
+    return LedgerStatementData(
+        opening_balance=opening_balance,
+        period_debit=period_debit,
+        period_credit=period_credit,
+        closing_balance=closing_balance,
+        entries=entries,
+    )
 
 
 @router.post("", response_model=LedgerOut, include_in_schema=False)
@@ -116,7 +245,7 @@ def get_day_book(
     period_end = datetime.combine(to_date, time.max)
 
     invoices = (
-        db.query(Invoice)
+        _active_invoices_query(db)
         .filter(Invoice.invoice_date >= period_start)
         .filter(Invoice.invoice_date <= period_end)
         .order_by(Invoice.invoice_date.asc(), Invoice.id.asc())
@@ -124,10 +253,9 @@ def get_day_book(
     )
 
     payments = (
-        db.query(Payment)
+        _active_payments_query(db)
         .filter(Payment.date >= period_start)
         .filter(Payment.date <= period_end)
-        .filter(Payment.status == "active")
         .order_by(Payment.date.asc(), Payment.id.asc())
         .all()
     )
@@ -283,111 +411,17 @@ def get_ledger_statement(
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
 
-    period_start = datetime.combine(from_date, time.min)
-    period_end = datetime.combine(to_date, time.max)
-
-    opening_totals = (
-        db.query(
-            func.coalesce(func.sum(case((Invoice.voucher_type == "sales", Invoice.total_amount), else_=0)), 0),
-            func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", Invoice.total_amount), else_=0)), 0),
-        )
-        .filter(Invoice.ledger_id == ledger_id)
-        .filter(Invoice.invoice_date < period_start)
-        .one()
-    )
-
-    opening_payment_totals = (
-        db.query(
-            func.coalesce(func.sum(case((Payment.voucher_type == "payment", Payment.amount), else_=0)), 0),
-            func.coalesce(func.sum(case((Payment.voucher_type == "receipt", Payment.amount), else_=0)), 0),
-        )
-        .filter(Payment.ledger_id == ledger_id)
-        .filter(Payment.date < period_start)
-        .filter(Payment.status == "active")
-        .one()
-    )
-
-    opening_credit_note_summary = get_credit_note_ledger_summary(
-        db,
-        ledger_id=ledger_id,
-        created_before=period_start,
-    )
-
-    period_invoices = (
-        db.query(Invoice)
-        .filter(Invoice.ledger_id == ledger_id)
-        .filter(Invoice.invoice_date >= period_start)
-        .filter(Invoice.invoice_date <= period_end)
-        .order_by(Invoice.invoice_date.asc(), Invoice.id.asc())
-        .all()
-    )
-
-    period_payments = (
-        db.query(Payment)
-        .filter(Payment.ledger_id == ledger_id)
-        .filter(Payment.date >= period_start)
-        .filter(Payment.date <= period_end)
-        .filter(Payment.status == "active")
-        .order_by(Payment.date.asc(), Payment.id.asc())
-        .all()
-    )
-
-    period_credit_note_summary = get_credit_note_ledger_summary(
-        db,
-        ledger_id=ledger_id,
-        created_from=period_start,
-        created_to=period_end,
-    )
-
-    entries = []
-    for invoice in period_invoices:
-        entries.append(LedgerStatementEntry(
-            entry_id=invoice.id,
-            entry_type="invoice",
-            date=invoice.invoice_date,
-            voucher_type=invoice.voucher_type.title(),
-            particulars=invoice.ledger_name or ledger.name,
-            debit=float(invoice.total_amount) if invoice.voucher_type == "sales" else 0.0,
-            credit=float(invoice.total_amount) if invoice.voucher_type == "purchase" else 0.0,
-        ))
-    for payment in period_payments:
-        entries.append(LedgerStatementEntry(
-            entry_id=payment.id,
-            entry_type="payment",
-            date=payment.date,
-            voucher_type=payment.voucher_type.title(),
-            particulars=f"{payment.voucher_type.title()}" + (f" ({payment.mode})" if payment.mode else ""),
-            debit=float(payment.amount) if payment.voucher_type == "payment" else 0.0,
-            credit=float(payment.amount) if payment.voucher_type == "receipt" else 0.0,
-        ))
-    for credit_note_entry in period_credit_note_summary.entries:
-        entries.append(LedgerStatementEntry(
-            entry_id=credit_note_entry.entry_id,
-            entry_type="credit_note",
-            date=credit_note_entry.date,
-            voucher_type=credit_note_entry.voucher_type,
-            particulars=credit_note_entry.particulars,
-            debit=credit_note_entry.debit,
-            credit=credit_note_entry.credit,
-        ))
-    entries.sort(key=lambda e: _make_aware(e.date))
-
-    period_debit = sum(entry.debit for entry in entries)
-    period_credit = sum(entry.credit for entry in entries)
-    opening_debit = float(opening_totals[0]) + float(opening_payment_totals[0]) + opening_credit_note_summary.purchase_credit_total
-    opening_credit = float(opening_totals[1]) + float(opening_payment_totals[1]) + opening_credit_note_summary.sales_credit_total
-    opening_balance = opening_debit - opening_credit
-    closing_balance = opening_balance + period_debit - period_credit
+    statement_data = _build_ledger_statement_data(db, ledger, from_date, to_date)
 
     return LedgerStatementOut(
         ledger=ledger,
         from_date=from_date,
         to_date=to_date,
-        opening_balance=opening_balance,
-        period_debit=period_debit,
-        period_credit=period_credit,
-        closing_balance=closing_balance,
-        entries=entries,
+        opening_balance=statement_data.opening_balance,
+        period_debit=statement_data.period_debit,
+        period_credit=statement_data.period_credit,
+        closing_balance=statement_data.closing_balance,
+        entries=statement_data.entries,
         fy_label=fy_label,
         financial_year_id=financial_year_id,
     )
@@ -708,90 +742,18 @@ def download_ledger_statement_pdf(
     company = db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
     currency = company.currency_code if company and company.currency_code else "INR"
 
-    # Reuse the same calculation logic as the statement endpoint
-    period_start = datetime.combine(from_date, time.min)
-    period_end = datetime.combine(to_date, time.max)
-
-    opening_totals = (
-        db.query(
-            func.coalesce(func.sum(case((Invoice.voucher_type == "sales", Invoice.total_amount), else_=0)), 0),
-            func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", Invoice.total_amount), else_=0)), 0),
-        )
-        .filter(Invoice.ledger_id == ledger_id)
-        .filter(Invoice.invoice_date < period_start)
-        .one()
-    )
-
-    opening_payment_totals = (
-        db.query(
-            func.coalesce(func.sum(case((Payment.voucher_type == "payment", Payment.amount), else_=0)), 0),
-            func.coalesce(func.sum(case((Payment.voucher_type == "receipt", Payment.amount), else_=0)), 0),
-        )
-        .filter(Payment.ledger_id == ledger_id)
-        .filter(Payment.date < period_start)
-        .filter(Payment.status == "active")
-        .one()
-    )
-
-    period_invoices = (
-        db.query(Invoice)
-        .filter(Invoice.ledger_id == ledger_id)
-        .filter(Invoice.invoice_date >= period_start)
-        .filter(Invoice.invoice_date <= period_end)
-        .order_by(Invoice.invoice_date.asc(), Invoice.id.asc())
-        .all()
-    )
-
-    period_payments = (
-        db.query(Payment)
-        .filter(Payment.ledger_id == ledger_id)
-        .filter(Payment.date >= period_start)
-        .filter(Payment.date <= period_end)
-        .filter(Payment.status == "active")
-        .order_by(Payment.date.asc(), Payment.id.asc())
-        .all()
-    )
-
-    entries: list[LedgerStatementEntry] = []
-    for invoice in period_invoices:
-        entries.append(LedgerStatementEntry(
-            entry_id=invoice.id,
-            entry_type="invoice",
-            date=invoice.invoice_date,
-            voucher_type=invoice.voucher_type.title(),
-            particulars=invoice.ledger_name or ledger.name,
-            debit=float(invoice.total_amount) if invoice.voucher_type == "sales" else 0.0,
-            credit=float(invoice.total_amount) if invoice.voucher_type == "purchase" else 0.0,
-        ))
-    for payment in period_payments:
-        entries.append(LedgerStatementEntry(
-            entry_id=payment.id,
-            entry_type="payment",
-            date=payment.date,
-            voucher_type=payment.voucher_type.title(),
-            particulars=f"{payment.voucher_type.title()}" + (f" ({payment.mode})" if payment.mode else ""),
-            debit=float(payment.amount) if payment.voucher_type == "payment" else 0.0,
-            credit=float(payment.amount) if payment.voucher_type == "receipt" else 0.0,
-        ))
-    entries.sort(key=lambda e: _make_aware(e.date))
-
-    period_debit = sum(e.debit for e in entries)
-    period_credit = sum(e.credit for e in entries)
-    opening_debit = float(opening_totals[0]) + float(opening_payment_totals[0])
-    opening_credit = float(opening_totals[1]) + float(opening_payment_totals[1])
-    opening_balance = opening_debit - opening_credit
-    closing_balance = opening_balance + period_debit - period_credit
+    statement_data = _build_ledger_statement_data(db, ledger, from_date, to_date)
 
     html = _build_statement_html(
         ledger=ledger,
         company=company,
         from_date=from_date,
         to_date=to_date,
-        opening_balance=opening_balance,
-        period_debit=period_debit,
-        period_credit=period_credit,
-        closing_balance=closing_balance,
-        entries=entries,
+        opening_balance=statement_data.opening_balance,
+        period_debit=statement_data.period_debit,
+        period_credit=statement_data.period_credit,
+        closing_balance=statement_data.closing_balance,
+        entries=statement_data.entries,
         currency=currency,
     )
 
