@@ -11,7 +11,7 @@ Covers:
 """
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import ANY, MagicMock, call, patch
 
 import pytest
 
@@ -113,6 +113,31 @@ class TestCreditNoteCreateSchema:
             ],
         )
         assert len(payload.items) == 2
+
+    def test_discount_payload_requires_discount_amount(self):
+        with pytest.raises(Exception):
+            CreditNoteCreate(
+                ledger_id=1,
+                invoice_ids=[1],
+                credit_note_type="discount",
+                items=[CreditNoteItemCreate(invoice_id=1, invoice_item_id=10)],
+            )
+
+    def test_discount_payload_rejects_quantity(self):
+        with pytest.raises(Exception):
+            CreditNoteCreate(
+                ledger_id=1,
+                invoice_ids=[1],
+                credit_note_type="discount",
+                items=[
+                    CreditNoteItemCreate(
+                        invoice_id=1,
+                        invoice_item_id=10,
+                        quantity=1,
+                        discount_amount_inclusive=Decimal("118"),
+                    )
+                ],
+            )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -243,6 +268,75 @@ class TestCreateCreditNoteValidation:
             create_credit_note(payload, db, current_user_id=1)
         assert exc.value.status_code == 400
 
+    def test_return_credit_note_increases_inventory(self):
+        ledger = make_ledger(id=1)
+        inv = make_invoice(id=1, ledger_id=1)
+        ii = make_invoice_item(id=10, invoice_id=1, product_id=22, quantity=10, unit_price=100, gst_rate=18)
+
+        payload = CreditNoteCreate(
+            ledger_id=1,
+            invoice_ids=[1],
+            credit_note_type="return",
+            items=[CreditNoteItemCreate(invoice_id=1, invoice_item_id=10, quantity=2)],
+        )
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = ledger
+        db.query.return_value.filter.return_value.all.side_effect = [[inv], [ii]]
+        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = 0
+
+        with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
+             patch("src.services.credit_note.get_fy_for_date", return_value=None), \
+             patch("src.services.credit_note.generate_next_number", return_value="CN-001"), \
+             patch("src.services.credit_note._recompute_credit_status"), \
+             patch("src.services.credit_note._change_inventory_quantity") as mock_change_inventory:
+            create_credit_note(payload, db, current_user_id=1)
+
+        mock_change_inventory.assert_called_once_with(db, 22, 2, context=ANY)
+
+    def test_discount_credit_note_splits_inclusive_tax(self):
+        ledger = make_ledger(id=1)
+        inv = make_invoice(id=1, ledger_id=1)
+        ii = make_invoice_item(id=10, invoice_id=1, product_id=22, quantity=10, unit_price=100, gst_rate=18)
+
+        payload = CreditNoteCreate(
+            ledger_id=1,
+            invoice_ids=[1],
+            credit_note_type="discount",
+            items=[
+                CreditNoteItemCreate(
+                    invoice_id=1,
+                    invoice_item_id=10,
+                    discount_amount_inclusive=Decimal("118"),
+                )
+            ],
+        )
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = ledger
+        db.query.return_value.filter.return_value.all.side_effect = [[inv], [ii]]
+
+        with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
+             patch("src.services.credit_note.get_fy_for_date", return_value=None), \
+             patch("src.services.credit_note.generate_next_number", return_value="CN-001"), \
+             patch("src.services.credit_note._recompute_credit_status"), \
+             patch("src.services.credit_note._change_inventory_quantity") as mock_change_inventory:
+            create_credit_note(payload, db, current_user_id=1)
+
+        added_credit_note_item = None
+        for added_call in db.add.call_args_list:
+            candidate = added_call.args[0]
+            if isinstance(candidate, CreditNoteItem):
+                added_credit_note_item = candidate
+                break
+
+        assert added_credit_note_item is not None
+        assert Decimal(str(added_credit_note_item.taxable_amount)) == Decimal("100.00")
+        assert Decimal(str(added_credit_note_item.tax_amount)) == Decimal("18.00")
+        assert Decimal(str(added_credit_note_item.line_total)) == Decimal("118.00")
+        assert added_credit_note_item.quantity == 1
+        mock_change_inventory.assert_not_called()
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # cancel_credit_note
@@ -279,3 +373,22 @@ class TestCancelCreditNote:
         assert cn.status == "cancelled"
         assert cn.cancelled_at is not None
         mock_recompute.assert_called_once_with(5, db)
+
+    def test_cancel_return_credit_note_reverses_inventory(self):
+        item = CreditNoteItem()
+        item.invoice_id = 5
+        item.product_id = 22
+        item.quantity = 3
+
+        cn = make_cn(status="active")
+        cn.credit_note_type = "return"
+        cn.items = [item]
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = cn
+
+        with patch("src.services.credit_note._recompute_credit_status"), \
+             patch("src.services.credit_note._change_inventory_quantity") as mock_change_inventory:
+            cancel_credit_note(1, db)
+
+        mock_change_inventory.assert_called_once_with(db, 22, -3, context=ANY)
