@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Eye, FileText, Pencil, Trash2, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
@@ -11,6 +12,8 @@ import LedgerCombobox from '../components/LedgerCombobox';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import formatCurrency from '../utils/formatting';
 import { useFY } from '../context/FYContext';
+import { fetchInvoiceComposerData } from '../features/invoices/api';
+import { invoiceQueryKeys } from '../features/invoices/queryKeys';
 
 type InvoiceFormItem = {
   id: number;
@@ -93,7 +96,6 @@ export default function InvoicesPage() {
   const [pendingCancelInvoiceNumber, setPendingCancelInvoiceNumber] = useState<string | null>(null);
   const [showCancelled, setShowCancelled] = useState(false);
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -102,41 +104,24 @@ export default function InvoicesPage() {
   const [invoiceTotal, setInvoiceTotal] = useState(0);
   const [invoiceSearch, setInvoiceSearch] = useState('');
   const invoicePageSize = 20;
+  const financialYearId = activeFY?.id;
+
+  const composerQuery = useQuery({
+    queryKey: invoiceQueryKeys.composer(invoicePage, invoicePageSize, invoiceSearch, showCancelled, financialYearId),
+    queryFn: () =>
+      fetchInvoiceComposerData({
+        page: invoicePage,
+        pageSize: invoicePageSize,
+        search: invoiceSearch,
+        showCancelled,
+        financialYearId,
+      }),
+  });
 
   async function loadInvoicePageData() {
-    try {
-      setLoading(true);
-      setError('');
-      const [productsRes, ledgersRes, invoicesRes, companyRes] = await Promise.all([
-        api.get<{ items: Product[] }>('/products/', { params: { page_size: 500 } }),
-        api.get<{ items: Ledger[] }>('/ledgers/', { params: { page_size: 500 } }),
-        api.get<PaginatedInvoices>('/invoices/', {
-          params: { page: invoicePage, page_size: invoicePageSize, search: invoiceSearch, show_cancelled: showCancelled },
-        }),
-        api.get<CompanyProfile>('/company/'),
-      ]);
-
-      setProducts(productsRes.data.items);
-      setLedgers(ledgersRes.data.items);
-      setInvoices(invoicesRes.data.items);
-      setInvoiceTotal(invoicesRes.data.total);
-      setInvoiceTotalPages(invoicesRes.data.total_pages);
-      setCompany(companyRes.data);
-      setSelectedLedgerId((current) => current || String(ledgersRes.data.items[0]?.id ?? ''));
-      setItems((current) =>
-        current.map((item, index) => {
-          const defaultProduct = productsRes.data.items[index] ?? productsRes.data.items[0];
-          return {
-            ...item,
-            productId: item.productId || String(defaultProduct?.id ?? ''),
-            unit_price: item.unit_price || String(defaultProduct?.price ?? ''),
-          };
-        })
-      );
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to load invoice data'));
-    } finally {
-      setLoading(false);
+    const res = await composerQuery.refetch();
+    if (res.error) {
+      throw res.error;
     }
   }
 
@@ -153,8 +138,37 @@ export default function InvoicesPage() {
   }
 
   useEffect(() => {
-    void loadInvoicePageData();
-  }, [invoicePage, invoiceSearch, showCancelled]);
+    if (!composerQuery.data) {
+      return;
+    }
+
+    setProducts(composerQuery.data.products);
+    setLedgers(composerQuery.data.ledgers);
+    setInvoices(composerQuery.data.invoices);
+    setInvoiceTotal(composerQuery.data.invoiceTotal);
+    setInvoiceTotalPages(composerQuery.data.invoiceTotalPages);
+    setCompany(composerQuery.data.company);
+    setSelectedLedgerId((current) => current || String(composerQuery.data.ledgers[0]?.id ?? ''));
+    setItems((current) =>
+      current.map((item, index) => {
+        const defaultProduct = composerQuery.data.products[index] ?? composerQuery.data.products[0];
+        return {
+          ...item,
+          productId: item.productId || String(defaultProduct?.id ?? ''),
+          unit_price: item.unit_price || String(defaultProduct?.price ?? ''),
+        };
+      })
+    );
+  }, [composerQuery.data]);
+
+  useEffect(() => {
+    if (!composerQuery.error) {
+      return;
+    }
+    setError(getApiErrorMessage(composerQuery.error, 'Unable to load invoice data'));
+  }, [composerQuery.error]);
+
+  const loading = composerQuery.isLoading || composerQuery.isFetching;
 
   const totalAmount = items.reduce((sum, item) => {
     const product = products.find((entry) => entry.id === Number(item.productId));

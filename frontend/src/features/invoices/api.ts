@@ -1,5 +1,5 @@
 import api from '../../api/client';
-import type { CompanyProfile, Invoice, PaginatedInvoices, Product } from '../../types/api';
+import type { CompanyProfile, Invoice, Ledger, PaginatedInvoices, Product } from '../../types/api';
 
 type InvoiceFilters = {
   page: number;
@@ -64,4 +64,39 @@ export async function fetchCompanyProfile(): Promise<CompanyProfile> {
 export async function fetchProducts(): Promise<Product[]> {
   const res = await api.get<{ items: Product[] }>('/products/', { params: { page_size: 500 } });
   return res.data.items;
+}
+
+export async function fetchLedgers(): Promise<Ledger[]> {
+  const res = await api.get<{ items: Ledger[] }>('/ledgers/', { params: { page_size: 500 } });
+  return res.data.items;
+}
+
+export async function fetchInvoiceComposerData(input: {
+  page: number;
+  pageSize: number;
+  search: string;
+  showCancelled: boolean;
+  financialYearId?: number;
+}) {
+  const [productsRes, ledgersRes, invoicesRes, companyRes] = await Promise.all([
+    api.get<{ items: Product[] }>('/products/', { params: { page_size: 500 } }),
+    api.get<{ items: Ledger[] }>('/ledgers/', { params: { page_size: 500 } }),
+    fetchInvoicePage({
+      page: input.page,
+      pageSize: input.pageSize,
+      search: input.search,
+      showCancelled: input.showCancelled,
+      financialYearId: input.financialYearId,
+    }),
+    fetchCompanyProfile(),
+  ]);
+
+  return {
+    products: productsRes.data.items,
+    ledgers: ledgersRes.data.items,
+    invoices: invoicesRes.items,
+    invoiceTotal: invoicesRes.total,
+    invoiceTotalPages: invoicesRes.total_pages,
+    company: companyRes,
+  };
 }
