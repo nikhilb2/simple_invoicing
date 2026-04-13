@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import api from '../api/client';
-import type { AuthToken, UserProfile } from '../types/api';
+import { useEffect } from 'react';
+import { useShallow } from 'zustand/shallow';
+import type { UserProfile } from '../types/api';
+import { useAuthStore } from '../store/useAuthStore';
 
 type AuthContextType = {
   token: string | null;
@@ -12,72 +13,36 @@ type AuthContextType = {
   logout: () => void;
 };
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-function decodeEmailFromToken(token: string | null) {
-  if (!token) {
-    return null;
-  }
-
-  try {
-    const [, payload] = token.split('.');
-    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
-    return typeof decoded.sub === 'string' ? decoded.sub : null;
-  } catch {
-    return null;
-  }
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
-  const [userEmail, setUserEmail] = useState<string | null>(() => decodeEmailFromToken(localStorage.getItem('token')));
-  const [userRole, setUserRole] = useState<UserProfile['role'] | null>(null);
-
-  useEffect(() => {
-    setUserEmail(decodeEmailFromToken(token));
-  }, [token]);
+  const { token, hydrateUserRole, setUserRole } = useAuthStore(useShallow((s) => ({
+    token: s.token,
+    hydrateUserRole: s.hydrateUserRole,
+    setUserRole: s.setUserRole,
+  })));
 
   useEffect(() => {
     if (!token) {
       setUserRole(null);
       return;
     }
-    api.get<UserProfile>('/auth/me').then((res) => {
-      setUserRole(res.data.role);
-    }).catch(() => {
-      setUserRole(null);
-    });
-  }, [token]);
+    void hydrateUserRole();
+  }, [token, hydrateUserRole, setUserRole]);
 
-  const value = useMemo(
-    () => ({
-      token,
-      userEmail,
-      userRole,
-      isAdmin: userRole === 'admin',
-      isAuthenticated: Boolean(token),
-      login: async (email: string, password: string) => {
-        const res = await api.post<AuthToken>('/auth/login', { email, password });
-        localStorage.setItem('token', res.data.access_token);
-        localStorage.setItem('refresh_token', res.data.refresh_token);
-        setToken(res.data.access_token);
-      },
-      logout: () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('refresh_token');
-        setToken(null);
-        setUserEmail(null);
-        setUserRole(null);
-      },
-    }),
-    [token, userEmail, userRole]
-  );
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return <>{children}</>;
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
+  const state = useAuthStore(useShallow((s) => ({
+    token: s.token,
+    userEmail: s.userEmail,
+    userRole: s.userRole,
+    login: s.login,
+    logout: s.logout,
+  })));
+
+  return {
+    ...state,
+    isAdmin: state.userRole === 'admin',
+    isAuthenticated: Boolean(state.token),
+  } as AuthContextType;
 }
