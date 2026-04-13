@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help dev prod down logs seed migrate migrate-up migrate-down migrate-down-all migrate-status migrate-create backend-shell frontend-shell test lint build install install-backend install-frontend
+.PHONY: help dev prod down logs seed reset-db migrate migrate-up migrate-down migrate-down-all migrate-status migrate-create backend-shell frontend-shell test lint build install install-backend install-frontend
 
 help:
 	@echo "Available commands:"
@@ -13,6 +13,7 @@ help:
 	@echo "  make down             - Stop all containers"
 	@echo "  make logs             - Tail logs for all services"
 	@echo "  make seed             - Seed default admin user"
+	@echo "  make reset-db         - Reset DB schema, run migrations, and seed admin"
 	@echo "  make migrate          - Run all pending migrations (alias for migrate-up)"
 	@echo "  make migrate-up       - Run all pending migrations"
 	@echo "  make migrate-down     - Roll back last migration"
@@ -38,6 +39,9 @@ logs:
 
 seed:
 	docker compose --profile dev exec backend-dev python seed_admin.py
+
+reset-db:
+	docker compose --profile dev exec backend-dev python reset_db.py
 
 migrate: migrate-up
 

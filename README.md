@@ -170,6 +170,7 @@ make migrate-down                     # Roll back last migration
 make migrate-down-all                 # Roll back all migrations
 make migrate-create name=<name>       # Create a new migration file
 make seed                             # Seed admin user
+make reset-db                         # Reset DB schema, migrate, and seed admin
 make logs                             # Tail all service logs
 make down                             # Stop all services
 ```
