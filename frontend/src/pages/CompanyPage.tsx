@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
+import { useAuth } from '../context/AuthContext';
 import { useFY } from '../context/FYContext';
 import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate } from '../types/api';
+import { isCompanyConfigured } from '../utils/companySetup';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -38,7 +41,7 @@ function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number, fyLabel?: string 
 
 type SeriesRowState = InvoiceSeriesUpdate;
 
-function InvoiceSeriesCard() {
+function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLElement> }) {
   const { activeFY } = useFY();
   const [seriesList, setSeriesList] = useState<InvoiceSeries[]>([]);
   const [drafts, setDrafts] = useState<Record<number, SeriesRowState>>({});
@@ -105,7 +108,7 @@ function InvoiceSeriesCard() {
   if (seriesList.length === 0) return null;
 
   return (
-    <article className="panel stack">
+    <article className="panel stack" id="invoice-series-settings" ref={sectionRef} tabIndex={-1}>
       <div className="panel__header">
         <div>
           <p className="eyebrow">Numbering</p>
@@ -236,6 +239,11 @@ function InvoiceSeriesCard() {
 // ---------------------------------------------------------------------------
 
 export default function CompanyPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { isAdmin } = useAuth();
+  const seriesSectionRef = useRef<HTMLElement>(null);
+  const companySetupSectionRef = useRef<HTMLElement>(null);
   const [form, setForm] = useState<CompanyProfileUpdate>({
     name: '',
     address: '',
@@ -254,12 +262,26 @@ export default function CompanyPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [initialSetupRequired, setInitialSetupRequired] = useState<boolean | null>(null);
+  const [showFirstSetupPrompt, setShowFirstSetupPrompt] = useState(false);
+  const setupRequiredByRoute = searchParams.get('setup') === 'required';
+  const [showSetupDialog, setShowSetupDialog] = useState(setupRequiredByRoute);
+  const [highlightCompanySetup, setHighlightCompanySetup] = useState(false);
+
+  useEffect(() => {
+    if (setupRequiredByRoute) {
+      setShowSetupDialog(true);
+    }
+  }, [setupRequiredByRoute]);
 
   async function loadCompanyProfile() {
     try {
       setLoading(true);
       setError('');
       const response = await api.get<CompanyProfile>('/company/');
+      if (initialSetupRequired === null) {
+        setInitialSetupRequired(!isCompanyConfigured(response.data));
+      }
       setForm({
         name: response.data.name || '',
         address: response.data.address || '',
@@ -310,11 +332,43 @@ export default function CompanyPage() {
 
       await api.put<CompanyProfile>('/company/', payload);
       setSuccess('Company profile saved. New invoices will now show this as billing company.');
+      if (initialSetupRequired && payload.name) {
+        setShowFirstSetupPrompt(true);
+      }
       await loadCompanyProfile();
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to save company profile'));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function handleAdjustInvoiceSeries() {
+    setShowFirstSetupPrompt(false);
+    const section = seriesSectionRef.current;
+    if (section) {
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      section.focus();
+    }
+  }
+
+  function handleSkipOnboardingStep() {
+    setShowFirstSetupPrompt(false);
+    navigate('/');
+  }
+
+  function dismissSetupDialog() {
+    setShowSetupDialog(false);
+    setHighlightCompanySetup(true);
+    setTimeout(() => setHighlightCompanySetup(false), 2500);
+
+    const section = companySetupSectionRef.current;
+    if (section) {
+      section.focus({ preventScroll: true });
+    }
+
+    if (setupRequiredByRoute) {
+      navigate('/company', { replace: true });
     }
   }
 
@@ -330,8 +384,80 @@ export default function CompanyPage() {
 
       <StatusToasts error={error} success={success} onClearError={() => setError('')} onClearSuccess={() => setSuccess('')} />
 
+      {showSetupDialog ? (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="setup-required-title">
+          <div className="modal-panel">
+            <div className="panel__header">
+              <div>
+                <p className="eyebrow">Getting started</p>
+                <h2 id="setup-required-title" className="nav-panel__title">Complete company setup to continue</h2>
+              </div>
+            </div>
+            <p className="section-copy" style={{ marginTop: '8px' }}>
+              Save your company details first. After saving, you can optionally adjust invoice numbering series.
+            </p>
+            <div className="button-row" style={{ marginTop: '16px' }}>
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={dismissSetupDialog}
+                title="Start company setup"
+                aria-label="Start company setup"
+              >
+                Start setup
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showFirstSetupPrompt ? (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="company-created-title">
+          <div className="modal-panel">
+            <div className="panel__header">
+              <div>
+                <p className="eyebrow">Next step</p>
+                <h2 id="company-created-title" className="nav-panel__title">Company created successfully</h2>
+              </div>
+            </div>
+            <p className="section-copy" style={{ marginTop: '8px' }}>
+              {isAdmin
+                ? 'You can now optionally adjust invoice series before creating invoices.'
+                : 'Setup is complete. You can continue to dashboard now.'}
+            </p>
+            <div className="button-row" style={{ marginTop: '16px' }}>
+              {isAdmin ? (
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  onClick={handleAdjustInvoiceSeries}
+                  title="Adjust invoice series"
+                  aria-label="Adjust invoice series"
+                >
+                  Adjust invoice series
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={handleSkipOnboardingStep}
+                title="Skip for now"
+                aria-label="Skip for now"
+              >
+                Skip for now
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <section className="content-grid">
-        <article className="panel stack">
+        <article
+          className="panel stack"
+          ref={companySetupSectionRef}
+          tabIndex={-1}
+          style={highlightCompanySetup ? { borderColor: 'var(--color-primary)', boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.25)' } : undefined}
+        >
           <div className="panel__header">
             <div>
               <p className="eyebrow">Company setup</p>
@@ -495,7 +621,7 @@ export default function CompanyPage() {
           ) : null}
         </article>
 
-        <InvoiceSeriesCard />
+        <InvoiceSeriesCard sectionRef={seriesSectionRef} />
       </section>
     </div>
   );
