@@ -154,7 +154,7 @@ export default function LedgersPage() {
                     <div className="table-row__meta">
                       <strong>{ledger.name}</strong>
                       <span className="table-subtext">
-                        {ledger.gst} · {ledger.phone_number}
+                        {[ledger.gst ? `GST: ${ledger.gst}` : '', ledger.phone_number].filter(Boolean).join(' · ')}
                       </span>
                       {(ledger.email || ledger.website) ? (
                         <span className="table-subtext">

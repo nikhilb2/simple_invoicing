@@ -127,12 +127,6 @@ def _apply_payload_to_invoice(
             active_financial_year_id,
         )
 
-    if not invoice.company_gst or not invoice.ledger_gst:
-        raise HTTPException(
-            status_code=400,
-            detail="Company GSTIN and ledger GSTIN are required before creating an invoice",
-        )
-
     if not payload.items:
         raise HTTPException(status_code=400, detail="Invoice must have at least one line item")
 

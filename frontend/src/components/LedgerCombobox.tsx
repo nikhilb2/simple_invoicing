@@ -11,8 +11,10 @@ type LedgerComboboxProps = {
 };
 
 export default function LedgerCombobox({ id, ledgers, value, onChange, required, disabled }: LedgerComboboxProps) {
+  const formatLedgerLabel = (ledger: Ledger) => ledger.gst ? `${ledger.name} (${ledger.gst})` : ledger.name;
+  const formatSearchText = (ledger: Ledger) => `${ledger.name} ${ledger.gst || ''}`.toLowerCase();
   const selectedLedger = ledgers.find((l) => String(l.id) === value);
-  const [query, setQuery] = useState(selectedLedger ? `${selectedLedger.name} (${selectedLedger.gst})` : '');
+  const [query, setQuery] = useState(selectedLedger ? formatLedgerLabel(selectedLedger) : '');
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [searching, setSearching] = useState(false);
@@ -23,13 +25,13 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, required,
   // Sync label when external value changes (e.g. default ledger on load)
   useEffect(() => {
     const l = ledgers.find((ledger) => String(ledger.id) === value);
-    if (l) setQuery(`${l.name} (${l.gst})`);
+    if (l) setQuery(formatLedgerLabel(l));
   }, [value, ledgers]);
 
   const suggestions = open
     ? ledgers.filter((l) =>
         searching && query.trim() !== ''
-          ? `${l.name} ${l.gst}`.toLowerCase().includes(query.toLowerCase())
+          ? formatSearchText(l).includes(query.toLowerCase())
           : true
       )
     : [];
@@ -42,7 +44,7 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, required,
   }
 
   function handleSelect(ledger: Ledger) {
-    setQuery(`${ledger.name} (${ledger.gst})`);
+    setQuery(formatLedgerLabel(ledger));
     setOpen(false);
     setActiveIndex(-1);
     setSearching(false);
@@ -74,7 +76,7 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, required,
       setActiveIndex(-1);
       setSearching(false);
       const l = ledgers.find((ledger) => String(ledger.id) === value);
-      if (l) setQuery(`${l.name} (${l.gst})`);
+      if (l) setQuery(formatLedgerLabel(l));
     }
   }
 
@@ -93,7 +95,7 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, required,
         setOpen(false);
         setSearching(false);
         const l = ledgers.find((ledger) => String(ledger.id) === value);
-        if (l) setQuery(`${l.name} (${l.gst})`);
+        if (l) setQuery(formatLedgerLabel(l));
       }
     }
     document.addEventListener('mousedown', handleOutside);
@@ -160,7 +162,10 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, required,
                 color: i === activeIndex ? '#fff' : '#111827',
               }}
             >
-              {l.name} <span style={{ opacity: 0.75, fontSize: '0.85em', color: i === activeIndex ? '#fff' : '#374151' }}>({l.gst})</span>
+              {l.name}
+              {l.gst ? (
+                <span style={{ opacity: 0.75, fontSize: '0.85em', color: i === activeIndex ? '#fff' : '#374151' }}> ({l.gst})</span>
+              ) : null}
             </li>
           ))}
         </ul>

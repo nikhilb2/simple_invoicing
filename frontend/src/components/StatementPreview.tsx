@@ -25,6 +25,12 @@ export default function StatementPreview({ ledger, statement, company, currencyC
     company?.website ? `Web: ${company.website}` : '',
   ].filter(Boolean).join(' · ');
 
+  const ledgerContact = [
+    ledger.gst ? `GST: ${ledger.gst}` : '',
+    ledger.phone_number ? `Phone: ${ledger.phone_number}` : '',
+    ledger.email || '',
+  ].filter(Boolean).join(' · ');
+
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="statement-preview-title">
       <div className="modal-panel modal-panel--invoice-preview">
@@ -98,10 +104,7 @@ export default function StatementPreview({ ledger, statement, company, currencyC
             <p className="eyebrow">Ledger</p>
             <h4>{ledger.name}</h4>
             <p>{ledger.address}</p>
-            <p>
-              GST: {ledger.gst} · Phone: {ledger.phone_number}
-              {ledger.email ? ` · ${ledger.email}` : ''}
-            </p>
+            <p>{ledgerContact}</p>
           </section>
 
           <section style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
