@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useShortcuts } from '../context/ShortcutsContext';
 import Sidebar from './Sidebar';
+import InvoiceCancelDialog from './InvoiceCancelDialog';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -71,6 +72,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </motion.main>
       </div>
+      <InvoiceCancelDialog />
     </div>
   );
 }

@@ -1,16 +1,19 @@
-import { useEffect, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { LayoutGrid, Table as TableIcon } from 'lucide-react';
-import { getApiErrorMessage } from '../api/client';
+import { useNavigate } from 'react-router-dom';
+import api, { getApiErrorMessage } from '../api/client';
 import type { Invoice } from '../types/api';
 import { useFY } from '../context/FYContext';
 import InvoicesTable from '../components/InvoicesTable';
 import InvoicesCompactCard from '../components/InvoicesCompactCard';
 import InvoicesTotalBreakdown from '../components/InvoicesTotalBreakdown';
 import InvoicePreview from '../components/InvoicePreview';
+import StatusToasts from '../components/StatusToasts';
 import type { Product } from '../types/api';
 import { useInvoiceFeedViewStore } from '../store/useInvoiceFeedViewStore';
 import { useInvoiceModalStore } from '../store/useInvoiceModalStore';
+import { useInvoiceCancelStore } from '../store/useInvoiceCancelStore';
 import { fetchCompanyProfile, fetchInvoicePage, fetchProducts } from '../features/invoices/api';
 import { invoiceQueryKeys } from '../features/invoices/queryKeys';
 
@@ -42,6 +45,37 @@ function calculateBreakdown(rows: Invoice[]): Breakdown {
 
 export default function InvoicesAdvancedView() {
   const { activeFY, loading: fyLoading } = useFY();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { requestCancel } = useInvoiceCancelStore();
+  const [actionError, setActionError] = useState('');
+  const [actionSuccess, setActionSuccess] = useState('');
+
+  const restoreMutation = useMutation({
+    mutationFn: (invoiceId: number) => api.post(`/invoices/${invoiceId}/restore`),
+    onSuccess: () => {
+      setActionSuccess('Invoice restored. Inventory has been re-applied.');
+      void queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
+    },
+    onError: (err) => setActionError(getApiErrorMessage(err, 'Unable to restore invoice')),
+  });
+
+  function handleEdit(invoice: Invoice) {
+    navigate(`/invoices?edit=${invoice.id}`);
+  }
+
+  function handleCreditNote(invoice: Invoice) {
+    navigate('/credit-notes', { state: { invoiceId: invoice.id } });
+  }
+
+  function handleCancelRequest(invoice: Invoice) {
+    requestCancel(invoice.id, invoice.invoice_number);
+  }
+
+  function handleRestore(invoice: Invoice) {
+    restoreMutation.mutate(invoice.id);
+  }
+
   const {
     viewType,
     invoiceSearch,
@@ -230,6 +264,10 @@ export default function InvoicesAdvancedView() {
                   invoice={invoice}
                   currencyCode={activeCurrencyCode}
                   onPreview={openPreview}
+                  onEdit={handleEdit}
+                  onCancel={handleCancelRequest}
+                  onRestore={handleRestore}
+                  onCreditNote={handleCreditNote}
                 />
               ))}
           </div>
@@ -283,6 +321,13 @@ export default function InvoicesAdvancedView() {
           onClose={closePreview}
         />
       )}
+
+      <StatusToasts
+        success={actionSuccess}
+        error={actionError}
+        onClearSuccess={() => setActionSuccess('')}
+        onClearError={() => setActionError('')}
+      />
     </div>
   );
 }
