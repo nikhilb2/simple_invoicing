@@ -835,8 +835,11 @@ export default function InvoicesPage() {
                   value={ledgerForm.gst}
                   onChange={(event) => setLedgerForm((current) => ({ ...current, gst: event.target.value }))}
                   placeholder="27ABCDE1234F1Z5"
-                  required
+                  pattern="^$|[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z][A-Za-z0-9]Z[A-Za-z0-9]$"
+                  title="Enter a valid 15-character GSTIN (e.g. 27ABCDE1234F1Z5), or leave blank"
+                  maxLength={15}
                 />
+                <small className="field-hint">Optional. If entered, format must be 27ABCDE1234F1Z5.</small>
               </div>
               <div className="field">
                 <label htmlFor="modal-ledger-phone">Phone number</label>

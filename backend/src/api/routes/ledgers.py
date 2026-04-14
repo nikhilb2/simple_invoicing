@@ -166,27 +166,29 @@ def create_ledger(
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
 ):
-    existing_ledger = db.query(Ledger).filter(Ledger.gst == payload.gst.strip()).first()
+  gst = payload.gst
+  if gst:
+    existing_ledger = db.query(Ledger).filter(Ledger.gst == gst).first()
     if existing_ledger:
-        raise HTTPException(status_code=400, detail="Ledger with this GST already exists")
+      raise HTTPException(status_code=400, detail="Ledger with this GST already exists")
 
-    ledger = Ledger(
-        name=payload.name.strip(),
-        address=payload.address.strip(),
-        gst=payload.gst.strip().upper(),
-        phone_number=payload.phone_number.strip(),
-        email=payload.email.strip() if payload.email else None,
-        website=payload.website.strip() if payload.website else None,
-        bank_name=payload.bank_name.strip() if payload.bank_name else None,
-        branch_name=payload.branch_name.strip() if payload.branch_name else None,
-        account_name=payload.account_name.strip() if payload.account_name else None,
-        account_number=payload.account_number.strip() if payload.account_number else None,
-        ifsc_code=payload.ifsc_code.strip().upper() if payload.ifsc_code else None,
-    )
-    db.add(ledger)
-    db.commit()
-    db.refresh(ledger)
-    return ledger
+  ledger = Ledger(
+    name=payload.name.strip(),
+    address=payload.address.strip(),
+    gst=gst,
+    phone_number=payload.phone_number.strip(),
+    email=payload.email.strip() if payload.email else None,
+    website=payload.website.strip() if payload.website else None,
+    bank_name=payload.bank_name.strip() if payload.bank_name else None,
+    branch_name=payload.branch_name.strip() if payload.branch_name else None,
+    account_name=payload.account_name.strip() if payload.account_name else None,
+    account_number=payload.account_number.strip() if payload.account_number else None,
+    ifsc_code=payload.ifsc_code.strip().upper() if payload.ifsc_code else None,
+  )
+  db.add(ledger)
+  db.commit()
+  db.refresh(ledger)
+  return ledger
 
 
 @router.get("", response_model=PaginatedLedgerOut, include_in_schema=False)
@@ -337,10 +339,11 @@ def update_ledger(
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
 
-    gst = payload.gst.strip().upper()
-    gst_owner = db.query(Ledger).filter(Ledger.gst == gst, Ledger.id != ledger_id).first()
-    if gst_owner:
-        raise HTTPException(status_code=400, detail="Ledger with this GST already exists")
+    gst = payload.gst
+    if gst:
+        gst_owner = db.query(Ledger).filter(Ledger.gst == gst, Ledger.id != ledger_id).first()
+        if gst_owner:
+            raise HTTPException(status_code=400, detail="Ledger with this GST already exists")
 
     ledger.name = payload.name.strip()
     ledger.address = payload.address.strip()
@@ -493,6 +496,9 @@ def _build_statement_html(
     company_gst = f"GST: {_e(company.gst)}" if company and company.gst else ""
     company_phone = f"Phone: {_e(company.phone_number)}" if company and company.phone_number else ""
     company_details = " &middot; ".join(p for p in [company_gst, company_phone] if p)
+    ledger_gst = f"GST: {_e(ledger.gst)}" if ledger.gst else ""
+    ledger_phone = f"Phone: {_e(ledger.phone_number)}" if ledger.phone_number else ""
+    ledger_details = " &middot; ".join(p for p in [ledger_gst, ledger_phone] if p)
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -674,7 +680,7 @@ def _build_statement_html(
     <p class="eyebrow">Ledger</p>
     <h4>{_e(ledger.name)}</h4>
     <p>{_e(ledger.address)}</p>
-    <p>GST: {_e(ledger.gst)} &middot; Phone: {_e(ledger.phone_number)}</p>
+    <p>{ledger_details}</p>
   </section>
 
   <section class="summary">

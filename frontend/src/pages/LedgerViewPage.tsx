@@ -266,7 +266,7 @@ export default function LedgerViewPage() {
           <p className="eyebrow">Ledger statement</p>
           <h1 className="page-title">{ledger.name}</h1>
           <p className="section-copy">
-            {ledger.gst} · {ledger.phone_number}
+            {[ledger.gst ? `GST: ${ledger.gst}` : '', ledger.phone_number].filter(Boolean).join(' · ')}
             {ledger.email ? ` · ${ledger.email}` : ''}
           </p>
         </div>

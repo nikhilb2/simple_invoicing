@@ -17,14 +17,16 @@ def create_buyer(
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
 ):
-    existing_buyer = db.query(Buyer).filter(Buyer.gst == payload.gst.strip()).first()
-    if existing_buyer:
-        raise HTTPException(status_code=400, detail="Buyer with this GST already exists")
+    gst = payload.gst
+    if gst:
+        existing_buyer = db.query(Buyer).filter(Buyer.gst == gst).first()
+        if existing_buyer:
+            raise HTTPException(status_code=400, detail="Buyer with this GST already exists")
 
     buyer = Buyer(
         name=payload.name.strip(),
         address=payload.address.strip(),
-        gst=payload.gst.strip().upper(),
+        gst=gst,
         phone_number=payload.phone_number.strip(),
         email=payload.email.strip() if payload.email else None,
         website=payload.website.strip() if payload.website else None,
