@@ -90,6 +90,7 @@ export default function InvoicesAdvancedView() {
   const invoices = invoicesQuery.data?.items ?? [];
   const totalPages = invoicesQuery.data?.total_pages ?? 1;
   const company = companyQuery.data ?? null;
+  const activeCurrencyCode = company?.currency_code || 'INR';
   const products = productsQuery.data ?? [];
 
   const loading =
@@ -210,6 +211,7 @@ export default function InvoicesAdvancedView() {
 
       <InvoicesTotalBreakdown
         breakdown={allPagesBreakdown}
+        currencyCode={activeCurrencyCode}
         title="Summary of all pages"
         note="This summary includes all invoice entries matching your current filters across every page."
       />
@@ -226,6 +228,7 @@ export default function InvoicesAdvancedView() {
                 <InvoicesCompactCard
                   key={invoice.id}
                   invoice={invoice}
+                  currencyCode={activeCurrencyCode}
                   onPreview={openPreview}
                 />
               ))}
@@ -233,6 +236,7 @@ export default function InvoicesAdvancedView() {
         ) : (
           <InvoicesTable
             invoices={invoices}
+            currencyCode={activeCurrencyCode}
             onRowClick={openPreview}
           />
         )}
@@ -265,6 +269,7 @@ export default function InvoicesAdvancedView() {
 
       <InvoicesTotalBreakdown
         breakdown={currentPageBreakdown}
+        currencyCode={activeCurrencyCode}
         title="Summary of current visible page"
         note="This summary is calculated only from the invoice entries visible on this page."
       />
@@ -273,8 +278,8 @@ export default function InvoicesAdvancedView() {
       {previewInvoice && (
         <InvoicePreview
           invoice={previewInvoice}
-           products={products}
-           currencyCode={company?.currency_code ?? ''}
+          products={products}
+          currencyCode={activeCurrencyCode}
           onClose={closePreview}
         />
       )}

@@ -3,10 +3,11 @@ import formatCurrency from '../utils/formatting';
 
 interface InvoicesTableProps {
   invoices: Invoice[];
+  currencyCode: string;
   onRowClick: (invoice: Invoice) => void;
 }
 
-export default function InvoicesTable({ invoices, onRowClick }: InvoicesTableProps) {
+export default function InvoicesTable({ invoices, currencyCode, onRowClick }: InvoicesTableProps) {
   return (
     <div className="invoice-feed-table-wrap">
       <table className="invoice-feed-table">
@@ -45,7 +46,7 @@ export default function InvoicesTable({ invoices, onRowClick }: InvoicesTablePro
                   )}
                 </td>
                 <td className="invoice-feed-table__amount">
-                  {formatCurrency(invoice.total_amount)}
+                  {formatCurrency(invoice.total_amount, invoice.company_currency_code || currencyCode)}
                 </td>
                 <td>
                   <span className={`invoice-type-badge invoice-type-badge--${invoice.voucher_type}`}>
