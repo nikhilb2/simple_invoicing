@@ -4,10 +4,11 @@ import formatCurrency from '../utils/formatting';
 
 interface InvoicesCompactCardProps {
   invoice: Invoice;
+  currencyCode: string;
   onPreview: (invoice: Invoice) => void;
 }
 
-  export default function InvoicesCompactCard({ invoice, onPreview }: InvoicesCompactCardProps) {
+  export default function InvoicesCompactCard({ invoice, currencyCode, onPreview }: InvoicesCompactCardProps) {
   const isCredit = invoice.voucher_type === 'purchase';
   const isCancelled = invoice.status === 'cancelled';
 
@@ -77,11 +78,11 @@ interface InvoicesCompactCardProps {
               {isCredit ? 'Credit' : 'Debit'}
             </div>
               <div className={`invoice-compact-card__amount invoice-compact-card__amount--${invoice.voucher_type}`}>
-              {formatCurrency(invoice.total_amount)}
+              {formatCurrency(invoice.total_amount, invoice.company_currency_code || currencyCode)}
             </div>
             {invoice.total_tax_amount > 0 && (
                 <div className="invoice-compact-card__meta">
-                Tax: {formatCurrency(invoice.total_tax_amount)}
+                Tax: {formatCurrency(invoice.total_tax_amount, invoice.company_currency_code || currencyCode)}
               </div>
             )}
           </div>
