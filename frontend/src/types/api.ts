@@ -408,3 +408,33 @@ export type InvoiceSeriesUpdate = {
   separator: string;
   pad_digits: 2 | 3 | 4;
 };
+
+export type BackupSummary = {
+  file_name: string;
+  size_bytes: number;
+  created_at: string;
+  migration_head: string | null;
+};
+
+export type BackupCreateResponse = {
+  file_name: string;
+  size_bytes: number;
+  created_at: string;
+  migration_head: string | null;
+};
+
+export type BackupPreflightResponse = {
+  valid: boolean;
+  compatibility: 'exact' | 'requires_migration' | 'newer_than_app' | 'diverged' | string;
+  reason: string | null;
+  backup_created_at: string | null;
+  backup_migration_head: string | null;
+  current_migration_head: string | null;
+  migration_gap_count: number | null;
+};
+
+export type BackupRestoreResponse = {
+  detail: string;
+  compatibility: string;
+  applied_migrations: number;
+};

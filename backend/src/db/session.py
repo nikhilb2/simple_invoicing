@@ -1,5 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
 from src.core.config import settings
 
 engine = create_engine(settings.DATABASE_URL)
@@ -11,4 +12,9 @@ def get_db():
     try:
         yield db
     finally:
-        db.close()
+        try:
+            db.close()
+        except SQLAlchemyError:
+            # During restore the underlying connection may be invalidated; avoid
+            # converting cleanup errors into endpoint failures.
+            pass
