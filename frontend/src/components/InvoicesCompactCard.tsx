@@ -6,9 +6,13 @@ interface InvoicesCompactCardProps {
   invoice: Invoice;
   currencyCode: string;
   onPreview: (invoice: Invoice) => void;
+  onEdit?: (invoice: Invoice) => void;
+  onCancel?: (invoice: Invoice) => void;
+  onRestore?: (invoice: Invoice) => void;
+  onCreditNote?: (invoice: Invoice) => void;
 }
 
-  export default function InvoicesCompactCard({ invoice, currencyCode, onPreview }: InvoicesCompactCardProps) {
+  export default function InvoicesCompactCard({ invoice, currencyCode, onPreview, onEdit, onCancel, onRestore, onCreditNote }: InvoicesCompactCardProps) {
   const isCredit = invoice.voucher_type === 'purchase';
   const isCancelled = invoice.status === 'cancelled';
 
@@ -103,6 +107,7 @@ interface InvoicesCompactCardProps {
                     type="button"
                     className="button button--ghost button--icon"
                   title="Create credit note"
+                  onClick={() => onCreditNote?.(invoice)}
                 >
                   <FileText size={16} />
                 </button>
@@ -110,6 +115,7 @@ interface InvoicesCompactCardProps {
                     type="button"
                     className="button button--ghost button--icon"
                   title="Edit"
+                  onClick={() => onEdit?.(invoice)}
                 >
                   <Pencil size={16} />
                 </button>
@@ -120,6 +126,7 @@ interface InvoicesCompactCardProps {
                   type="button"
                   className="button button--ghost button--icon"
                 title="Restore"
+                onClick={() => onRestore?.(invoice)}
               >
                 <RotateCcw size={16} />
               </button>
@@ -129,6 +136,7 @@ interface InvoicesCompactCardProps {
                   type="button"
                   className="button button--ghost button--icon"
                 title="Cancel"
+                onClick={() => onCancel?.(invoice)}
               >
                 <Trash2 size={16} />
               </button>

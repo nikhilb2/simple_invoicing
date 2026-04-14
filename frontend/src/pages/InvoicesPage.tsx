@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Eye, FileText, Pencil, Trash2, RotateCcw } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerCreate, PaginatedInvoices, Payment, PaymentCreate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
@@ -12,7 +12,7 @@ import LedgerCombobox from '../components/LedgerCombobox';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import formatCurrency from '../utils/formatting';
 import { useFY } from '../context/FYContext';
-import { fetchInvoiceComposerData } from '../features/invoices/api';
+import { fetchInvoiceById, fetchInvoiceComposerData } from '../features/invoices/api';
 import { invoiceQueryKeys } from '../features/invoices/queryKeys';
 
 type InvoiceFormItem = {
@@ -40,6 +40,7 @@ const creditStatusMeta: Record<Invoice['credit_status'], { label: string; backgr
 export default function InvoicesPage() {
   const { activeFY } = useFY();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -160,6 +161,16 @@ export default function InvoicesPage() {
       })
     );
   }, [composerQuery.data]);
+
+  // Handle ?edit=<id> query param — triggered from invoice feed or any other page
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (!editId || editingInvoiceId) return;
+    fetchInvoiceById(Number(editId))
+      .then(startEditingInvoice)
+      .catch(() => setError('Unable to load invoice for editing.'));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   useEffect(() => {
     if (!composerQuery.error) {
@@ -301,6 +312,9 @@ export default function InvoicesPage() {
       if (editingInvoiceId) {
         await api.put<Invoice>(`/invoices/${editingInvoiceId}`, payload);
         setSuccess('Invoice updated successfully. Inventory has been recalculated.');
+        if (searchParams.has('edit')) {
+          setSearchParams((prev) => { prev.delete('edit'); return prev; }, { replace: true });
+        }
       } else {
         const res = await api.post<Invoice>('/invoices/', payload);
         const baseMsg =

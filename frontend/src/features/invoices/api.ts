@@ -24,6 +24,11 @@ function buildInvoiceParams(filters: InvoiceFilters) {
   return params;
 }
 
+export async function fetchInvoiceById(invoiceId: number): Promise<Invoice> {
+  const res = await api.get<Invoice>(`/invoices/${invoiceId}`);
+  return res.data;
+}
+
 export async function fetchInvoicePage(filters: InvoiceFilters): Promise<PaginatedInvoices> {
   const res = await api.get<PaginatedInvoices>('/invoices/', {
     params: buildInvoiceParams(filters),
