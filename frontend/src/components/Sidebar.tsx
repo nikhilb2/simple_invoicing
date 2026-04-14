@@ -28,6 +28,7 @@ const managementGroup: NavItem[] = [
 
 const settingsGroup = (isAdmin: boolean): NavItem[] => [
   ...(isAdmin ? [{ to: '/smtp-settings', label: 'SMTP Settings' }] : []),
+  ...(isAdmin ? [{ to: '/backups', label: 'Backups' }] : []),
   { to: '/shortcuts', label: 'Keyboard Shortcuts' },
 ];
 

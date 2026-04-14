@@ -19,6 +19,7 @@ import LedgerViewPage from './pages/LedgerViewPage';
 import DayBookPage from './pages/DayBookPage';
 import CompanyPage from './pages/CompanyPage';
 import SmtpSettingsPage from './pages/SmtpSettingsPage';
+import BackupsPage from './pages/BackupsPage';
 import KeyboardShortcutsPage from './pages/KeyboardShortcutsPage';
 import Layout from './components/Layout';
 
@@ -101,6 +102,7 @@ function AppRoutes() {
       <Route path="/credit-notes" element={<Protected><CompanyRequired><Layout><CreditNotesPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/company" element={<Protected><Layout><CompanyPage /></Layout></Protected>} />
       <Route path="/smtp-settings" element={<Protected><CompanyRequired><AdminOnly><Layout><SmtpSettingsPage /></Layout></AdminOnly></CompanyRequired></Protected>} />
+      <Route path="/backups" element={<Protected><CompanyRequired><AdminOnly><Layout><BackupsPage /></Layout></AdminOnly></CompanyRequired></Protected>} />
       <Route path="/shortcuts" element={<Protected><CompanyRequired><Layout><KeyboardShortcutsPage /></Layout></CompanyRequired></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
