@@ -161,6 +161,9 @@ def test_create_opening_balance_skips_payment_series_number_generation():
     with patch("src.api.routes.payments.get_active_fy", return_value=active_fy), patch(
         "src.api.routes.payments.get_fy_for_date", return_value=active_fy
     ), patch(
+        "src.api.routes.payments._find_existing_opening_balance",
+        return_value=None,
+    ), patch(
         "src.api.routes.payments.generate_next_number"
     ) as generate_mock, patch(
         "src.api.routes.payments.PaymentOut.model_validate",
