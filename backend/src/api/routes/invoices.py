@@ -38,6 +38,13 @@ def _is_interstate_supply(company_gst: str | None, ledger_gst: str | None) -> bo
     return company_gst[:2] != ledger_gst[:2]
 
 
+def _extract_pan_from_gstin(gstin: str | None) -> str | None:
+    normalized = (gstin or "").strip().upper()
+    if len(normalized) != 15:
+        return None
+    return normalized[2:12]
+
+
 def _generate_next_number(
     db: Session,
     voucher_type: str,
@@ -467,6 +474,9 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     supplier_detail_parts = []
     if invoice.ledger_gst:
         supplier_detail_parts.append(f"GST: {_e(invoice.ledger_gst)}")
+        supplier_pan = _extract_pan_from_gstin(invoice.ledger_gst)
+        if supplier_pan:
+            supplier_detail_parts.append(f"PAN: {_e(supplier_pan)}")
     if invoice.ledger_phone:
         supplier_detail_parts.append(f"Phone: {_e(invoice.ledger_phone)}")
     supplier_details = " &middot; ".join(supplier_detail_parts)
@@ -475,6 +485,9 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     company_detail_parts = []
     if invoice.company_gst:
         company_detail_parts.append(f"GST: {_e(invoice.company_gst)}")
+        company_pan = _extract_pan_from_gstin(invoice.company_gst)
+        if company_pan:
+            company_detail_parts.append(f"PAN: {_e(company_pan)}")
     company_details = " &middot; ".join(company_detail_parts)
 
     # Optional supplier reference row
@@ -743,6 +756,9 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
     company_detail_parts = []
     if invoice.company_gst:
         company_detail_parts.append(f"GST: {_e(invoice.company_gst)}")
+        company_pan = _extract_pan_from_gstin(invoice.company_gst)
+        if company_pan:
+            company_detail_parts.append(f"PAN: {_e(company_pan)}")
     if invoice.company_phone:
         company_detail_parts.append(f"Phone: {_e(invoice.company_phone)}")
     company_details = " &middot; ".join(company_detail_parts)
@@ -758,6 +774,9 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
     billto_parts = []
     if invoice.ledger_gst:
         billto_parts.append(f"GST: {_e(invoice.ledger_gst)}")
+        billto_pan = _extract_pan_from_gstin(invoice.ledger_gst)
+        if billto_pan:
+            billto_parts.append(f"PAN: {_e(billto_pan)}")
     if invoice.ledger_phone:
         billto_parts.append(f"Phone: {_e(invoice.ledger_phone)}")
     billto_details = " &middot; ".join(billto_parts)
