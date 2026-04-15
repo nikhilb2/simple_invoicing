@@ -135,9 +135,7 @@ def _apply_payload_to_invoice(
 
     taxable_total = Decimal("0")
     tax_total = Decimal("0")
-    cgst_total = Decimal("0")
-    sgst_total = Decimal("0")
-    igst_total = Decimal("0")
+    created_items: list[InvoiceItem] = []
     for item in payload.items:
         if item.quantity <= 0:
             raise HTTPException(status_code=400, detail="Item quantity must be greater than zero")
@@ -173,41 +171,47 @@ def _apply_payload_to_invoice(
             tax_amount = _money(taxable_amount * gst_rate / Decimal("100"))
             line_total = _money(taxable_amount + tax_amount)
 
-        if interstate_supply:
-            igst_amount = tax_amount
-            cgst_amount = Decimal("0")
-            sgst_amount = Decimal("0")
-        else:
-            half_tax = _money(tax_amount / Decimal("2"))
-            cgst_amount = half_tax
-            sgst_amount = _money(tax_amount - half_tax)
-            igst_amount = Decimal("0")
-
         taxable_total += taxable_amount
         tax_total += tax_amount
-        cgst_total += cgst_amount
-        sgst_total += sgst_amount
-        igst_total += igst_amount
 
-        db.add(
-            InvoiceItem(
-                invoice_id=invoice.id,
-                product_id=product.id,
-                quantity=item.quantity,
-                hsn_sac=product.hsn_sac,
-                unit_price=float(unit_price),
-                gst_rate=float(gst_rate),
-                taxable_amount=float(taxable_amount),
-                tax_amount=float(tax_amount),
-                line_total=float(line_total),
-            )
+        invoice_item = InvoiceItem(
+            invoice_id=invoice.id,
+            product_id=product.id,
+            quantity=item.quantity,
+            hsn_sac=product.hsn_sac,
+            unit_price=float(unit_price),
+            gst_rate=float(gst_rate),
+            taxable_amount=float(taxable_amount),
+            tax_amount=float(tax_amount),
+            line_total=float(line_total),
         )
+        created_items.append(invoice_item)
+        db.add(invoice_item)
 
     invoice.taxable_amount = float(_money(taxable_total))
-    invoice.total_tax_amount = float(_money(tax_total))
-    invoice.cgst_amount = float(_money(cgst_total))
-    invoice.sgst_amount = float(_money(sgst_total))
-    invoice.igst_amount = float(_money(igst_total))
+    tax_total = _money(tax_total)
+
+    # Split GST components at invoice level. If intrastate total tax has odd paise,
+    # add Rs 0.01 first so CGST and SGST are always equal after splitting.
+    if interstate_supply:
+        invoice.cgst_amount = 0.0
+        invoice.sgst_amount = 0.0
+        invoice.igst_amount = float(tax_total)
+    else:
+        paise = int(tax_total * Decimal("100"))
+        if paise % 2 != 0:
+            tax_total = _money(tax_total + Decimal("0.01"))
+            if created_items:
+                last_item = created_items[-1]
+                last_item.tax_amount = float(_money(Decimal(str(last_item.tax_amount or 0)) + Decimal("0.01")))
+                last_item.line_total = float(_money(Decimal(str(last_item.line_total or 0)) + Decimal("0.01")))
+
+        half_tax_total = _money(tax_total / Decimal("2"))
+        invoice.cgst_amount = float(half_tax_total)
+        invoice.sgst_amount = float(half_tax_total)
+        invoice.igst_amount = 0.0
+
+    invoice.total_tax_amount = float(tax_total)
     raw_total = _money(taxable_total + tax_total)
     if invoice.apply_round_off:
         rounded_total = raw_total.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
