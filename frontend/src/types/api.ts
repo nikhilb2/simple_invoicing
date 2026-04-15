@@ -157,6 +157,8 @@ export type Invoice = {
   voucher_type: 'sales' | 'purchase';
   status: 'active' | 'cancelled';
   tax_inclusive: boolean;
+  apply_round_off: boolean;
+  round_off_amount: number;
   supplier_invoice_number?: string | null;
   ledger: Ledger | null;
   taxable_amount: number;
@@ -253,6 +255,7 @@ export type InvoiceCreate = {
   due_date?: string;
   supplier_invoice_number?: string | null;
   tax_inclusive?: boolean;
+  apply_round_off?: boolean;
   items: InvoiceItemInput[];
 };
 
