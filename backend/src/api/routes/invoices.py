@@ -438,6 +438,20 @@ def _e(text: str | None) -> str:
     return escape(text or "")
 
 
+def _build_pdf_tax_breakup_rows(invoice: Invoice, currency: str) -> str:
+  cgst = float(invoice.cgst_amount or 0)
+  sgst = float(invoice.sgst_amount or 0)
+  igst = float(invoice.igst_amount or 0)
+
+  # GST display rule for PDFs: show either IGST or CGST+SGST.
+  if igst > 0:
+    return f"<p>IGST: {_fmt_currency(igst, currency)}</p>"
+  return (
+    f"<p>CGST: {_fmt_currency(cgst, currency)}</p>"
+    f"<p>SGST: {_fmt_currency(sgst, currency)}</p>"
+  )
+
+
 def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> str:
     """Generate HTML for a purchase invoice (supplier at top-left, your company top-right,
     no bank details in footer, optional supplier ref row)."""
@@ -504,6 +518,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     round_off_html = (
         f'<p>Round off: {_fmt_currency(round_off_amount, currency)}</p>' if show_round_off else ''
     )
+    tax_breakup_rows = _build_pdf_tax_breakup_rows(invoice, currency)
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -701,9 +716,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     <div class="invoice-sheet__totals">
       <p class="eyebrow">Tax breakup</p>
       <p>Taxable: {_fmt_currency(float(invoice.taxable_amount or 0), currency)}</p>
-      <p>CGST: {_fmt_currency(float(invoice.cgst_amount or 0), currency)}</p>
-      <p>SGST: {_fmt_currency(float(invoice.sgst_amount or 0), currency)}</p>
-      <p>IGST: {_fmt_currency(float(invoice.igst_amount or 0), currency)}</p>
+      {tax_breakup_rows}
       <p>Total tax: {_fmt_currency(float(invoice.total_tax_amount or 0), currency)}</p>
       {round_off_html}
       <p class="eyebrow" style="margin-top: 10px;">Total due</p>
@@ -786,6 +799,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
     round_off_html = (
         f'<p>Round off: {_fmt_currency(round_off_amount, currency)}</p>' if show_round_off else ''
     )
+    tax_breakup_rows = _build_pdf_tax_breakup_rows(invoice, currency)
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -996,9 +1010,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
     <div class="invoice-sheet__totals">
       <p class="eyebrow">Tax breakup</p>
       <p>Taxable: {_fmt_currency(float(invoice.taxable_amount or 0), currency)}</p>
-      <p>CGST: {_fmt_currency(float(invoice.cgst_amount or 0), currency)}</p>
-      <p>SGST: {_fmt_currency(float(invoice.sgst_amount or 0), currency)}</p>
-      <p>IGST: {_fmt_currency(float(invoice.igst_amount or 0), currency)}</p>
+      {tax_breakup_rows}
       <p>Total tax: {_fmt_currency(float(invoice.total_tax_amount or 0), currency)}</p>
       {round_off_html}
       <p class="eyebrow" style="margin-top: 10px;">Total due</p>

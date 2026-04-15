@@ -69,3 +69,33 @@ def test_purchase_html_shows_supplier_and_company_pan_when_gst_present():
     assert "PAN: ABCDE1234F" in html
     assert "GST: 07AAMPB1274B1Z8" in html
     assert "PAN: AAMPB1274B" in html
+
+
+def test_sales_pdf_tax_breakup_shows_only_igst_for_interstate_case():
+    invoice = _invoice_base("sales")
+    invoice.taxable_amount = 100
+    invoice.total_tax_amount = 18
+    invoice.cgst_amount = 0
+    invoice.sgst_amount = 0
+    invoice.igst_amount = 18
+
+    html = _build_invoice_html(invoice, [])
+
+    assert "IGST:" in html
+    assert "CGST:" not in html
+    assert "SGST:" not in html
+
+
+def test_purchase_pdf_tax_breakup_shows_only_cgst_sgst_for_intrastate_case():
+    invoice = _invoice_base("purchase")
+    invoice.taxable_amount = 100
+    invoice.total_tax_amount = 18
+    invoice.cgst_amount = 9
+    invoice.sgst_amount = 9
+    invoice.igst_amount = 0
+
+    html = _build_purchase_invoice_html(invoice, [])
+
+    assert "CGST:" in html
+    assert "SGST:" in html
+    assert "IGST:" not in html
