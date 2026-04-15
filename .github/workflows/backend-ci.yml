@@ -55,3 +55,10 @@ jobs:
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/testdb"
           SECRET_KEY: "testing-secret-key"
         run: python -c "from app_main import app; print('FastAPI app import OK')"
+
+      - name: Run backend tests
+        working-directory: backend
+        env:
+          DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/testdb"
+          SECRET_KEY: "testing-secret-key"
+        run: python -m pytest tests/ -v
