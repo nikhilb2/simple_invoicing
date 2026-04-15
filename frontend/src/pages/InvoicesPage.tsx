@@ -973,8 +973,6 @@ export default function InvoicesPage() {
       {previewInvoice ? (
         <InvoicePreview
           invoice={previewInvoice}
-          products={products}
-          currencyCode={activeCurrencyCode}
           onClose={() => setPreviewInvoice(null)}
           onError={(msg) => setError(msg)}
         />

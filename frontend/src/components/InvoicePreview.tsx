@@ -1,43 +1,87 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
-import type { Invoice, Product } from '../types/api';
-import formatCurrency from '../utils/formatting';
+import type { Invoice } from '../types/api';
 import SendEmailModal from './SendEmailModal';
-
-function getPreviewLineItems(invoice: Invoice, products: Product[]) {
-  return (invoice.items || []).map((item) => {
-    const matchedProduct = products.find((product) => product.id === item.product_id);
-    const gstRate = item.gst_rate ?? matchedProduct?.gst_rate ?? 0;
-    const taxableAmount = item.taxable_amount ?? item.unit_price * item.quantity;
-    const taxAmount = item.tax_amount ?? taxableAmount * gstRate / 100;
-    return {
-      ...item,
-      productName: matchedProduct?.name || `Product #${item.product_id}`,
-      sku: matchedProduct?.sku || 'N/A',
-      hsnSac: item.hsn_sac || matchedProduct?.hsn_sac || 'N/A',
-      gstRate,
-      taxableAmount,
-      taxAmount,
-    };
-  });
-}
 
 type InvoicePreviewProps = {
   invoice: Invoice;
-  products: Product[];
-  currencyCode: string;
   onClose: () => void;
   onError?: (message: string) => void;
 };
 
-export default function InvoicePreview({ invoice, products, currencyCode, onClose, onError }: InvoicePreviewProps) {
+export default function InvoicePreview({ invoice, onClose, onError }: InvoicePreviewProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
-  const previewCurrencyCode = invoice.company_currency_code || currencyCode;
-  const roundOffAmount = invoice.round_off_amount || 0;
-  const showRoundOff = invoice.apply_round_off && roundOffAmount !== 0;
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [loadingPdf, setLoadingPdf] = useState(true);
+  const [pdfError, setPdfError] = useState('');
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEscapeClose(onClose);
+
+  useEffect(() => {
+    let isMounted = true;
+    let objectUrlToRevoke: string | null = null;
+
+    const loadPdf = async () => {
+      setLoadingPdf(true);
+      setPdfError('');
+      setPdfUrl(null);
+
+      try {
+        const response = await api.get(`/invoices/${invoice.id}/pdf`, {
+          responseType: 'blob',
+        });
+        const nextUrl = window.URL.createObjectURL(response.data as Blob);
+        objectUrlToRevoke = nextUrl;
+
+        if (!isMounted) {
+          window.URL.revokeObjectURL(nextUrl);
+          return;
+        }
+        setPdfUrl(nextUrl);
+      } catch (err) {
+        if (!isMounted) return;
+        const message = getApiErrorMessage(err, 'Unable to load invoice PDF preview');
+        setPdfError(message);
+        onError?.(message);
+      } finally {
+        if (isMounted) {
+          setLoadingPdf(false);
+        }
+      }
+    };
+
+    loadPdf();
+
+    return () => {
+      isMounted = false;
+      if (objectUrlToRevoke) {
+        window.URL.revokeObjectURL(objectUrlToRevoke);
+      }
+    };
+  }, [invoice.id]);
+
+  const handleDownloadPdf = async () => {
+    try {
+      const response = await api.get(`/invoices/${invoice.id}/pdf`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(response.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `invoice_${invoice.invoice_number || invoice.id}.pdf`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      onError?.(getApiErrorMessage(err, 'Unable to download PDF'));
+    }
+  };
+
+  const handlePrintPdf = () => {
+    iframeRef.current?.contentWindow?.focus();
+    iframeRef.current?.contentWindow?.print();
+  };
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="invoice-preview-title">
@@ -45,10 +89,10 @@ export default function InvoicePreview({ invoice, products, currencyCode, onClos
         <div className="panel__header no-print">
           <div>
             <p className="eyebrow">Invoice preview</p>
-            <h2 id="invoice-preview-title" className="nav-panel__title">Printable invoice {invoice.invoice_number || `#${invoice.id}`}</h2>
+            <h2 id="invoice-preview-title" className="nav-panel__title">PDF invoice {invoice.invoice_number || `#${invoice.id}`}</h2>
           </div>
           <div className="button-row">
-            <button type="button" className="button button--secondary" onClick={() => window.print()} title="Print invoice" aria-label="Print invoice">
+            <button type="button" className="button button--secondary" onClick={handlePrintPdf} disabled={!pdfUrl || loadingPdf} title="Print invoice" aria-label="Print invoice">
               Print
             </button>
             <button
@@ -56,21 +100,7 @@ export default function InvoicePreview({ invoice, products, currencyCode, onClos
               className="button button--primary"
               title="Download invoice PDF"
               aria-label="Download invoice PDF"
-              onClick={async () => {
-                try {
-                  const response = await api.get(`/invoices/${invoice.id}/pdf`, {
-                    responseType: 'blob',
-                  });
-                  const url = window.URL.createObjectURL(response.data as Blob);
-                  const link = document.createElement('a');
-                  link.href = url;
-                  link.download = `invoice_${invoice.invoice_number || invoice.id}.pdf`;
-                  link.click();
-                  window.URL.revokeObjectURL(url);
-                } catch (err) {
-                  onError?.(getApiErrorMessage(err, 'Unable to download PDF'));
-                }
-              }}
+              onClick={handleDownloadPdf}
             >
               Download PDF
             </button>
@@ -89,141 +119,18 @@ export default function InvoicePreview({ invoice, products, currencyCode, onClos
           </div>
         </div>
 
-        <article className="invoice-print-root invoice-sheet">
-          {invoice.voucher_type === 'purchase' ? (
-            <>
-              <header className="invoice-sheet__header">
-                <div>
-                  <p className="eyebrow">Supplier</p>
-                  <h3>{invoice.ledger?.name || invoice.ledger_name || 'Unknown supplier'}</h3>
-                  <p>{invoice.ledger?.address || invoice.ledger_address || 'Address not provided'}</p>
-                  <p>
-                    {(invoice.ledger?.gst || invoice.ledger_gst) ? `GST: ${invoice.ledger?.gst || invoice.ledger_gst}` : ''}
-                    {(invoice.ledger?.phone_number || invoice.ledger_phone) ? ` · Phone: ${invoice.ledger?.phone_number || invoice.ledger_phone}` : ''}
-                  </p>
-                </div>
-                <div className="invoice-sheet__header-right">
-                  <p className="eyebrow">Bill To</p>
-                  <h3>{invoice.company_name || 'Your company'}</h3>
-                  <p>{invoice.company_address || 'Address not provided'}</p>
-                  <p>{invoice.company_gst ? `GST: ${invoice.company_gst}` : ''}</p>
-                </div>
-              </header>
-
-              <div className="invoice-sheet__titleblock">
-                <span className="invoice-badge invoice-badge--purchase">Purchase Invoice</span>
-                <h2>Invoice {invoice.invoice_number || `#${invoice.id}`}</h2>
-                <p>Date: {new Date(invoice.invoice_date).toLocaleDateString()} &nbsp;·&nbsp; Currency: {previewCurrencyCode}</p>
-              </div>
-
-              {invoice.supplier_invoice_number && (
-                <section className="invoice-sheet__supplierref">
-                  <span className="eyebrow">Supplier Ref:</span>
-                  <span className="invoice-sheet__supplierref-value">{invoice.supplier_invoice_number}</span>
-                </section>
-              )}
-            </>
-          ) : (
-            <>
-              <header className="invoice-sheet__header">
-                <div>
-                  <p className="eyebrow">Billed by</p>
-                  <h3>{invoice.company_name || 'Company not set'}</h3>
-                  <p>{invoice.company_address || 'Address not provided'}</p>
-                  <p>
-                    {invoice.company_gst ? `GST: ${invoice.company_gst}` : ''}
-                    {invoice.company_phone ? ` · Phone: ${invoice.company_phone}` : ''}
-                  </p>
-                  <p>
-                    {invoice.company_email ? `Email: ${invoice.company_email}` : ''}
-                    {invoice.company_email && invoice.company_website ? ' · ' : ''}
-                    {invoice.company_website ? `Web: ${invoice.company_website}` : ''}
-                  </p>
-                </div>
-                <div className="invoice-sheet__meta">
-                  <span className="invoice-badge">{invoice.voucher_type === 'sales' ? 'Sales' : 'Purchase'}</span>
-                  <h2>Invoice {invoice.invoice_number || `#${invoice.id}`}</h2>
-                  <p>Date: {new Date(invoice.invoice_date).toLocaleDateString()}</p>
-                  <p>Currency: {previewCurrencyCode}</p>
-                </div>
-              </header>
-
-              <section className="invoice-sheet__billto">
-                <p className="eyebrow">Bill to</p>
-                <h4>{invoice.ledger?.name || invoice.ledger_name || 'Unknown ledger'}</h4>
-                <p>{invoice.ledger?.address || invoice.ledger_address || 'Address not provided'}</p>
-                <p>
-                  {(invoice.ledger?.gst || invoice.ledger_gst) ? `GST: ${invoice.ledger?.gst || invoice.ledger_gst}` : ''}
-                  {(invoice.ledger?.phone_number || invoice.ledger_phone) ? ` · Phone: ${invoice.ledger?.phone_number || invoice.ledger_phone}` : ''}
-                </p>
-              </section>
-            </>
-          )}
-
-          <section className="invoice-sheet__table-wrap">
-            <table className="invoice-sheet__table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Item</th>
-                  <th>SKU</th>
-                  <th>HSN/SAC</th>
-                  <th className="right">Qty</th>
-                  <th className="right">Unit Price</th>
-                  <th className="right">GST %</th>
-                  <th className="right">Tax</th>
-                  <th className="right">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {getPreviewLineItems(invoice, products).map((item, index) => (
-                  <tr key={item.id}>
-                    <td>{index + 1}</td>
-                    <td>{item.productName}</td>
-                    <td>{item.sku}</td>
-                    <td>{item.hsnSac}</td>
-                    <td className="right">{item.quantity}</td>
-                    <td className="right">{formatCurrency(item.unit_price, previewCurrencyCode)}</td>
-                    <td className="right">{item.gstRate.toFixed(2)}%</td>
-                    <td className="right">{formatCurrency(item.taxAmount, previewCurrencyCode)}</td>
-                    <td className="right">{formatCurrency(item.line_total, previewCurrencyCode)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-
-          <section className="invoice-sheet__footer">
-            {invoice.voucher_type !== 'purchase' && (
-              <div className="invoice-sheet__bank">
-                <p className="eyebrow">Payment details</p>
-                <p>Bank: {invoice.company_bank_name || 'N/A'}</p>
-                <p>Branch: {invoice.company_branch_name || 'N/A'}</p>
-                <p>Account: {invoice.company_account_name || 'N/A'}</p>
-                <p>A/C No: {invoice.company_account_number || 'N/A'}</p>
-                <p>IFSC: {invoice.company_ifsc_code || 'N/A'}</p>
-              </div>
-            )}
-            <div className="invoice-sheet__totals">
-              <p className="eyebrow">Tax breakup</p>
-              <p>Taxable: {formatCurrency(invoice.taxable_amount || 0, previewCurrencyCode)}</p>
-              <p>CGST: {formatCurrency(invoice.cgst_amount || 0, previewCurrencyCode)}</p>
-              <p>SGST: {formatCurrency(invoice.sgst_amount || 0, previewCurrencyCode)}</p>
-              <p>IGST: {formatCurrency(invoice.igst_amount || 0, previewCurrencyCode)}</p>
-              <p>Total tax: {formatCurrency(invoice.total_tax_amount || 0, previewCurrencyCode)}</p>
-              {showRoundOff ? <p>Round off: {formatCurrency(roundOffAmount, previewCurrencyCode)}</p> : null}
-              <p className="eyebrow" style={{ marginTop: '12px' }}>Total due</p>
-              <p className="invoice-sheet__total-value">
-                {formatCurrency(invoice.total_amount, previewCurrencyCode)}
-              </p>
-              <p className="muted-text">
-                {invoice.voucher_type === 'purchase'
-                  ? `Received by ${invoice.company_name || 'Your company'}`
-                  : `Authorized by ${invoice.company_name || 'Billing company'}`}
-              </p>
-            </div>
-          </section>
-        </article>
+        <div className="invoice-pdf-viewer" aria-live="polite">
+          {loadingPdf ? <p className="muted-text">Loading PDF preview...</p> : null}
+          {!loadingPdf && pdfError ? <p className="error-text">{pdfError}</p> : null}
+          {!loadingPdf && pdfUrl ? (
+            <iframe
+              ref={iframeRef}
+              title={`Invoice ${invoice.invoice_number || invoice.id} PDF preview`}
+              src={`${pdfUrl}#navpanes=0&toolbar=1&statusbar=0&messages=0`}
+              className="invoice-pdf-viewer__frame"
+            />
+          ) : null}
+        </div>
       </div>
 
       {showEmailModal && (

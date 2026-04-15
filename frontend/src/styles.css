@@ -1100,6 +1100,24 @@ textarea {
   width: min(980px, 100%);
 }
 
+.invoice-pdf-viewer {
+  margin-top: 16px;
+  min-height: 72vh;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+}
+
+.invoice-pdf-viewer__frame {
+  width: 100%;
+  min-height: 72vh;
+  border: none;
+  background: #111827;
+}
+
 .restore-progress-panel {
   width: min(400px, 100%);
   display: flex;

@@ -316,8 +316,6 @@ export default function InvoicesAdvancedView() {
       {previewInvoice && (
         <InvoicePreview
           invoice={previewInvoice}
-          products={products}
-          currencyCode={activeCurrencyCode}
           onClose={closePreview}
         />
       )}
