@@ -40,6 +40,8 @@ class Invoice(Base):
     invoice_date = Column(DateTime, nullable=False, default=datetime.utcnow)
     due_date = Column(DateTime, nullable=True)
     tax_inclusive = Column(Boolean, nullable=False, default=False)
+    apply_round_off = Column(Boolean, nullable=False, default=False)
+    round_off_amount = Column(Numeric(5, 2), nullable=False, default=0)
     financial_year_id = Column(Integer, ForeignKey("financial_years.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

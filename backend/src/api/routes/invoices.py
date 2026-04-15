@@ -121,6 +121,7 @@ def _apply_payload_to_invoice(
         invoice.due_date = datetime.combine(payload.due_date, datetime.min.time())
 
     invoice.tax_inclusive = payload.tax_inclusive
+    invoice.apply_round_off = payload.apply_round_off
     if regenerate_number:
         invoice.invoice_number = _generate_next_number(
             db, invoice.voucher_type, financial_year_id, payload.invoice_date,
@@ -207,7 +208,15 @@ def _apply_payload_to_invoice(
     invoice.cgst_amount = float(_money(cgst_total))
     invoice.sgst_amount = float(_money(sgst_total))
     invoice.igst_amount = float(_money(igst_total))
-    invoice.total_amount = float(_money(taxable_total + tax_total))
+    raw_total = _money(taxable_total + tax_total)
+    if invoice.apply_round_off:
+        rounded_total = raw_total.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        round_off_amount = _money(rounded_total - raw_total)
+        invoice.round_off_amount = float(round_off_amount)
+        invoice.total_amount = float(_money(rounded_total))
+    else:
+        invoice.round_off_amount = 0
+        invoice.total_amount = float(raw_total)
 
 
 @router.post("", response_model=InvoiceOut, include_in_schema=False)
@@ -473,6 +482,12 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     <span class="invoice-sheet__supplierref-value">{_e(invoice.supplier_invoice_number)}</span>
   </section>"""
 
+    round_off_amount = float(invoice.round_off_amount or 0)
+    show_round_off = bool(invoice.apply_round_off and round_off_amount != 0)
+    round_off_html = (
+        f'<p>Round off: {_fmt_currency(round_off_amount, currency)}</p>' if show_round_off else ''
+    )
+
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -673,6 +688,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
       <p>SGST: {_fmt_currency(float(invoice.sgst_amount or 0), currency)}</p>
       <p>IGST: {_fmt_currency(float(invoice.igst_amount or 0), currency)}</p>
       <p>Total tax: {_fmt_currency(float(invoice.total_tax_amount or 0), currency)}</p>
+      {round_off_html}
       <p class="eyebrow" style="margin-top: 10px;">Total due</p>
       <p class="invoice-sheet__total-value">{_fmt_currency(float(invoice.total_amount), currency)}</p>
       <p class="muted-text">Received by {_e(invoice.company_name) or 'Your company'}</p>
@@ -741,6 +757,12 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
     if invoice.ledger_phone:
         billto_parts.append(f"Phone: {_e(invoice.ledger_phone)}")
     billto_details = " &middot; ".join(billto_parts)
+
+    round_off_amount = float(invoice.round_off_amount or 0)
+    show_round_off = bool(invoice.apply_round_off and round_off_amount != 0)
+    round_off_html = (
+        f'<p>Round off: {_fmt_currency(round_off_amount, currency)}</p>' if show_round_off else ''
+    )
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -955,6 +977,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
       <p>SGST: {_fmt_currency(float(invoice.sgst_amount or 0), currency)}</p>
       <p>IGST: {_fmt_currency(float(invoice.igst_amount or 0), currency)}</p>
       <p>Total tax: {_fmt_currency(float(invoice.total_tax_amount or 0), currency)}</p>
+      {round_off_html}
       <p class="eyebrow" style="margin-top: 10px;">Total due</p>
       <p class="invoice-sheet__total-value">{_fmt_currency(float(invoice.total_amount), currency)}</p>
       <p class="muted-text">Authorized by {_e(invoice.company_name) or 'Billing company'}</p>
