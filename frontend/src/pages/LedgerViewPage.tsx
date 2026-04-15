@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, FileText, FilePlus, Mail, Pencil, ReceiptText, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
-import type { CompanyProfile, Invoice, Ledger, LedgerStatement, Payment, PaymentCreate, PaymentUpdate, Product } from '../types/api';
+import type { CompanyProfile, Invoice, Ledger, LedgerStatement, Payment, PaymentCreate, PaymentUpdate, PaymentVoucherType, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
 import StatementPreview from '../components/StatementPreview';
 import StatusToasts from '../components/StatusToasts';
@@ -19,6 +19,17 @@ function defaultDateRange() {
   return { fromDate: toIso(firstDay), toDate: toIso(today) };
 }
 
+function isOpeningBalanceType(voucherType: PaymentVoucherType) {
+  return voucherType === 'opening_balance';
+}
+
+function getPaymentAmountError(voucherType: PaymentVoucherType, amount: number) {
+  if (isOpeningBalanceType(voucherType)) {
+    return amount === 0 ? 'Opening balance amount must be non-zero' : '';
+  }
+  return amount <= 0 ? 'Amount must be greater than 0' : '';
+}
+
 export default function LedgerViewPage() {
   const { id } = useParams<{ id: string }>();
   const ledgerId = Number(id);
@@ -29,6 +40,7 @@ export default function LedgerViewPage() {
   const [statement, setStatement] = useState<LedgerStatement | null>(null);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [loadingLedger, setLoadingLedger] = useState(true);
   const [loadingStatement, setLoadingStatement] = useState(false);
@@ -84,15 +96,17 @@ export default function LedgerViewPage() {
     (async () => {
       try {
         setLoadingLedger(true);
-        const [ledgerRes, companyRes, productsRes] = await Promise.all([
+        const [ledgerRes, companyRes, productsRes, paymentsRes] = await Promise.all([
           api.get<Ledger>(`/ledgers/${ledgerId}`),
           api.get<CompanyProfile>('/company/'),
           api.get<{ items: Product[] }>('/products/', { params: { page_size: 500 } }),
+          api.get<Payment[]>('/payments/', { params: { ledger_id: ledgerId } }),
         ]);
         if (cancelled) return;
         setLedger(ledgerRes.data);
         setCompany(companyRes.data);
         setProducts(productsRes.data.items);
+        setPayments(paymentsRes.data);
       } catch (err) {
         if (!cancelled) setError(getApiErrorMessage(err, 'Unable to load ledger'));
       } finally {
@@ -100,7 +114,7 @@ export default function LedgerViewPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [ledgerId]);
+  }, [ledgerId, refreshKey]);
 
   useEffect(() => {
     if (!ledgerId || !period.fromDate || !period.toDate) return;
@@ -134,6 +148,9 @@ export default function LedgerViewPage() {
   }, [activeFY]);
 
   const activeCurrencyCode = company?.currency_code || 'INR';
+  const openingBalancePayment = payments.find((payment) => payment.voucher_type === 'opening_balance') ?? null;
+  const createOpeningBalanceDisabled = openingBalancePayment !== null;
+  const editOpeningBalanceDisabled = openingBalancePayment !== null && openingBalancePayment.id !== editingPayment?.id;
 
   async function handleViewInvoice(invoiceId: number) {
     try {
@@ -147,8 +164,9 @@ export default function LedgerViewPage() {
 
   async function handleSubmitPayment(e: React.FormEvent) {
     e.preventDefault();
-    if (paymentForm.amount <= 0) {
-      setError('Amount must be greater than 0');
+    const amountError = getPaymentAmountError(paymentForm.voucher_type, paymentForm.amount);
+    if (amountError) {
+      setError(amountError);
       return;
     }
     try {
@@ -171,9 +189,12 @@ export default function LedgerViewPage() {
         setSuccess(
           `⚠️ This date is outside the active financial year (${activeFY.label}). The payment was still recorded.`,
         );
+      } else if (paymentForm.voucher_type === 'opening_balance') {
+        setSuccess('Opening balance saved successfully.');
       }
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to record payment'));
+      const message = getApiErrorMessage(err, 'Unable to record payment');
+      setError(message === 'Opening balance already exists for this ledger' ? 'Only one opening balance is allowed per ledger.' : message);
     } finally {
       setSubmittingPayment(false);
     }
@@ -200,8 +221,9 @@ export default function LedgerViewPage() {
   async function handleUpdatePayment(e: React.FormEvent) {
     e.preventDefault();
     if (!editingPayment) return;
-    if ((editPaymentForm.amount ?? 0) <= 0) {
-      setError('Amount must be greater than 0');
+    const amountError = getPaymentAmountError(editPaymentForm.voucher_type, editPaymentForm.amount ?? 0);
+    if (amountError) {
+      setError(amountError);
       return;
     }
     try {
@@ -211,7 +233,8 @@ export default function LedgerViewPage() {
       setEditingPayment(null);
       setRefreshKey((k) => k + 1);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to update payment'));
+      const message = getApiErrorMessage(err, 'Unable to update payment');
+      setError(message === 'Opening balance already exists for this ledger' ? 'Only one opening balance is allowed per ledger.' : message);
     } finally {
       setSubmittingEditPayment(false);
     }
@@ -517,11 +540,13 @@ export default function LedgerViewPage() {
                     id="pay-type"
                     className="input"
                     value={paymentForm.voucher_type}
-                    onChange={(e) => setPaymentForm((f) => ({ ...f, voucher_type: e.target.value as 'receipt' | 'payment' }))}
+                    onChange={(e) => setPaymentForm((f) => ({ ...f, voucher_type: e.target.value as PaymentVoucherType }))}
                   >
                     <option value="receipt">Receipt (money received)</option>
                     <option value="payment">Payment (money paid)</option>
+                    <option value="opening_balance" disabled={createOpeningBalanceDisabled}>Opening Balance (carry forward)</option>
                   </select>
+                  {createOpeningBalanceDisabled ? <p className="muted-text">An opening balance already exists for this ledger.</p> : null}
                 </div>
                 <div className="field">
                   <label htmlFor="pay-amount">Amount</label>
@@ -529,12 +554,13 @@ export default function LedgerViewPage() {
                     id="pay-amount"
                     className="input"
                     type="number"
-                    min="0.01"
+                    min={isOpeningBalanceType(paymentForm.voucher_type) ? undefined : '0.01'}
                     step="0.01"
                     value={paymentForm.amount || ''}
                     onChange={(e) => setPaymentForm((f) => ({ ...f, amount: parseFloat(e.target.value) || 0 }))}
                     required
                   />
+                  {isOpeningBalanceType(paymentForm.voucher_type) ? <p className="muted-text">Use a positive amount for debit opening balance and a negative amount for credit opening balance.</p> : null}
                 </div>
                 <div className="field">
                   <label htmlFor="pay-date">Date</label>
@@ -652,11 +678,13 @@ export default function LedgerViewPage() {
                     id="edit-pay-type"
                     className="input"
                     value={editPaymentForm.voucher_type}
-                    onChange={(e) => setEditPaymentForm((f) => ({ ...f, voucher_type: e.target.value as 'receipt' | 'payment' }))}
+                    onChange={(e) => setEditPaymentForm((f) => ({ ...f, voucher_type: e.target.value as PaymentVoucherType }))}
                   >
                     <option value="receipt">Receipt (money received)</option>
                     <option value="payment">Payment (money paid)</option>
+                    <option value="opening_balance" disabled={editOpeningBalanceDisabled}>Opening Balance (carry forward)</option>
                   </select>
+                  {editOpeningBalanceDisabled ? <p className="muted-text">Another opening balance already exists for this ledger.</p> : null}
                 </div>
                 <div className="field">
                   <label htmlFor="edit-pay-amount">Amount</label>
@@ -664,12 +692,13 @@ export default function LedgerViewPage() {
                     id="edit-pay-amount"
                     className="input"
                     type="number"
-                    min="0.01"
+                    min={isOpeningBalanceType(editPaymentForm.voucher_type) ? undefined : '0.01'}
                     step="0.01"
                     value={editPaymentForm.amount || ''}
                     onChange={(e) => setEditPaymentForm((f) => ({ ...f, amount: parseFloat(e.target.value) || 0 }))}
                     required
                   />
+                  {isOpeningBalanceType(editPaymentForm.voucher_type) ? <p className="muted-text">Use a positive amount for debit opening balance and a negative amount for credit opening balance.</p> : null}
                 </div>
                 <div className="field">
                   <label htmlFor="edit-pay-date">Date</label>
