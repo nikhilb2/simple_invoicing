@@ -48,6 +48,23 @@ def _active_payments_query(db: Session):
     return db.query(Payment).filter(Payment.status == "active")
 
 
+def _format_voucher_label(voucher_type: str) -> str:
+  return voucher_type.replace("_", " ").title()
+
+
+def _payment_debit_credit(payment: Payment) -> tuple[float, float]:
+  amount = float(payment.amount)
+  if payment.voucher_type == "payment":
+    return amount, 0.0
+  if payment.voucher_type == "receipt":
+    return 0.0, amount
+  if payment.voucher_type == "opening_balance":
+    if amount > 0:
+      return amount, 0.0
+    return 0.0, abs(amount)
+  return 0.0, 0.0
+
+
 def _build_ledger_statement_data(
     db: Session,
     ledger: Ledger,
@@ -73,6 +90,8 @@ def _build_ledger_statement_data(
         .with_entities(
             func.coalesce(func.sum(case((Payment.voucher_type == "payment", Payment.amount), else_=0)), 0),
             func.coalesce(func.sum(case((Payment.voucher_type == "receipt", Payment.amount), else_=0)), 0),
+        func.coalesce(func.sum(case((((Payment.voucher_type == "opening_balance") & (Payment.amount > 0)), Payment.amount), else_=0)), 0),
+        func.coalesce(func.sum(case((((Payment.voucher_type == "opening_balance") & (Payment.amount < 0)), -Payment.amount), else_=0)), 0),
         )
         .filter(Payment.ledger_id == ledger.id)
         .filter(Payment.date < period_start)
@@ -122,14 +141,15 @@ def _build_ledger_statement_data(
             credit=float(invoice.total_amount) if invoice.voucher_type == "purchase" else 0.0,
         ))
     for payment in period_payments:
+        debit, credit = _payment_debit_credit(payment)
         entries.append(LedgerStatementEntry(
             entry_id=payment.id,
             entry_type="payment",
             date=payment.date,
-            voucher_type=payment.voucher_type.title(),
-            particulars=f"{payment.voucher_type.title()}" + (f" ({payment.mode})" if payment.mode else ""),
-            debit=float(payment.amount) if payment.voucher_type == "payment" else 0.0,
-            credit=float(payment.amount) if payment.voucher_type == "receipt" else 0.0,
+            voucher_type=_format_voucher_label(payment.voucher_type),
+            particulars=f"{_format_voucher_label(payment.voucher_type)}" + (f" ({payment.mode})" if payment.mode else ""),
+            debit=debit,
+            credit=credit,
         ))
     for credit_note_entry in period_credit_note_summary.entries:
         entries.append(LedgerStatementEntry(
@@ -145,8 +165,8 @@ def _build_ledger_statement_data(
 
     period_debit = sum(entry.debit for entry in entries)
     period_credit = sum(entry.credit for entry in entries)
-    opening_debit = float(opening_totals[0]) + float(opening_payment_totals[0]) + opening_credit_note_summary.purchase_credit_total
-    opening_credit = float(opening_totals[1]) + float(opening_payment_totals[1]) + opening_credit_note_summary.sales_credit_total
+    opening_debit = float(opening_totals[0]) + float(opening_payment_totals[0]) + float(opening_payment_totals[2]) + opening_credit_note_summary.purchase_credit_total
+    opening_credit = float(opening_totals[1]) + float(opening_payment_totals[1]) + float(opening_payment_totals[3]) + opening_credit_note_summary.sales_credit_total
     opening_balance = opening_debit - opening_credit
     closing_balance = opening_balance + period_debit - period_credit
 
@@ -281,17 +301,18 @@ def get_day_book(
             credit=float(invoice.total_amount) if invoice.voucher_type == "purchase" else 0.0,
         ))
     for payment in payments:
-        ledger = db.query(Ledger).filter(Ledger.id == payment.ledger_id).first()
-        entries.append(DayBookEntry(
-            entry_id=payment.id,
-            entry_type="payment",
-            date=payment.date,
-            voucher_type=payment.voucher_type.title(),
-            ledger_name=ledger.name if ledger else "Unknown ledger",
-            particulars=f"{payment.voucher_type.title()} #{payment.id}" + (f" ({payment.mode})" if payment.mode else ""),
-            debit=float(payment.amount) if payment.voucher_type == "payment" else 0.0,
-            credit=float(payment.amount) if payment.voucher_type == "receipt" else 0.0,
-        ))
+      ledger = db.query(Ledger).filter(Ledger.id == payment.ledger_id).first()
+      debit, credit = _payment_debit_credit(payment)
+      entries.append(DayBookEntry(
+        entry_id=payment.id,
+        entry_type="payment",
+        date=payment.date,
+        voucher_type=_format_voucher_label(payment.voucher_type),
+        ledger_name=ledger.name if ledger else "Unknown ledger",
+        particulars=f"{_format_voucher_label(payment.voucher_type)} #{payment.id}" + (f" ({payment.mode})" if payment.mode else ""),
+        debit=debit,
+        credit=credit,
+      ))
     for credit_note_entry in credit_note_summary.entries:
         entries.append(DayBookEntry(
             entry_id=credit_note_entry.entry_id,

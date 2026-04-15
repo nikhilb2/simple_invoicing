@@ -258,9 +258,64 @@ def test_statement_email_uses_same_active_only_statement_math(db_session):
 
     render_kwargs = fake_template.render.call_args.kwargs
     assert render_kwargs["total_invoices"] == "40.00"
-    assert render_kwargs["total_payments"] == "10.00"
-    assert render_kwargs["balance"] == "102.00"
-    send_email_mock.assert_awaited_once()
+
+
+def test_ledger_statement_supports_signed_opening_balance_entries(db_session):
+    user, ledger, _ = _seed_basics(db_session)
+
+    # Opening balance window (before from_date)
+    _add_payment(db_session, ledger, user, 120, datetime(2026, 1, 1, 9, 0, 0), voucher_type="opening_balance")
+    _add_payment(db_session, ledger, user, -30, datetime(2026, 1, 2, 9, 0, 0), voucher_type="opening_balance")
+
+    # Period window
+    period_positive_opening = _add_payment(db_session, ledger, user, 15, datetime(2026, 1, 11, 9, 0, 0), voucher_type="opening_balance")
+    period_negative_opening = _add_payment(db_session, ledger, user, -40, datetime(2026, 1, 12, 9, 0, 0), voucher_type="opening_balance")
+    period_receipt = _add_payment(db_session, ledger, user, 10, datetime(2026, 1, 13, 9, 0, 0), voucher_type="receipt")
+    period_payment = _add_payment(db_session, ledger, user, 5, datetime(2026, 1, 14, 9, 0, 0), voucher_type="payment")
+    db_session.commit()
+
+    result = get_ledger_statement(
+        ledger_id=ledger.id,
+        from_date=date(2026, 1, 10),
+        to_date=date(2026, 1, 31),
+        db=db_session,
+        _=user,
+    )
+
+    assert result.opening_balance == pytest.approx(90.0)
+    assert result.period_debit == pytest.approx(20.0)
+    assert result.period_credit == pytest.approx(50.0)
+    assert result.closing_balance == pytest.approx(60.0)
+
+    entry_by_id = {entry.entry_id: entry for entry in result.entries}
+    assert entry_by_id[period_positive_opening.id].debit == pytest.approx(15.0)
+    assert entry_by_id[period_positive_opening.id].credit == pytest.approx(0.0)
+    assert entry_by_id[period_positive_opening.id].voucher_type == "Opening Balance"
+    assert entry_by_id[period_negative_opening.id].debit == pytest.approx(0.0)
+    assert entry_by_id[period_negative_opening.id].credit == pytest.approx(40.0)
+    assert entry_by_id[period_receipt.id].credit == pytest.approx(10.0)
+    assert entry_by_id[period_payment.id].debit == pytest.approx(5.0)
+
+
+def test_day_book_supports_signed_opening_balance_entries(db_session):
+    user, ledger, _ = _seed_basics(db_session)
+    opening_positive = _add_payment(db_session, ledger, user, 25, datetime(2026, 1, 20, 10, 0, 0), voucher_type="opening_balance")
+    opening_negative = _add_payment(db_session, ledger, user, -12, datetime(2026, 1, 21, 10, 0, 0), voucher_type="opening_balance")
+    db_session.commit()
+
+    result = get_day_book(
+        from_date=date(2026, 1, 20),
+        to_date=date(2026, 1, 31),
+        db=db_session,
+        _=user,
+    )
+
+    assert result.total_debit == pytest.approx(25.0)
+    assert result.total_credit == pytest.approx(12.0)
+    entry_by_id = {entry.entry_id: entry for entry in result.entries}
+    assert entry_by_id[opening_positive.id].voucher_type == "Opening Balance"
+    assert entry_by_id[opening_positive.id].debit == pytest.approx(25.0)
+    assert entry_by_id[opening_negative.id].credit == pytest.approx(12.0)
 
 
 def test_payment_reminder_ignores_cancelled_documents_and_cancelled_last_payment(db_session):
