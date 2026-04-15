@@ -17,6 +17,7 @@ class InvoiceCreate(BaseModel):
     due_date: Optional[date] = None
     supplier_invoice_number: str | None = None
     tax_inclusive: bool = False
+    apply_round_off: bool = False
     items: List[InvoiceItemCreate]
 
 
@@ -69,6 +70,8 @@ class InvoiceOut(BaseModel):
     invoice_date: datetime
     due_date: datetime | None = None
     tax_inclusive: bool = False
+    apply_round_off: bool = False
+    round_off_amount: float = 0
     financial_year_id: Optional[int] = None
     warnings: List[str] = Field(default_factory=list)
     created_at: datetime

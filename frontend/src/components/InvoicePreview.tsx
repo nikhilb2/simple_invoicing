@@ -34,6 +34,8 @@ type InvoicePreviewProps = {
 export default function InvoicePreview({ invoice, products, currencyCode, onClose, onError }: InvoicePreviewProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const previewCurrencyCode = invoice.company_currency_code || currencyCode;
+  const roundOffAmount = invoice.round_off_amount || 0;
+  const showRoundOff = invoice.apply_round_off && roundOffAmount !== 0;
 
   useEscapeClose(onClose);
 
@@ -209,6 +211,7 @@ export default function InvoicePreview({ invoice, products, currencyCode, onClos
               <p>SGST: {formatCurrency(invoice.sgst_amount || 0, previewCurrencyCode)}</p>
               <p>IGST: {formatCurrency(invoice.igst_amount || 0, previewCurrencyCode)}</p>
               <p>Total tax: {formatCurrency(invoice.total_tax_amount || 0, previewCurrencyCode)}</p>
+              {showRoundOff ? <p>Round off: {formatCurrency(roundOffAmount, previewCurrencyCode)}</p> : null}
               <p className="eyebrow" style={{ marginTop: '12px' }}>Total due</p>
               <p className="invoice-sheet__total-value">
                 {formatCurrency(invoice.total_amount, previewCurrencyCode)}

@@ -48,6 +48,7 @@ export default function InvoicesPage() {
   const [selectedLedgerId, setSelectedLedgerId] = useState('');
   const [voucherType, setVoucherType] = useState<'sales' | 'purchase' | 'payment'>('sales');
   const [taxInclusive, setTaxInclusive] = useState(false);
+  const [applyRoundOff, setApplyRoundOff] = useState(false);
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
   const [paymentReference, setPaymentReference] = useState('');
@@ -199,6 +200,10 @@ export default function InvoicesPage() {
     return sum + taxableAmount + taxAmount;
   }, 0);
 
+  const roundedTotalAmount = Math.round(totalAmount);
+  const roundOffPreviewAmount = applyRoundOff ? roundedTotalAmount - totalAmount : 0;
+  const projectedTotalAmount = applyRoundOff ? roundedTotalAmount : totalAmount;
+
   const activeCurrencyCode = company?.currency_code || 'USD';
 
   function addItem() {
@@ -219,6 +224,7 @@ export default function InvoicesPage() {
     setEditingInvoiceId(null);
     setSupplierInvoiceNumber('');
     setTaxInclusive(false);
+    setApplyRoundOff(false);
     setPaymentMode('cash');
     setPaymentReference('');
     setPaymentAmount('');
@@ -245,6 +251,7 @@ export default function InvoicesPage() {
     setVoucherType(invoice.voucher_type);
     setSupplierInvoiceNumber(invoice.supplier_invoice_number ?? '');
     setTaxInclusive(invoice.tax_inclusive ?? false);
+    setApplyRoundOff(invoice.apply_round_off ?? false);
     setSelectedLedgerId(String(invoice.ledger_id));
     setInvoiceDate(invoice.invoice_date ? invoice.invoice_date.slice(0, 10) : new Date().toISOString().slice(0, 10));
 
@@ -302,6 +309,7 @@ export default function InvoicesPage() {
         invoice_date: invoiceDate,
         supplier_invoice_number: voucherType === 'purchase' ? (supplierInvoiceNumber.trim() || null) : null,
         tax_inclusive: taxInclusive,
+        apply_round_off: applyRoundOff,
         items: items.map((item) => ({
           product_id: Number(item.productId),
           quantity: Number(item.quantity),
@@ -540,7 +548,7 @@ export default function InvoicesPage() {
               <h2 className="nav-panel__title">{editingInvoiceId ? `Editing invoice #${editingInvoiceId}` : 'Order entry'}</h2>
             </div>
             <div className="button-row" style={{ justifyContent: 'flex-end' }}>
-              <div className="status-chip">Projected total {formatCurrency(totalAmount, activeCurrencyCode)}</div>
+              <div className="status-chip">Projected total {formatCurrency(projectedTotalAmount, activeCurrencyCode)}</div>
               <Link className="button button--secondary" to="/invoices-view">Open invoice view</Link>
             </div>
           </div>
@@ -650,14 +658,29 @@ export default function InvoicesPage() {
             </div>
 
             {voucherType !== 'payment' ? (
-              <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <input
-                  id="invoice-tax-inclusive"
-                  type="checkbox"
-                  checked={taxInclusive}
-                  onChange={(event) => setTaxInclusive(event.target.checked)}
-                />
-                <label htmlFor="invoice-tax-inclusive" style={{ marginBottom: 0, cursor: 'pointer' }}>Prices include GST</label>
+              <div className="stack" style={{ gap: '8px' }}>
+                <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 0 }}>
+                  <input
+                    id="invoice-tax-inclusive"
+                    type="checkbox"
+                    checked={taxInclusive}
+                    onChange={(event) => setTaxInclusive(event.target.checked)}
+                  />
+                  <label htmlFor="invoice-tax-inclusive" style={{ marginBottom: 0, cursor: 'pointer' }}>Prices include GST</label>
+
+                  <input
+                    id="invoice-apply-round-off"
+                    type="checkbox"
+                    checked={applyRoundOff}
+                    onChange={(event) => setApplyRoundOff(event.target.checked)}
+                  />
+                  <label htmlFor="invoice-apply-round-off" style={{ marginBottom: 0, cursor: 'pointer' }}>Apply round off</label>
+                </div>
+                {applyRoundOff ? (
+                  <p className="muted-text" style={{ marginTop: 0 }}>
+                    Round off: {formatCurrency(roundOffPreviewAmount, activeCurrencyCode)} · Adjusted total: {formatCurrency(projectedTotalAmount, activeCurrencyCode)}
+                  </p>
+                ) : null}
               </div>
             ) : null}
 
