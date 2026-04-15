@@ -72,13 +72,15 @@ def create_payment(
             fy_for_payment = dated_fy
     fy_id = fy_for_payment.id if fy_for_payment else None
 
-    payment_number = generate_next_number(
-        db,
-        "payment",
-        fy_id,
-        payment_day,
-        active_fy.id if active_fy else None,
-    )
+    payment_number = None
+    if payload.voucher_type != "opening_balance":
+        payment_number = generate_next_number(
+            db,
+            "payment",
+            fy_id,
+            payment_day,
+            active_fy.id if active_fy else None,
+        )
 
     payment = Payment(
         ledger_id=payload.ledger_id,

@@ -143,3 +143,32 @@ def test_update_payment_rejects_duplicate_opening_balance_for_same_ledger():
         except HTTPException as exc:
             assert exc.status_code == 409
             assert exc.detail == "Opening balance already exists for this ledger"
+
+
+def test_create_opening_balance_skips_payment_series_number_generation():
+    ledger = Ledger()
+    ledger.id = 10
+    payload = PaymentCreate(
+        ledger_id=10,
+        voucher_type="opening_balance",
+        amount=100,
+        date=datetime(2032, 4, 1, 12, 0),
+    )
+    db = _build_db(ledger)
+    active_fy = SimpleNamespace(id=20, start_date=date(2032, 4, 1), end_date=date(2033, 3, 31))
+    current_user = SimpleNamespace(id=8)
+
+    with patch("src.api.routes.payments.get_active_fy", return_value=active_fy), patch(
+        "src.api.routes.payments.get_fy_for_date", return_value=active_fy
+    ), patch(
+        "src.api.routes.payments.generate_next_number"
+    ) as generate_mock, patch(
+        "src.api.routes.payments.PaymentOut.model_validate",
+        return_value=SimpleNamespace(warnings=[]),
+    ):
+        result = create_payment(payload, db=db, current_user=current_user)
+
+    generate_mock.assert_not_called()
+    payment = db.add.call_args.args[0]
+    assert payment.payment_number is None
+    assert result.warnings == []
