@@ -71,6 +71,7 @@ export default function InvoicesPage() {
     name: '',
     address: '',
     gst: '',
+    opening_balance: null,
     phone_number: '',
     email: '',
     website: '',
@@ -441,6 +442,7 @@ export default function InvoicesPage() {
         name: ledgerForm.name.trim(),
         address: ledgerForm.address.trim(),
         gst: ledgerForm.gst.trim().toUpperCase(),
+        opening_balance: ledgerForm.opening_balance,
         phone_number: ledgerForm.phone_number.trim(),
         email: ledgerForm.email.trim(),
         website: ledgerForm.website.trim(),
@@ -458,6 +460,7 @@ export default function InvoicesPage() {
         name: '',
         address: '',
         gst: '',
+        opening_balance: null,
         phone_number: '',
         email: '',
         website: '',
@@ -874,6 +877,19 @@ export default function InvoicesPage() {
                   placeholder="+91 9876543210"
                   required
                 />
+              </div>
+              <div className="field">
+                <label htmlFor="modal-ledger-opening-balance">Opening balance</label>
+                <input
+                  id="modal-ledger-opening-balance"
+                  className="input"
+                  type="number"
+                  step="0.01"
+                  value={ledgerForm.opening_balance ?? ''}
+                  onChange={(event) => setLedgerForm((current) => ({ ...current, opening_balance: event.target.value === '' ? null : (parseFloat(event.target.value) || null) }))}
+                  placeholder="0.00"
+                />
+                <small className="field-hint">Positive for debit opening balance, negative for credit opening balance. Leave blank for none.</small>
               </div>
               <div className="field">
                 <label htmlFor="modal-ledger-email">Email</label>

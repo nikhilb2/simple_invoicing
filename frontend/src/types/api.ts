@@ -39,6 +39,7 @@ export type Ledger = {
   name: string;
   address: string;
   gst: string;
+  opening_balance: number | null;
   phone_number: string;
   email: string | null;
   website: string | null;
@@ -53,6 +54,7 @@ export type LedgerCreate = {
   name: string;
   address: string;
   gst: string;
+  opening_balance: number | null;
   phone_number: string;
   email: string;
   website: string;

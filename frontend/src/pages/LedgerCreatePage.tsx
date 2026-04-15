@@ -16,6 +16,7 @@ export default function LedgerCreatePage() {
     name: '',
     address: '',
     gst: '',
+    opening_balance: null,
     phone_number: '',
     email: '',
     website: '',
@@ -39,6 +40,7 @@ export default function LedgerCreatePage() {
           name: l.name,
           address: l.address,
           gst: l.gst || '',
+          opening_balance: l.opening_balance,
           phone_number: l.phone_number,
           email: l.email || '',
           website: l.website || '',
@@ -67,6 +69,7 @@ export default function LedgerCreatePage() {
         name: form.name.trim(),
         address: form.address.trim(),
         gst: form.gst.trim().toUpperCase(),
+        opening_balance: form.opening_balance,
         phone_number: form.phone_number.trim(),
         email: form.email.trim(),
         website: form.website.trim(),
@@ -156,6 +159,19 @@ export default function LedgerCreatePage() {
                   required
                 />
                 <small className="field-hint">e.g. +91 98765 43210</small>
+              </div>
+              <div className="field">
+                <label htmlFor="ledger-opening-balance">Opening balance</label>
+                <input
+                  id="ledger-opening-balance"
+                  className="input"
+                  type="number"
+                  step="0.01"
+                  value={form.opening_balance ?? ''}
+                  onChange={(e) => setForm((c) => ({ ...c, opening_balance: e.target.value === '' ? null : (parseFloat(e.target.value) || null) }))}
+                  placeholder="0.00"
+                />
+                <small className="field-hint">Positive for debit opening balance, negative for credit opening balance. Leave blank for none.</small>
               </div>
               <div className="field">
                 <label htmlFor="ledger-email">Email</label>
