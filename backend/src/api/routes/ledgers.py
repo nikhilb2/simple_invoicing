@@ -48,6 +48,92 @@ def _active_payments_query(db: Session):
     return db.query(Payment).filter(Payment.status == "active")
 
 
+def _get_opening_balance_payment(db: Session, ledger_id: int) -> Payment | None:
+  return (
+    db.query(Payment)
+    .filter(
+      Payment.ledger_id == ledger_id,
+      Payment.voucher_type == "opening_balance",
+      Payment.status == "active",
+    )
+    .first()
+  )
+
+
+def _serialize_ledger(db: Session, ledger: Ledger) -> LedgerOut:
+  opening_balance_payment = _get_opening_balance_payment(db, ledger.id)
+  return LedgerOut(
+    id=ledger.id,
+    name=ledger.name,
+    address=ledger.address,
+    gst=ledger.gst,
+    opening_balance=float(opening_balance_payment.amount) if opening_balance_payment else None,
+    phone_number=ledger.phone_number,
+    email=ledger.email,
+    website=ledger.website,
+    bank_name=ledger.bank_name,
+    branch_name=ledger.branch_name,
+    account_name=ledger.account_name,
+    account_number=ledger.account_number,
+    ifsc_code=ledger.ifsc_code,
+  )
+
+
+def _default_opening_balance_date(db: Session) -> tuple[datetime, int | None]:
+  active_fy = get_active_fy(db)
+  if active_fy is not None:
+    return datetime.combine(active_fy.start_date, time.min), active_fy.id
+  return datetime.utcnow(), None
+
+
+def _sync_opening_balance(
+  db: Session,
+  ledger_id: int,
+  opening_balance: float | None,
+  current_user_id: int,
+) -> None:
+  existing = _get_opening_balance_payment(db, ledger_id)
+  normalized = None if opening_balance is None or opening_balance == 0 else float(opening_balance)
+
+  if normalized is None:
+    if existing is not None:
+      db.delete(existing)
+    return
+
+  if existing is not None:
+    existing.amount = normalized
+    return
+
+  opening_date, fy_id = _default_opening_balance_date(db)
+  db.add(Payment(
+    ledger_id=ledger_id,
+    voucher_type="opening_balance",
+    amount=normalized,
+    date=opening_date,
+    payment_number=None,
+    financial_year_id=fy_id,
+    created_by=current_user_id,
+    status="active",
+  ))
+
+
+def _format_voucher_label(voucher_type: str) -> str:
+  return voucher_type.replace("_", " ").title()
+
+
+def _payment_debit_credit(payment: Payment) -> tuple[float, float]:
+  amount = float(payment.amount)
+  if payment.voucher_type == "payment":
+    return amount, 0.0
+  if payment.voucher_type == "receipt":
+    return 0.0, amount
+  if payment.voucher_type == "opening_balance":
+    if amount > 0:
+      return amount, 0.0
+    return 0.0, abs(amount)
+  return 0.0, 0.0
+
+
 def _build_ledger_statement_data(
     db: Session,
     ledger: Ledger,
@@ -73,6 +159,8 @@ def _build_ledger_statement_data(
         .with_entities(
             func.coalesce(func.sum(case((Payment.voucher_type == "payment", Payment.amount), else_=0)), 0),
             func.coalesce(func.sum(case((Payment.voucher_type == "receipt", Payment.amount), else_=0)), 0),
+        func.coalesce(func.sum(case((((Payment.voucher_type == "opening_balance") & (Payment.amount > 0)), Payment.amount), else_=0)), 0),
+        func.coalesce(func.sum(case((((Payment.voucher_type == "opening_balance") & (Payment.amount < 0)), -Payment.amount), else_=0)), 0),
         )
         .filter(Payment.ledger_id == ledger.id)
         .filter(Payment.date < period_start)
@@ -122,14 +210,15 @@ def _build_ledger_statement_data(
             credit=float(invoice.total_amount) if invoice.voucher_type == "purchase" else 0.0,
         ))
     for payment in period_payments:
+        debit, credit = _payment_debit_credit(payment)
         entries.append(LedgerStatementEntry(
             entry_id=payment.id,
             entry_type="payment",
             date=payment.date,
-            voucher_type=payment.voucher_type.title(),
-            particulars=f"{payment.voucher_type.title()}" + (f" ({payment.mode})" if payment.mode else ""),
-            debit=float(payment.amount) if payment.voucher_type == "payment" else 0.0,
-            credit=float(payment.amount) if payment.voucher_type == "receipt" else 0.0,
+            voucher_type=_format_voucher_label(payment.voucher_type),
+            particulars=f"{_format_voucher_label(payment.voucher_type)}" + (f" ({payment.mode})" if payment.mode else ""),
+            debit=debit,
+            credit=credit,
         ))
     for credit_note_entry in period_credit_note_summary.entries:
         entries.append(LedgerStatementEntry(
@@ -145,8 +234,8 @@ def _build_ledger_statement_data(
 
     period_debit = sum(entry.debit for entry in entries)
     period_credit = sum(entry.credit for entry in entries)
-    opening_debit = float(opening_totals[0]) + float(opening_payment_totals[0]) + opening_credit_note_summary.purchase_credit_total
-    opening_credit = float(opening_totals[1]) + float(opening_payment_totals[1]) + opening_credit_note_summary.sales_credit_total
+    opening_debit = float(opening_totals[0]) + float(opening_payment_totals[0]) + float(opening_payment_totals[2]) + opening_credit_note_summary.purchase_credit_total
+    opening_credit = float(opening_totals[1]) + float(opening_payment_totals[1]) + float(opening_payment_totals[3]) + opening_credit_note_summary.sales_credit_total
     opening_balance = opening_debit - opening_credit
     closing_balance = opening_balance + period_debit - period_credit
 
@@ -164,7 +253,7 @@ def _build_ledger_statement_data(
 def create_ledger(
     payload: LedgerCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+  current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
 ):
   gst = payload.gst
   if gst:
@@ -186,9 +275,11 @@ def create_ledger(
     ifsc_code=payload.ifsc_code.strip().upper() if payload.ifsc_code else None,
   )
   db.add(ledger)
+  db.flush()
+  _sync_opening_balance(db, ledger.id, payload.opening_balance, current_user.id)
   db.commit()
   db.refresh(ledger)
-  return ledger
+  return _serialize_ledger(db, ledger)
 
 
 @router.get("", response_model=PaginatedLedgerOut, include_in_schema=False)
@@ -281,17 +372,18 @@ def get_day_book(
             credit=float(invoice.total_amount) if invoice.voucher_type == "purchase" else 0.0,
         ))
     for payment in payments:
-        ledger = db.query(Ledger).filter(Ledger.id == payment.ledger_id).first()
-        entries.append(DayBookEntry(
-            entry_id=payment.id,
-            entry_type="payment",
-            date=payment.date,
-            voucher_type=payment.voucher_type.title(),
-            ledger_name=ledger.name if ledger else "Unknown ledger",
-            particulars=f"{payment.voucher_type.title()} #{payment.id}" + (f" ({payment.mode})" if payment.mode else ""),
-            debit=float(payment.amount) if payment.voucher_type == "payment" else 0.0,
-            credit=float(payment.amount) if payment.voucher_type == "receipt" else 0.0,
-        ))
+      ledger = db.query(Ledger).filter(Ledger.id == payment.ledger_id).first()
+      debit, credit = _payment_debit_credit(payment)
+      entries.append(DayBookEntry(
+        entry_id=payment.id,
+        entry_type="payment",
+        date=payment.date,
+        voucher_type=_format_voucher_label(payment.voucher_type),
+        ledger_name=ledger.name if ledger else "Unknown ledger",
+        particulars=f"{_format_voucher_label(payment.voucher_type)} #{payment.id}" + (f" ({payment.mode})" if payment.mode else ""),
+        debit=debit,
+        credit=credit,
+      ))
     for credit_note_entry in credit_note_summary.entries:
         entries.append(DayBookEntry(
             entry_id=credit_note_entry.entry_id,
@@ -325,7 +417,7 @@ def get_ledger(
     ledger = db.query(Ledger).filter(Ledger.id == ledger_id).first()
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
-    return ledger
+    return _serialize_ledger(db, ledger)
 
 
 @router.put("/{ledger_id}", response_model=LedgerOut)
@@ -333,7 +425,7 @@ def update_ledger(
     ledger_id: int,
     payload: LedgerCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+  current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
 ):
     ledger = db.query(Ledger).filter(Ledger.id == ledger_id).first()
     if not ledger:
@@ -356,10 +448,11 @@ def update_ledger(
     ledger.account_name = payload.account_name.strip() if payload.account_name else None
     ledger.account_number = payload.account_number.strip() if payload.account_number else None
     ledger.ifsc_code = payload.ifsc_code.strip().upper() if payload.ifsc_code else None
+    _sync_opening_balance(db, ledger.id, payload.opening_balance, current_user.id)
 
     db.commit()
     db.refresh(ledger)
-    return ledger
+    return _serialize_ledger(db, ledger)
 
 
 @router.delete("/{ledger_id}")

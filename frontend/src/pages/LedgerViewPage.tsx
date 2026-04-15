@@ -462,6 +462,16 @@ export default function LedgerViewPage() {
                       >
                         View
                       </button>
+                    ) : entry.voucher_type === 'Opening Balance' ? (
+                      <button
+                        type="button"
+                        className="button button--ghost button--small"
+                        onClick={() => navigate(`/ledgers/${ledgerId}/edit`)}
+                        title="Edit ledger opening balance"
+                        aria-label="Edit ledger opening balance"
+                      >
+                        Edit Ledger
+                      </button>
                     ) : (
                       <div style={{ display: 'flex', gap: '4px' }}>
                         <button

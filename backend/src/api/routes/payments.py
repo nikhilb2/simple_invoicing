@@ -15,6 +15,39 @@ from src.services.financial_year import get_active_fy, get_fy_for_date
 router = APIRouter()
 
 
+def _find_existing_opening_balance(
+    db: Session,
+    ledger_id: int,
+    exclude_payment_id: int | None = None,
+) -> Payment | None:
+    query = db.query(Payment).filter(
+        Payment.ledger_id == ledger_id,
+        Payment.voucher_type == "opening_balance",
+        Payment.status == "active",
+    )
+    if exclude_payment_id is not None:
+        query = query.filter(Payment.id != exclude_payment_id)
+    return query.first()
+
+
+def _ensure_single_opening_balance(
+    db: Session,
+    ledger_id: int,
+    voucher_type: str,
+    exclude_payment_id: int | None = None,
+) -> None:
+    if voucher_type != "opening_balance":
+        return
+
+    existing = _find_existing_opening_balance(
+        db,
+        ledger_id,
+        exclude_payment_id=exclude_payment_id,
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Opening balance already exists for this ledger")
+
+
 @router.post("", response_model=PaymentOut, include_in_schema=False)
 @router.post("/", response_model=PaymentOut)
 def create_payment(
@@ -25,6 +58,8 @@ def create_payment(
     ledger = db.query(Ledger).filter(Ledger.id == payload.ledger_id).first()
     if not ledger:
         raise HTTPException(status_code=404, detail="Ledger not found")
+
+    _ensure_single_opening_balance(db, payload.ledger_id, payload.voucher_type)
 
     payment_date = payload.date or datetime.utcnow()
     payment_day = payment_date.date() if hasattr(payment_date, "date") else payment_date
@@ -37,13 +72,15 @@ def create_payment(
             fy_for_payment = dated_fy
     fy_id = fy_for_payment.id if fy_for_payment else None
 
-    payment_number = generate_next_number(
-        db,
-        "payment",
-        fy_id,
-        payment_day,
-        active_fy.id if active_fy else None,
-    )
+    payment_number = None
+    if payload.voucher_type != "opening_balance":
+        payment_number = generate_next_number(
+            db,
+            "payment",
+            fy_id,
+            payment_day,
+            active_fy.id if active_fy else None,
+        )
 
     payment = Payment(
         ledger_id=payload.ledger_id,
@@ -110,6 +147,13 @@ def update_payment(
     payment = db.query(Payment).filter(Payment.id == payment_id, Payment.status == "active").first()
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
+
+    _ensure_single_opening_balance(
+        db,
+        payment.ledger_id,
+        payload.voucher_type,
+        exclude_payment_id=payment.id,
+    )
 
     payment.voucher_type = payload.voucher_type
     payment.amount = payload.amount

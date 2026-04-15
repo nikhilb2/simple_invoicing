@@ -39,6 +39,7 @@ export type Ledger = {
   name: string;
   address: string;
   gst: string;
+  opening_balance: number | null;
   phone_number: string;
   email: string | null;
   website: string | null;
@@ -53,6 +54,7 @@ export type LedgerCreate = {
   name: string;
   address: string;
   gst: string;
+  opening_balance: number | null;
   phone_number: string;
   email: string;
   website: string;
@@ -303,10 +305,12 @@ export type DayBook = {
   financial_year_id: number | null;
 };
 
+export type PaymentVoucherType = 'receipt' | 'payment' | 'opening_balance';
+
 export type Payment = {
   id: number;
   ledger_id: number;
-  voucher_type: 'receipt' | 'payment';
+  voucher_type: PaymentVoucherType;
   amount: number;
   date: string;
   payment_number?: string | null;
@@ -320,7 +324,7 @@ export type Payment = {
 };
 
 export type PaymentUpdate = {
-  voucher_type: 'receipt' | 'payment';
+  voucher_type: PaymentVoucherType;
   amount: number;
   date?: string;
   mode?: string;
@@ -330,7 +334,7 @@ export type PaymentUpdate = {
 
 export type PaymentCreate = {
   ledger_id: number;
-  voucher_type: 'receipt' | 'payment';
+  voucher_type: PaymentVoucherType;
   amount: number;
   date?: string;
   mode?: string;

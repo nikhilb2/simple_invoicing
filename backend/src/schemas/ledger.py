@@ -8,6 +8,7 @@ class LedgerCreate(BaseModel):
     name: str
     address: str
     gst: str | None = None
+    opening_balance: float | None = None
     phone_number: str
     email: str | None = None
     website: str | None = None
@@ -28,6 +29,7 @@ class LedgerOut(BaseModel):
     name: str
     address: str
     gst: str = ""
+    opening_balance: float | None = None
     phone_number: str
     email: str | None = None
     website: str | None = None

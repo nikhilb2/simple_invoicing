@@ -52,6 +52,48 @@ test.describe('Ledgers CRUD', () => {
     await expect(page.locator('.table-row', { hasText: name })).toBeVisible();
   });
 
+  test('creates and edits ledger opening balance', async ({ authedPage: page }) => {
+    await page.click('[href="/ledgers"]');
+    await page.click('button:has-text("Create ledger")');
+
+    const name = uniqueName();
+    await page.fill('#ledger-name', name);
+    await page.fill('#ledger-address', 'Opening Balance Street');
+    await page.fill('#ledger-gst', uniqueGstin('29'));
+    await page.fill('#ledger-phone', '+91 7654321098');
+    await page.fill('#ledger-opening-balance', '250');
+    await page.click('button:has-text("Create ledger")');
+
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expectSuccess(page, 'Ledger created');
+
+    await page.fill('#ledger-search', name);
+    await page.waitForTimeout(500);
+    const row = page.locator('.table-row', { hasText: name });
+    await expect(row).toBeVisible({ timeout: 10_000 });
+    await row.locator('[aria-label^="Edit ledger"]').click();
+
+    await expect(page.locator('h1')).toContainText('Edit ledger', { timeout: 10_000 });
+    await expect(page.locator('#ledger-opening-balance')).toHaveValue('250');
+    await page.fill('#ledger-opening-balance', '-125');
+    await page.click('button:has-text("Update ledger")');
+
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expectSuccess(page, 'Ledger updated');
+
+    await page.fill('#ledger-search', name);
+    await page.waitForTimeout(500);
+    const updatedRow = page.locator('.table-row', { hasText: name });
+    await expect(updatedRow).toBeVisible({ timeout: 10_000 });
+    await updatedRow.locator('[aria-label^="View ledger"]').click();
+
+    await expect(page.locator('h1')).toContainText(name, { timeout: 10_000 });
+    await expect(page.locator('.invoice-row', { hasText: 'Opening Balance' }).first()).toBeVisible({ timeout: 10_000 });
+    await page.click('button:has-text("Edit Ledger")');
+    await expect(page.locator('h1')).toContainText('Edit ledger', { timeout: 10_000 });
+    await expect(page.locator('#ledger-opening-balance')).toHaveValue('-125');
+  });
+
   test('edits an existing ledger via edit page', async ({ authedPage: page }) => {
     await page.click('[href="/ledgers"]');
     await page.click('button:has-text("Create ledger")');
