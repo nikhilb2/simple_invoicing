@@ -74,6 +74,52 @@ def _change_inventory_quantity(db: Session, product_id: int, quantity_delta: int
         raise HTTPException(status_code=400, detail=f"Insufficient inventory while {context}")
 
 
+def _assign_item_tax_split(
+    items: list[InvoiceItem],
+    *,
+    interstate_supply: bool,
+    invoice_cgst_amount: Decimal,
+    invoice_sgst_amount: Decimal,
+    invoice_igst_amount: Decimal,
+) -> None:
+    if not items:
+        return
+
+    if interstate_supply:
+        remaining_igst = _money(invoice_igst_amount)
+        for index, item in enumerate(items):
+            item_tax_amount = _money(Decimal(str(item.tax_amount or 0)))
+            is_last_item = index == len(items) - 1
+            item_igst_amount = remaining_igst if is_last_item else item_tax_amount
+            if not is_last_item:
+                remaining_igst = _money(remaining_igst - item_igst_amount)
+
+            item.cgst_amount = 0.0
+            item.sgst_amount = 0.0
+            item.igst_amount = float(item_igst_amount)
+        return
+
+    remaining_cgst = _money(invoice_cgst_amount)
+    remaining_sgst = _money(invoice_sgst_amount)
+
+    for index, item in enumerate(items):
+        item_tax_amount = _money(Decimal(str(item.tax_amount or 0)))
+        is_last_item = index == len(items) - 1
+
+        if is_last_item:
+            item_cgst_amount = remaining_cgst
+            item_sgst_amount = remaining_sgst
+        else:
+            item_cgst_amount = _money(item_tax_amount / Decimal("2"))
+            item_sgst_amount = _money(item_tax_amount - item_cgst_amount)
+            remaining_cgst = _money(remaining_cgst - item_cgst_amount)
+            remaining_sgst = _money(remaining_sgst - item_sgst_amount)
+
+        item.cgst_amount = float(item_cgst_amount)
+        item.sgst_amount = float(item_sgst_amount)
+        item.igst_amount = 0.0
+
+
 def _reverse_existing_invoice_inventory(db: Session, invoice: Invoice) -> None:
     for item in invoice.items:
         reverse_delta = item.quantity if invoice.voucher_type == "sales" else -item.quantity
@@ -217,6 +263,14 @@ def _apply_payload_to_invoice(
         invoice.cgst_amount = float(half_tax_total)
         invoice.sgst_amount = float(half_tax_total)
         invoice.igst_amount = 0.0
+
+    _assign_item_tax_split(
+        created_items,
+        interstate_supply=interstate_supply,
+        invoice_cgst_amount=Decimal(str(invoice.cgst_amount or 0)),
+        invoice_sgst_amount=Decimal(str(invoice.sgst_amount or 0)),
+        invoice_igst_amount=Decimal(str(invoice.igst_amount or 0)),
+    )
 
     invoice.total_tax_amount = float(tax_total)
     raw_total = _money(taxable_total + tax_total)
