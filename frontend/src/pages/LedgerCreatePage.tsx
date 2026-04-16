@@ -3,8 +3,15 @@ import { useNavigate, useParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import type { Ledger, LedgerCreate } from '../types/api';
+import {
+  applyOpeningBalanceSide,
+  openingBalanceMagnitude,
+  openingBalanceSideFromValue,
+  parseOpeningBalanceInput,
+  type OpeningBalanceSide,
+} from '../utils/openingBalance';
 
-export default function LedgerCreatePage() {
+export default function   LedgerCreatePage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const editingLedgerId = id ? Number(id) : null;
@@ -12,6 +19,7 @@ export default function LedgerCreatePage() {
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(!!editingLedgerId);
   const [error, setError] = useState('');
+  const [openingBalanceSide, setOpeningBalanceSide] = useState<OpeningBalanceSide>('debit');
   const [form, setForm] = useState<LedgerCreate>({
     name: '',
     address: '',
@@ -36,6 +44,7 @@ export default function LedgerCreatePage() {
         const res = await api.get<Ledger>(`/ledgers/${editingLedgerId}`);
         if (cancelled) return;
         const l = res.data;
+        setOpeningBalanceSide(openingBalanceSideFromValue(l.opening_balance));
         setForm({
           name: l.name,
           address: l.address,
@@ -121,143 +130,209 @@ export default function LedgerCreatePage() {
 
       <section className="content-grid">
         <article className="panel stack">
-          <form className="stack" onSubmit={handleSubmit}>
-            <div className="field-grid">
-              <div className="field">
-                <label htmlFor="ledger-name">Ledger name</label>
-                <input
-                  id="ledger-name"
-                  className="input"
-                  value={form.name}
-                  onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))}
-                  placeholder="Acme Traders"
-                  required
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="ledger-gst">GST</label>
-                <input
-                  id="ledger-gst"
-                  className="input"
-                  value={form.gst}
-                  onChange={(e) => setForm((c) => ({ ...c, gst: e.target.value }))}
-                  placeholder="27ABCDE1234F1Z5"
-                  pattern="^$|[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z][A-Za-z0-9]Z[A-Za-z0-9]$"
-                  title="Enter a valid 15-character GSTIN (e.g. 27ABCDE1234F1Z5), or leave blank"
-                  maxLength={15}
-                />
-                <small className="field-hint">Optional. If entered, format must be 27ABCDE1234F1Z5.</small>
-              </div>
-              <div className="field">
-                <label htmlFor="ledger-phone">Phone number</label>
-                <input
-                  id="ledger-phone"
-                  className="input"
-                  value={form.phone_number}
-                  onChange={(e) => setForm((c) => ({ ...c, phone_number: e.target.value }))}
-                  placeholder="+91 9876543210"
-                  required
-                />
-                <small className="field-hint">e.g. +91 98765 43210</small>
-              </div>
-              <div className="field">
-                <label htmlFor="ledger-opening-balance">Opening balance</label>
-                <input
-                  id="ledger-opening-balance"
-                  className="input"
-                  type="number"
-                  step="0.01"
-                  value={form.opening_balance ?? ''}
-                  onChange={(e) => setForm((c) => ({ ...c, opening_balance: e.target.value === '' ? null : (parseFloat(e.target.value) || null) }))}
-                  placeholder="0.00"
-                />
-                <small className="field-hint">Positive for debit opening balance, negative for credit opening balance. Leave blank for none.</small>
-              </div>
-              <div className="field">
-                <label htmlFor="ledger-email">Email</label>
-                <input
-                  id="ledger-email"
-                  className="input"
-                  value={form.email}
-                  onChange={(e) => setForm((c) => ({ ...c, email: e.target.value }))}
-                  placeholder="accounts@acme.com"
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="ledger-website">Website</label>
-                <input
-                  id="ledger-website"
-                  className="input"
-                  value={form.website}
-                  onChange={(e) => setForm((c) => ({ ...c, website: e.target.value }))}
-                  placeholder="https://acme.com"
-                />
-              </div>
-              <div className="field field--full">
-                <label htmlFor="ledger-address">Address</label>
-                <textarea
-                  id="ledger-address"
-                  className="textarea"
-                  value={form.address}
-                  onChange={(e) => setForm((c) => ({ ...c, address: e.target.value }))}
-                  placeholder="221B Baker Street, London"
-                  required
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="ledger-bank-name">Bank name</label>
-                <input
-                  id="ledger-bank-name"
-                  className="input"
-                  value={form.bank_name}
-                  onChange={(e) => setForm((c) => ({ ...c, bank_name: e.target.value }))}
-                  placeholder="HDFC Bank"
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="ledger-branch-name">Branch</label>
-                <input
-                  id="ledger-branch-name"
-                  className="input"
-                  value={form.branch_name}
-                  onChange={(e) => setForm((c) => ({ ...c, branch_name: e.target.value }))}
-                  placeholder="Bandra West"
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="ledger-account-name">Account holder</label>
-                <input
-                  id="ledger-account-name"
-                  className="input"
-                  value={form.account_name}
-                  onChange={(e) => setForm((c) => ({ ...c, account_name: e.target.value }))}
-                  placeholder="Acme Traders"
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="ledger-account-number">Account number</label>
-                <input
-                  id="ledger-account-number"
-                  className="input"
-                  value={form.account_number}
-                  onChange={(e) => setForm((c) => ({ ...c, account_number: e.target.value }))}
-                  placeholder="123456789012"
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="ledger-ifsc">IFSC</label>
-                <input
-                  id="ledger-ifsc"
-                  className="input"
-                  value={form.ifsc_code}
-                  onChange={(e) => setForm((c) => ({ ...c, ifsc_code: e.target.value }))}
-                  placeholder="HDFC0001234"
-                />
-                <small className="field-hint">Format: SBIN0001234</small>
-              </div>
+          <div className="panel__header">
+            <div>
+              <p className="eyebrow">Ledger form</p>
+              <h2 className="nav-panel__title">{editingLedgerId ? 'Update ledger details' : 'New ledger details'}</h2>
+              <p className="section-copy" style={{ marginTop: '8px' }}>
+                Start with the billing details you always need. Contact and bank fields are optional and can be added now or later.
+              </p>
             </div>
+          </div>
+          <form className="stack" onSubmit={handleSubmit}>
+            <section className="form-section">
+              <div className="form-section__header">
+                <div>
+                  <p className="form-section__eyebrow">Required first</p>
+                  <h3 className="form-section__title">Primary details</h3>
+                  <p className="form-section__copy">Use the information that identifies this ledger on invoices, statements, and payment tracking.</p>
+                </div>
+              </div>
+              <div className="field-grid">
+                <div className="field">
+                  <label htmlFor="ledger-name">Ledger name</label>
+                  <input
+                    id="ledger-name"
+                    className="input"
+                    value={form.name}
+                    onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))}
+                    placeholder="Acme Traders"
+                    required
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="ledger-phone">Phone number</label>
+                  <input
+                    id="ledger-phone"
+                    className="input"
+                    value={form.phone_number}
+                    onChange={(e) => setForm((c) => ({ ...c, phone_number: e.target.value }))}
+                    placeholder="+91 9876543210"
+                    required
+                  />
+                  <small className="field-hint">e.g. +91 98765 43210</small>
+                </div>
+                <div className="field">
+                  <label htmlFor="ledger-gst">GST</label>
+                  <input
+                    id="ledger-gst"
+                    className="input"
+                    value={form.gst}
+                    onChange={(e) => setForm((c) => ({ ...c, gst: e.target.value }))}
+                    placeholder="27ABCDE1234F1Z5"
+                    pattern="^$|[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z][A-Za-z0-9]Z[A-Za-z0-9]$"
+                    title="Enter a valid 15-character GSTIN (e.g. 27ABCDE1234F1Z5), or leave blank"
+                    maxLength={15}
+                  />
+                  <small className="field-hint">Optional. If entered, format must be 27ABCDE1234F1Z5.</small>
+                </div>
+                <div className="field field--full">
+                  <label htmlFor="ledger-opening-balance">Opening balance</label>
+                  <div className="opening-balance-group">
+                    <div className="opening-balance-group__amount">
+                      <input
+                        id="ledger-opening-balance"
+                        className="input"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={openingBalanceMagnitude(form.opening_balance) ?? ''}
+                        onChange={(e) => setForm((c) => ({ ...c, opening_balance: parseOpeningBalanceInput(e.target.value, openingBalanceSide) }))}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div className="opening-balance-group__type">
+                      <label htmlFor="ledger-opening-balance-side">Type</label>
+                      <select
+                        id="ledger-opening-balance-side"
+                        className="select"
+                        value={openingBalanceSide}
+                        onChange={(e) => {
+                          const nextSide = e.target.value as OpeningBalanceSide;
+                          setOpeningBalanceSide(nextSide);
+                          setForm((c) => ({ ...c, opening_balance: applyOpeningBalanceSide(c.opening_balance, nextSide) }));
+                        }}
+                      >
+                        <option value="debit">Debit</option>
+                        <option value="credit">Credit</option>
+                      </select>
+                    </div>
+                  </div>
+                  <small className="field-hint">Enter the amount only. Choose debit or credit separately. Leave blank for none.</small>
+                </div>
+                <div className="field field--full">
+                  <label htmlFor="ledger-address">Address</label>
+                  <textarea
+                    id="ledger-address"
+                    className="textarea"
+                    value={form.address}
+                    onChange={(e) => setForm((c) => ({ ...c, address: e.target.value }))}
+                    placeholder="221B Baker Street, London"
+                    required
+                  />
+                </div>
+              </div>
+            </section>
 
-            <div className="button-row">
+            <section className="form-section">
+              <div className="form-section__header">
+                <div>
+                  <p className="form-section__eyebrow">Optional</p>
+                  <h3 className="form-section__title">Contact details</h3>
+                  <p className="form-section__copy">Add direct communication details if you email invoices or want faster follow-up later.</p>
+                </div>
+              </div>
+              <div className="field-grid">
+                <div className="field">
+                  <label htmlFor="ledger-email">Email</label>
+                  <input
+                    id="ledger-email"
+                    className="input"
+                    value={form.email}
+                    onChange={(e) => setForm((c) => ({ ...c, email: e.target.value }))}
+                    placeholder="accounts@acme.com"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="ledger-website">Website</label>
+                  <input
+                    id="ledger-website"
+                    className="input"
+                    value={form.website}
+                    onChange={(e) => setForm((c) => ({ ...c, website: e.target.value }))}
+                    placeholder="https://acme.com"
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="form-section">
+              <div className="form-section__header">
+                <div>
+                  <p className="form-section__eyebrow">Optional</p>
+                  <h3 className="form-section__title">Banking details</h3>
+                  <p className="form-section__copy">Useful when this ledger needs payment instructions on statements, reminders, or exported documents.</p>
+                </div>
+              </div>
+              <div className="field-grid">
+                <div className="field">
+                  <label htmlFor="ledger-bank-name">Bank name</label>
+                  <input
+                    id="ledger-bank-name"
+                    className="input"
+                    value={form.bank_name}
+                    onChange={(e) => setForm((c) => ({ ...c, bank_name: e.target.value }))}
+                    placeholder="HDFC Bank"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="ledger-branch-name">Branch</label>
+                  <input
+                    id="ledger-branch-name"
+                    className="input"
+                    value={form.branch_name}
+                    onChange={(e) => setForm((c) => ({ ...c, branch_name: e.target.value }))}
+                    placeholder="Bandra West"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="ledger-account-name">Account holder</label>
+                  <input
+                    id="ledger-account-name"
+                    className="input"
+                    value={form.account_name}
+                    onChange={(e) => setForm((c) => ({ ...c, account_name: e.target.value }))}
+                    placeholder="Acme Traders"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="ledger-account-number">Account number</label>
+                  <input
+                    id="ledger-account-number"
+                    className="input"
+                    value={form.account_number}
+                    onChange={(e) => setForm((c) => ({ ...c, account_number: e.target.value }))}
+                    placeholder="123456789012"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="ledger-ifsc">IFSC</label>
+                  <input
+                    id="ledger-ifsc"
+                    className="input"
+                    value={form.ifsc_code}
+                    onChange={(e) => setForm((c) => ({ ...c, ifsc_code: e.target.value }))}
+                    placeholder="HDFC0001234"
+                  />
+                  <small className="field-hint">Format: SBIN0001234</small>
+                </div>
+              </div>
+            </section>
+
+            <div className="form-action-bar">
+              <div className="form-action-bar__meta">
+                <strong>Required:</strong> ledger name, phone number, and address.
+              </div>
               <button type="button" className="button button--secondary" onClick={() => navigate('/ledgers')} title="Cancel and return to ledgers" aria-label="Cancel and return to ledgers">
                 Cancel
               </button>

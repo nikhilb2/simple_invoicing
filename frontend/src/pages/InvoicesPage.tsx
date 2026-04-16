@@ -12,6 +12,12 @@ import LedgerCombobox from '../components/LedgerCombobox';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import formatCurrency from '../utils/formatting';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../utils/invoiceTax';
+import {
+  applyOpeningBalanceSide,
+  openingBalanceMagnitude,
+  parseOpeningBalanceInput,
+  type OpeningBalanceSide,
+} from '../utils/openingBalance';
 import { useFY } from '../context/FYContext';
 import { fetchInvoiceById, fetchInvoiceComposerData } from '../features/invoices/api';
 import { invoiceQueryKeys } from '../features/invoices/queryKeys';
@@ -82,6 +88,7 @@ export default function InvoicesPage() {
     account_number: '',
     ifsc_code: '',
   });
+  const [ledgerOpeningBalanceSide, setLedgerOpeningBalanceSide] = useState<OpeningBalanceSide>('debit');
   const [productForm, setProductForm] = useState({ name: '', sku: '', hsn_sac: '', price: '', gst_rate: '0' });
   const [stockForm, setStockForm] = useState({ productId: '', adjustment: '' });
   const [ledgerSubmitting, setLedgerSubmitting] = useState(false);
@@ -473,6 +480,7 @@ export default function InvoicesPage() {
         account_number: '',
         ifsc_code: '',
       });
+      setLedgerOpeningBalanceSide('debit');
       setShowLedgerModal(false);
       setSuccess('Ledger added and selected for this invoice.');
     } catch (err) {
@@ -888,18 +896,39 @@ export default function InvoicesPage() {
                   required
                 />
               </div>
-              <div className="field">
+              <div className="field field--full">
                 <label htmlFor="modal-ledger-opening-balance">Opening balance</label>
-                <input
-                  id="modal-ledger-opening-balance"
-                  className="input"
-                  type="number"
-                  step="0.01"
-                  value={ledgerForm.opening_balance ?? ''}
-                  onChange={(event) => setLedgerForm((current) => ({ ...current, opening_balance: event.target.value === '' ? null : (parseFloat(event.target.value) || null) }))}
-                  placeholder="0.00"
-                />
-                <small className="field-hint">Positive for debit opening balance, negative for credit opening balance. Leave blank for none.</small>
+                <div className="opening-balance-group">
+                  <div className="opening-balance-group__amount">
+                    <input
+                      id="modal-ledger-opening-balance"
+                      className="input"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={openingBalanceMagnitude(ledgerForm.opening_balance) ?? ''}
+                      onChange={(event) => setLedgerForm((current) => ({ ...current, opening_balance: parseOpeningBalanceInput(event.target.value, ledgerOpeningBalanceSide) }))}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div className="opening-balance-group__type">
+                    <label htmlFor="modal-ledger-opening-balance-side">Type</label>
+                    <select
+                      id="modal-ledger-opening-balance-side"
+                      className="select"
+                      value={ledgerOpeningBalanceSide}
+                      onChange={(event) => {
+                        const nextSide = event.target.value as OpeningBalanceSide;
+                        setLedgerOpeningBalanceSide(nextSide);
+                        setLedgerForm((current) => ({ ...current, opening_balance: applyOpeningBalanceSide(current.opening_balance, nextSide) }));
+                      }}
+                    >
+                      <option value="debit">Debit</option>
+                      <option value="credit">Credit</option>
+                    </select>
+                  </div>
+                </div>
+                <small className="field-hint">Enter the amount only. Choose debit or credit separately. Leave blank for none.</small>
               </div>
               <div className="field">
                 <label htmlFor="modal-ledger-email">Email</label>
