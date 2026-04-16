@@ -35,7 +35,7 @@ class InvoiceItemOut(BaseModel):
     sgst_amount: float
     igst_amount: float
     line_total: float
-        description: str | None = None
+    description: str | None = None
 
     class Config:
         from_attributes = True

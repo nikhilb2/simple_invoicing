@@ -65,6 +65,6 @@ class InvoiceItem(Base):
     sgst_amount = Column(Numeric(10, 2), nullable=False, default=0)
     igst_amount = Column(Numeric(10, 2), nullable=False, default=0)
     line_total = Column(Numeric(10, 2), nullable=False)
-        description = Column(Text, nullable=True)
+    description = Column(Text, nullable=True)
 
     invoice = relationship("Invoice", back_populates="items")
