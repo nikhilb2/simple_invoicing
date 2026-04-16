@@ -103,7 +103,7 @@ test.describe('Products CRUD', () => {
     await page.fill('#product-search', sku);
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: sku });
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await row.locator('[aria-label^="Edit product"]').click();
 
     // Form should show "Editing product" heading
@@ -136,11 +136,11 @@ test.describe('Products CRUD', () => {
     await page.fill('#product-search', sku);
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: sku });
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     // Delete it — click Delete row button, then confirm in the custom dialog
     await row.locator('[aria-label^="Delete product"]').click();
     await page.locator('.modal-overlay button:has-text("Delete")').click();
-    await expect(page.locator('.toast--success')).toContainText('Product deleted', { timeout: 10_000 });
+    await expect(page.locator('.toast--success')).toContainText('Product deleted', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Should no longer appear
     await expect(page.locator('.table-row', { hasText: sku })).not.toBeVisible();

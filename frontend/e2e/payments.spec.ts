@@ -1,27 +1,34 @@
 import { test, expect, expectSuccess, uniqueGstin } from './fixtures';
 
+async function setStatementRangeToCurrentMonth(page: import('@playwright/test').Page) {
+  const today = new Date();
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  await page.locator('#statement-from').fill(startOfMonth.toISOString().split('T')[0]);
+  await page.locator('#statement-to').fill(today.toISOString().split('T')[0]);
+}
+
 test.describe('Payments (Receipt / Payment)', () => {
   test('records a receipt and verifies it appears in the ledger statement', async ({ authedPage: page }) => {
     // 1. Create a ledger
     const ledgerName = `PayLedger-${Date.now().toString(36)}`;
     await page.click('[href="/ledgers"]');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);
     await page.fill('#ledger-address', '789 Payment Ave');
     await page.fill('#ledger-gst', uniqueGstin());
     await page.fill('#ledger-phone', '+91 7777777777');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger created');
 
     // 2. Navigate to ledger view
     await page.fill('#ledger-search', ledgerName);
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: ledgerName });
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await row.locator('[aria-label^="View ledger"]').click();
-    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // 3. Open payment form
     await page.click('button:has-text("Record Receipt / Payment")');
@@ -39,9 +46,11 @@ test.describe('Payments (Receipt / Payment)', () => {
     await modal.locator('button:has-text("Save")').click();
     await expect(modal).not.toBeVisible({ timeout: 5_000 });
 
-    // 6. Wait for statement to refresh and verify receipt entry appears
+    // 6. Refresh statement context and verify receipt entry appears
+    await page.reload();
+    await setStatementRangeToCurrentMonth(page);
     await page.waitForTimeout(1_000);
-    const receiptEntry = page.locator('.invoice-row').filter({ hasText: 'Receipt' });
+    const receiptEntry = page.locator('.invoice-row').filter({ hasText: /receipt/i });
     await expect(receiptEntry.first()).toBeVisible({ timeout: 10_000 });
     await expect(receiptEntry.first()).toContainText('Cr');
 
@@ -54,22 +63,22 @@ test.describe('Payments (Receipt / Payment)', () => {
     const ledgerName = `PayOutLedger-${Date.now().toString(36)}`;
     await page.click('[href="/ledgers"]');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);
     await page.fill('#ledger-address', '321 Outflow St');
     await page.fill('#ledger-gst', uniqueGstin());
     await page.fill('#ledger-phone', '+91 8888888888');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger created');
 
     // 2. Navigate to ledger view
     await page.fill('#ledger-search', ledgerName);
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: ledgerName });
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await row.locator('[aria-label^="View ledger"]').click();
-    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // 3. Open payment form and record a payment (money paid out)
     await page.click('button:has-text("Record Receipt / Payment")');
@@ -84,9 +93,11 @@ test.describe('Payments (Receipt / Payment)', () => {
     await modal.locator('button:has-text("Save")').click();
     await expect(modal).not.toBeVisible({ timeout: 5_000 });
 
-    // 4. Verify payment entry appears as Debit
+    // 4. Refresh statement context and verify payment entry appears as Debit
+    await page.reload();
+    await setStatementRangeToCurrentMonth(page);
     await page.waitForTimeout(1_000);
-    const paymentEntry = page.locator('.invoice-row').filter({ hasText: 'Payment' });
+    const paymentEntry = page.locator('.invoice-row').filter({ hasText: /payment/i });
     await expect(paymentEntry.first()).toBeVisible({ timeout: 10_000 });
     await expect(paymentEntry.first()).toContainText('Dr');
   });
@@ -96,22 +107,22 @@ test.describe('Payments (Receipt / Payment)', () => {
     const ledgerName = `ValLedger-${Date.now().toString(36)}`;
     await page.click('[href="/ledgers"]');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);
     await page.fill('#ledger-address', '999 Validate Blvd');
     await page.fill('#ledger-gst', uniqueGstin());
     await page.fill('#ledger-phone', '+91 9999999999');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger created');
 
     // 2. Navigate to ledger view and open form
     await page.fill('#ledger-search', ledgerName);
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: ledgerName });
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await row.locator('[aria-label^="View ledger"]').click();
-    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     await page.click('button:has-text("Record Receipt / Payment")');
     const modal = page.locator('.modal-overlay');

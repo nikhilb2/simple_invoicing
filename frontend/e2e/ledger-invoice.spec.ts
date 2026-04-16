@@ -1,4 +1,11 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption } from './fixtures';
+
+async function setStatementRangeToCurrentMonth(page: import('@playwright/test').Page) {
+  const today = new Date();
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  await page.locator('#statement-from').fill(startOfMonth.toISOString().split('T')[0]);
+  await page.locator('#statement-to').fill(today.toISOString().split('T')[0]);
+}
 
 test.describe('Create Invoice from Ledger View', () => {
   /**
@@ -20,18 +27,8 @@ test.describe('Create Invoice from Ledger View', () => {
 
     // 2. Add inventory
     await page.click('[href="/inventory"]');
-    await page.waitForTimeout(500);
-    const productSelect = page.locator('#inventory-product');
-    const options = productSelect.locator('option');
-    const count = await options.count();
-    for (let i = 0; i < count; i++) {
-      const text = await options.nth(i).textContent();
-      if (text?.includes(sku)) {
-        const val = (await options.nth(i).getAttribute('value')) || '';
-        await productSelect.selectOption(val);
-        break;
-      }
-    }
+    await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+    await selectComboboxOption(page, 'inventory-product', sku);
     await page.fill('#inventory-quantity', '100');
     await page.click('button:has-text("Apply adjustment")');
     await expectSuccess(page, 'Inventory updated');
@@ -39,22 +36,22 @@ test.describe('Create Invoice from Ledger View', () => {
     // 3. Create ledger
     await page.click('[href="/ledgers"]');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);
     await page.fill('#ledger-address', '111 Invoice Lane');
     await page.fill('#ledger-gst', uniqueGstin());
     await page.fill('#ledger-phone', '+91 3333333333');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger created');
 
     // 4. Navigate to ledger view – use search to find ledger in paginated list
     await page.fill('#ledger-search', ledgerName);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1_000);
     const row = page.locator('.table-row', { hasText: ledgerName });
     await expect(row).toBeVisible({ timeout: 10_000 });
     await row.locator('[aria-label^="View ledger"]').click();
-    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     return { sku, productName, ledgerName };
   }
@@ -79,28 +76,21 @@ test.describe('Create Invoice from Ledger View', () => {
     await expect(ledgerSelect).toBeDisabled();
 
     // Select product in first line item
-    const productSelect = modal.locator('[id^="modal-inv-product-"]').first();
-    const prodOptions = productSelect.locator('option');
-    const prodCount = await prodOptions.count();
-    for (let i = 0; i < prodCount; i++) {
-      const text = await prodOptions.nth(i).textContent();
-      if (text?.includes(sku)) {
-        const val = (await prodOptions.nth(i).getAttribute('value')) || '';
-        await productSelect.selectOption(val);
-        break;
-      }
-    }
+    const productInputId = (await modal.locator('[id^="modal-inv-product-"]').first().getAttribute('id')) || 'modal-inv-product-1';
+    await selectComboboxOption(page, productInputId, sku);
 
     // Set quantity
     await modal.locator('[id^="modal-inv-qty-"]').first().fill('2');
 
     // Submit
     await modal.locator('button:has-text("Create invoice")').click();
-    await expect(modal).not.toBeVisible({ timeout: 10_000 });
+    await expect(modal).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
-    // Wait for statement refresh and verify entry appears
-    await page.waitForTimeout(1_500);
-    const salesEntry = page.locator('.invoice-row').filter({ hasText: 'Sales' });
+    // Refresh statement context and verify entry appears.
+    await page.reload();
+    await setStatementRangeToCurrentMonth(page);
+    await page.waitForTimeout(1_000);
+    const salesEntry = page.locator('.invoice-row').filter({ hasText: /sales/i });
     await expect(salesEntry.first()).toBeVisible({ timeout: 10_000 });
     await expect(salesEntry.first()).toContainText('Dr');
   });
@@ -118,27 +108,20 @@ test.describe('Create Invoice from Ledger View', () => {
     await modal.locator('#modal-inv-voucher-type').selectOption('purchase');
 
     // Select product
-    const productSelect = modal.locator('[id^="modal-inv-product-"]').first();
-    const prodOptions = productSelect.locator('option');
-    const prodCount = await prodOptions.count();
-    for (let i = 0; i < prodCount; i++) {
-      const text = await prodOptions.nth(i).textContent();
-      if (text?.includes(sku)) {
-        const val = (await prodOptions.nth(i).getAttribute('value')) || '';
-        await productSelect.selectOption(val);
-        break;
-      }
-    }
+    const productInputId = (await modal.locator('[id^="modal-inv-product-"]').first().getAttribute('id')) || 'modal-inv-product-1';
+    await selectComboboxOption(page, productInputId, sku);
 
     await modal.locator('[id^="modal-inv-qty-"]').first().fill('5');
 
     // Submit
     await modal.locator('button:has-text("Create invoice")').click();
-    await expect(modal).not.toBeVisible({ timeout: 10_000 });
+    await expect(modal).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
-    // Verify purchase entry appears as Credit
-    await page.waitForTimeout(1_500);
-    const purchaseEntry = page.locator('.invoice-row').filter({ hasText: 'Purchase' });
+    // Refresh statement context and verify purchase entry appears as Credit.
+    await page.reload();
+    await setStatementRangeToCurrentMonth(page);
+    await page.waitForTimeout(1_000);
+    const purchaseEntry = page.locator('.invoice-row').filter({ hasText: /purchase/i });
     await expect(purchaseEntry.first()).toBeVisible({ timeout: 10_000 });
     await expect(purchaseEntry.first()).toContainText('Cr');
   });
@@ -162,21 +145,21 @@ test.describe('Ledger View Actions Dropdown', () => {
     // Create a minimal ledger and navigate to its view page
     await page.click('[href="/ledgers"]');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     const ledgerName = `DropdownLedger-${Date.now().toString(36)}`;
     await page.fill('#ledger-name', ledgerName);
     await page.fill('#ledger-address', '1 Dropdown Rd');
     await page.fill('#ledger-gst', uniqueGstin());
     await page.fill('#ledger-phone', '+91 1111111111');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     await page.fill('#ledger-search', ledgerName);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1_000);
     const row = page.locator('.table-row', { hasText: ledgerName });
     await expect(row).toBeVisible({ timeout: 10_000 });
     await row.locator('[aria-label^="View ledger"]').click();
-    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Dropdown is closed initially
     await expect(page.locator('[role="menuitem"][aria-label="Send Reminder"]')).not.toBeVisible();
@@ -193,21 +176,21 @@ test.describe('Ledger View Actions Dropdown', () => {
   test('dropdown closes when clicking outside', async ({ authedPage: page }) => {
     await page.click('[href="/ledgers"]');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     const ledgerName = `DropdownClose-${Date.now().toString(36)}`;
     await page.fill('#ledger-name', ledgerName);
     await page.fill('#ledger-address', '2 Close Rd');
     await page.fill('#ledger-gst', uniqueGstin());
     await page.fill('#ledger-phone', '+91 2222222222');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     await page.fill('#ledger-search', ledgerName);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1_000);
     const row = page.locator('.table-row', { hasText: ledgerName });
     await expect(row).toBeVisible({ timeout: 10_000 });
     await row.locator('[aria-label^="View ledger"]').click();
-    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Open dropdown
     await page.click('[aria-label="More ledger actions"]');

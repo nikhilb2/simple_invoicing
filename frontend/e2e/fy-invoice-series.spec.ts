@@ -45,7 +45,7 @@ async function ensureAndActivateFY(
     await expect(dialog).toBeVisible({ timeout: 5_000 });
     await dialog.locator('input[type="number"]').fill(String(startYear));
     await dialog.locator('button:has-text("Create")').click();
-    await expect(dialog).not.toBeVisible({ timeout: 10_000 });
+    await expect(dialog).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     // Reopen the dropdown to activate
     await fyButton.click();
     await expect(listbox).toBeVisible({ timeout: 5_000 });
@@ -60,7 +60,7 @@ async function ensureAndActivateFY(
 
 async function configureActiveFySalesSeries(page: import('@playwright/test').Page) {
   await page.click('[href="/company"]');
-  await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
   const prefixInput = page.locator('[id^="series-prefix-"]').first();
   const suffixInput = page.locator('[id^="series-suffix-"]').first();
@@ -100,7 +100,7 @@ async function getFinancialYearIdByLabel(
 
 async function getSalesNextSequence(page: import('@playwright/test').Page): Promise<number> {
   await page.click('[href="/company"]');
-  await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   const salesRow = page.locator('xpath=//strong[normalize-space()="Sales"]/ancestor::div[contains(@class,"panel")][1]');
   const nextText = await salesRow.locator('text=/Next: #\\d+/').textContent();
   const match = nextText?.match(/#(\d+)/);

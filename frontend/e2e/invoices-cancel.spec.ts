@@ -21,7 +21,7 @@ async function createInvoicePrerequisites(page: Parameters<typeof selectCombobox
   // Add inventory
   await page.click('[href="/inventory"]');
   // Wait for ProductCombobox to be enabled (products loaded)
-  await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: 10_000 });
+  await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   await selectComboboxOption(page, 'inventory-product', sku);
   await page.fill('#inventory-quantity', '50');
   await page.click('button:has-text("Apply adjustment")');
@@ -40,7 +40,7 @@ async function createInvoicePrerequisites(page: Parameters<typeof selectCombobox
   // Navigate to invoices and create one sales invoice
   await page.click('[href="/invoices"]');
   // Wait for LedgerCombobox to be enabled (ledgers loaded)
-  await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: 10_000 });
+  await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   await page.selectOption('#invoice-voucher-type', 'sales');
 
   await selectComboboxOption(page, 'invoice-ledger', ledgerName);
@@ -55,29 +55,38 @@ async function createInvoicePrerequisites(page: Parameters<typeof selectCombobox
   return { sku, ledgerName };
 }
 
+async function openInvoiceFeed(page: Parameters<typeof selectComboboxOption>[0]) {
+  await page.goto('/invoices-view');
+  await expect(page.locator('h1')).toContainText('Invoice Feed', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+
+  // Keep feed tests independent from FY/view toggles mutated by other tests.
+  await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Search all FY' }).locator('input').check();
+  await page.getByRole('button', { name: 'Card' }).click();
+}
+
 test.describe('Invoice cancellation', () => {
   test('Cancel button appears for active invoices', async ({ authedPage: page }) => {
     const { ledgerName } = await createInvoicePrerequisites(page);
 
-    await page.click('[href="/invoices"]');
-    const row = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await openInvoiceFeed(page);
+    const row = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Should have a Cancel button (Trash2 icon), not a Delete button label
-    await expect(row.locator('button[title="Cancel invoice"]')).toBeVisible();
+    await expect(row.locator('button[title="Cancel"]')).toBeVisible();
     // Should NOT have a Restore button
-    await expect(row.locator('button[title="Restore invoice"]')).not.toBeVisible();
+    await expect(row.locator('button[title="Restore"]')).not.toBeVisible();
   });
 
   test('Cancelling an invoice shows Cancelled badge and hides it by default', async ({ authedPage: page }) => {
     const { ledgerName } = await createInvoicePrerequisites(page);
 
-    await page.click('[href="/invoices"]');
-    const row = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await openInvoiceFeed(page);
+    const row = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Click Cancel
-    await row.locator('button[title="Cancel invoice"]').click();
+    await row.locator('button[title="Cancel"]').click();
 
     // Confirm in the dialog
     await expect(page.locator('.modal-overlay')).toBeVisible({ timeout: 5_000 });
@@ -86,102 +95,101 @@ test.describe('Invoice cancellation', () => {
     await expectSuccess(page, 'Invoice cancelled');
 
     // By default, cancelled invoices are hidden from the list
-    await expect(page.locator('.invoice-row', { hasText: ledgerName })).not.toBeVisible();
+    await expect(page.locator('.invoice-compact-card', { hasText: ledgerName })).toHaveCount(0);
   });
 
   test('Show Cancelled toggle reveals cancelled invoices with red badge', async ({ authedPage: page }) => {
     const { ledgerName } = await createInvoicePrerequisites(page);
 
-    await page.click('[href="/invoices"]');
-    const row = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await openInvoiceFeed(page);
+    const row = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Cancel the invoice
-    await row.locator('button[title="Cancel invoice"]').click();
+    await row.locator('button[title="Cancel"]').click();
     await expect(page.locator('.modal-overlay')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Cancel invoice")');
     await expectSuccess(page, 'Invoice cancelled');
 
     // Toggle "Show Cancelled"
-    await page.click('#toggle-show-cancelled');
+    await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Show cancelled' }).locator('input').check();
     await page.waitForTimeout(500);
 
     // Row is visible again
-    const cancelledRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await expect(cancelledRow).toBeVisible({ timeout: 10_000 });
+    const cancelledRow = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await expect(cancelledRow).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Shows a red "Cancelled" badge
-    await expect(cancelledRow.locator('text=Cancelled')).toBeVisible();
+    await expect(cancelledRow.locator('.invoice-compact-card__cancelled-badge')).toBeVisible();
 
     // Edit button should be hidden, Restore button should be visible
-    await expect(cancelledRow.locator('button[title="Restore invoice"]')).toBeVisible();
-    await expect(cancelledRow.locator('button[title="Edit invoice"]')).not.toBeVisible();
-    await expect(cancelledRow.locator('button[title="Cancel invoice"]')).not.toBeVisible();
+    await expect(cancelledRow.locator('button[title="Restore"]')).toBeVisible();
+    await expect(cancelledRow.locator('button[title="Edit"]')).not.toBeVisible();
+    await expect(cancelledRow.locator('button[title="Cancel"]')).not.toBeVisible();
   });
 
   test('Restoring a cancelled invoice brings it back to active', async ({ authedPage: page }) => {
     const { ledgerName } = await createInvoicePrerequisites(page);
 
-    await page.click('[href="/invoices"]');
-    const row = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await openInvoiceFeed(page);
+    const row = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Cancel it
-    await row.locator('button[title="Cancel invoice"]').click();
+    await row.locator('button[title="Cancel"]').click();
     await expect(page.locator('.modal-overlay')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Cancel invoice")');
     await expectSuccess(page, 'Invoice cancelled');
 
     // Show Cancelled
-    await page.click('#toggle-show-cancelled');
+    await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Show cancelled' }).locator('input').check();
     await page.waitForTimeout(500);
 
-    const cancelledRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await expect(cancelledRow).toBeVisible({ timeout: 10_000 });
+    const cancelledRow = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await expect(cancelledRow).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Restore it
-    await cancelledRow.locator('button[title="Restore invoice"]').click();
+    await cancelledRow.locator('button[title="Restore"]').click();
     await expectSuccess(page, 'Invoice restored');
 
     // Toggle back to "Hide Cancelled" mode (default)
-    await page.click('#toggle-show-cancelled');
+    await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Show cancelled' }).locator('input').uncheck();
     await page.waitForTimeout(500);
 
     // Active invoice should be visible in the default list
-    const restoredRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await expect(restoredRow).toBeVisible({ timeout: 10_000 });
+    const restoredRow = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await expect(restoredRow).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Should show Sales/Purchase badge, not Cancelled
-    await expect(restoredRow.locator('text=Cancelled')).not.toBeVisible();
-    await expect(restoredRow.locator('button[title="Cancel invoice"]')).toBeVisible();
-    await expect(restoredRow.locator('button[title="Edit invoice"]')).toBeVisible();
+    await expect(restoredRow.locator('.invoice-compact-card__cancelled-badge')).toHaveCount(0);
+    await expect(restoredRow.locator('button[title="Cancel"]')).toBeVisible();
+    await expect(restoredRow.locator('button[title="Edit"]')).toBeVisible();
   });
 
   test('Cancelled invoices still visible in Show Cancelled view across page reload', async ({ authedPage: page }) => {
     const { ledgerName } = await createInvoicePrerequisites(page);
 
-    await page.click('[href="/invoices"]');
-    const row = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await openInvoiceFeed(page);
+    const row = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Cancel it
-    await row.locator('button[title="Cancel invoice"]').click();
+    await row.locator('button[title="Cancel"]').click();
     await expect(page.locator('.modal-overlay')).toBeVisible({ timeout: 5_000 });
     await page.click('button:has-text("Cancel invoice")');
     await expectSuccess(page, 'Invoice cancelled');
 
     // Navigate away and come back
     await page.click('[href="/products"]');
-    await page.click('[href="/invoices"]');
-    await page.waitForTimeout(500);
+    await openInvoiceFeed(page);
 
     // Still hidden in default view
-    await expect(page.locator('.invoice-row', { hasText: ledgerName })).not.toBeVisible();
+    await expect(page.locator('.invoice-compact-card', { hasText: ledgerName })).toHaveCount(0);
 
     // Toggle on
-    await page.click('#toggle-show-cancelled');
+    await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Show cancelled' }).locator('input').check();
     await page.waitForTimeout(500);
 
-    await expect(page.locator('.invoice-row', { hasText: ledgerName }).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.invoice-compact-card', { hasText: ledgerName }).first()).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   });
 });

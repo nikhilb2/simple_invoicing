@@ -2,12 +2,12 @@ import { test, expect } from './fixtures';
 
 test.describe('Financial Year Switcher', () => {
   test('FY switcher section is visible in the nav panel', async ({ authedPage: page }) => {
-    await expect(page.getByText('Financial Year')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Financial Year')).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   });
 
   test('FY switcher dropdown button shows active FY label or fallback', async ({ authedPage: page }) => {
     const fyButton = page.locator('button[aria-haspopup="listbox"]');
-    await expect(fyButton).toBeVisible({ timeout: 10_000 });
+    await expect(fyButton).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     // Button must have some text (either a FY label or "No active FY")
     const text = await fyButton.textContent();
     expect(text?.trim().length).toBeGreaterThan(0);
@@ -119,7 +119,7 @@ test.describe('Financial Year Switcher', () => {
     await dialog.locator('button:has-text("Create")').click();
 
     // Modal should close
-    await expect(dialog).not.toBeVisible({ timeout: 10_000 });
+    await expect(dialog).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // New FY should appear in the dropdown
     await fyButton.click();
@@ -170,7 +170,7 @@ test.describe('Financial Year Switcher', () => {
       await expect(dialog).toBeVisible({ timeout: 5_000 });
       await dialog.locator('input[type="number"]').fill('2035');
       await dialog.locator('button:has-text("Create")').click();
-      await expect(dialog).not.toBeVisible({ timeout: 10_000 });
+      await expect(dialog).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
       // Re-open dropdown
       await fyButton.click();

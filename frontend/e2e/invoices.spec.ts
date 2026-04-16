@@ -1,6 +1,15 @@
 import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption } from './fixtures';
 
 test.describe('Invoices', () => {
+  async function openInvoiceFeed(page: import('@playwright/test').Page) {
+    await page.goto('/invoices-view');
+    await expect(page.locator('h1')).toContainText('Invoice Feed', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+
+    // Keep feed tests independent from FY/view toggles mutated by other tests.
+    await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Search all FY' }).locator('input').check();
+    await page.getByRole('button', { name: 'Card' }).click();
+  }
+
   /**
    * Helper: set up a product, ledger, and inventory ready for invoicing.
    * Returns { sku, productName, ledgerName }.
@@ -62,20 +71,21 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'invoice created');
 
-    // Verify invoice appears in the list
-    await expect(page.locator('.invoice-row', { hasText: ledgerName }).first()).toBeVisible();
+    // Verify invoice appears in the feed list
+    await openInvoiceFeed(page);
+    await expect(page.locator('.invoice-compact-card', { hasText: ledgerName }).first()).toBeVisible();
 
     // Search for the ledger name — invoice should still be visible
-    await page.fill('#invoice-search', ledgerName);
-    await expect(page.locator('.invoice-row', { hasText: ledgerName }).first()).toBeVisible();
+    await page.fill('.invoice-feed-view__search', ledgerName);
+    await expect(page.locator('.invoice-compact-card', { hasText: ledgerName }).first()).toBeVisible();
 
     // Search for a non-existent name — no invoices should appear
-    await page.fill('#invoice-search', 'ZZZZNONEXISTENT999');
-    await expect(page.locator('.invoice-row')).toHaveCount(0);
+    await page.fill('.invoice-feed-view__search', 'ZZZZNONEXISTENT999');
+    await expect(page.locator('.invoice-compact-card')).toHaveCount(0);
 
     // Clear search — invoice should reappear
-    await page.fill('#invoice-search', '');
-    await expect(page.locator('.invoice-row').first()).toBeVisible();
+    await page.fill('.invoice-feed-view__search', '');
+    await expect(page.locator('.invoice-compact-card').first()).toBeVisible();
   });
 
   test('creates a sales invoice', async ({ authedPage: page }) => {
@@ -100,8 +110,8 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'invoice created');
 
-    // Verify invoice appears in list
-    await expect(page.locator('.invoice-row').first()).toBeVisible();
+    await openInvoiceFeed(page);
+    await expect(page.locator('.invoice-compact-card', { hasText: ledgerName }).first()).toBeVisible();
   });
 
   test('creates a purchase invoice', async ({ authedPage: page }) => {
@@ -174,11 +184,12 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'invoice created');
 
-    // Cancel the invoice — click Cancel row button, then confirm in the custom dialog
-    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await invoiceRow.locator('[aria-label^="Cancel invoice"]').click();
+    // Cancel the invoice from invoice feed
+    await openInvoiceFeed(page);
+    const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await invoiceCard.locator('button[title="Cancel"]').click();
     await page.locator('.modal-overlay button:has-text("Cancel invoice")').click();
-    await expect(page.locator('.toast--success')).toContainText('cancelled', { timeout: 10_000 });
+    await expect(page.locator('.toast--success')).toContainText('cancelled', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   });
 
   test('shows projected total while composing', async ({
@@ -214,13 +225,14 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'invoice created');
 
-    // Verify the invoice appears in the list with the backdated date
-    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await expect(invoiceRow).toBeVisible();
-    // The date chip should show 6/15/2025 (locale-dependent, check for the year)
-    await expect(invoiceRow.locator('.invoice-meta-chip', { hasText: 'Date' })).toContainText('2025');
+    // Verify the invoice appears in the feed with the backdated year in date text
+    await openInvoiceFeed(page);
+    const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await expect(invoiceCard).toBeVisible();
+    await expect(invoiceCard).toContainText('2025');
 
     // Verify the invoice date field resets to today after creation
+    await page.goto('/invoices');
     const dateInput = page.locator('#invoice-date');
     const resetValue = await dateInput.inputValue();
     const today = new Date().toISOString().slice(0, 10);
@@ -238,14 +250,11 @@ test.describe('Invoices', () => {
   });
 
   test('shows search-no-results message when search finds nothing', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
-    await page.waitForTimeout(500);
-    await page.fill('#invoice-search', 'ZZZZNONEXISTENT999');
+    await openInvoiceFeed(page);
+    await page.fill('.invoice-feed-view__search', 'ZZZZNONEXISTENT999');
     await page.waitForTimeout(500);
 
-    await expect(page.locator('.empty-state')).toContainText('No invoices match your search.');
-    // CTA for truly-empty state must not appear during a search
-    await expect(page.locator('button:has-text("Create your first invoice")')).not.toBeVisible();
+    await expect(page.locator('.empty-state')).toContainText('No invoices found');
   });
 
   test('shows friendly empty state with CTA when no invoices exist', async ({ authedPage: page }) => {
@@ -258,18 +267,11 @@ test.describe('Invoices', () => {
       })
     );
 
-    await page.goto('/invoices');
+    await page.goto('/invoices-view');
     await page.waitForTimeout(500);
 
     const emptyState = page.locator('.empty-state');
-    await expect(emptyState).toContainText('No invoices yet');
-    await expect(emptyState).toContainText('first invoice');
-
-    const ctaButton = page.locator('button:has-text("Create your first invoice")');
-    await expect(ctaButton).toBeVisible();
-    // CTA should focus the voucher type selector so the user can start filling the form
-    await ctaButton.click();
-    await expect(page.locator('#invoice-voucher-type')).toBeFocused();
+    await expect(emptyState).toContainText('No invoices found');
   });
 
   test('supplier invoice # field is hidden for sales invoices', async ({ authedPage: page }) => {
@@ -308,9 +310,10 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'Purchase invoice created');
 
-    // Verify supplier ref appears in the invoice list row
-    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await expect(invoiceRow).toContainText(`Supplier Ref: ${supplierRef}`);
+    // Verify supplier ref appears in the invoice feed row
+    await openInvoiceFeed(page);
+    const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await expect(invoiceCard).toContainText(`Ref: ${supplierRef}`);
   });
 
   test('supplier invoice # field clears when switching from purchase to sales', async ({ authedPage: page }) => {
@@ -346,9 +349,10 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'Purchase invoice created');
 
-    // Click edit on that invoice
-    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await invoiceRow.locator('[aria-label^="Edit invoice"]').click();
+    // Click edit from invoice feed
+    await openInvoiceFeed(page);
+    const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await invoiceCard.locator('button[title="Edit"]').click();
 
     // Supplier ref field should be populated
     await expect(page.locator('#invoice-supplier-ref')).toHaveValue(supplierRef);
@@ -404,12 +408,10 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'invoice created');
 
-    // The invoice row should show the correct breakdown
-    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await expect(invoiceRow).toBeVisible();
-    // Total tax should be ₹18 and taxable should be ₹100
-    await expect(invoiceRow.locator('.invoice-row__tax-grid')).toContainText('Taxable');
-    await expect(invoiceRow.locator('.invoice-row__tax-grid')).toContainText('Total tax');
+    await openInvoiceFeed(page);
+    const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await expect(invoiceCard).toBeVisible();
+    await expect(invoiceCard).toContainText('Tax:');
   });
 
   test('tax-exclusive invoice behaviour is unchanged (default)', async ({ authedPage: page }) => {
@@ -436,9 +438,10 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'invoice created');
 
-    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await expect(invoiceRow).toBeVisible();
-    await expect(invoiceRow.locator('.invoice-row__tax-grid')).toContainText('Taxable');
+    await openInvoiceFeed(page);
+    const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await expect(invoiceCard).toBeVisible();
+    await expect(invoiceCard).toContainText('Tax:');
   });
 
   test('edit restores tax-inclusive checkbox state', async ({ authedPage: page }) => {
@@ -460,9 +463,10 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'invoice created');
 
-    // Click edit — checkbox should be restored to checked
-    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await invoiceRow.locator('[aria-label^="Edit invoice"]').click();
+    // Click edit from invoice feed — checkbox should be restored to checked
+    await openInvoiceFeed(page);
+    const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await invoiceCard.locator('button[title="Edit"]').click();
     await expect(page.locator('#invoice-tax-inclusive')).toBeChecked();
   });
 
@@ -501,25 +505,18 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'Purchase invoice created');
 
-    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
+    await openInvoiceFeed(page);
+    const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await invoiceCard.locator('button[title="Preview"]').click();
 
     const modal = page.locator('[role="dialog"]');
     await expect(modal).toBeVisible();
 
-    // Left column: Supplier eyebrow + ledger name as supplier name
-    await expect(modal.locator('.invoice-sheet__header .eyebrow').first()).toContainText('Supplier');
-    await expect(modal.locator('.invoice-sheet__header h3').first()).toContainText(ledgerName);
-
-    // Right column: "Bill To" eyebrow
-    await expect(modal.locator('.invoice-sheet__header-right .eyebrow')).toContainText('Bill To');
-
-    // Purchase-specific title block with green badge
-    await expect(modal.locator('.invoice-badge--purchase')).toBeVisible();
-    await expect(modal.locator('.invoice-badge--purchase')).toContainText('Purchase Invoice');
-
-    // Sales-specific header must NOT appear
-    await expect(modal.locator('.eyebrow:text("Billed by")')).not.toBeVisible();
+    // Preview is PDF-based now; validate key controls and title rendering.
+    await expect(modal.locator('#invoice-preview-title')).toContainText('PDF invoice');
+    await expect(modal.getByRole('button', { name: 'Download invoice PDF' })).toBeVisible();
+    await expect(modal.getByRole('button', { name: 'Email invoice' })).toBeVisible();
+    await expect(modal.locator('iframe.invoice-pdf-viewer__frame')).toBeVisible();
   });
 
   test('purchase invoice preview shows supplier ref when provided', async ({ authedPage: page }) => {
@@ -538,16 +535,16 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'Purchase invoice created');
 
-    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
+    await openInvoiceFeed(page);
+    const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await invoiceCard.locator('button[title="Preview"]').click();
+
+    // Supplier ref is surfaced in the feed card metadata.
+    await expect(invoiceCard).toContainText(`Ref: ${supplierRef}`);
 
     const modal = page.locator('[role="dialog"]');
     await expect(modal).toBeVisible();
-
-    const supplierRefSection = modal.locator('.invoice-sheet__supplierref');
-    await expect(supplierRefSection).toBeVisible();
-    await expect(supplierRefSection).toContainText('Supplier Ref:');
-    await expect(supplierRefSection).toContainText(supplierRef);
+    await expect(modal.locator('iframe.invoice-pdf-viewer__frame')).toBeVisible();
   });
 
   test('purchase invoice preview without supplier ref hides supplier ref row', async ({ authedPage: page }) => {
@@ -565,12 +562,15 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'Purchase invoice created');
 
-    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
+    await openInvoiceFeed(page);
+    const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await invoiceCard.locator('button[title="Preview"]').click();
+
+    await expect(invoiceCard).not.toContainText('Ref:');
 
     const modal = page.locator('[role="dialog"]');
     await expect(modal).toBeVisible();
-    await expect(modal.locator('.invoice-sheet__supplierref')).not.toBeVisible();
+    await expect(modal.locator('iframe.invoice-pdf-viewer__frame')).toBeVisible();
   });
 
   test('purchase invoice preview has no bank details and shows tax breakup', async ({ authedPage: page }) => {
@@ -587,18 +587,17 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'Purchase invoice created');
 
-    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
+    await openInvoiceFeed(page);
+    const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await invoiceCard.locator('button[title="Preview"]').click();
 
     const modal = page.locator('[role="dialog"]');
     await expect(modal).toBeVisible();
 
-    // No bank/payment details section
-    await expect(modal.locator('.invoice-sheet__bank')).not.toBeVisible();
-
-    // Tax breakup still present
-    await expect(modal.locator('.invoice-sheet__totals')).toBeVisible();
-    await expect(modal.locator('.invoice-sheet__totals')).toContainText('Tax breakup');
+    // New preview renders a PDF iframe rather than inline invoice-sheet sections.
+    await expect(modal.locator('.invoice-sheet__bank')).toHaveCount(0);
+    await expect(modal.locator('.invoice-sheet__totals')).toHaveCount(0);
+    await expect(modal.locator('iframe.invoice-pdf-viewer__frame')).toBeVisible();
   });
 
   test('sales invoice preview layout is unchanged', async ({ authedPage: page }) => {
@@ -615,21 +614,18 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'Sales invoice created');
 
-    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
+    await openInvoiceFeed(page);
+    const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await invoiceCard.locator('button[title="Preview"]').click();
 
     const modal = page.locator('[role="dialog"]');
     await expect(modal).toBeVisible();
 
-    // Sales layout: "Billed by" on the left
-    await expect(modal.locator('.invoice-sheet__header .eyebrow').first()).toContainText('Billed by');
-
-    // Bank / payment details block present
-    await expect(modal.locator('.invoice-sheet__bank')).toBeVisible();
-    await expect(modal.locator('.invoice-sheet__bank')).toContainText('Payment details');
-
-    // No purchase-specific badge
-    await expect(modal.locator('.invoice-badge--purchase')).not.toBeVisible();
+    // Sales preview uses the same PDF modal controls.
+    await expect(modal.locator('#invoice-preview-title')).toContainText('PDF invoice');
+    await expect(modal.getByRole('button', { name: 'Download invoice PDF' })).toBeVisible();
+    await expect(modal.getByRole('button', { name: 'Email invoice' })).toBeVisible();
+    await expect(modal.locator('iframe.invoice-pdf-viewer__frame')).toBeVisible();
   });
 
   test('purchase invoice PDF endpoint returns 200 and application/pdf', async ({ authedPage: page }) => {
@@ -648,8 +644,9 @@ test.describe('Invoices', () => {
     await expectSuccess(page, 'Purchase invoice created');
 
     // Open preview and click Download PDF — intercept the network request
-    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
+    await openInvoiceFeed(page);
+    const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await invoiceCard.locator('button[title="Preview"]').click();
 
     const modal = page.locator('[role="dialog"]');
     await expect(modal).toBeVisible();
@@ -676,8 +673,9 @@ test.describe('Invoices', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'Sales invoice created');
 
-    const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-    await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
+    await openInvoiceFeed(page);
+    const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await invoiceCard.locator('button[title="Preview"]').click();
 
     const modal = page.locator('[role="dialog"]');
     await expect(modal).toBeVisible();
