@@ -11,15 +11,15 @@ def _money(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def _is_interstate_supply(company_gst: str | None, ledger_gst: str | None) -> bool:
-    if not company_gst or not ledger_gst or len(company_gst) < 2 or len(ledger_gst) < 2:
+def _is_interstate_supply(company_gst: str | None, buyer_gst: str | None) -> bool:
+    if not company_gst or not buyer_gst or len(company_gst) < 2 or len(buyer_gst) < 2:
         return False
-    return company_gst[:2] != ledger_gst[:2]
+    return company_gst[:2] != buyer_gst[:2]
 
 
 def up(conn) -> None:
     invoice_rows = conn.execute(text("""
-        SELECT id, company_gst, ledger_gst, cgst_amount, sgst_amount, igst_amount
+        SELECT id, company_gst, buyer_gst, cgst_amount, sgst_amount, igst_amount
         FROM invoices
         WHERE id IN (SELECT DISTINCT invoice_id FROM invoice_items)
         ORDER BY id
@@ -47,7 +47,7 @@ def up(conn) -> None:
         if not item_rows:
             continue
 
-        interstate_supply = _is_interstate_supply(invoice["company_gst"], invoice["ledger_gst"])
+        interstate_supply = _is_interstate_supply(invoice["company_gst"], invoice["buyer_gst"])
         item_tax_amounts = [_money(Decimal(str(item["tax_amount"] or 0))) for item in item_rows]
         total_item_tax = _money(sum(item_tax_amounts, Decimal("0")))
 
