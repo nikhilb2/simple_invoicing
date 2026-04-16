@@ -496,6 +496,61 @@ def _e(text: str | None) -> str:
     return escape(text or "")
 
 
+def _amount_in_words_indian(amount: float, currency_code: str | None = None) -> str:
+    """Convert a monetary amount to words using the Indian numbering system (crores/lakhs)."""
+    _ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven',
+             'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen',
+             'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
+    _TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+
+    def _two(n: int) -> str:
+        if n < 20:
+            return _ONES[n]
+        return _TENS[n // 10] + (' ' + _ONES[n % 10] if n % 10 else '')
+
+    def _three(n: int) -> str:
+        if n == 0:
+            return ''
+        if n < 100:
+            return _two(n)
+        return _ONES[n // 100] + ' Hundred' + (' ' + _two(n % 100) if n % 100 else '')
+
+    try:
+        amount = round(amount, 2)
+        rupees = int(amount)
+        paise = round((amount - rupees) * 100)
+        currency_label = 'Rupees' if not currency_code or currency_code == 'INR' else currency_code
+
+        if rupees == 0 and paise == 0:
+            return f'Zero {currency_label} Only'
+
+        parts: list[str] = []
+        n = rupees
+        crores = n // 10_000_000
+        n %= 10_000_000
+        lakhs = n // 100_000
+        n %= 100_000
+        thousands = n // 1000
+        remainder = n % 1000
+
+        if crores:
+            parts.append(_three(crores) + ' Crore')
+        if lakhs:
+            parts.append(_two(lakhs) + ' Lakh')
+        if thousands:
+            parts.append(_two(thousands) + ' Thousand')
+        if remainder:
+            parts.append(_three(remainder))
+
+        rupee_words = ' '.join(parts) if parts else 'Zero'
+        result = f'{rupee_words} {currency_label}'
+        if paise:
+            result += f' and {_two(paise)} Paise'
+        return result + ' Only'
+    except Exception:
+        return ''
+
+
 def _fmt_rate(value: float) -> str:
     return f"{value:.2f}".rstrip("0").rstrip(".")
 
@@ -770,6 +825,12 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     font-size: 8px;
     color: #9ca3af;
   }}
+  .invoice-amount-words {{
+    font-size: 8px;
+    font-style: italic;
+    color: #374151;
+    margin-top: 2px;
+  }}
 </style>
 </head>
 <body>
@@ -824,6 +885,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
       {round_off_html}
       <p class="eyebrow" style="margin-top: 10px;">Total due</p>
       <p class="invoice-sheet__total-value">{_fmt_currency(float(invoice.total_amount), currency)}</p>
+      <p class="invoice-amount-words">{_amount_in_words_indian(float(invoice.total_amount), currency)}</p>
       <p class="muted-text">Received by {_e(invoice.company_name) or 'Your company'}</p>
     </div>
   </section>
@@ -1052,6 +1114,12 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
     font-size: 8px;
     color: #9ca3af;
   }}
+  .invoice-amount-words {{
+    font-size: 8px;
+    font-style: italic;
+    color: #374151;
+    margin-top: 2px;
+  }}
 </style>
 </head>
 <body>
@@ -1116,6 +1184,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
       {round_off_html}
       <p class="eyebrow" style="margin-top: 10px;">Total due</p>
       <p class="invoice-sheet__total-value">{_fmt_currency(float(invoice.total_amount), currency)}</p>
+      <p class="invoice-amount-words">{_amount_in_words_indian(float(invoice.total_amount), currency)}</p>
       <p class="muted-text">Authorized by {_e(invoice.company_name) or 'Billing company'}</p>
     </div>
   </section>
