@@ -628,6 +628,10 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     for idx, item in enumerate(invoice.items or [], start=1):
         prod = product_map.get(item.product_id)
         product_name = _e(prod.name) if prod else f"Product #{item.product_id}"
+          item_description = _e(item.description)
+          product_cell_html = product_name
+          if item_description:
+              product_cell_html = f"{product_name}<br><span class=\"muted-text\">{item_description}</span>"
         sku = _e(prod.sku) if prod else "N/A"
         hsn = _e(item.hsn_sac or (prod.hsn_sac if prod else None) or "N/A")
         tax_row_cells = _build_pdf_tax_row_cells(item, currency, interstate_supply)
@@ -635,7 +639,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
         item_rows += f"""
         <tr>
           <td>{idx}</td>
-          <td>{product_name}</td>
+            <td>{product_cell_html}</td>
           <td>{sku}</td>
           <td>{hsn}</td>
           <td class="right">{item.quantity}</td>
