@@ -74,6 +74,52 @@ def _change_inventory_quantity(db: Session, product_id: int, quantity_delta: int
         raise HTTPException(status_code=400, detail=f"Insufficient inventory while {context}")
 
 
+def _assign_item_tax_split(
+    items: list[InvoiceItem],
+    *,
+    interstate_supply: bool,
+    invoice_cgst_amount: Decimal,
+    invoice_sgst_amount: Decimal,
+    invoice_igst_amount: Decimal,
+) -> None:
+    if not items:
+        return
+
+    if interstate_supply:
+        remaining_igst = _money(invoice_igst_amount)
+        for index, item in enumerate(items):
+            item_tax_amount = _money(Decimal(str(item.tax_amount or 0)))
+            is_last_item = index == len(items) - 1
+            item_igst_amount = remaining_igst if is_last_item else item_tax_amount
+            if not is_last_item:
+                remaining_igst = _money(remaining_igst - item_igst_amount)
+
+            item.cgst_amount = 0.0
+            item.sgst_amount = 0.0
+            item.igst_amount = float(item_igst_amount)
+        return
+
+    remaining_cgst = _money(invoice_cgst_amount)
+    remaining_sgst = _money(invoice_sgst_amount)
+
+    for index, item in enumerate(items):
+        item_tax_amount = _money(Decimal(str(item.tax_amount or 0)))
+        is_last_item = index == len(items) - 1
+
+        if is_last_item:
+            item_cgst_amount = remaining_cgst
+            item_sgst_amount = remaining_sgst
+        else:
+            item_cgst_amount = _money(item_tax_amount / Decimal("2"))
+            item_sgst_amount = _money(item_tax_amount - item_cgst_amount)
+            remaining_cgst = _money(remaining_cgst - item_cgst_amount)
+            remaining_sgst = _money(remaining_sgst - item_sgst_amount)
+
+        item.cgst_amount = float(item_cgst_amount)
+        item.sgst_amount = float(item_sgst_amount)
+        item.igst_amount = 0.0
+
+
 def _reverse_existing_invoice_inventory(db: Session, invoice: Invoice) -> None:
     for item in invoice.items:
         reverse_delta = item.quantity if invoice.voucher_type == "sales" else -item.quantity
@@ -217,6 +263,14 @@ def _apply_payload_to_invoice(
         invoice.cgst_amount = float(half_tax_total)
         invoice.sgst_amount = float(half_tax_total)
         invoice.igst_amount = 0.0
+
+    _assign_item_tax_split(
+        created_items,
+        interstate_supply=interstate_supply,
+        invoice_cgst_amount=Decimal(str(invoice.cgst_amount or 0)),
+        invoice_sgst_amount=Decimal(str(invoice.sgst_amount or 0)),
+        invoice_igst_amount=Decimal(str(invoice.igst_amount or 0)),
+    )
 
     invoice.total_tax_amount = float(tax_total)
     raw_total = _money(taxable_total + tax_total)
@@ -438,6 +492,53 @@ def _e(text: str | None) -> str:
     return escape(text or "")
 
 
+def _fmt_rate(value: float) -> str:
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def _build_pdf_tax_header_cells(interstate_supply: bool) -> str:
+    if interstate_supply:
+        return '<th class="right">IGST %</th><th class="right">IGST Amt</th><th class="right">Total Tax</th>'
+    return (
+        '<th class="right">SGST %</th>'
+        '<th class="right">SGST Amt</th>'
+        '<th class="right">CGST %</th>'
+        '<th class="right">CGST Amt</th>'
+        '<th class="right">Total Tax</th>'
+    )
+
+
+def _build_pdf_tax_row_cells(item: InvoiceItem, currency: str, interstate_supply: bool) -> str:
+    gst_rate = float(item.gst_rate or 0)
+    tax_amount = float(item.tax_amount or 0)
+
+    if interstate_supply:
+        igst_amount = float(item.igst_amount or 0)
+        if tax_amount > 0 and igst_amount == 0:
+            igst_amount = tax_amount
+        igst_rate = gst_rate if igst_amount > 0 else 0
+        return (
+            f'<td class="right">{_fmt_rate(igst_rate)}%</td>'
+        f'<td class="right">{_fmt_currency(igst_amount, currency)}</td>'
+            f'<td class="right">{_fmt_currency(tax_amount, currency)}</td>'
+        )
+
+    sgst_amount = float(item.sgst_amount or 0)
+    cgst_amount = float(item.cgst_amount or 0)
+    if tax_amount > 0 and sgst_amount == 0 and cgst_amount == 0:
+      cgst_amount = float(_money(Decimal(str(tax_amount)) / Decimal("2")))
+      sgst_amount = float(_money(Decimal(str(tax_amount)) - Decimal(str(cgst_amount))))
+
+    split_rate = gst_rate / 2 if (tax_amount > 0 or sgst_amount > 0 or cgst_amount > 0) else 0
+    return (
+        f'<td class="right">{_fmt_rate(split_rate)}%</td>'
+      f'<td class="right">{_fmt_currency(sgst_amount, currency)}</td>'
+        f'<td class="right">{_fmt_rate(split_rate)}%</td>'
+      f'<td class="right">{_fmt_currency(cgst_amount, currency)}</td>'
+        f'<td class="right">{_fmt_currency(tax_amount, currency)}</td>'
+    )
+
+
 def _build_pdf_tax_breakup_rows(invoice: Invoice, currency: str) -> str:
   cgst = float(invoice.cgst_amount or 0)
   sgst = float(invoice.sgst_amount or 0)
@@ -458,6 +559,8 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     currency = invoice.company_currency_code or "USD"
     inv_number = invoice.invoice_number or f"#{invoice.id}"
     inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else (invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A")
+    interstate_supply = _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
+    tax_header_cells = _build_pdf_tax_header_cells(interstate_supply)
 
     product_map = {p.id: p for p in products}
 
@@ -467,9 +570,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
         product_name = _e(prod.name) if prod else f"Product #{item.product_id}"
         sku = _e(prod.sku) if prod else "N/A"
         hsn = _e(item.hsn_sac or (prod.hsn_sac if prod else None) or "N/A")
-        gst_rate = float(item.gst_rate or 0)
-        taxable_amt = float(item.taxable_amount or (float(item.unit_price) * item.quantity))
-        tax_amt = float(item.tax_amount or (taxable_amt * gst_rate / 100))
+        tax_row_cells = _build_pdf_tax_row_cells(item, currency, interstate_supply)
 
         item_rows += f"""
         <tr>
@@ -479,8 +580,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
           <td>{hsn}</td>
           <td class="right">{item.quantity}</td>
           <td class="right">{_fmt_currency(float(item.unit_price), currency)}</td>
-          <td class="right">{gst_rate:.2f}%</td>
-          <td class="right">{_fmt_currency(tax_amt, currency)}</td>
+          {tax_row_cells}
           <td class="right">{_fmt_currency(float(item.line_total), currency)}</td>
         </tr>"""
 
@@ -701,8 +801,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
           <th>HSN/SAC</th>
           <th class="right">Qty</th>
           <th class="right">Unit Price</th>
-          <th class="right">GST %</th>
-          <th class="right">Tax</th>
+          {tax_header_cells}
           <th class="right">Amount</th>
         </tr>
       </thead>
@@ -738,6 +837,8 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
     voucher_label = "Sales" if invoice.voucher_type == "sales" else "Purchase"
     inv_number = invoice.invoice_number or f"#{invoice.id}"
     inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else (invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A")
+    interstate_supply = _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
+    tax_header_cells = _build_pdf_tax_header_cells(interstate_supply)
 
     product_map = {p.id: p for p in products}
 
@@ -748,9 +849,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
         product_name = _e(prod.name) if prod else f"Product #{item.product_id}"
         sku = _e(prod.sku) if prod else "N/A"
         hsn = _e(item.hsn_sac or (prod.hsn_sac if prod else None) or "N/A")
-        gst_rate = float(item.gst_rate or 0)
-        taxable_amt = float(item.taxable_amount or (float(item.unit_price) * item.quantity))
-        tax_amt = float(item.tax_amount or (taxable_amt * gst_rate / 100))
+        tax_row_cells = _build_pdf_tax_row_cells(item, currency, interstate_supply)
 
         item_rows += f"""
         <tr>
@@ -760,8 +859,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
           <td>{hsn}</td>
           <td class="right">{item.quantity}</td>
           <td class="right">{_fmt_currency(float(item.unit_price), currency)}</td>
-          <td class="right">{gst_rate:.2f}%</td>
-          <td class="right">{_fmt_currency(tax_amt, currency)}</td>
+          {tax_row_cells}
           <td class="right">{_fmt_currency(float(item.line_total), currency)}</td>
         </tr>"""
 
@@ -987,8 +1085,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
           <th>HSN/SAC</th>
           <th class="right">Qty</th>
           <th class="right">Unit Price</th>
-          <th class="right">GST %</th>
-          <th class="right">Tax</th>
+          {tax_header_cells}
           <th class="right">Amount</th>
         </tr>
       </thead>
