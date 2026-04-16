@@ -492,6 +492,40 @@ def _e(text: str | None) -> str:
     return escape(text or "")
 
 
+def _fmt_rate(value: float) -> str:
+  return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def _build_pdf_item_tax_breakup(item: InvoiceItem, currency: str, interstate_supply: bool) -> str:
+  gst_rate = float(item.gst_rate or 0)
+  tax_amount = float(item.tax_amount or 0)
+  cgst_amount = float(item.cgst_amount or 0)
+  sgst_amount = float(item.sgst_amount or 0)
+  igst_amount = float(item.igst_amount or 0)
+
+  if tax_amount > 0 and cgst_amount == 0 and sgst_amount == 0 and igst_amount == 0:
+    if interstate_supply:
+      igst_amount = tax_amount
+    else:
+      cgst_amount = float(_money(Decimal(str(tax_amount)) / Decimal("2")))
+      sgst_amount = float(_money(Decimal(str(tax_amount)) - Decimal(str(cgst_amount))))
+
+  if igst_amount > 0:
+    return (
+      f"IGST {_fmt_rate(gst_rate)}%<br>"
+      f"{_fmt_currency(igst_amount, currency)}"
+    )
+
+  if cgst_amount > 0 or sgst_amount > 0:
+    split_rate = gst_rate / 2
+    return (
+      f"CGST {_fmt_rate(split_rate)}%: {_fmt_currency(cgst_amount, currency)}<br>"
+      f"SGST {_fmt_rate(split_rate)}%: {_fmt_currency(sgst_amount, currency)}"
+    )
+
+  return f"GST {_fmt_rate(gst_rate)}%: {_fmt_currency(0, currency)}"
+
+
 def _build_pdf_tax_breakup_rows(invoice: Invoice, currency: str) -> str:
   cgst = float(invoice.cgst_amount or 0)
   sgst = float(invoice.sgst_amount or 0)
@@ -512,6 +546,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     currency = invoice.company_currency_code or "USD"
     inv_number = invoice.invoice_number or f"#{invoice.id}"
     inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else (invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A")
+    interstate_supply = _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
 
     product_map = {p.id: p for p in products}
 
@@ -522,8 +557,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
         sku = _e(prod.sku) if prod else "N/A"
         hsn = _e(item.hsn_sac or (prod.hsn_sac if prod else None) or "N/A")
         gst_rate = float(item.gst_rate or 0)
-        taxable_amt = float(item.taxable_amount or (float(item.unit_price) * item.quantity))
-        tax_amt = float(item.tax_amount or (taxable_amt * gst_rate / 100))
+        tax_breakup = _build_pdf_item_tax_breakup(item, currency, interstate_supply)
 
         item_rows += f"""
         <tr>
@@ -534,7 +568,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
           <td class="right">{item.quantity}</td>
           <td class="right">{_fmt_currency(float(item.unit_price), currency)}</td>
           <td class="right">{gst_rate:.2f}%</td>
-          <td class="right">{_fmt_currency(tax_amt, currency)}</td>
+          <td class="right invoice-sheet__tax-breakup">{tax_breakup}</td>
           <td class="right">{_fmt_currency(float(item.line_total), currency)}</td>
         </tr>"""
 
@@ -692,6 +726,9 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
   .invoice-sheet__table tbody td.right {{
     text-align: right;
   }}
+  .invoice-sheet__tax-breakup {{
+    line-height: 1.35;
+  }}
   .invoice-sheet__table tbody tr:last-child td {{
     border-bottom: 2px solid #d1d5db;
   }}
@@ -756,7 +793,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
           <th class="right">Qty</th>
           <th class="right">Unit Price</th>
           <th class="right">GST %</th>
-          <th class="right">Tax</th>
+          <th class="right">GST Split</th>
           <th class="right">Amount</th>
         </tr>
       </thead>
@@ -792,6 +829,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
     voucher_label = "Sales" if invoice.voucher_type == "sales" else "Purchase"
     inv_number = invoice.invoice_number or f"#{invoice.id}"
     inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else (invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A")
+    interstate_supply = _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
 
     product_map = {p.id: p for p in products}
 
@@ -803,8 +841,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
         sku = _e(prod.sku) if prod else "N/A"
         hsn = _e(item.hsn_sac or (prod.hsn_sac if prod else None) or "N/A")
         gst_rate = float(item.gst_rate or 0)
-        taxable_amt = float(item.taxable_amount or (float(item.unit_price) * item.quantity))
-        tax_amt = float(item.tax_amount or (taxable_amt * gst_rate / 100))
+        tax_breakup = _build_pdf_item_tax_breakup(item, currency, interstate_supply)
 
         item_rows += f"""
         <tr>
@@ -815,7 +852,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
           <td class="right">{item.quantity}</td>
           <td class="right">{_fmt_currency(float(item.unit_price), currency)}</td>
           <td class="right">{gst_rate:.2f}%</td>
-          <td class="right">{_fmt_currency(tax_amt, currency)}</td>
+          <td class="right invoice-sheet__tax-breakup">{tax_breakup}</td>
           <td class="right">{_fmt_currency(float(item.line_total), currency)}</td>
         </tr>"""
 
@@ -967,6 +1004,9 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
   .invoice-sheet__table tbody td.right {{
     text-align: right;
   }}
+  .invoice-sheet__tax-breakup {{
+    line-height: 1.35;
+  }}
   .invoice-sheet__table tbody tr:last-child td {{
     border-bottom: 2px solid #d1d5db;
   }}
@@ -1042,7 +1082,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
           <th class="right">Qty</th>
           <th class="right">Unit Price</th>
           <th class="right">GST %</th>
-          <th class="right">Tax</th>
+          <th class="right">GST Split</th>
           <th class="right">Amount</th>
         </tr>
       </thead>
