@@ -25,7 +25,7 @@ async function activateTestFY(page: import('@playwright/test').Page) {
     await expect(dialog).toBeVisible({ timeout: 5_000 });
     await dialog.locator('input[type="number"]').fill(String(TEST_FY_START_YEAR));
     await dialog.locator('button:has-text("Create")').click();
-    await expect(dialog).not.toBeVisible({ timeout: 10_000 });
+    await expect(dialog).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     // Reopen to activate
     await fyButton.click();
     await expect(listbox).toBeVisible({ timeout: 5_000 });
@@ -86,7 +86,7 @@ test.describe('FY Defaults — Day Book', () => {
       await expect(dialog).toBeVisible({ timeout: 5_000 });
       await dialog.locator('input[type="number"]').fill('2030');
       await dialog.locator('button:has-text("Create")').click();
-      await expect(dialog).not.toBeVisible({ timeout: 10_000 });
+      await expect(dialog).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
       await fyButton.click();
       await expect(listbox).toBeVisible({ timeout: 5_000 });
     }
@@ -120,20 +120,20 @@ test.describe('FY Defaults — Ledger Statement', () => {
     const ledgerName = `FYDefaultLedger-${Date.now().toString(36)}`;
     await page.click('[href="/ledgers"]');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);
     await page.fill('#ledger-address', '1 FY Default Rd');
     await page.fill('#ledger-gst', uniqueGstin());
     await page.fill('#ledger-phone', '+91 9999999999');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     await page.fill('#ledger-search', ledgerName);
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: ledgerName });
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await row.locator('[aria-label^="View ledger"]').click();
-    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   }
 
   test('period defaults to active FY on load', async ({ authedPage: page }) => {
@@ -176,7 +176,7 @@ test.describe('FY Defaults — Ledger Statement', () => {
       await expect(dialog).toBeVisible({ timeout: 5_000 });
       await dialog.locator('input[type="number"]').fill('2030');
       await dialog.locator('button:has-text("Create")').click();
-      await expect(dialog).not.toBeVisible({ timeout: 10_000 });
+      await expect(dialog).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
       await fyButton.click();
       await expect(listbox).toBeVisible({ timeout: 5_000 });
     }

@@ -22,7 +22,7 @@ test.describe('Ledgers CRUD', () => {
     await page.click('button:has-text("Create ledger")');
 
     // Should redirect back to list with success message
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger created');
     await page.fill('#ledger-search', name);
     await page.waitForTimeout(500);
@@ -45,7 +45,7 @@ test.describe('Ledgers CRUD', () => {
     await page.fill('#ledger-ifsc', 'HDFC0001234');
     await page.click('button:has-text("Create ledger")');
 
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger created');
     await page.fill('#ledger-search', name);
     await page.waitForTimeout(500);
@@ -64,33 +64,33 @@ test.describe('Ledgers CRUD', () => {
     await page.fill('#ledger-opening-balance', '250');
     await page.click('button:has-text("Create ledger")');
 
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger created');
 
     await page.fill('#ledger-search', name);
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: name });
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await row.locator('[aria-label^="Edit ledger"]').click();
 
-    await expect(page.locator('h1')).toContainText('Edit ledger', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Edit ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expect(page.locator('#ledger-opening-balance')).toHaveValue('250');
     await page.fill('#ledger-opening-balance', '-125');
     await page.click('button:has-text("Update ledger")');
 
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger updated');
 
     await page.fill('#ledger-search', name);
     await page.waitForTimeout(500);
     const updatedRow = page.locator('.table-row', { hasText: name });
-    await expect(updatedRow).toBeVisible({ timeout: 10_000 });
+    await expect(updatedRow).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await updatedRow.locator('[aria-label^="View ledger"]').click();
 
-    await expect(page.locator('h1')).toContainText(name, { timeout: 10_000 });
-    await expect(page.locator('.invoice-row', { hasText: 'Opening Balance' }).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText(name, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+    await expect(page.locator('.invoice-row', { hasText: 'Opening Balance' }).first()).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.click('button:has-text("Edit Ledger")');
-    await expect(page.locator('h1')).toContainText('Edit ledger', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Edit ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expect(page.locator('#ledger-opening-balance')).toHaveValue('-125');
   });
 
@@ -105,23 +105,23 @@ test.describe('Ledgers CRUD', () => {
     await page.fill('#ledger-gst', uniqueGstin());
     await page.fill('#ledger-phone', '+91 1111111111');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger created');
 
     // Search and click Edit
     await page.fill('#ledger-search', name);
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: name });
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await row.locator('[aria-label^="Edit ledger"]').click();
-    await expect(page.locator('h1')).toContainText('Edit ledger', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Edit ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Update the name
     const updatedName = `${name}-Updated`;
     await page.fill('#ledger-name', updatedName);
     await page.click('button:has-text("Update ledger")');
 
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger updated');
     await page.fill('#ledger-search', updatedName);
     await page.waitForTimeout(500);
@@ -139,17 +139,17 @@ test.describe('Ledgers CRUD', () => {
     await page.fill('#ledger-gst', uniqueGstin());
     await page.fill('#ledger-phone', '+91 2222222222');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger created');
 
     // Search, then delete — click Delete row button, then confirm in the custom dialog
     await page.fill('#ledger-search', name);
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: name });
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await row.locator('[aria-label^="Delete ledger"]').click();
     await page.locator('.modal-overlay button:has-text("Delete")').click();
-    await expect(page.locator('.toast--success')).toContainText('Ledger deleted', { timeout: 10_000 });
+    await expect(page.locator('.toast--success')).toContainText('Ledger deleted', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expect(page.locator('.table-row', { hasText: name })).not.toBeVisible();
   });
 
@@ -164,33 +164,33 @@ test.describe('Ledgers CRUD', () => {
     await page.fill('#ledger-gst', uniqueGstin());
     await page.fill('#ledger-phone', '+91 7777777777');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger created');
 
     // Search and click View
     await page.fill('#ledger-search', name);
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: name });
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await row.locator('[aria-label^="View ledger"]').click();
 
     // Should navigate to ledger view page
-    await expect(page.locator('h1')).toContainText(name, { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText(name, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expect(page.locator('#statement-from')).toBeVisible();
     await expect(page.locator('#statement-to')).toBeVisible();
 
     // Back to ledgers
     await page.click('[aria-label="Back to ledgers"]');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   });
 
   test('cancel on create page returns to list', async ({ authedPage: page }) => {
     await page.click('[href="/ledgers"]');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     await page.click('button:has-text("Cancel")');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   });
 
   test('searches ledgers by name', async ({ authedPage: page }) => {
@@ -207,7 +207,7 @@ test.describe('Ledgers CRUD', () => {
     await page.fill('#ledger-gst', uniqueGstin());
     await page.fill('#ledger-phone', '+91 1010101010');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger created');
 
     // Create second ledger
@@ -217,7 +217,7 @@ test.describe('Ledgers CRUD', () => {
     await page.fill('#ledger-gst', uniqueGstin());
     await page.fill('#ledger-phone', '+91 2020202020');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger created');
 
     // Search for Alpha — should be visible

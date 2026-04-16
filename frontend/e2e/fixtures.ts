@@ -1,8 +1,8 @@
 import { test as base, expect, Page } from '@playwright/test';
 
 /** Default admin credentials – override via env vars if needed. */
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'admin@simple.dev';
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'Admin@123';
+const ADMIN_EMAIL = (globalThis as any).process?.env?.E2E_ADMIN_EMAIL || 'admin@simple.dev';
+const ADMIN_PASSWORD = (globalThis as any).process?.env?.E2E_ADMIN_PASSWORD || 'Admin@123';
 
 /**
  * Custom fixture that provides an already-authenticated page.
@@ -15,7 +15,7 @@ export const test = base.extend<{ authedPage: Page }>({
     await page.fill('#email', ADMIN_EMAIL);
     await page.fill('#password', ADMIN_PASSWORD);
     await page.click('button:has-text("Open dashboard")');
-    await expect(page).toHaveURL('/', { timeout: 10_000 });
+    await expect(page).toHaveURL('/', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await use(page);
   },
 });
@@ -39,15 +39,15 @@ export async function selectComboboxOption(page: Page, inputId: string, searchTe
 
 /** Helper: wait for a success toast to appear and contain text. */
 export async function expectSuccess(page: Page, substring: string) {
-  const banner = page.locator('.toast--success');
-  await expect(banner).toBeVisible({ timeout: 10_000 });
+  const banner = page.locator('.toast--success').filter({ hasText: substring }).last();
+  await expect(banner).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   await expect(banner).toContainText(substring);
 }
 
 /** Helper: wait for an error toast to appear. */
 export async function expectError(page: Page, substring?: string) {
   const banner = page.locator('.toast--error');
-  await expect(banner).toBeVisible({ timeout: 10_000 });
+  await expect(banner).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   if (substring) {
     await expect(banner).toContainText(substring);
   }

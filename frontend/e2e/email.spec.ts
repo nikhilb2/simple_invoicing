@@ -1,6 +1,7 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption } from './fixtures';
 
 const LEDGER_EMAIL = 'buyer@example.com';
+const EXPECT_TIMEOUT_MS = Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '2000');
 
 /**
  * Creates a ledger with an email address and navigates to its view page.
@@ -12,7 +13,7 @@ async function createLedgerAndNavigateToView(
 ) {
   await page.click('[href="/ledgers"]');
   await page.click('button:has-text("Create ledger")');
-  await expect(page.locator('h1')).toContainText('Create ledger', { timeout: 10_000 });
+  await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
   await page.fill('#ledger-name', ledgerName);
   await page.fill('#ledger-address', '1 Email Test Road');
@@ -20,16 +21,16 @@ async function createLedgerAndNavigateToView(
   await page.fill('#ledger-phone', '+91 9999999999');
   await page.fill('#ledger-email', LEDGER_EMAIL);
   await page.click('button:has-text("Create ledger")');
-  await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+  await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   await expectSuccess(page, 'Ledger created');
 
   // Navigate to the ledger view page
   await page.fill('#ledger-search', ledgerName);
   await page.waitForTimeout(500);
   const row = page.locator('.table-row', { hasText: ledgerName });
-  await expect(row).toBeVisible({ timeout: 10_000 });
+  await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   await row.locator('[aria-label^="View ledger"]').click();
-  await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
+  await expect(page.locator('h1')).toContainText(ledgerName, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 }
 
 test.describe('Send Email Modal', () => {
@@ -42,7 +43,7 @@ test.describe('Send Email Modal', () => {
       await page.click('[role="menuitem"][aria-label="Send Reminder"]');
 
       const modal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
-      await expect(modal).toBeVisible({ timeout: 5_000 });
+      await expect(modal).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
 
       // Title
       await expect(modal.locator('#send-email-title')).toContainText('Send Payment Reminder');
@@ -68,10 +69,10 @@ test.describe('Send Email Modal', () => {
       await page.click('[aria-label="More ledger actions"]');
       await page.click('[role="menuitem"][aria-label="Send Reminder"]');
       const modal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
-      await expect(modal).toBeVisible({ timeout: 5_000 });
+      await expect(modal).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
 
       await modal.locator('button:has-text("Cancel")').click();
-      await expect(modal).not.toBeVisible({ timeout: 5_000 });
+      await expect(modal).not.toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
     });
 
     test('Escape key closes the modal', async ({ authedPage: page }) => {
@@ -81,10 +82,10 @@ test.describe('Send Email Modal', () => {
       await page.click('[aria-label="More ledger actions"]');
       await page.click('[role="menuitem"][aria-label="Send Reminder"]');
       const modal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
-      await expect(modal).toBeVisible({ timeout: 5_000 });
+      await expect(modal).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
 
       await page.keyboard.press('Escape');
-      await expect(modal).not.toBeVisible({ timeout: 5_000 });
+      await expect(modal).not.toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
     });
 
     test('Send button is disabled when To field is cleared', async ({ authedPage: page }) => {
@@ -94,7 +95,7 @@ test.describe('Send Email Modal', () => {
       await page.click('[aria-label="More ledger actions"]');
       await page.click('[role="menuitem"][aria-label="Send Reminder"]');
       const modal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
-      await expect(modal).toBeVisible({ timeout: 5_000 });
+      await expect(modal).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
 
       // Clear the To field
       await modal.locator('#email-to').clear();
@@ -108,7 +109,7 @@ test.describe('Send Email Modal', () => {
       await page.click('[aria-label="More ledger actions"]');
       await page.click('[role="menuitem"][aria-label="Send Reminder"]');
       const modal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
-      await expect(modal).toBeVisible({ timeout: 5_000 });
+      await expect(modal).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
 
       // To is pre-filled, so Send should be enabled
       await expect(modal.locator('button:has-text("Send Email")')).toBeEnabled();
@@ -121,7 +122,7 @@ test.describe('Send Email Modal', () => {
       await page.click('[aria-label="More ledger actions"]');
       await page.click('[role="menuitem"][aria-label="Send Reminder"]');
       const modal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
-      await expect(modal).toBeVisible({ timeout: 5_000 });
+      await expect(modal).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
 
       // Overwrite To
       await modal.locator('#email-to').fill('other@example.com');
@@ -158,18 +159,8 @@ test.describe('Send Email Modal', () => {
 
       // Add inventory
       await page.click('[href="/inventory"]');
-      await page.waitForTimeout(500);
-      const inventorySelect = page.locator('#inventory-product');
-      const invOptions = inventorySelect.locator('option');
-      const invCount = await invOptions.count();
-      for (let i = 0; i < invCount; i++) {
-        const text = await invOptions.nth(i).textContent();
-        if (text?.includes(sku)) {
-          const val = (await invOptions.nth(i).getAttribute('value')) || '';
-          await inventorySelect.selectOption(val);
-          break;
-        }
-      }
+      await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+      await selectComboboxOption(page, 'inventory-product', sku);
       await page.fill('#inventory-quantity', '20');
       await page.click('button:has-text("Apply adjustment")');
       await expectSuccess(page, 'Inventory updated');
@@ -177,7 +168,7 @@ test.describe('Send Email Modal', () => {
       // Create ledger with email
       await page.click('[href="/ledgers"]');
       await page.click('button:has-text("Create ledger")');
-      await expect(page.locator('h1')).toContainText('Create ledger', { timeout: 10_000 });
+      await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
       await page.fill('#ledger-name', ledgerName);
       await page.fill('#ledger-address', '99 Invoice Email Rd');
       await page.fill('#ledger-gst', uniqueGstin());
@@ -188,42 +179,26 @@ test.describe('Send Email Modal', () => {
 
       // Create invoice
       await page.click('[href="/invoices"]');
-      await page.waitForTimeout(500);
+      await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
       await page.selectOption('#invoice-voucher-type', 'sales');
-
-      const ledgerSelect = page.locator('#invoice-ledger');
-      const ledgerOptions = ledgerSelect.locator('option');
-      const ledgerCount = await ledgerOptions.count();
-      for (let i = 0; i < ledgerCount; i++) {
-        const text = await ledgerOptions.nth(i).textContent();
-        if (text?.includes(ledgerName)) {
-          const val = (await ledgerOptions.nth(i).getAttribute('value')) || '';
-          await ledgerSelect.selectOption(val);
-          break;
-        }
-      }
-      const productSelect = page.locator('[id^="invoice-product-"]').first();
-      const prodOptions = productSelect.locator('option');
-      const prodCount = await prodOptions.count();
-      for (let i = 0; i < prodCount; i++) {
-        const text = await prodOptions.nth(i).textContent();
-        if (text?.includes(sku)) {
-          const val = (await prodOptions.nth(i).getAttribute('value')) || '';
-          await productSelect.selectOption(val);
-          break;
-        }
-      }
+      await selectComboboxOption(page, 'invoice-ledger', ledgerName);
+      const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+      await selectComboboxOption(page, productInputId, sku);
       await page.locator('[id^="invoice-quantity-"]').first().fill('1');
       await page.click('button:has-text("Create invoice")');
       await expectSuccess(page, 'invoice created');
 
-      // Open preview of the first invoice matching the ledger
-      const invoiceRow = page.locator('.invoice-row', { hasText: ledgerName }).first();
-      await expect(invoiceRow).toBeVisible({ timeout: 10_000 });
-      await invoiceRow.locator('[aria-label^="Preview invoice"]').click();
+      // Open preview from the invoice feed view
+      await page.goto('/invoices-view');
+      await expect(page.locator('h1')).toContainText('Invoice Feed', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+      await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Search all FY' }).locator('input').check();
+      await page.getByRole('button', { name: 'Card' }).click();
+      const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+      await expect(invoiceCard).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+      await invoiceCard.locator('button[title="Preview"]').click();
 
       const preview = page.locator('.modal-panel--invoice-preview');
-      await expect(preview).toBeVisible({ timeout: 5_000 });
+      await expect(preview).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
 
       return { preview, ledgerName };
     }
@@ -234,7 +209,7 @@ test.describe('Send Email Modal', () => {
       await preview.locator('button:has-text("Email Invoice")').click();
 
       const emailModal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
-      await expect(emailModal).toBeVisible({ timeout: 5_000 });
+      await expect(emailModal).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
       await expect(emailModal.locator('#send-email-title')).toContainText('Email Invoice');
 
       // Subject contains "Invoice"
@@ -247,10 +222,10 @@ test.describe('Send Email Modal', () => {
 
       await preview.locator('button:has-text("Email Invoice")').click();
       const emailModal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
-      await expect(emailModal).toBeVisible({ timeout: 5_000 });
+      await expect(emailModal).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
 
       await emailModal.locator('button:has-text("Cancel")').click();
-      await expect(emailModal).not.toBeVisible({ timeout: 5_000 });
+      await expect(emailModal).not.toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
 
       // Invoice preview should still be visible
       await expect(preview).toBeVisible();
@@ -273,18 +248,8 @@ test.describe('Send Email Modal', () => {
 
       // Add inventory
       await page.click('[href="/inventory"]');
-      await page.waitForTimeout(500);
-      const inventorySelect = page.locator('#inventory-product');
-      const invOptions = inventorySelect.locator('option');
-      const invCount = await invOptions.count();
-      for (let i = 0; i < invCount; i++) {
-        const text = await invOptions.nth(i).textContent();
-        if (text?.includes(sku)) {
-          const val = (await invOptions.nth(i).getAttribute('value')) || '';
-          await inventorySelect.selectOption(val);
-          break;
-        }
-      }
+      await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+      await selectComboboxOption(page, 'inventory-product', sku);
       await page.fill('#inventory-quantity', '10');
       await page.click('button:has-text("Apply adjustment")');
       await expectSuccess(page, 'Inventory updated');
@@ -292,7 +257,7 @@ test.describe('Send Email Modal', () => {
       // Create ledger with email
       await page.click('[href="/ledgers"]');
       await page.click('button:has-text("Create ledger")');
-      await expect(page.locator('h1')).toContainText('Create ledger', { timeout: 10_000 });
+      await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
       await page.fill('#ledger-name', ledgerName);
       await page.fill('#ledger-address', '55 Statement Rd');
       await page.fill('#ledger-gst', uniqueGstin());
@@ -303,31 +268,11 @@ test.describe('Send Email Modal', () => {
 
       // Create an invoice so the statement has entries
       await page.click('[href="/invoices"]');
-      await page.waitForTimeout(500);
+      await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
       await page.selectOption('#invoice-voucher-type', 'sales');
-
-      const ledgerSelect = page.locator('#invoice-ledger');
-      const ledgerOptions = ledgerSelect.locator('option');
-      const ledgerCount = await ledgerOptions.count();
-      for (let i = 0; i < ledgerCount; i++) {
-        const text = await ledgerOptions.nth(i).textContent();
-        if (text?.includes(ledgerName)) {
-          const val = (await ledgerOptions.nth(i).getAttribute('value')) || '';
-          await ledgerSelect.selectOption(val);
-          break;
-        }
-      }
-      const productSelect = page.locator('[id^="invoice-product-"]').first();
-      const prodOptions = productSelect.locator('option');
-      const prodCount = await prodOptions.count();
-      for (let i = 0; i < prodCount; i++) {
-        const text = await prodOptions.nth(i).textContent();
-        if (text?.includes(sku)) {
-          const val = (await prodOptions.nth(i).getAttribute('value')) || '';
-          await productSelect.selectOption(val);
-          break;
-        }
-      }
+      await selectComboboxOption(page, 'invoice-ledger', ledgerName);
+      const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+      await selectComboboxOption(page, productInputId, sku);
       await page.locator('[id^="invoice-quantity-"]').first().fill('1');
       await page.click('button:has-text("Create invoice")');
       await expectSuccess(page, 'invoice created');
@@ -338,17 +283,21 @@ test.describe('Send Email Modal', () => {
       await page.fill('#ledger-search', ledgerName);
       await page.waitForTimeout(500);
       const row = page.locator('.table-row', { hasText: ledgerName });
-      await expect(row).toBeVisible({ timeout: 10_000 });
+      await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
       await row.locator('[aria-label^="View ledger"]').click();
-      await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
+      await expect(page.locator('h1')).toContainText(ledgerName, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
-      // Wait for statement to load with today's date range (default)
-      await page.waitForTimeout(1_000);
+      // Ensure the selected period definitely includes today and wait for rows.
+      const today = new Date();
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      await page.locator('#statement-from').fill(startOfMonth.toISOString().split('T')[0]);
+      await page.locator('#statement-to').fill(today.toISOString().split('T')[0]);
+      await expect(page.locator('.invoice-row').filter({ hasText: 'Sales' }).first()).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
       // Open statement preview — button only shows when entries exist
       await page.click('button:has-text("Preview / PDF")');
       const statementPreview = page.locator('.modal-panel--invoice-preview');
-      await expect(statementPreview).toBeVisible({ timeout: 5_000 });
+      await expect(statementPreview).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
 
       return statementPreview;
     }
@@ -359,7 +308,7 @@ test.describe('Send Email Modal', () => {
       await statementPreview.locator('button:has-text("Email Statement")').click();
 
       const emailModal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
-      await expect(emailModal).toBeVisible({ timeout: 5_000 });
+      await expect(emailModal).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
       await expect(emailModal.locator('#send-email-title')).toContainText('Email Statement');
 
       // Subject contains "Statement"
@@ -375,10 +324,10 @@ test.describe('Send Email Modal', () => {
 
       await statementPreview.locator('button:has-text("Email Statement")').click();
       const emailModal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
-      await expect(emailModal).toBeVisible({ timeout: 5_000 });
+      await expect(emailModal).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
 
       await emailModal.locator('button:has-text("Cancel")').click();
-      await expect(emailModal).not.toBeVisible({ timeout: 5_000 });
+      await expect(emailModal).not.toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
 
       // Statement preview should still be visible
       await expect(statementPreview).toBeVisible();

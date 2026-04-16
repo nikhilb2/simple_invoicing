@@ -15,7 +15,7 @@ test.describe('Authentication', () => {
     await page.fill('#password', 'WrongPassword');
     await page.click('button:has-text("Open dashboard")');
     await expect(page.locator('.toast--error')).toBeVisible({
-      timeout: 10_000,
+      timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000'),
     });
     // Should stay on the login page
     await expect(page).toHaveURL(/\/login/);
@@ -26,7 +26,7 @@ test.describe('Authentication', () => {
     await page.fill('#email', 'admin@simple.dev');
     await page.fill('#password', 'Admin@123');
     await page.click('button:has-text("Open dashboard")');
-    await expect(page).toHaveURL('/', { timeout: 10_000 });
+    await expect(page).toHaveURL('/', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expect(page.locator('h1')).toContainText('Operations dashboard');
   });
 
@@ -37,12 +37,12 @@ test.describe('Authentication', () => {
     await page.click('button:has-text("Open dashboard")');
     // Button should briefly show "Signing in..."
     // We just confirm the page eventually loads
-    await expect(page).toHaveURL('/', { timeout: 10_000 });
+    await expect(page).toHaveURL('/', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   });
 
   test('redirects unauthenticated users to /login', async ({ page }) => {
     await page.goto('/products');
-    await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
+    await expect(page).toHaveURL(/\/login/, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   });
 
   test('logout redirects to login page', async ({ page }) => {
@@ -51,10 +51,10 @@ test.describe('Authentication', () => {
     await page.fill('#email', 'admin@simple.dev');
     await page.fill('#password', 'Admin@123');
     await page.click('button:has-text("Open dashboard")');
-    await expect(page).toHaveURL('/', { timeout: 10_000 });
+    await expect(page).toHaveURL('/', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Now logout
     await page.click('button:has-text("Logout")');
-    await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
+    await expect(page).toHaveURL(/\/login/, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   });
 });

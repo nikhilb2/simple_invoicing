@@ -28,7 +28,7 @@ async function activateTestFY(page: import('@playwright/test').Page) {
     await expect(dialog).toBeVisible({ timeout: 5_000 });
     await dialog.locator('input[type="number"]').fill(String(TEST_FY_START_YEAR));
     await dialog.locator('button:has-text("Create")').click();
-    await expect(dialog).not.toBeVisible({ timeout: 10_000 });
+    await expect(dialog).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     // Reopen dropdown to activate
     await fyButton.click();
     await expect(listbox).toBeVisible({ timeout: 5_000 });
@@ -95,21 +95,21 @@ test.describe('FY Date Warning — CreateInvoiceModal (LedgerView)', () => {
     const ledgerName = `FYWarnInv-${Date.now().toString(36)}`;
     await page.click('[href="/ledgers"]');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);
     await page.fill('#ledger-address', '1 FY Warn Ln');
     await page.fill('#ledger-gst', uniqueGstin());
     await page.fill('#ledger-phone', '+91 2222222222');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger created');
 
     await page.fill('#ledger-search', ledgerName);
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: ledgerName });
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await row.locator('[aria-label^="View ledger"]').click();
-    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   }
 
   test('shows warning when invoice date is outside active FY', async ({ authedPage: page }) => {
@@ -154,21 +154,21 @@ test.describe('FY Date Warning — Payment form (LedgerView)', () => {
     const ledgerName = `FYWarnPay-${Date.now().toString(36)}`;
     await page.click('[href="/ledgers"]');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);
     await page.fill('#ledger-address', '2 FY Pay Ave');
     await page.fill('#ledger-gst', uniqueGstin());
     await page.fill('#ledger-phone', '+91 5555555555');
     await page.click('button:has-text("Create ledger")');
-    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expectSuccess(page, 'Ledger created');
 
     await page.fill('#ledger-search', ledgerName);
     await page.waitForTimeout(500);
     const row = page.locator('.table-row', { hasText: ledgerName });
-    await expect(row).toBeVisible({ timeout: 10_000 });
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await row.locator('[aria-label^="View ledger"]').click();
-    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: 10_000 });
+    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     await page.click('button:has-text("Record Receipt / Payment")');
     const modal = page.locator('.modal-overlay');

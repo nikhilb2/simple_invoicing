@@ -13,7 +13,7 @@ test.describe('Dashboard', () => {
 
   test('shows "Backend synced" chip', async ({ authedPage: page }) => {
     await expect(page.locator('.status-chip').first()).toContainText('Backend synced', {
-      timeout: 10_000,
+      timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000'),
     });
   });
 
