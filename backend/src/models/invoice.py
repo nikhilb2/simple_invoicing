@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, ForeignKey, DateTime, Numeric, String
+from sqlalchemy import Boolean, Column, Integer, ForeignKey, DateTime, Numeric, String, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.db.base import Base
@@ -65,5 +65,6 @@ class InvoiceItem(Base):
     sgst_amount = Column(Numeric(10, 2), nullable=False, default=0)
     igst_amount = Column(Numeric(10, 2), nullable=False, default=0)
     line_total = Column(Numeric(10, 2), nullable=False)
+    description = Column(Text, nullable=True)
 
     invoice = relationship("Invoice", back_populates="items")

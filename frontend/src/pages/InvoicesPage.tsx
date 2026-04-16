@@ -27,6 +27,7 @@ type InvoiceFormItem = {
   productId: string;
   quantity: string;
   unit_price: string;
+  description: string;
 };
 
 function createItem(id: number, productId = '', unitPrice = ''): InvoiceFormItem {
@@ -35,6 +36,7 @@ function createItem(id: number, productId = '', unitPrice = ''): InvoiceFormItem
     productId,
     quantity: '1',
     unit_price: unitPrice,
+    description: '',
   };
 }
 
@@ -227,7 +229,7 @@ export default function InvoicesPage() {
     setItems((current) => (current.length === 1 ? current : current.filter((item) => item.id !== id)));
   }
 
-  function updateItem(id: number, key: 'productId' | 'quantity' | 'unit_price', value: string) {
+  function updateItem(id: number, key: 'productId' | 'quantity' | 'unit_price' | 'description', value: string) {
     setItems((current) => current.map((item) => (item.id === id ? { ...item, [key]: value } : item)));
   }
 
@@ -271,6 +273,7 @@ export default function InvoicesPage() {
       productId: String(line.product_id),
       quantity: String(line.quantity),
       unit_price: String(line.unit_price),
+      description: line.description ?? '',
     }));
 
     setItems(nextItems);
@@ -325,6 +328,7 @@ export default function InvoicesPage() {
           product_id: Number(item.productId),
           quantity: Number(item.quantity),
           unit_price: item.unit_price ? Number(item.unit_price) : undefined,
+          description: item.description || undefined,
         })),
       };
 
@@ -817,6 +821,17 @@ export default function InvoicesPage() {
                       <button type="button" className="button button--danger" onClick={() => removeItem(item.id)} title={`Remove line item ${index + 1}`} aria-label={`Remove line item ${index + 1}`}>
                         Remove
                       </button>
+                      <div className="field" style={{ gridColumn: '1 / -1' }}>
+                        <label htmlFor={`invoice-description-${item.id}`}>Description (optional)</label>
+                        <textarea
+                          id={`invoice-description-${item.id}`}
+                          className="input"
+                          rows={2}
+                          value={item.description}
+                          onChange={(event) => updateItem(item.id, 'description', event.target.value)}
+                          placeholder="Serial number, batch code, or item notes"
+                        />
+                      </div>
                     </div>
                   );
                 })}

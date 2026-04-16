@@ -8,6 +8,7 @@ class InvoiceItemCreate(BaseModel):
     product_id: int
     quantity: int
     unit_price: float | None = None
+    description: str | None = None
 
 
 class InvoiceCreate(BaseModel):
@@ -34,6 +35,7 @@ class InvoiceItemOut(BaseModel):
     sgst_amount: float
     igst_amount: float
     line_total: float
+    description: str | None = None
 
     class Config:
         from_attributes = True

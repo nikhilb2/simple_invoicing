@@ -13,10 +13,11 @@ type InvoiceFormItem = {
   productId: string;
   quantity: string;
   unit_price: string;
+  description: string;
 };
 
 function createItem(id: number, productId = '', unitPrice = ''): InvoiceFormItem {
-  return { id, productId, quantity: '1', unit_price: unitPrice };
+  return { id, productId, quantity: '1', unit_price: unitPrice, description: '' };
 }
 
 type CreateInvoiceModalProps = {
@@ -103,7 +104,7 @@ export default function CreateInvoiceModal({
     setItems((c) => (c.length === 1 ? c : c.filter((i) => i.id !== id)));
   }
 
-  function updateItem(id: number, key: 'productId' | 'quantity' | 'unit_price', value: string) {
+  function updateItem(id: number, key: 'productId' | 'quantity' | 'unit_price' | 'description', value: string) {
     setItems((c) => c.map((i) => (i.id === id ? { ...i, [key]: value } : i)));
   }
 
@@ -126,6 +127,7 @@ export default function CreateInvoiceModal({
           product_id: Number(item.productId),
           quantity: Number(item.quantity),
           unit_price: item.unit_price ? Number(item.unit_price) : undefined,
+          description: item.description || undefined,
         })),
       };
       const res = await api.post<Invoice>('/invoices/', payload);
@@ -273,6 +275,17 @@ export default function CreateInvoiceModal({
                       </div>
                     </div>
                     <button type="button" className="button button--danger" onClick={() => removeItem(item.id)} title={`Remove line item ${index + 1}`} aria-label={`Remove line item ${index + 1}`}>Remove</button>
+                      <div className="field" style={{ gridColumn: '1 / -1' }}>
+                        <label htmlFor={`modal-inv-description-${item.id}`}>Description (optional)</label>
+                        <textarea
+                          id={`modal-inv-description-${item.id}`}
+                          className="input"
+                          rows={2}
+                          value={item.description}
+                          onChange={(e) => updateItem(item.id, 'description', e.target.value)}
+                          placeholder="Serial number, batch code, or item notes"
+                        />
+                      </div>
                   </div>
                 );
               })}
