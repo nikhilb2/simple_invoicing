@@ -14,7 +14,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
 
-from src.api.routes.invoices import _apply_payload_to_invoice
+from src.api.routes.invoices import _apply_payload_to_invoice, _build_invoice_html
 from src.db.base import Base
 from src.models.buyer import Buyer
 from src.models.company import CompanyProfile
@@ -43,7 +43,7 @@ def db_session():
         Base.metadata.drop_all(bind=engine)
 
 
-def _seed_common(db_session):
+def _seed_common(db_session, ledger_gst: str = "07ABCDE1234F1Z5"):
     user = User(
         email="admin@example.com",
         full_name="Admin",
@@ -53,7 +53,7 @@ def _seed_common(db_session):
     ledger = Buyer(
         name="Test Ledger",
         address="Some Address",
-        gst="07ABCDE1234F1Z5",
+        gst=ledger_gst,
         phone_number="9999999999",
     )
     company = CompanyProfile(
@@ -124,7 +124,17 @@ def test_intrastate_odd_paise_total_tax_is_adjusted_and_split_equally(db_session
 
     assert len(invoice.items) == 1
     assert float(invoice.items[0].tax_amount) == pytest.approx(18.02)
+    assert float(invoice.items[0].cgst_amount) == pytest.approx(9.01)
+    assert float(invoice.items[0].sgst_amount) == pytest.approx(9.01)
+    assert float(invoice.items[0].igst_amount) == pytest.approx(0)
     assert float(invoice.items[0].line_total) == pytest.approx(118.05)
+
+    html = _build_invoice_html(invoice, [product])
+    assert "SGST %</th>" in html
+    assert "CGST %</th>" in html
+    assert "Total Tax</th>" in html
+    assert "IGST %</th>" not in html
+    assert "GST Split" not in html
 
 
 def test_intrastate_three_line_case_keeps_cgst_sgst_equal(db_session):
@@ -165,3 +175,50 @@ def test_intrastate_three_line_case_keeps_cgst_sgst_equal(db_session):
     assert float(invoice.items[0].tax_amount) == pytest.approx(45.76)
     assert float(invoice.items[1].tax_amount) == pytest.approx(442.37)
     assert float(invoice.items[2].tax_amount) == pytest.approx(91.53)
+    assert float(invoice.items[0].cgst_amount) == pytest.approx(22.88)
+    assert float(invoice.items[0].sgst_amount) == pytest.approx(22.88)
+    assert float(invoice.items[1].cgst_amount) == pytest.approx(221.19)
+    assert float(invoice.items[1].sgst_amount) == pytest.approx(221.18)
+    assert float(invoice.items[2].cgst_amount) == pytest.approx(45.76)
+    assert float(invoice.items[2].sgst_amount) == pytest.approx(45.77)
+    assert sum(float(item.cgst_amount) for item in invoice.items) == pytest.approx(289.83)
+    assert sum(float(item.sgst_amount) for item in invoice.items) == pytest.approx(289.83)
+    assert sum(float(item.igst_amount) for item in invoice.items) == pytest.approx(0)
+
+
+def test_interstate_item_tax_is_stored_as_igst_and_rendered_in_pdf(db_session):
+    user, ledger = _seed_common(db_session, ledger_gst="27ABCDE1234F1Z5")
+    product = _create_product_with_inventory(db_session, "IGST01", 100.00, 18)
+    invoice = _new_invoice(db_session)
+
+    payload = InvoiceCreate(
+        ledger_id=ledger.id,
+        voucher_type="sales",
+        tax_inclusive=False,
+        items=[InvoiceItemCreate(product_id=product.id, quantity=1, unit_price=100.00)],
+    )
+
+    _apply_payload_to_invoice(
+        db_session,
+        invoice,
+        payload,
+        created_by=user.id,
+        regenerate_number=False,
+    )
+    db_session.flush()
+    db_session.refresh(invoice)
+
+    assert float(invoice.cgst_amount) == pytest.approx(0)
+    assert float(invoice.sgst_amount) == pytest.approx(0)
+    assert float(invoice.igst_amount) == pytest.approx(18.00)
+    assert len(invoice.items) == 1
+    assert float(invoice.items[0].cgst_amount) == pytest.approx(0)
+    assert float(invoice.items[0].sgst_amount) == pytest.approx(0)
+    assert float(invoice.items[0].igst_amount) == pytest.approx(18.00)
+
+    html = _build_invoice_html(invoice, [product])
+    assert "IGST %</th>" in html
+    assert "Total Tax</th>" in html
+    assert "SGST %</th>" not in html
+    assert "CGST %</th>" not in html
+    assert "GST Split" not in html
