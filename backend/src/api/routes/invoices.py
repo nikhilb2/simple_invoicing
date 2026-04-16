@@ -498,8 +498,14 @@ def _fmt_rate(value: float) -> str:
 
 def _build_pdf_tax_header_cells(interstate_supply: bool) -> str:
     if interstate_supply:
-        return '<th class="right">IGST %</th><th class="right">Total Tax</th>'
-    return '<th class="right">SGST %</th><th class="right">CGST %</th><th class="right">Total Tax</th>'
+        return '<th class="right">IGST %</th><th class="right">IGST Amt</th><th class="right">Total Tax</th>'
+    return (
+        '<th class="right">SGST %</th>'
+        '<th class="right">SGST Amt</th>'
+        '<th class="right">CGST %</th>'
+        '<th class="right">CGST Amt</th>'
+        '<th class="right">Total Tax</th>'
+    )
 
 
 def _build_pdf_tax_row_cells(item: InvoiceItem, currency: str, interstate_supply: bool) -> str:
@@ -513,13 +519,22 @@ def _build_pdf_tax_row_cells(item: InvoiceItem, currency: str, interstate_supply
         igst_rate = gst_rate if igst_amount > 0 else 0
         return (
             f'<td class="right">{_fmt_rate(igst_rate)}%</td>'
+        f'<td class="right">{_fmt_currency(igst_amount, currency)}</td>'
             f'<td class="right">{_fmt_currency(tax_amount, currency)}</td>'
         )
 
-    split_rate = gst_rate / 2 if tax_amount > 0 else 0
+    sgst_amount = float(item.sgst_amount or 0)
+    cgst_amount = float(item.cgst_amount or 0)
+    if tax_amount > 0 and sgst_amount == 0 and cgst_amount == 0:
+      cgst_amount = float(_money(Decimal(str(tax_amount)) / Decimal("2")))
+      sgst_amount = float(_money(Decimal(str(tax_amount)) - Decimal(str(cgst_amount))))
+
+    split_rate = gst_rate / 2 if (tax_amount > 0 or sgst_amount > 0 or cgst_amount > 0) else 0
     return (
         f'<td class="right">{_fmt_rate(split_rate)}%</td>'
+      f'<td class="right">{_fmt_currency(sgst_amount, currency)}</td>'
         f'<td class="right">{_fmt_rate(split_rate)}%</td>'
+      f'<td class="right">{_fmt_currency(cgst_amount, currency)}</td>'
         f'<td class="right">{_fmt_currency(tax_amount, currency)}</td>'
     )
 

@@ -131,9 +131,12 @@ def test_intrastate_odd_paise_total_tax_is_adjusted_and_split_equally(db_session
 
     html = _build_invoice_html(invoice, [product])
     assert "SGST %</th>" in html
+    assert "SGST Amt</th>" in html
     assert "CGST %</th>" in html
+    assert "CGST Amt</th>" in html
     assert "Total Tax</th>" in html
     assert "IGST %</th>" not in html
+    assert "IGST Amt</th>" not in html
     assert "GST Split" not in html
 
 
@@ -218,7 +221,10 @@ def test_interstate_item_tax_is_stored_as_igst_and_rendered_in_pdf(db_session):
 
     html = _build_invoice_html(invoice, [product])
     assert "IGST %</th>" in html
+    assert "IGST Amt</th>" in html
     assert "Total Tax</th>" in html
     assert "SGST %</th>" not in html
+    assert "SGST Amt</th>" not in html
     assert "CGST %</th>" not in html
+    assert "CGST Amt</th>" not in html
     assert "GST Split" not in html
