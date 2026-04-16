@@ -30,6 +30,9 @@ class InvoiceItemOut(BaseModel):
     gst_rate: float
     taxable_amount: float
     tax_amount: float
+    cgst_amount: float
+    sgst_amount: float
+    igst_amount: float
     line_total: float
 
     class Config:

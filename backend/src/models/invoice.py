@@ -61,6 +61,9 @@ class InvoiceItem(Base):
     gst_rate = Column(Numeric(5, 2), nullable=False, default=0)
     taxable_amount = Column(Numeric(10, 2), nullable=False, default=0)
     tax_amount = Column(Numeric(10, 2), nullable=False, default=0)
+    cgst_amount = Column(Numeric(10, 2), nullable=False, default=0)
+    sgst_amount = Column(Numeric(10, 2), nullable=False, default=0)
+    igst_amount = Column(Numeric(10, 2), nullable=False, default=0)
     line_total = Column(Numeric(10, 2), nullable=False)
 
     invoice = relationship("Invoice", back_populates="items")
