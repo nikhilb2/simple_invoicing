@@ -16,3 +16,11 @@ class InventoryOut(BaseModel):
     quantity: int
     date_added: Optional[datetime] = None
     last_sold_at: Optional[datetime] = None
+
+
+class PaginatedInventoryOut(BaseModel):
+    items: list[InventoryOut]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int

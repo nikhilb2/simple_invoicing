@@ -8,7 +8,7 @@ from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
 from src.models.user import User, UserRole
-from src.schemas.inventory import InventoryAdjust, InventoryOut
+from src.schemas.inventory import InventoryAdjust, InventoryOut, PaginatedInventoryOut
 from src.api.deps import get_current_user, require_roles
 
 router = APIRouter()
@@ -37,12 +37,14 @@ def adjust_inventory(
     return {"message": "Inventory updated"}
 
 
-@router.get("", response_model=list[InventoryOut], include_in_schema=False)
-@router.get("/", response_model=list[InventoryOut])
+@router.get("", response_model=PaginatedInventoryOut, include_in_schema=False)
+@router.get("/", response_model=PaginatedInventoryOut)
 def list_inventory(
     search: str = Query(""),
     sort_by: Literal["name", "quantity", "date_added", "last_sold"] = Query("name"),
     sort_order: Literal["asc", "desc"] = Query("asc"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=500),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -84,8 +86,9 @@ def list_inventory(
     else:
         query = query.order_by(order_col.asc().nulls_last())
 
-    rows = query.all()
-    return [
+    total = query.count()
+    rows = query.offset((page - 1) * page_size).limit(page_size).all()
+    items = [
         InventoryOut(
             product_id=inv.product_id,
             product_name=prod.name,
@@ -97,3 +100,10 @@ def list_inventory(
         )
         for inv, prod, last_sold_at in rows
     ]
+    return PaginatedInventoryOut(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=(total + page_size - 1) // page_size if total > 0 else 1,
+    )

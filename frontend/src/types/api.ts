@@ -40,6 +40,14 @@ export type InventoryAdjust = {
   quantity: number;
 };
 
+export type PaginatedInventoryOut = {
+  items: InventoryRow[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+};
+
 export type Ledger = {
   id: number;
   name: string;
