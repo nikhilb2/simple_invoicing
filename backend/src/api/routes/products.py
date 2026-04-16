@@ -36,6 +36,15 @@ def create_product(
         gst_rate=payload.gst_rate,
     )
     db.add(product)
+    db.flush()  # get product.id before committing
+
+    if payload.initial_quantity != 0:
+        inventory = Inventory(product_id=product.id, quantity=payload.initial_quantity)
+        db.add(inventory)
+    else:
+        inventory = Inventory(product_id=product.id, quantity=0)
+        db.add(inventory)
+
     db.commit()
     db.refresh(product)
     return product

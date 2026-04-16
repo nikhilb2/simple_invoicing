@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Numeric
+from sqlalchemy import Column, DateTime, Integer, String, Numeric, func
 from src.db.base import Base
 
 
@@ -12,3 +12,4 @@ class Product(Base):
     hsn_sac = Column(String, nullable=True)
     price = Column(Numeric(10, 2), nullable=False)
     gst_rate = Column(Numeric(5, 2), nullable=False, default=0)
+    created_at = Column(DateTime, server_default=func.now(), nullable=True)

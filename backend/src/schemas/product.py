@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, field_validator
 from typing import Optional
 
@@ -11,6 +12,7 @@ class ProductCreate(BaseModel):
     hsn_sac: Optional[str] = None
     price: float
     gst_rate: float = 0
+    initial_quantity: int = 0
 
     @field_validator("hsn_sac")
     @classmethod
@@ -26,6 +28,7 @@ class ProductOut(BaseModel):
     hsn_sac: Optional[str]
     price: float
     gst_rate: float
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
