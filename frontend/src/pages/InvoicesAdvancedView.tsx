@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { LayoutGrid, Table as TableIcon } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { LayoutGrid, Table as TableIcon, X } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import type { Invoice } from '../types/api';
 import { useFY } from '../context/FYContext';
@@ -76,19 +76,36 @@ export default function InvoicesAdvancedView() {
     restoreMutation.mutate(invoice.id);
   }
 
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const {
     viewType,
     invoiceSearch,
     showCancelled,
     allowAllFY,
     page,
+    productId,
     setViewType,
     setInvoiceSearch,
     setShowCancelled,
     setAllowAllFY,
     setPage,
     resetPage,
+    setProductId,
   } = useInvoiceFeedViewStore();
+
+  // Sync ?product_id from URL into store on mount
+  useEffect(() => {
+    const urlProductId = searchParams.get('product_id');
+    if (urlProductId !== null) {
+      const parsed = parseInt(urlProductId, 10);
+      if (!isNaN(parsed)) {
+        setProductId(parsed);
+        setAllowAllFY(true);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const { previewInvoice, openPreview, closePreview } = useInvoiceModalStore();
   const pageSize = 20;
   const shouldUseAllFY = allowAllFY;
@@ -96,13 +113,14 @@ export default function InvoicesAdvancedView() {
   const financialYearId = shouldUseAllFY ? undefined : activeFY?.id;
 
   const invoicesQuery = useQuery({
-    queryKey: invoiceQueryKeys.list(page, pageSize, invoiceSearch, showCancelled, financialYearId),
+    queryKey: invoiceQueryKeys.list(page, pageSize, invoiceSearch, showCancelled, financialYearId, productId ?? undefined),
     queryFn: () => fetchInvoicePage({
       page,
       pageSize,
       search: invoiceSearch,
       showCancelled,
       financialYearId,
+      productId: productId ?? undefined,
     }),
     enabled: isFYReady && !fyLoading,
   });
@@ -119,7 +137,7 @@ export default function InvoicesAdvancedView() {
 
   useEffect(() => {
     resetPage();
-  }, [invoiceSearch, showCancelled, allowAllFY, activeFY?.id]);
+  }, [invoiceSearch, showCancelled, allowAllFY, activeFY?.id, productId]);
 
   const invoices = invoicesQuery.data?.items ?? [];
   const totalPages = invoicesQuery.data?.total_pages ?? 1;
@@ -232,6 +250,27 @@ export default function InvoicesAdvancedView() {
         {!allowAllFY && (
           <div className="invoice-feed-view__fy-label">
             Showing invoices from: <strong>{activeFY?.label}</strong>
+          </div>
+        )}
+
+        {/* Product filter badge */}
+        {productId !== null && (
+          <div className="invoice-feed-view__fy-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>
+              Filtered by product: <strong>{products.find((p) => p.id === productId)?.name ?? `#${productId}`}</strong>
+            </span>
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              style={{ padding: '2px 6px', lineHeight: 1 }}
+              title="Clear product filter"
+              onClick={() => {
+                setProductId(null);
+                setSearchParams({});
+              }}
+            >
+              <X size={14} />
+            </button>
           </div>
         )}
       </section>

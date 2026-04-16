@@ -12,6 +12,7 @@ export type Product = {
   hsn_sac: string | null;
   price: number;
   gst_rate: number;
+  created_at: string | null;
 };
 
 export type ProductCreate = {
@@ -21,17 +22,30 @@ export type ProductCreate = {
   hsn_sac: string;
   price: number;
   gst_rate: number;
+  initial_quantity?: number;
 };
 
 export type InventoryRow = {
   product_id: number;
   product_name: string;
+  sku: string;
+  price: number;
   quantity: number;
+  date_added: string | null;
+  last_sold_at: string | null;
 };
 
 export type InventoryAdjust = {
   product_id: number;
   quantity: number;
+};
+
+export type PaginatedInventoryOut = {
+  items: InventoryRow[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
 };
 
 export type Ledger = {

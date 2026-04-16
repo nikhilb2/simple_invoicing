@@ -29,6 +29,7 @@ export default function ProductsPage() {
     hsn_sac: '',
     price: '',
     gst_rate: '0',
+    initial_quantity: '0',
   });
 
   const activeCurrencyCode = company?.currency_code || 'USD';
@@ -59,7 +60,7 @@ export default function ProductsPage() {
   }, [page, search]);
 
   function resetForm() {
-    setForm({ sku: '', name: '', description: '', hsn_sac: '', price: '', gst_rate: '0' });
+    setForm({ sku: '', name: '', description: '', hsn_sac: '', price: '', gst_rate: '0', initial_quantity: '0' });
     setEditingProductId(null);
   }
 
@@ -74,6 +75,7 @@ export default function ProductsPage() {
       hsn_sac: product.hsn_sac ?? '',
       price: String(product.price),
       gst_rate: String(product.gst_rate),
+      initial_quantity: '0',
     });
   }
 
@@ -92,6 +94,7 @@ export default function ProductsPage() {
         hsn_sac: form.hsn_sac.trim(),
         price: Number(form.price),
         gst_rate: Number(form.gst_rate),
+        ...(editingProductId ? {} : { initial_quantity: Number(form.initial_quantity) }),
       };
 
       if (editingProductId) {
@@ -240,6 +243,22 @@ export default function ProductsPage() {
                   placeholder="Optional details for operators and quoting."
                 />
               </div>
+              {!editingProductId ? (
+                <div className="field">
+                  <label htmlFor="initial-quantity">Initial stock quantity</label>
+                  <input
+                    id="initial-quantity"
+                    className="input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={form.initial_quantity}
+                    onChange={(event) => setForm((current) => ({ ...current, initial_quantity: event.target.value }))}
+                    placeholder="0"
+                  />
+                  <span className="field-hint">Starting inventory count for this product.</span>
+                </div>
+              ) : null}
             </div>
 
             <div className="button-row">

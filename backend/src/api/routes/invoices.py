@@ -343,7 +343,8 @@ def list_invoices(
     page_size: int = Query(20, ge=1, le=500),
     search: str = Query(""),
     show_cancelled: bool = Query(False),
-  financial_year_id: int | None = Query(None),
+    financial_year_id: int | None = Query(None),
+    product_id: int | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -352,9 +353,12 @@ def list_invoices(
         if not show_cancelled:
             base = base.filter(Invoice.status == "active")
         if financial_year_id is not None:
-          base = base.filter(Invoice.financial_year_id == financial_year_id)
+            base = base.filter(Invoice.financial_year_id == financial_year_id)
         if search.strip():
             base = base.filter(Invoice.ledger_name.ilike(f"%{search.strip()}%"))
+        if product_id is not None:
+            product_subq = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id).subquery()
+            base = base.filter(Invoice.id.in_(product_subq))
 
         summary_row = base.with_entities(
           func.coalesce(func.sum(Invoice.total_amount), 0),
