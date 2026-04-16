@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
-import { ArrowUpDown } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowUpDown, FileText } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
-import type { InventoryAdjust, InventoryRow } from '../types/api';
+import type { InventoryAdjust, InventoryRow, PaginatedInventoryOut } from '../types/api';
 
 type SortBy = 'name' | 'quantity' | 'date_added' | 'last_sold';
 type SortOrder = 'asc' | 'desc';
 
 export default function InventoryPage() {
+  const navigate = useNavigate();
   const [rows, setRows] = useState<InventoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -15,6 +17,10 @@ export default function InventoryPage() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<SortBy>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const pageSize = 20;
   // Per-row adjustment state: productId -> delta string
   const [adjusting, setAdjusting] = useState<Record<number, string>>({});
   const [submittingId, setSubmittingId] = useState<number | null>(null);
@@ -23,10 +29,12 @@ export default function InventoryPage() {
     try {
       setLoading(true);
       setError('');
-      const res = await api.get<InventoryRow[]>('/inventory/', {
-        params: { search, sort_by: sortBy, sort_order: sortOrder },
+      const res = await api.get<PaginatedInventoryOut>('/inventory/', {
+        params: { search, sort_by: sortBy, sort_order: sortOrder, page, page_size: pageSize },
       });
-      setRows(res.data);
+      setRows(res.data.items);
+      setTotal(res.data.total);
+      setTotalPages(res.data.total_pages);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to load inventory'));
     } finally {
@@ -37,7 +45,7 @@ export default function InventoryPage() {
   useEffect(() => {
     void loadInventory();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, sortBy, sortOrder]);
+  }, [search, sortBy, sortOrder, page]);
 
   function toggleSort(col: SortBy) {
     if (sortBy === col) {
@@ -46,6 +54,7 @@ export default function InventoryPage() {
       setSortBy(col);
       setSortOrder('asc');
     }
+    setPage(1);
   }
 
   function setRowDelta(productId: number, value: string) {
@@ -102,12 +111,12 @@ export default function InventoryPage() {
           <h1 className="page-title">Stock ledger</h1>
           <p className="section-copy">Search products, review on-hand quantities, and apply inline adjustments.</p>
         </div>
-        <div className="status-chip">{rows.length} products</div>
+        <div className="status-chip">{total} products</div>
       </section>
 
       <StatusToasts error={error} success={success} onClearError={() => setError('')} onClearSuccess={() => setSuccess('')} />
 
-      <section className="content-grid content-grid--full">
+      <section className="content-grid content-grid--single">
         <article className="panel stack">
           {/* Toolbar */}
           <div className="panel__header" style={{ flexWrap: 'wrap', gap: '12px' }}>
@@ -117,7 +126,7 @@ export default function InventoryPage() {
                 type="search"
                 placeholder="Search by name or SKU…"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                 aria-label="Search inventory by name or SKU"
               />
             </div>
@@ -185,11 +194,49 @@ export default function InventoryPage() {
                       >
                         {submittingId === row.product_id ? 'Applying…' : 'Apply'}
                       </button>
+                      <button
+                        type="button"
+                        className="button button--ghost button--small"
+                        onClick={() => navigate(`/invoices-view?product_id=${row.product_id}`)}
+                        title={`View invoices for ${row.product_name}`}
+                        aria-label={`View invoices for ${row.product_name}`}
+                        style={{ padding: '4px 8px' }}
+                      >
+                        <FileText size={15} />
+                      </button>
                     </div>
                   </div>
                 ))
               : null}
           </div>
+
+          {totalPages > 1 ? (
+            <div className="button-row" style={{ justifyContent: 'center', paddingTop: '8px' }}>
+              <button
+                type="button"
+                className="button button--ghost"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+                title="Previous page"
+                aria-label="Previous page"
+              >
+                Previous
+              </button>
+              <span className="muted-text" style={{ alignSelf: 'center' }}>
+                Page {page} of {totalPages}
+              </span>
+              <button
+                type="button"
+                className="button button--ghost"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+                title="Next page"
+                aria-label="Next page"
+              >
+                Next
+              </button>
+            </div>
+          ) : null}
         </article>
       </section>
     </div>

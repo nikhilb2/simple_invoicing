@@ -12,8 +12,9 @@ export const invoiceQueryKeys = {
     pageSize: number,
     search: string,
     showCancelled: boolean,
-    financialYearId?: number
-  ) => ['invoices', 'list', page, pageSize, search, showCancelled, financialYearId ?? 'all'] as const,
+    financialYearId?: number,
+    productId?: number
+  ) => ['invoices', 'list', page, pageSize, search, showCancelled, financialYearId ?? 'all', productId ?? 'all'] as const,
   company: ['company', 'profile'] as const,
   products: ['products', 'lookup'] as const,
 };

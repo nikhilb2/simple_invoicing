@@ -7,6 +7,7 @@ type InvoiceFilters = {
   search: string;
   showCancelled: boolean;
   financialYearId?: number;
+  productId?: number;
 };
 
 function buildInvoiceParams(filters: InvoiceFilters) {
@@ -19,6 +20,10 @@ function buildInvoiceParams(filters: InvoiceFilters) {
 
   if (typeof filters.financialYearId === 'number') {
     params.financial_year_id = filters.financialYearId;
+  }
+
+  if (typeof filters.productId === 'number') {
+    params.product_id = filters.productId;
   }
 
   return params;
