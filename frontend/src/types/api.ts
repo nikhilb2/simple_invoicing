@@ -201,12 +201,14 @@ export type InvoiceItem = {
   taxable_amount: number;
   tax_amount: number;
   line_total: number;
+  description?: string | null;
 };
 
 export type InvoiceItemInput = {
   product_id: number;
   quantity: number;
   unit_price?: number;
+  description?: string;
 };
 
 export type CreditNoteItem = {
