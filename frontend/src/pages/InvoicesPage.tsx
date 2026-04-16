@@ -11,6 +11,7 @@ import ProductCombobox from '../components/ProductCombobox';
 import LedgerCombobox from '../components/LedgerCombobox';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import formatCurrency from '../utils/formatting';
+import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../utils/invoiceTax';
 import { useFY } from '../context/FYContext';
 import { fetchInvoiceById, fetchInvoiceComposerData } from '../features/invoices/api';
 import { invoiceQueryKeys } from '../features/invoices/queryKeys';
@@ -206,6 +207,8 @@ export default function InvoicesPage() {
   const projectedTotalAmount = applyRoundOff ? roundedTotalAmount : totalAmount;
 
   const activeCurrencyCode = company?.currency_code || 'USD';
+  const selectedLedger = ledgers.find((entry) => entry.id === Number(selectedLedgerId));
+  const composerInterstateSupply = isInterstateSupply(company?.gst, selectedLedger?.gst);
 
   function addItem() {
     const defaultProduct = products[0];
@@ -794,7 +797,14 @@ export default function InvoicesPage() {
 
                       <div className="line-item__price">
                         {formatCurrency(lineTotal, activeCurrencyCode)}
-                        <div className="table-subtext">Incl GST {gstRate}% ({formatCurrency(taxAmount, activeCurrencyCode)})</div>
+                        <div className="table-subtext">
+                          {formatInvoiceTaxBreakdown({
+                            gstRate,
+                            taxAmount,
+                            currencyCode: activeCurrencyCode,
+                            interstateSupply: composerInterstateSupply,
+                          })}
+                        </div>
                       </div>
                       <button type="button" className="button button--danger" onClick={() => removeItem(item.id)} title={`Remove line item ${index + 1}`} aria-label={`Remove line item ${index + 1}`}>
                         Remove

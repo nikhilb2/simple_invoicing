@@ -4,6 +4,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import type { InvoiceCreate, Invoice, Ledger, Product } from '../types/api';
 import { useFY } from '../context/FYContext';
 import formatCurrency from '../utils/formatting';
+import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../utils/invoiceTax';
 import ProductCombobox from './ProductCombobox';
 import LedgerCombobox from './LedgerCombobox';
 
@@ -47,6 +48,7 @@ export default function CreateInvoiceModal({
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [currencyCode, setCurrencyCode] = useState('INR');
+  const [companyGst, setCompanyGst] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,12 +58,13 @@ export default function CreateInvoiceModal({
         const [productsRes, ledgersRes, companyRes] = await Promise.all([
           api.get<{ items: Product[] }>('/products/', { params: { page_size: 500 } }),
           api.get<{ items: Ledger[] }>('/ledgers/', { params: { page_size: 500 } }),
-          api.get<{ currency_code: string | null }>('/company/'),
+          api.get<{ currency_code: string | null; gst: string | null }>('/company/'),
         ]);
         if (cancelled) return;
         setProducts(productsRes.data.items);
         setLedgers(ledgersRes.data.items);
         setCurrencyCode(companyRes.data.currency_code || 'INR');
+        setCompanyGst(companyRes.data.gst || null);
 
         if (!preselectedLedgerId && ledgersRes.data.items.length > 0) {
           setSelectedLedgerId(String(ledgersRes.data.items[0].id));
@@ -108,6 +111,8 @@ export default function CreateInvoiceModal({
     activeFY !== null &&
     invoiceDate !== '' &&
     (invoiceDate < activeFY.start_date || invoiceDate > activeFY.end_date);
+  const selectedLedger = ledgers.find((ledger) => ledger.id === Number(selectedLedgerId));
+  const composerInterstateSupply = isInterstateSupply(companyGst, selectedLedger?.gst);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -258,7 +263,14 @@ export default function CreateInvoiceModal({
 
                     <div className="line-item__price">
                       {formatCurrency(lineTotal, currencyCode)}
-                      <div className="table-subtext">Incl GST {gstRate}% ({formatCurrency(taxAmount, currencyCode)})</div>
+                      <div className="table-subtext">
+                        {formatInvoiceTaxBreakdown({
+                          gstRate,
+                          taxAmount,
+                          currencyCode,
+                          interstateSupply: composerInterstateSupply,
+                        })}
+                      </div>
                     </div>
                     <button type="button" className="button button--danger" onClick={() => removeItem(item.id)} title={`Remove line item ${index + 1}`} aria-label={`Remove line item ${index + 1}`}>Remove</button>
                   </div>
