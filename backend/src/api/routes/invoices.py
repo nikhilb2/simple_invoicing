@@ -237,6 +237,7 @@ def _apply_payload_to_invoice(
             taxable_amount=float(taxable_amount),
             tax_amount=float(tax_amount),
             line_total=float(line_total),
+            description=item.description,
         )
         created_items.append(invoice_item)
         db.add(invoice_item)
