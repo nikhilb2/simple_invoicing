@@ -277,10 +277,10 @@ export default function CreateInvoiceModal({
                     <button type="button" className="button button--danger" onClick={() => removeItem(item.id)} title={`Remove line item ${index + 1}`} aria-label={`Remove line item ${index + 1}`}>Remove</button>
                       <div className="field" style={{ gridColumn: '1 / -1' }}>
                         <label htmlFor={`modal-inv-description-${item.id}`}>Description (optional)</label>
-                        <input
+                        <textarea
                           id={`modal-inv-description-${item.id}`}
                           className="input"
-                          type="text"
+                          rows={2}
                           value={item.description}
                           onChange={(e) => updateItem(item.id, 'description', e.target.value)}
                           placeholder="Serial number, batch code, or item notes"

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
-import type { CompanyProfile, InventoryRow, Invoice, Product } from '../types/api';
+import type { CompanyProfile, InventoryRow, Invoice, PaginatedInventoryOut, Product } from '../types/api';
 import formatCurrency from '../utils/formatting';
 
 type DashboardState = {
@@ -9,6 +9,17 @@ type DashboardState = {
   inventory: InventoryRow[];
   invoices: Invoice[];
 };
+
+function normalizeInventoryRows(payload: PaginatedInventoryOut | InventoryRow[] | unknown): InventoryRow[] {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+  if (payload && typeof payload === 'object' && 'items' in payload) {
+    const items = (payload as PaginatedInventoryOut).items;
+    return Array.isArray(items) ? items : [];
+  }
+  return [];
+}
 
 export default function DashboardPage() {
   const [state, setState] = useState<DashboardState>({ products: [], inventory: [], invoices: [] });
@@ -27,7 +38,7 @@ export default function DashboardPage() {
         setError('');
         const [productsRes, inventoryRes, invoicesRes, companyRes] = await Promise.all([
           api.get<{ items: Product[] }>('/products/', { params: { page_size: 100 } }),
-          api.get<InventoryRow[]>('/inventory/'),
+          api.get<PaginatedInventoryOut>('/inventory/', { params: { page_size: 100 } }),
           api.get<{ items: Invoice[] }>('/invoices/', { params: { page_size: 100 } }),
           api.get<CompanyProfile>('/company/'),
         ]);
@@ -38,7 +49,7 @@ export default function DashboardPage() {
 
         setState({
           products: productsRes.data.items,
-          inventory: inventoryRes.data,
+          inventory: normalizeInventoryRows(inventoryRes.data),
           invoices: invoicesRes.data.items,
         });
         setCompany(companyRes.data);
