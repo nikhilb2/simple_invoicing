@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import { useFY } from '../context/FYContext';
@@ -30,6 +31,19 @@ export default function TaxLedgerPage() {
   const [error, setError] = useState('');
 
   const activeCurrencyCode = company?.currency_code || 'INR';
+  const entries = taxLedger?.entries ?? [];
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: entries.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 44,
+    overscan: 12,
+  });
+
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const topPadding = virtualItems.length > 0 ? virtualItems[0].start : 0;
+  const bottomPadding = virtualItems.length > 0 ? rowVirtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end : 0;
   const numericGstRate = useMemo(() => {
     if (!gstRate.trim()) return undefined;
     const parsed = Number(gstRate);
@@ -195,10 +209,10 @@ export default function TaxLedgerPage() {
         {loading ? <div className="empty-state">Loading tax ledger...</div> : null}
         {!loading && (!taxLedger || taxLedger.entries.length === 0) ? <div className="empty-state">No tax entries found for this filter.</div> : null}
 
-        {!loading && taxLedger && taxLedger.entries.length > 0 ? (
-          <div className="table-wrap">
+        {!loading && entries.length > 0 ? (
+          <div ref={scrollContainerRef} className="table-wrap tax-ledger-scroll">
             <table className="invoice-feed-table tax-ledger-table">
-              <thead>
+              <thead className="tax-ledger-thead--sticky">
                 <tr>
                   <th>Date</th>
                   <th>Reference</th>
@@ -215,18 +229,25 @@ export default function TaxLedgerPage() {
                 </tr>
               </thead>
               <tbody>
-                {taxLedger.entries.map((entry) => {
+                {topPadding > 0 && (
+                  <tr><td colSpan={12} style={{ height: `${topPadding}px`, padding: 0 }} /></tr>
+                )}
+                {virtualItems.map((virtualRow) => {
+                  const entry = entries[virtualRow.index];
                   const rowClass = entry.source_voucher_type === 'sales' ? 'tax-ledger-row--sales' : 'tax-ledger-row--purchase';
                   const typeBadgeClass = entry.source_voucher_type === 'sales' ? 'invoice-type-badge invoice-type-badge--sales' : 'invoice-type-badge invoice-type-badge--purchase';
 
                   return (
-                    <tr key={`${entry.entry_type}-${entry.entry_id}-${entry.gst_rate}`} className={rowClass}>
+                    <tr
+                      key={`${entry.entry_type}-${entry.entry_id}-${entry.gst_rate}`}
+                      className={rowClass}
+                      style={{ height: `${virtualRow.size}px` }}
+                    >
                       <td>{new Date(entry.date).toLocaleDateString()}</td>
                       <td>
-                        <strong>{entry.reference_number}</strong>
-                        <div className="table-subtext">{entry.particulars}</div>
+                        <strong className='text-xs' >{entry.reference_number}</strong>
                       </td>
-                      <td>{entry.ledger_name}</td>
+                      <td className='text-xs'>{entry.ledger_name}</td>
                       <td>
                         <div className="tax-ledger-type-cell">
                           <span className={typeBadgeClass}>{entry.source_voucher_type}</span>
@@ -244,6 +265,9 @@ export default function TaxLedgerPage() {
                     </tr>
                   );
                 })}
+                {bottomPadding > 0 && (
+                  <tr><td colSpan={12} style={{ height: `${bottomPadding}px`, padding: 0 }} /></tr>
+                )}
               </tbody>
             </table>
           </div>

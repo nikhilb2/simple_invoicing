@@ -1611,8 +1611,21 @@ textarea {
   border: 1px solid rgba(255, 139, 139, 0.25);
 }
 
+.tax-ledger-scroll {
+  max-height: 60vh;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
 .tax-ledger-table {
   min-width: 980px;
+}
+
+.tax-ledger-thead--sticky th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--panel-bg, #0d1a2b);
 }
 
 .tax-ledger-table tbody tr {
