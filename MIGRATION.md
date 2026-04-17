@@ -92,3 +92,13 @@ Prevention pattern:
 
 - Keep seed inserts forward-compatible by explicitly including newly required columns.
 - Example: include `suffix` in both the column list and seed values (`''` for defaults).
+
+## Company Accounts rollout note
+
+Migration `20260417000001_create_company_accounts_and_link_payments.py` introduces `company_accounts` and an optional `payments.account_id` foreign key.
+
+Expected behavior after rollout:
+
+- Existing historical payments remain with `account_id = NULL`.
+- UI and reports should treat these records as `Unallocated` until manually edited.
+- No automatic backfill is performed by design to avoid incorrect historical assumptions.
