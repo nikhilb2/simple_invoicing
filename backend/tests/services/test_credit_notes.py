@@ -324,17 +324,74 @@ class TestCreateCreditNoteValidation:
             create_credit_note(payload, db, current_user_id=1)
 
         added_credit_note_item = None
+        added_credit_note = None
         for added_call in db.add.call_args_list:
             candidate = added_call.args[0]
+            if isinstance(candidate, CreditNote) and added_credit_note is None:
+                added_credit_note = candidate
             if isinstance(candidate, CreditNoteItem):
                 added_credit_note_item = candidate
                 break
 
         assert added_credit_note_item is not None
+        assert added_credit_note is not None
         assert Decimal(str(added_credit_note_item.taxable_amount)) == Decimal("100.00")
         assert Decimal(str(added_credit_note_item.tax_amount)) == Decimal("18.00")
         assert Decimal(str(added_credit_note_item.line_total)) == Decimal("118.00")
         assert added_credit_note_item.quantity == 1
+        assert Decimal(str(added_credit_note.cgst_amount)) == Decimal("9.00")
+        assert Decimal(str(added_credit_note.sgst_amount)) == Decimal("9.00")
+        assert Decimal(str(added_credit_note.total_amount)) == Decimal("118.00")
+        assert Decimal(str(added_credit_note.cgst_amount + added_credit_note.sgst_amount)) == Decimal("18.00")
+        mock_change_inventory.assert_not_called()
+
+    def test_discount_credit_note_intrastate_keeps_item_split_equal_for_odd_paise_tax(self):
+        ledger = make_ledger(id=1)
+        inv = make_invoice(id=1, ledger_id=1)
+        ii = make_invoice_item(id=10, invoice_id=1, product_id=22, quantity=10, unit_price=100, gst_rate=18)
+
+        payload = CreditNoteCreate(
+            ledger_id=1,
+            invoice_ids=[1],
+            credit_note_type="discount",
+            items=[
+                CreditNoteItemCreate(
+                    invoice_id=1,
+                    invoice_item_id=10,
+                    discount_amount_inclusive=Decimal("118.05"),
+                )
+            ],
+        )
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = ledger
+        db.query.return_value.filter.return_value.all.side_effect = [[inv], [ii]]
+
+        with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
+             patch("src.services.credit_note.get_fy_for_date", return_value=None), \
+             patch("src.services.credit_note.generate_next_number", return_value="CN-001"), \
+             patch("src.services.credit_note._recompute_credit_status"), \
+             patch("src.services.credit_note._change_inventory_quantity") as mock_change_inventory:
+            create_credit_note(payload, db, current_user_id=1)
+
+        added_credit_note_item = None
+        added_credit_note = None
+        for added_call in db.add.call_args_list:
+            candidate = added_call.args[0]
+            if isinstance(candidate, CreditNote) and added_credit_note is None:
+                added_credit_note = candidate
+            if isinstance(candidate, CreditNoteItem):
+                added_credit_note_item = candidate
+
+        assert added_credit_note_item is not None
+        assert added_credit_note is not None
+        assert Decimal(str(added_credit_note_item.taxable_amount)) == Decimal("100.04")
+        assert Decimal(str(added_credit_note_item.tax_amount)) == Decimal("18.02")
+        assert Decimal(str(added_credit_note_item.line_total)) == Decimal("118.06")
+        assert Decimal(str(added_credit_note.cgst_amount)) == Decimal("9.01")
+        assert Decimal(str(added_credit_note.sgst_amount)) == Decimal("9.01")
+        assert Decimal(str(added_credit_note.cgst_amount + added_credit_note.sgst_amount)) == Decimal("18.02")
+        assert Decimal(str(added_credit_note.total_amount)) == Decimal("118.06")
         mock_change_inventory.assert_not_called()
 
 

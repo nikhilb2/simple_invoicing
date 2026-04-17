@@ -43,6 +43,7 @@ export default function CreateInvoiceModal({
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [selectedLedgerId, setSelectedLedgerId] = useState(preselectedLedgerId ? String(preselectedLedgerId) : '');
   const [voucherType, setVoucherType] = useState<'sales' | 'purchase'>(preselectedVoucherType || 'sales');
+  const [taxInclusive, setTaxInclusive] = useState(false);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [items, setItems] = useState<InvoiceFormItem[]>([createItem(1)]);
   const [nextItemId, setNextItemId] = useState(2);
@@ -90,6 +91,11 @@ export default function CreateInvoiceModal({
     const unitPrice = item.unit_price ? Number(item.unit_price) : (product?.price || 0);
     const gstRate = product?.gst_rate || 0;
     if (!product || Number.isNaN(quantity)) return sum;
+
+    if (taxInclusive) {
+      return sum + unitPrice * quantity;
+    }
+
     const taxableAmount = unitPrice * quantity;
     return sum + taxableAmount + taxableAmount * gstRate / 100;
   }, 0);
@@ -123,6 +129,7 @@ export default function CreateInvoiceModal({
         ledger_id: Number(selectedLedgerId),
         voucher_type: voucherType,
         invoice_date: invoiceDate,
+        tax_inclusive: taxInclusive,
         items: items.map((item) => ({
           product_id: Number(item.productId),
           quantity: Number(item.quantity),
@@ -210,14 +217,33 @@ export default function CreateInvoiceModal({
               </div>
             </div>
 
+            <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 0 }}>
+              <input
+                id="modal-inv-tax-inclusive"
+                type="checkbox"
+                checked={taxInclusive}
+                onChange={(e) => setTaxInclusive(e.target.checked)}
+              />
+              <label htmlFor="modal-inv-tax-inclusive" style={{ marginBottom: 0, cursor: 'pointer' }}>
+                Prices include GST
+              </label>
+            </div>
+
             <div className="stack">
               {items.map((item, index) => {
                 const selectedProduct = products.find((p) => p.id === Number(item.productId));
                 const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
                 const gstRate = selectedProduct?.gst_rate || 0;
-                const taxableAmount = unitPrice * Number(item.quantity || 0);
-                const taxAmount = taxableAmount * gstRate / 100;
-                const lineTotal = taxableAmount + taxAmount;
+                let lineTotal: number;
+                let taxAmount: number;
+                if (taxInclusive) {
+                  lineTotal = unitPrice * Number(item.quantity || 0);
+                  taxAmount = lineTotal - lineTotal / (1 + gstRate / 100);
+                } else {
+                  const taxableAmount = unitPrice * Number(item.quantity || 0);
+                  taxAmount = taxableAmount * gstRate / 100;
+                  lineTotal = taxableAmount + taxAmount;
+                }
 
                 return (
                   <div key={item.id} className="line-item">
@@ -250,7 +276,7 @@ export default function CreateInvoiceModal({
                     </div>
 
                     <div className="field">
-                      <label htmlFor={`modal-inv-price-${item.id}`}>Price</label>
+                      <label htmlFor={`modal-inv-price-${item.id}`}>{taxInclusive ? 'Amount (incl. GST)' : 'Price'}</label>
                       <input
                         id={`modal-inv-price-${item.id}`}
                         className="input"

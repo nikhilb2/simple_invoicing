@@ -214,8 +214,10 @@ def create_credit_note(
         else:
             half = _money(tax / Decimal("2"))
             cgst = half
-            sgst = _money(tax - half)
+            sgst = half
             igst = Decimal("0")
+            tax = _money(cgst + sgst)
+            line_total = _money(taxable + tax)
 
         taxable_total += taxable
         cgst_total += cgst
