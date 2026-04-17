@@ -903,7 +903,10 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     return html
 
 
-def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount]) -> str:
+def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount] | None = None) -> str:
+    if invoice_bank_accounts is None:
+        invoice_bank_accounts = []
+    
     if invoice.voucher_type == "purchase":
         return _build_purchase_invoice_html(invoice, products)
 
