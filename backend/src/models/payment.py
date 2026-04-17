@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, DateTime, Numeric, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.db.base import Base
+from src.models.company_account import CompanyAccount  # noqa: F401
 
 
 class Payment(Base):
@@ -17,8 +18,10 @@ class Payment(Base):
     reference = Column(String, nullable=True)  # cheque no, txn id
     notes = Column(String, nullable=True)
     financial_year_id = Column(Integer, ForeignKey("financial_years.id"), nullable=True)
+    account_id = Column(Integer, ForeignKey("company_accounts.id"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     status = Column(String, nullable=False, default="active")  # "active" | "cancelled"
 
     ledger = relationship("Buyer", backref="payments")
+    account = relationship("CompanyAccount", back_populates="payments")
