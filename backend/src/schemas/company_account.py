@@ -34,9 +34,13 @@ class CompanyAccountBase(BaseModel):
             raise ValueError("display_name is required")
         return normalized
 
-
 class CompanyAccountCreate(CompanyAccountBase):
-    pass
+    @field_validator("opening_balance")
+    @classmethod
+    def validate_opening_balance(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("opening_balance must be greater than or equal to 0")
+        return value
 
 
 class CompanyAccountUpdate(BaseModel):
@@ -70,6 +74,15 @@ class CompanyAccountUpdate(BaseModel):
         if not normalized:
             raise ValueError("display_name cannot be empty")
         return normalized
+
+    @field_validator("opening_balance")
+    @classmethod
+    def validate_opening_balance(cls, value: float | None) -> float | None:
+        if value is None:
+            return None
+        if value < 0:
+            raise ValueError("opening_balance must be greater than or equal to 0")
+        return value
 
 
 class CompanyAccountOut(CompanyAccountBase):

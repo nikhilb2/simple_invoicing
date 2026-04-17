@@ -115,7 +115,7 @@ export default function CashBankPage() {
     const totalDebit = accountEntries.reduce((sum, entry) => sum + entry.debit, 0);
     const totalCredit = accountEntries.reduce((sum, entry) => sum + entry.credit, 0);
     const openingBalance = selectedAccount ? Number(selectedAccount.opening_balance || 0) : 0;
-    const availableBalance = openingBalance + totalDebit - totalCredit;
+    const availableBalance = openingBalance + totalCredit - totalDebit;
 
     return {
       totalDebit,
@@ -202,7 +202,7 @@ export default function CashBankPage() {
           <div className="summary-box">
             <p className="eyebrow">Account totals</p>
             <p className="summary-box__value">{formatCurrency(totals.availableBalance, activeCurrencyCode)}</p>
-            <p className="muted-text">Opening {formatCurrency(totals.openingBalance, activeCurrencyCode)}</p>
+            <p className="muted-text">Opening available balance {formatCurrency(totals.openingBalance, activeCurrencyCode)}</p>
             <p className="muted-text">Dr {formatCurrency(totals.totalDebit, activeCurrencyCode)} · Cr {formatCurrency(totals.totalCredit, activeCurrencyCode)}</p>
           </div>
         </article>

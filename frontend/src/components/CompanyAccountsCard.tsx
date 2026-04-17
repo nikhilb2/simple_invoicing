@@ -241,11 +241,12 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="new-account-opening">Opening balance</label>
+                  <label htmlFor="new-account-opening">Opening available balance</label>
                   <input
                     id="new-account-opening"
                     className="input"
                     type="number"
+                    min="0"
                     step="0.01"
                     value={createDraft.opening_balance}
                     onChange={(event) => setCreateDraft((current) => ({ ...current, opening_balance: event.target.value }))}
@@ -370,11 +371,12 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
                       />
                     </div>
                     <div className="field">
-                      <label htmlFor={`account-opening-${account.id}`}>Opening balance</label>
+                      <label htmlFor={`account-opening-${account.id}`}>Opening available balance</label>
                       <input
                         id={`account-opening-${account.id}`}
                         className="input"
                         type="number"
+                        min="0"
                         step="0.01"
                         value={draft.opening_balance}
                         onChange={(event) => patchDraft(account.id, { opening_balance: event.target.value })}
