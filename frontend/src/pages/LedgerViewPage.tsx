@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronDown, FileText, FilePlus, Mail, Pencil, ReceiptText, 
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyAccount, CompanyProfile, Invoice, Ledger, LedgerStatement, Payment, PaymentCreate, PaymentUpdate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
+import PaymentReceiptPreview from '../components/PaymentReceiptPreview';
 import StatementPreview from '../components/StatementPreview';
 import StatusToasts from '../components/StatusToasts';
 import CreateInvoiceModal from '../components/CreateInvoiceModal';
@@ -31,6 +32,8 @@ export default function LedgerViewPage() {
   const [companyAccounts, setCompanyAccounts] = useState<CompanyAccount[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
+  const [previewReceiptId, setPreviewReceiptId] = useState<number | null>(null);
+  const [previewReceiptNumber, setPreviewReceiptNumber] = useState<string | null>(null);
   const [loadingLedger, setLoadingLedger] = useState(true);
   const [loadingStatement, setLoadingStatement] = useState(false);
   const [error, setError] = useState('');
@@ -490,6 +493,15 @@ export default function LedgerViewPage() {
                         <button
                           type="button"
                           className="button button--ghost button--small"
+                          onClick={() => { setPreviewReceiptId(entry.entry_id); setPreviewReceiptNumber(null); }}
+                          title="View receipt PDF"
+                          aria-label="View receipt PDF"
+                        >
+                          Receipt
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
                           onClick={() => void handleLoadEditPayment(entry.entry_id)}
                           title="Edit payment"
                           aria-label="Edit payment"
@@ -642,6 +654,15 @@ export default function LedgerViewPage() {
         <InvoicePreview
           invoice={previewInvoice}
           onClose={() => setPreviewInvoice(null)}
+          onError={(msg) => setError(msg)}
+        />
+      ) : null}
+
+      {previewReceiptId !== null ? (
+        <PaymentReceiptPreview
+          paymentId={previewReceiptId}
+          paymentNumber={previewReceiptNumber}
+          onClose={() => { setPreviewReceiptId(null); setPreviewReceiptNumber(null); }}
           onError={(msg) => setError(msg)}
         />
       ) : null}

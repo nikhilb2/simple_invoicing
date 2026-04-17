@@ -1,12 +1,18 @@
 from datetime import datetime
+from html import escape
+from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+
+import weasyprint
 
 from src.api.deps import get_current_user, require_roles
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
 from src.models.company_account import CompanyAccount
+from src.models.company import CompanyProfile
 from src.models.payment import Payment
 from src.models.user import User, UserRole
 from src.schemas.payment import PaymentCreate, PaymentOut, PaymentUpdate
@@ -209,3 +215,324 @@ def delete_payment(
     payment.status = "cancelled"
     db.commit()
     return {"message": "Payment cancelled"}
+
+
+# ---------------------------------------------------------------------------
+# Receipt / Payment voucher PDF
+# ---------------------------------------------------------------------------
+
+def _re(text: str | None) -> str:
+    return escape(str(text or ""))
+
+
+def _fmt_amt(value: float, currency_code: str | None = None) -> str:
+    code = currency_code or "INR"
+    try:
+        if code == "INR":
+            return f"\u20b9{value:,.2f}"
+        elif code == "EUR":
+            return f"\u20ac{value:,.2f}"
+        elif code == "GBP":
+            return f"\u00a3{value:,.2f}"
+        else:
+            return f"${value:,.2f}"
+    except Exception:
+        return f"{value:,.2f}"
+
+
+def _build_receipt_html(payment: Payment, company: CompanyProfile | None) -> str:
+    ledger = payment.ledger
+    account = payment.account
+
+    currency = (company.currency_code or "INR") if company else "INR"
+    voucher_label = "Receipt" if payment.voucher_type == "receipt" else "Payment"
+    voucher_number = _re(payment.payment_number) if payment.payment_number else f"#{payment.id}"
+    dt = payment.date
+    date_str = dt.strftime("%d %b %Y") if dt else "N/A"
+    time_str = dt.strftime("%H:%M") if dt else ""
+
+    company_name = _re(company.name) if company else "Company"
+    company_address = _re(company.address) if company else ""
+    company_gst = _re(company.gst) if company else ""
+    company_phone = _re(company.phone_number) if company else ""
+    company_email = _re(company.email) if company else ""
+
+    ledger_name = _re(ledger.name) if ledger else "Unknown"
+    ledger_address = _re(ledger.address) if ledger else ""
+    ledger_phone = _re(ledger.phone_number) if ledger else ""
+    ledger_gst = _re(ledger.gst) if ledger else ""
+
+    amount_fmt = _fmt_amt(float(payment.amount), currency)
+    mode_label = _re((payment.mode or "").title()) or "—"
+    reference = _re(payment.reference) if payment.reference else "—"
+    notes = _re(payment.notes) if payment.notes else ""
+
+    account_name = _re(account.display_name) if account else "Unallocated"
+    account_type = _re(account.account_type) if account else ""
+    account_bank = _re(account.bank_name) if account and account.bank_name else ""
+
+    party_label = "Received from" if payment.voucher_type == "receipt" else "Paid to"
+
+    # Company detail line
+    company_details_parts = []
+    if company_gst:
+        company_details_parts.append(f"GST: {company_gst}")
+    if company_phone:
+        company_details_parts.append(f"Ph: {company_phone}")
+    if company_email:
+        company_details_parts.append(f"Email: {company_email}")
+    company_details = " &middot; ".join(company_details_parts)
+
+    # Ledger detail line
+    ledger_details_parts = []
+    if ledger_gst:
+        ledger_details_parts.append(f"GST: {ledger_gst}")
+    if ledger_phone:
+        ledger_details_parts.append(f"Ph: {ledger_phone}")
+    ledger_details = " &middot; ".join(ledger_details_parts)
+
+    account_html = f"""
+    <tr>
+      <td class="label">Account</td>
+      <td>{account_name}{f' <span class="chip">{account_type}</span>' if account_type else ''}{f'<br><span class="sub">{account_bank}</span>' if account_bank else ''}</td>
+    </tr>"""
+
+    notes_html = f"""
+    <tr>
+      <td class="label">Notes</td>
+      <td>{notes}</td>
+    </tr>""" if notes else ""
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page {{
+    size: A5 landscape;
+    margin: 12mm 16mm;
+  }}
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{
+    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-size: 10px;
+    color: #1f2937;
+    line-height: 1.5;
+  }}
+  .sheet {{
+    width: 100%;
+  }}
+  .header {{
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #e5e7eb;
+    margin-bottom: 14px;
+  }}
+  .header h3 {{
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }}
+  .header p {{
+    font-size: 8.5px;
+    color: #6b7280;
+    margin-bottom: 1px;
+  }}
+  .meta {{
+    text-align: right;
+  }}
+  .badge {{
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #fff;
+    background: {"#16a34a" if payment.voucher_type == "receipt" else "#2563eb"};
+    margin-bottom: 6px;
+  }}
+  .meta h2 {{
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }}
+  .meta p {{
+    font-size: 8.5px;
+    color: #6b7280;
+  }}
+  .party-box {{
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+  }}
+  .party-box .eyebrow {{
+    font-size: 7.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6b7280;
+    margin-bottom: 2px;
+  }}
+  .party-box h4 {{
+    font-size: 11px;
+    font-weight: 600;
+    margin-bottom: 2px;
+    color: #111827;
+  }}
+  .party-box p {{
+    font-size: 8.5px;
+    color: #4b5563;
+    margin-bottom: 1px;
+  }}
+  .details-table {{
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 14px;
+    font-size: 9px;
+  }}
+  .details-table td {{
+    padding: 5px 8px;
+    border-bottom: 1px solid #f3f4f6;
+    vertical-align: top;
+  }}
+  .details-table td.label {{
+    width: 28%;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    font-size: 8px;
+    letter-spacing: 0.05em;
+  }}
+  .amount-block {{
+    border-top: 2px solid #e5e7eb;
+    padding-top: 12px;
+    text-align: right;
+  }}
+  .amount-big {{
+    font-size: 26px;
+    font-weight: 700;
+    color: {"#16a34a" if payment.voucher_type == "receipt" else "#2563eb"};
+  }}
+  .amount-label {{
+    font-size: 8.5px;
+    color: #9ca3af;
+    margin-top: 2px;
+  }}
+  .chip {{
+    display: inline-block;
+    padding: 1px 6px;
+    background: #eff6ff;
+    color: #1a56db;
+    border-radius: 4px;
+    font-size: 8px;
+    font-weight: 600;
+    margin-left: 4px;
+  }}
+  .sub {{
+    font-size: 8px;
+    color: #9ca3af;
+  }}
+  .footer {{
+    margin-top: 14px;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }}
+  .footer p {{
+    font-size: 8px;
+    color: #9ca3af;
+  }}
+  .sig-line {{
+    width: 120px;
+    border-top: 1px solid #d1d5db;
+    padding-top: 4px;
+    font-size: 8px;
+    color: #6b7280;
+    text-align: center;
+  }}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <header class="header">
+    <div>
+      <h3>{company_name}</h3>
+      <p>{company_address}</p>
+      <p>{company_details}</p>
+    </div>
+    <div class="meta">
+      <span class="badge">{voucher_label}</span>
+      <h2>{voucher_number}</h2>
+      <p>Date: {date_str}{f' {time_str}' if time_str else ''}</p>
+    </div>
+  </header>
+
+  <section class="party-box">
+    <p class="eyebrow">{party_label}</p>
+    <h4>{ledger_name}</h4>
+    <p>{ledger_address}</p>
+    <p>{ledger_details}</p>
+  </section>
+
+  <table class="details-table">
+    <tr>
+      <td class="label">Mode</td>
+      <td>{mode_label}</td>
+    </tr>
+    <tr>
+      <td class="label">Reference</td>
+      <td>{reference}</td>
+    </tr>
+    {account_html}
+    {notes_html}
+  </table>
+
+  <section class="amount-block">
+    <p class="amount-label">{voucher_label} Amount</p>
+    <p class="amount-big">{amount_fmt}</p>
+  </section>
+
+  <footer class="footer">
+    <p>Generated by {company_name} &middot; {date_str}</p>
+    <div class="sig-line">Authorised Signatory</div>
+  </footer>
+</div>
+</body>
+</html>"""
+    return html
+
+
+@router.get("/{payment_id}/pdf")
+def download_payment_pdf(
+    payment_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    payment = (
+        db.query(Payment)
+        .filter(Payment.id == payment_id, Payment.status == "active")
+        .first()
+    )
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    company = db.query(CompanyProfile).first()
+
+    html = _build_receipt_html(payment, company)
+    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+    buf = BytesIO(pdf_bytes)
+
+    filename = f"receipt_{payment.payment_number or payment_id}.pdf"
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
