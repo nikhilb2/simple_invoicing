@@ -143,11 +143,56 @@ export type CompanyProfileUpdate = {
   currency_code: string;
   email: string;
   website: string;
-  bank_name: string;
-  branch_name: string;
-  account_name: string;
-  account_number: string;
-  ifsc_code: string;
+  bank_name?: string;
+  branch_name?: string;
+  account_name?: string;
+  account_number?: string;
+  ifsc_code?: string;
+};
+
+export type CompanyAccountType = 'bank' | 'cash';
+
+export type CompanyAccount = {
+  id: number;
+  account_type: CompanyAccountType;
+  display_name: string;
+  bank_name: string | null;
+  branch_name: string | null;
+  account_name: string | null;
+  account_number: string | null;
+  ifsc_code: string | null;
+  display_on_invoice: boolean;
+  opening_balance: number;
+  is_active: boolean;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CompanyAccountCreate = {
+  account_type: CompanyAccountType;
+  display_name: string;
+  bank_name?: string;
+  branch_name?: string;
+  account_name?: string;
+  account_number?: string;
+  ifsc_code?: string;
+  display_on_invoice?: boolean;
+  opening_balance?: number;
+  is_active?: boolean;
+};
+
+export type CompanyAccountUpdate = {
+  account_type?: CompanyAccountType;
+  display_name?: string;
+  bank_name?: string;
+  branch_name?: string;
+  account_name?: string;
+  account_number?: string;
+  ifsc_code?: string;
+  display_on_invoice?: boolean;
+  opening_balance?: number;
+  is_active?: boolean;
 };
 
 export type Invoice = {
@@ -285,6 +330,8 @@ export type LedgerStatementEntry = {
   particulars: string;
   debit: number;
   credit: number;
+  account_display_name?: string | null;
+  account_type?: CompanyAccountType | null;
 };
 
 export type LedgerStatement = {
@@ -309,6 +356,8 @@ export type DayBookEntry = {
   particulars: string;
   debit: number;
   credit: number;
+  account_display_name?: string | null;
+  account_type?: CompanyAccountType | null;
 };
 
 export type DayBook = {
@@ -328,6 +377,9 @@ export type Payment = {
   ledger_id: number;
   voucher_type: PaymentVoucherType;
   amount: number;
+  account_id?: number | null;
+  account_display_name?: string | null;
+  account_type?: CompanyAccountType | null;
   date: string;
   payment_number?: string | null;
   mode: string | null;
@@ -342,6 +394,7 @@ export type Payment = {
 export type PaymentUpdate = {
   voucher_type: PaymentVoucherType;
   amount: number;
+  account_id?: number | null;
   date?: string;
   mode?: string;
   reference?: string;
@@ -352,6 +405,7 @@ export type PaymentCreate = {
   ledger_id: number;
   voucher_type: PaymentVoucherType;
   amount: number;
+  account_id?: number | null;
   date?: string;
   mode?: string;
   reference?: string;

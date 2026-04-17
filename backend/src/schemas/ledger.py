@@ -65,6 +65,8 @@ class LedgerStatementEntry(BaseModel):
     particulars: str
     debit: float
     credit: float
+    account_display_name: str | None = None
+    account_type: str | None = None
 
 
 class LedgerStatementOut(BaseModel):
@@ -89,6 +91,8 @@ class DayBookEntry(BaseModel):
     particulars: str
     debit: float
     credit: float
+    account_display_name: str | None = None
+    account_type: str | None = None
 
 
 class DayBookOut(BaseModel):

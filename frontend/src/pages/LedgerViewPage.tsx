@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, FileText, FilePlus, Mail, Pencil, ReceiptText, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
-import type { CompanyProfile, Invoice, Ledger, LedgerStatement, Payment, PaymentCreate, PaymentUpdate, Product } from '../types/api';
+import type { CompanyAccount, CompanyProfile, Invoice, Ledger, LedgerStatement, Payment, PaymentCreate, PaymentUpdate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
 import StatementPreview from '../components/StatementPreview';
 import StatusToasts from '../components/StatusToasts';
@@ -28,6 +28,7 @@ export default function LedgerViewPage() {
   const [ledger, setLedger] = useState<Ledger | null>(null);
   const [statement, setStatement] = useState<LedgerStatement | null>(null);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
+  const [companyAccounts, setCompanyAccounts] = useState<CompanyAccount[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [loadingLedger, setLoadingLedger] = useState(true);
@@ -44,6 +45,7 @@ export default function LedgerViewPage() {
     ledger_id: ledgerId,
     voucher_type: 'receipt',
     amount: 0,
+    account_id: null,
     date: new Date().toISOString().slice(0, 16),
     mode: '',
     reference: '',
@@ -59,6 +61,7 @@ export default function LedgerViewPage() {
   const [editPaymentForm, setEditPaymentForm] = useState<PaymentUpdate>({
     voucher_type: 'receipt',
     amount: 0,
+    account_id: null,
     date: new Date().toISOString().slice(0, 16),
     mode: '',
     reference: '',
@@ -84,14 +87,16 @@ export default function LedgerViewPage() {
     (async () => {
       try {
         setLoadingLedger(true);
-        const [ledgerRes, companyRes, productsRes] = await Promise.all([
+        const [ledgerRes, companyRes, accountsRes, productsRes] = await Promise.all([
           api.get<Ledger>(`/ledgers/${ledgerId}`),
           api.get<CompanyProfile>('/company/'),
+          api.get<CompanyAccount[]>('/company-accounts/'),
           api.get<{ items: Product[] }>('/products/', { params: { page_size: 500 } }),
         ]);
         if (cancelled) return;
         setLedger(ledgerRes.data);
         setCompany(companyRes.data);
+        setCompanyAccounts(accountsRes.data);
         setProducts(productsRes.data.items);
       } catch (err) {
         if (!cancelled) setError(getApiErrorMessage(err, 'Unable to load ledger'));
@@ -160,6 +165,7 @@ export default function LedgerViewPage() {
         ledger_id: ledgerId,
         voucher_type: 'receipt',
         amount: 0,
+        account_id: null,
         date: new Date().toISOString().slice(0, 16),
         mode: '',
         reference: '',
@@ -187,6 +193,7 @@ export default function LedgerViewPage() {
       setEditPaymentForm({
         voucher_type: res.data.voucher_type,
         amount: res.data.amount,
+        account_id: res.data.account_id ?? null,
         date: res.data.date.slice(0, 16),
         mode: res.data.mode || '',
         reference: res.data.reference || '',
@@ -448,6 +455,12 @@ export default function LedgerViewPage() {
                     <div className="invoice-row__meta">
                       <strong>{entry.voucher_type} #{entry.entry_id}</strong>
                       <span className="table-subtext">{new Date(entry.date).toLocaleDateString()} · {entry.particulars}</span>
+                      {entry.entry_type === 'payment' ? (
+                        <span className="table-subtext">
+                          Account: {entry.account_display_name || 'Unallocated'}
+                          {entry.account_type ? ` (${entry.account_type})` : ''}
+                        </span>
+                      ) : null}
                     </div>
                     <span className="invoice-row__price">
                       {entry.debit > 0 ? `Dr ${formatCurrency(entry.debit, activeCurrencyCode)}` : `Cr ${formatCurrency(entry.credit, activeCurrencyCode)}`}
@@ -545,6 +558,22 @@ export default function LedgerViewPage() {
                     onChange={(e) => setPaymentForm((f) => ({ ...f, amount: parseFloat(e.target.value) || 0 }))}
                     required
                   />
+                </div>
+                <div className="field">
+                  <label htmlFor="pay-account">Account</label>
+                  <select
+                    id="pay-account"
+                    className="input"
+                    value={paymentForm.account_id ?? ''}
+                    onChange={(e) => setPaymentForm((f) => ({ ...f, account_id: e.target.value ? Number(e.target.value) : null }))}
+                  >
+                    <option value="">Unallocated</option>
+                    {companyAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.display_name} ({account.account_type})
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="field">
                   <label htmlFor="pay-date">Date</label>
@@ -680,6 +709,22 @@ export default function LedgerViewPage() {
                     onChange={(e) => setEditPaymentForm((f) => ({ ...f, amount: parseFloat(e.target.value) || 0 }))}
                     required
                   />
+                </div>
+                <div className="field">
+                  <label htmlFor="edit-pay-account">Account</label>
+                  <select
+                    id="edit-pay-account"
+                    className="input"
+                    value={editPaymentForm.account_id ?? ''}
+                    onChange={(e) => setEditPaymentForm((f) => ({ ...f, account_id: e.target.value ? Number(e.target.value) : null }))}
+                  >
+                    <option value="">Unallocated</option>
+                    {companyAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.display_name} ({account.account_type})
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="field">
                   <label htmlFor="edit-pay-date">Date</label>
