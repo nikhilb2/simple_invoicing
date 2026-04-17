@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from src.api.deps import get_current_user, require_roles
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
+from src.models.company_account import CompanyAccount
 from src.models.payment import Payment
 from src.models.user import User, UserRole
 from src.schemas.payment import PaymentCreate, PaymentOut, PaymentUpdate
@@ -13,6 +14,24 @@ from src.services.series import generate_next_number
 from src.services.financial_year import get_active_fy, get_fy_for_date
 
 router = APIRouter()
+
+
+def _get_active_account(db: Session, account_id: int) -> CompanyAccount:
+    account = db.query(CompanyAccount).filter(
+        CompanyAccount.id == account_id,
+        CompanyAccount.is_active.is_(True),
+    ).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return account
+
+
+def _to_payment_out(payment: Payment) -> PaymentOut:
+    result = PaymentOut.model_validate(payment)
+    if payment.account is not None:
+        result.account_display_name = payment.account.display_name
+        result.account_type = payment.account.account_type
+    return result
 
 
 def _find_existing_opening_balance(
@@ -61,6 +80,10 @@ def create_payment(
 
     _ensure_single_opening_balance(db, payload.ledger_id, payload.voucher_type)
 
+    selected_account = None
+    if payload.account_id is not None:
+        selected_account = _get_active_account(db, payload.account_id)
+
     payment_date = payload.date or datetime.utcnow()
     payment_day = payment_date.date() if hasattr(payment_date, "date") else payment_date
 
@@ -86,6 +109,7 @@ def create_payment(
         ledger_id=payload.ledger_id,
         voucher_type=payload.voucher_type,
         amount=payload.amount,
+        account_id=selected_account.id if selected_account else None,
         date=payment_date,
         mode=payload.mode.strip() if payload.mode else None,
         reference=payload.reference.strip() if payload.reference else None,
@@ -104,7 +128,7 @@ def create_payment(
         if not (active_fy.start_date <= pdate <= active_fy.end_date):
             warnings.append("invoice_date_outside_fy")
 
-    result = PaymentOut.model_validate(payment)
+    result = _to_payment_out(payment)
     result.warnings = warnings
     return result
 
@@ -122,7 +146,7 @@ def list_payments(
         query = query.filter(Payment.ledger_id == ledger_id)
     if not include_cancelled:
         query = query.filter(Payment.status == "active")
-    return query.order_by(Payment.date.desc()).all()
+    return [_to_payment_out(payment) for payment in query.order_by(Payment.date.desc()).all()]
 
 
 @router.get("/{payment_id}", response_model=PaymentOut)
@@ -134,7 +158,7 @@ def get_payment(
     payment = db.query(Payment).filter(Payment.id == payment_id).first()
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
-    return payment
+    return _to_payment_out(payment)
 
 
 @router.put("/{payment_id}", response_model=PaymentOut)
@@ -155,8 +179,13 @@ def update_payment(
         exclude_payment_id=payment.id,
     )
 
+    selected_account = None
+    if payload.account_id is not None:
+        selected_account = _get_active_account(db, payload.account_id)
+
     payment.voucher_type = payload.voucher_type
     payment.amount = payload.amount
+    payment.account_id = selected_account.id if selected_account else None
     if payload.date is not None:
         payment.date = payload.date
     payment.mode = payload.mode.strip() if payload.mode else None
@@ -164,7 +193,7 @@ def update_payment(
     payment.notes = payload.notes.strip() if payload.notes else None
     db.commit()
     db.refresh(payment)
-    result = PaymentOut.model_validate(payment)
+    result = _to_payment_out(payment)
     return result
 
 

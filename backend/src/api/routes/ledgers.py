@@ -219,6 +219,8 @@ def _build_ledger_statement_data(
             particulars=f"{_format_voucher_label(payment.voucher_type)}" + (f" ({payment.mode})" if payment.mode else ""),
             debit=debit,
             credit=credit,
+        account_display_name=payment.account.display_name if payment.account else None,
+        account_type=payment.account.account_type if payment.account else None,
         ))
     for credit_note_entry in period_credit_note_summary.entries:
         entries.append(LedgerStatementEntry(
@@ -383,6 +385,8 @@ def get_day_book(
         particulars=f"{_format_voucher_label(payment.voucher_type)} #{payment.id}" + (f" ({payment.mode})" if payment.mode else ""),
         debit=debit,
         credit=credit,
+        account_display_name=payment.account.display_name if payment.account else None,
+        account_type=payment.account.account_type if payment.account else None,
       ))
     for credit_note_entry in credit_note_summary.entries:
         entries.append(DayBookEntry(

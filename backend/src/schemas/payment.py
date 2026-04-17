@@ -9,6 +9,7 @@ PAYMENT_VOUCHER_TYPES = ("receipt", "payment", "opening_balance")
 class PaymentUpdate(BaseModel):
     voucher_type: str
     amount: float
+    account_id: int | None = None
     date: datetime | None = None
     mode: str | None = None
     reference: str | None = None
@@ -38,6 +39,7 @@ class PaymentCreate(BaseModel):
     ledger_id: int
     voucher_type: str  # "receipt", "payment" or "opening_balance"
     amount: float
+    account_id: int | None = None
     date: datetime | None = None
     mode: str | None = None
     reference: str | None = None
@@ -68,6 +70,9 @@ class PaymentOut(BaseModel):
     ledger_id: int
     voucher_type: str
     amount: float
+    account_id: int | None = None
+    account_display_name: str | None = None
+    account_type: str | None = None
     date: datetime
     payment_number: str | None = None
     mode: str | None = None
