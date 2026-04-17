@@ -17,6 +17,7 @@ import LedgersPage from './pages/LedgersPage';
 import LedgerCreatePage from './pages/LedgerCreatePage';
 import LedgerViewPage from './pages/LedgerViewPage';
 import DayBookPage from './pages/DayBookPage';
+import TaxLedgerPage from './pages/TaxLedgerPage';
 import CashBankPage from './pages/CashBankPage';
 import CashBankAccountsPage from './pages/CashBankAccountsPage';
 import CompanyPage from './pages/CompanyPage';
@@ -99,6 +100,7 @@ function AppRoutes() {
       <Route path="/ledgers/:id" element={<Protected><CompanyRequired><Layout><LedgerViewPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/ledgers/:id/edit" element={<Protected><CompanyRequired><Layout><LedgerCreatePage /></Layout></CompanyRequired></Protected>} />
       <Route path="/day-book" element={<Protected><CompanyRequired><Layout><DayBookPage /></Layout></CompanyRequired></Protected>} />
+      <Route path="/tax-ledger" element={<Protected><CompanyRequired><Layout><TaxLedgerPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/cash-bank" element={<Protected><CompanyRequired><Layout><CashBankPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/cash-bank/accounts" element={<Protected><CompanyRequired><Layout><CashBankAccountsPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/invoices" element={<Protected><CompanyRequired><Layout><InvoicesPage /></Layout></CompanyRequired></Protected>} />

@@ -26,6 +26,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       registerAction('go_products',  () => navigate('/products')),
       registerAction('go_inventory', () => navigate('/inventory')),
       registerAction('go_day_book',  () => navigate('/day-book')),
+      registerAction('go_tax_ledger',() => navigate('/tax-ledger')),
       registerAction('open_reports', () => navigate('/day-book')),
       registerAction('new_customer', () => navigate('/ledgers/new')),
     ];
