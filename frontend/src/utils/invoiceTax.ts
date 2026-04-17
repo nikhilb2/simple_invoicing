@@ -61,6 +61,6 @@ export function formatInvoiceTaxBreakdown({
   }
 
   const splitCgstAmount = roundCurrency(normalizedTaxAmount / 2);
-  const splitSgstAmount = roundCurrency(normalizedTaxAmount - splitCgstAmount);
+  const splitSgstAmount = splitCgstAmount;
   return `CGST ${formatRate(normalizedGstRate / 2)}% (${formatCurrency(splitCgstAmount, currencyCode)}) + SGST ${formatRate(normalizedGstRate / 2)}% (${formatCurrency(splitSgstAmount, currencyCode)})`;
 }

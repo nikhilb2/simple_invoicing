@@ -78,43 +78,33 @@ def _assign_item_tax_split(
     items: list[InvoiceItem],
     *,
     interstate_supply: bool,
-    invoice_cgst_amount: Decimal,
-    invoice_sgst_amount: Decimal,
-    invoice_igst_amount: Decimal,
 ) -> None:
     if not items:
         return
 
     if interstate_supply:
-        remaining_igst = _money(invoice_igst_amount)
-        for index, item in enumerate(items):
+        for item in items:
             item_tax_amount = _money(Decimal(str(item.tax_amount or 0)))
-            is_last_item = index == len(items) - 1
-            item_igst_amount = remaining_igst if is_last_item else item_tax_amount
-            if not is_last_item:
-                remaining_igst = _money(remaining_igst - item_igst_amount)
+            item_igst_amount = item_tax_amount
+            taxable_amount = _money(Decimal(str(item.taxable_amount or 0)))
 
+            item.tax_amount = float(item_igst_amount)
+            item.line_total = float(_money(taxable_amount + item_igst_amount))
             item.cgst_amount = 0.0
             item.sgst_amount = 0.0
             item.igst_amount = float(item_igst_amount)
         return
 
-    remaining_cgst = _money(invoice_cgst_amount)
-    remaining_sgst = _money(invoice_sgst_amount)
-
-    for index, item in enumerate(items):
+    for item in items:
         item_tax_amount = _money(Decimal(str(item.tax_amount or 0)))
-        is_last_item = index == len(items) - 1
+        item_half_tax_amount = _money(item_tax_amount / Decimal("2"))
+        item_cgst_amount = item_half_tax_amount
+        item_sgst_amount = item_half_tax_amount
+        item_total_tax_amount = _money(item_cgst_amount + item_sgst_amount)
+        taxable_amount = _money(Decimal(str(item.taxable_amount or 0)))
 
-        if is_last_item:
-            item_cgst_amount = remaining_cgst
-            item_sgst_amount = remaining_sgst
-        else:
-            item_cgst_amount = _money(item_tax_amount / Decimal("2"))
-            item_sgst_amount = _money(item_tax_amount - item_cgst_amount)
-            remaining_cgst = _money(remaining_cgst - item_cgst_amount)
-            remaining_sgst = _money(remaining_sgst - item_sgst_amount)
-
+        item.tax_amount = float(item_total_tax_amount)
+        item.line_total = float(_money(taxable_amount + item_total_tax_amount))
         item.cgst_amount = float(item_cgst_amount)
         item.sgst_amount = float(item_sgst_amount)
         item.igst_amount = 0.0
@@ -242,37 +232,28 @@ def _apply_payload_to_invoice(
         created_items.append(invoice_item)
         db.add(invoice_item)
 
-    invoice.taxable_amount = float(_money(taxable_total))
-    tax_total = _money(tax_total)
-
-    # Split GST components at invoice level. If intrastate total tax has odd paise,
-    # add Rs 0.01 first so CGST and SGST are always equal after splitting.
-    if interstate_supply:
-        invoice.cgst_amount = 0.0
-        invoice.sgst_amount = 0.0
-        invoice.igst_amount = float(tax_total)
-    else:
-        paise = int(tax_total * Decimal("100"))
-        if paise % 2 != 0:
-            tax_total = _money(tax_total + Decimal("0.01"))
-            if created_items:
-                last_item = created_items[-1]
-                last_item.tax_amount = float(_money(Decimal(str(last_item.tax_amount or 0)) + Decimal("0.01")))
-                last_item.line_total = float(_money(Decimal(str(last_item.line_total or 0)) + Decimal("0.01")))
-
-        half_tax_total = _money(tax_total / Decimal("2"))
-        invoice.cgst_amount = float(half_tax_total)
-        invoice.sgst_amount = float(half_tax_total)
-        invoice.igst_amount = 0.0
+    taxable_total = _money(taxable_total)
+    invoice.taxable_amount = float(taxable_total)
 
     _assign_item_tax_split(
         created_items,
         interstate_supply=interstate_supply,
-        invoice_cgst_amount=Decimal(str(invoice.cgst_amount or 0)),
-        invoice_sgst_amount=Decimal(str(invoice.sgst_amount or 0)),
-        invoice_igst_amount=Decimal(str(invoice.igst_amount or 0)),
     )
 
+    cgst_total = _money(sum((_money(Decimal(str(item.cgst_amount or 0))) for item in created_items), Decimal("0")))
+    sgst_total = _money(sum((_money(Decimal(str(item.sgst_amount or 0))) for item in created_items), Decimal("0")))
+    igst_total = _money(sum((_money(Decimal(str(item.igst_amount or 0))) for item in created_items), Decimal("0")))
+
+    if interstate_supply:
+        invoice.cgst_amount = 0.0
+        invoice.sgst_amount = 0.0
+        invoice.igst_amount = float(igst_total)
+    else:
+        invoice.cgst_amount = float(cgst_total)
+        invoice.sgst_amount = float(sgst_total)
+        invoice.igst_amount = 0.0
+
+    tax_total = _money(cgst_total + sgst_total + igst_total)
     invoice.total_tax_amount = float(tax_total)
     raw_total = _money(taxable_total + tax_total)
     if invoice.apply_round_off:

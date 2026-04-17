@@ -140,7 +140,7 @@ def test_intrastate_odd_paise_total_tax_is_adjusted_and_split_equally(db_session
     assert "GST Split" not in html
 
 
-def test_intrastate_three_line_case_keeps_cgst_sgst_equal(db_session):
+def test_intrastate_three_line_case_keeps_itemwise_cgst_sgst_equal(db_session):
     user, ledger = _seed_common(db_session)
     p1 = _create_product_with_inventory(db_session, "MS02", 254.24, 18)
     p2 = _create_product_with_inventory(db_session, "LED01", 2457.63, 18)
@@ -176,16 +176,19 @@ def test_intrastate_three_line_case_keeps_cgst_sgst_equal(db_session):
 
     assert len(invoice.items) == 3
     assert float(invoice.items[0].tax_amount) == pytest.approx(45.76)
-    assert float(invoice.items[1].tax_amount) == pytest.approx(442.37)
-    assert float(invoice.items[2].tax_amount) == pytest.approx(91.53)
+    assert float(invoice.items[1].tax_amount) == pytest.approx(442.38)
+    assert float(invoice.items[2].tax_amount) == pytest.approx(91.52)
     assert float(invoice.items[0].cgst_amount) == pytest.approx(22.88)
     assert float(invoice.items[0].sgst_amount) == pytest.approx(22.88)
     assert float(invoice.items[1].cgst_amount) == pytest.approx(221.19)
-    assert float(invoice.items[1].sgst_amount) == pytest.approx(221.18)
+    assert float(invoice.items[1].sgst_amount) == pytest.approx(221.19)
     assert float(invoice.items[2].cgst_amount) == pytest.approx(45.76)
-    assert float(invoice.items[2].sgst_amount) == pytest.approx(45.77)
+    assert float(invoice.items[2].sgst_amount) == pytest.approx(45.76)
+    assert all(float(item.cgst_amount) == pytest.approx(float(item.sgst_amount)) for item in invoice.items)
     assert sum(float(item.cgst_amount) for item in invoice.items) == pytest.approx(289.83)
     assert sum(float(item.sgst_amount) for item in invoice.items) == pytest.approx(289.83)
+    assert sum(float(item.tax_amount) for item in invoice.items) == pytest.approx(float(invoice.total_tax_amount))
+    assert float(invoice.total_tax_amount) == pytest.approx(float(invoice.cgst_amount) + float(invoice.sgst_amount))
     assert sum(float(item.igst_amount) for item in invoice.items) == pytest.approx(0)
 
 
