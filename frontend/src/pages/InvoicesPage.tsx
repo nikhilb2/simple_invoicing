@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Eye, FileText, Pencil, Trash2, RotateCcw } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
-import type { CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerCreate, PaginatedInvoices, Payment, PaymentCreate, Product } from '../types/api';
+import type { CompanyAccount, CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerCreate, PaginatedInvoices, Payment, PaymentCreate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
 import ConfirmDialog from '../components/ConfirmDialog';
 import StatusToasts from '../components/StatusToasts';
@@ -54,6 +54,7 @@ export default function InvoicesPage() {
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
+  const [companyAccounts, setCompanyAccounts] = useState<CompanyAccount[]>([]);
   const [selectedLedgerId, setSelectedLedgerId] = useState('');
   const [voucherType, setVoucherType] = useState<'sales' | 'purchase' | 'payment'>('sales');
   const [taxInclusive, setTaxInclusive] = useState(false);
@@ -61,6 +62,7 @@ export default function InvoicesPage() {
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
   const [paymentReference, setPaymentReference] = useState('');
+  const [selectedPaymentAccountId, setSelectedPaymentAccountId] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [payments, setPayments] = useState<Payment[]>([]);
   const [listTab, setListTab] = useState<'invoices' | 'payments'>('invoices');
@@ -149,6 +151,22 @@ export default function InvoicesPage() {
       setLoadingPayments(false);
     }
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<CompanyAccount[]>('/company-accounts/');
+        if (cancelled) return;
+        setCompanyAccounts(res.data);
+      } catch {
+        // Keep payment voucher flow usable even when accounts fail to load.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!composerQuery.data) {
@@ -240,6 +258,7 @@ export default function InvoicesPage() {
     setApplyRoundOff(false);
     setPaymentMode('cash');
     setPaymentReference('');
+    setSelectedPaymentAccountId('');
     setPaymentAmount('');
     const defaultProduct = products[0];
     setItems([createItem(1, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))]);
@@ -293,6 +312,7 @@ export default function InvoicesPage() {
           ledger_id: Number(selectedLedgerId),
           voucher_type: 'payment',
           amount: Number(paymentAmount),
+          account_id: selectedPaymentAccountId ? Number(selectedPaymentAccountId) : null,
           date: invoiceDate ? new Date(invoiceDate).toISOString() : undefined,
           mode: paymentMode || undefined,
           reference: paymentReference.trim() || undefined,
@@ -704,6 +724,22 @@ export default function InvoicesPage() {
 
             {voucherType === 'payment' ? (
               <div className="field-grid">
+                <div className="field">
+                  <label htmlFor="payment-account">Account</label>
+                  <select
+                    id="payment-account"
+                    className="select"
+                    value={selectedPaymentAccountId}
+                    onChange={(event) => setSelectedPaymentAccountId(event.target.value)}
+                  >
+                    <option value="">Unallocated</option>
+                    {companyAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.display_name} ({account.account_type})
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div className="field">
                   <label htmlFor="payment-mode">Payment mode</label>
                   <select

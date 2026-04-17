@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
+import CompanyAccountsCard from '../components/CompanyAccountsCard';
 import StatusToasts from '../components/StatusToasts';
 import { useAuth } from '../context/AuthContext';
 import { useFY } from '../context/FYContext';
@@ -620,6 +621,8 @@ export default function CompanyPage() {
             </form>
           ) : null}
         </article>
+
+        <CompanyAccountsCard isAdmin={isAdmin} />
 
         <InvoiceSeriesCard sectionRef={seriesSectionRef} />
       </section>
