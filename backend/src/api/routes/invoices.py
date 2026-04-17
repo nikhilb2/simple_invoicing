@@ -973,6 +973,8 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
         billto_parts.append(f"Phone: {_e(invoice.ledger_phone)}")
     billto_details = " &middot; ".join(billto_parts)
 
+    invoice_title = "Tax Invoice" if invoice.ledger_gst else "Sales Invoice"
+
     round_off_amount = float(invoice.round_off_amount or 0)
     show_round_off = bool(invoice.apply_round_off and round_off_amount != 0)
     round_off_html = (
@@ -1156,6 +1158,17 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     font-size: 8px;
     color: #9ca3af;
   }}
+  .invoice-title {{
+    text-align: center;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #1f2937;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #e5e7eb;
+    margin-bottom: 16px;
+  }}
   .invoice-amount-words {{
     font-size: 8px;
     font-style: italic;
@@ -1166,6 +1179,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
 </head>
 <body>
 <div class="invoice-sheet">
+  <div class="invoice-title">{invoice_title}</div>
   <header class="invoice-sheet__header">
     <div>
       <p class="eyebrow">Billed by</p>
