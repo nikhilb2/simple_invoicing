@@ -903,7 +903,15 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     return html
 
 
-def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount] | None = None) -> str:
+def _copy_label(n: int) -> str:
+    _labels = {1: "Original", 2: "Duplicate", 3: "Triplicate"}
+    if n in _labels:
+        return _labels[n]
+    suffix = ("th" if (n % 100) in (11, 12, 13) else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th"))
+    return f"{n}{suffix} Copy"
+
+
+def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount] | None = None, copy_label: str = "Original") -> str:
     if invoice_bank_accounts is None:
         invoice_bank_accounts = []
     
@@ -1169,6 +1177,15 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     border-bottom: 2px solid #e5e7eb;
     margin-bottom: 16px;
   }}
+  .copy-label {{
+    text-align: right;
+    font-size: 8px;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }}
   .invoice-amount-words {{
     font-size: 8px;
     font-style: italic;
@@ -1179,6 +1196,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
 </head>
 <body>
 <div class="invoice-sheet">
+  <div class="copy-label">{copy_label}</div>
   <div class="invoice-title">{invoice_title}</div>
   <header class="invoice-sheet__header">
     <div>
@@ -1247,8 +1265,39 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     return html
 
 
+def _build_multi_copy_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int) -> str:
+    if invoice.voucher_type == "purchase":
+        return _build_purchase_invoice_html(invoice, products)
+    if copies == 1:
+        return _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1))
+
+    pages = []
+    first_html: str | None = None
+    for i in range(1, copies + 1):
+        full_html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(i))
+        if i == 1:
+            first_html = full_html
+        body_open_end = full_html.index('<body>') + len('<body>')
+        body_close_start = full_html.rindex('</body>')
+        body_content = full_html[body_open_end:body_close_start].strip()
+        page_style = '' if i == copies else ' style="break-after: page; page-break-after: always;"'
+        pages.append(f'<div{page_style}>\n{body_content}\n</div>')
+
+    assert first_html is not None
+    body_open_end = first_html.index('<body>') + len('<body>')
+    combined = '\n'.join(pages)
+    return first_html[:body_open_end] + '\n' + combined + '\n</body>\n</html>'
+
+
 def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount]) -> BytesIO:
-    html = _build_invoice_html(invoice, products, invoice_bank_accounts)
+    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1))
+    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+    buf = BytesIO(pdf_bytes)
+    return buf
+
+
+def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int) -> BytesIO:
+    html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies)
     pdf_bytes = weasyprint.HTML(string=html).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
@@ -1257,6 +1306,7 @@ def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_a
 @router.get("/{invoice_id}/pdf")
 def download_invoice_pdf(
     invoice_id: int,
+    copies: int = Query(default=1, ge=1, le=10),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -1283,7 +1333,7 @@ def download_invoice_pdf(
       .all()
     )
 
-    pdf_buffer = _build_invoice_pdf(invoice, products, invoice_bank_accounts)
+    pdf_buffer = _build_multi_copy_invoice_pdf(invoice, products, invoice_bank_accounts, copies)
     filename = f"invoice_{invoice.invoice_number or invoice.id}.pdf"
 
     return StreamingResponse(

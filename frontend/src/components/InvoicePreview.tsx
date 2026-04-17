@@ -12,6 +12,7 @@ type InvoicePreviewProps = {
 
 export default function InvoicePreview({ invoice, onClose, onError }: InvoicePreviewProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [copies, setCopies] = useState(1);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
@@ -29,7 +30,7 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
       setPdfUrl(null);
 
       try {
-        const response = await api.get(`/invoices/${invoice.id}/pdf`, {
+        const response = await api.get(`/invoices/${invoice.id}/pdf?copies=${copies}`, {
           responseType: 'blob',
         });
         const nextUrl = window.URL.createObjectURL(response.data as Blob);
@@ -60,11 +61,11 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
         window.URL.revokeObjectURL(objectUrlToRevoke);
       }
     };
-  }, [invoice.id]);
+  }, [invoice.id, copies]);
 
   const handleDownloadPdf = async () => {
     try {
-      const response = await api.get(`/invoices/${invoice.id}/pdf`, {
+      const response = await api.get(`/invoices/${invoice.id}/pdf?copies=${copies}`, {
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(response.data as Blob);
@@ -91,7 +92,19 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
             <p className="eyebrow">Invoice preview</p>
             <h2 id="invoice-preview-title" className="nav-panel__title">PDF invoice {invoice.invoice_number || `#${invoice.id}`}</h2>
           </div>
-          <div className="button-row">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#6b7280', whiteSpace: 'nowrap' }}>
+              Copies
+              <input
+                type="number"
+                min={1}
+                max={10}
+                value={copies}
+                onChange={(e) => setCopies(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
+                style={{ width: '52px', padding: '4px 6px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '12px', textAlign: 'center' }}
+              />
+            </label>
+            <div className="button-row">
             <button type="button" className="button button--secondary" onClick={handlePrintPdf} disabled={!pdfUrl || loadingPdf} title="Print invoice" aria-label="Print invoice">
               Print
             </button>
@@ -116,6 +129,7 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
             <button type="button" className="button button--ghost" onClick={onClose} title="Close invoice preview" aria-label="Close invoice preview">
               Close
             </button>
+            </div>
           </div>
         </div>
 
