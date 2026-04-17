@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
-import CompanyAccountsCard from '../components/CompanyAccountsCard';
 import StatusToasts from '../components/StatusToasts';
 import { useAuth } from '../context/AuthContext';
 import { useFY } from '../context/FYContext';
@@ -253,11 +252,6 @@ export default function CompanyPage() {
     currency_code: 'USD',
     email: '',
     website: '',
-    bank_name: '',
-    branch_name: '',
-    account_name: '',
-    account_number: '',
-    ifsc_code: '',
   });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -291,11 +285,6 @@ export default function CompanyPage() {
         currency_code: response.data.currency_code || 'USD',
         email: response.data.email || '',
         website: response.data.website || '',
-        bank_name: response.data.bank_name || '',
-        branch_name: response.data.branch_name || '',
-        account_name: response.data.account_name || '',
-        account_number: response.data.account_number || '',
-        ifsc_code: response.data.ifsc_code || '',
       });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to load company profile'));
@@ -324,11 +313,6 @@ export default function CompanyPage() {
         currency_code: form.currency_code.trim().toUpperCase(),
         email: form.email.trim(),
         website: form.website.trim(),
-        bank_name: form.bank_name.trim(),
-        branch_name: form.branch_name.trim(),
-        account_name: form.account_name.trim(),
-        account_number: form.account_number.trim(),
-        ifsc_code: form.ifsc_code.trim().toUpperCase(),
       };
 
       await api.put<CompanyProfile>('/company/', payload);
@@ -556,60 +540,21 @@ export default function CompanyPage() {
                   />
                 </div>
 
-                <div className="field">
-                  <label htmlFor="company-bank-name">Bank name</label>
-                  <input
-                    id="company-bank-name"
-                    className="input"
-                    value={form.bank_name}
-                    onChange={(event) => setForm((current) => ({ ...current, bank_name: event.target.value }))}
-                    placeholder="HDFC Bank"
-                  />
-                </div>
-
-                <div className="field">
-                  <label htmlFor="company-branch-name">Branch</label>
-                  <input
-                    id="company-branch-name"
-                    className="input"
-                    value={form.branch_name}
-                    onChange={(event) => setForm((current) => ({ ...current, branch_name: event.target.value }))}
-                    placeholder="Bandra West"
-                  />
-                </div>
-
-                <div className="field">
-                  <label htmlFor="company-account-name">Account holder name</label>
-                  <input
-                    id="company-account-name"
-                    className="input"
-                    value={form.account_name}
-                    onChange={(event) => setForm((current) => ({ ...current, account_name: event.target.value }))}
-                    placeholder="Simple Invoicing Pvt Ltd"
-                  />
-                </div>
-
-                <div className="field">
-                  <label htmlFor="company-account-number">Account number</label>
-                  <input
-                    id="company-account-number"
-                    className="input"
-                    value={form.account_number}
-                    onChange={(event) => setForm((current) => ({ ...current, account_number: event.target.value }))}
-                    placeholder="123456789012"
-                  />
-                </div>
-
-                <div className="field">
-                  <label htmlFor="company-ifsc">IFSC</label>
-                  <input
-                    id="company-ifsc"
-                    className="input"
-                    value={form.ifsc_code}
-                    onChange={(event) => setForm((current) => ({ ...current, ifsc_code: event.target.value }))}
-                    placeholder="HDFC0001234"
-                  />
-                  <small className="field-hint">Format: SBIN0001234</small>
+                <div className="field field--full">
+                  <small className="field-hint">
+                    Bank and cash account details are managed from Cash &amp; Bank Accounts.
+                  </small>
+                  <div className="button-row" style={{ marginTop: '8px' }}>
+                    <button
+                      type="button"
+                      className="button button--secondary"
+                      onClick={() => navigate('/cash-bank/accounts')}
+                      title="Open Cash & Bank Accounts"
+                      aria-label="Open Cash & Bank Accounts"
+                    >
+                      Manage cash &amp; bank accounts
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -621,8 +566,6 @@ export default function CompanyPage() {
             </form>
           ) : null}
         </article>
-
-        <CompanyAccountsCard isAdmin={isAdmin} />
 
         <InvoiceSeriesCard sectionRef={seriesSectionRef} />
       </section>

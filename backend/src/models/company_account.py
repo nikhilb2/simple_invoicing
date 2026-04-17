@@ -17,6 +17,7 @@ class CompanyAccount(Base):
     account_name = Column(String, nullable=True)
     account_number = Column(String, nullable=True)
     ifsc_code = Column(String, nullable=True)
+    display_on_invoice = Column(Boolean, nullable=False, default=True)
     opening_balance = Column(Numeric(12, 2), nullable=False, default=0)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)

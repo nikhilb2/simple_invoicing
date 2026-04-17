@@ -15,6 +15,7 @@ from fastapi import Query
 
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
+from src.models.company_account import CompanyAccount
 from src.models.company import CompanyProfile
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.inventory import Inventory
@@ -594,6 +595,27 @@ def _build_pdf_tax_breakup_rows(invoice: Invoice, currency: str) -> str:
   )
 
 
+def _build_pdf_payment_details_html(invoice_bank_accounts: list[CompanyAccount]) -> str:
+    if not invoice_bank_accounts:
+        return '<p class="muted-text">No bank account marked to display on invoice.</p>'
+
+    blocks: list[str] = []
+    for account in invoice_bank_accounts:
+        blocks.append(
+            (
+                '<div class="invoice-sheet__bank-card">'
+                f"<p class=\"invoice-sheet__bank-card-title\">{_e(account.display_name)}</p>"
+                f"<p>Bank: {_e(account.bank_name) or 'N/A'}</p>"
+                f"<p>Branch: {_e(account.branch_name) or 'N/A'}</p>"
+                f"<p>A/C No: {_e(account.account_number) or 'N/A'}</p>"
+                f"<p>IFSC: {_e(account.ifsc_code) or 'N/A'}</p>"
+                "</div>"
+            )
+        )
+
+    return f'<div class="invoice-sheet__bank-cards">{"".join(blocks)}</div>'
+
+
 def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> str:
     """Generate HTML for a purchase invoice (supplier at top-left, your company top-right,
     no bank details in footer, optional supplier ref row)."""
@@ -881,7 +903,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     return html
 
 
-def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
+def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount]) -> str:
     if invoice.voucher_type == "purchase":
         return _build_purchase_invoice_html(invoice, products)
 
@@ -954,6 +976,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
         f'<p>Round off: {_fmt_currency(round_off_amount, currency)}</p>' if show_round_off else ''
     )
     tax_breakup_rows = _build_pdf_tax_breakup_rows(invoice, currency)
+    payment_details_html = _build_pdf_payment_details_html(invoice_bank_accounts)
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -1072,20 +1095,46 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
   }}
   .invoice-sheet__footer {{
     display: flex;
-    justify-content: space-between;
-    gap: 24px;
+    justify-content: flex-end;
     margin-top: 8px;
   }}
-  .invoice-sheet__bank {{
-    flex: 1;
+  .invoice-sheet__bank-section {{
+    margin-top: 14px;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 10px;
   }}
-  .invoice-sheet__bank p {{
+  .invoice-sheet__bank-section p {{
     font-size: 9px;
     color: #4b5563;
     margin-bottom: 1px;
   }}
+  .invoice-sheet__bank-cards {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: stretch;
+  }}
+  .invoice-sheet__bank-card {{
+    flex: 1 1 240px;
+    max-width: 320px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #f9fafb;
+    padding: 10px 12px;
+  }}
+  .invoice-sheet__bank-card p {{
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }}
+  .invoice-sheet__bank-card-title {{
+    font-size: 10px !important;
+    font-weight: 700;
+    color: #1f2937 !important;
+    margin-bottom: 4px !important;
+  }}
   .invoice-sheet__totals {{
-    flex: 1;
+    min-width: 240px;
     text-align: right;
   }}
   .invoice-sheet__totals p {{
@@ -1158,14 +1207,6 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
   </section>
 
   <section class="invoice-sheet__footer">
-    <div class="invoice-sheet__bank">
-      <p class="eyebrow">Payment details</p>
-      <p>Bank: {_e(invoice.company_bank_name) or 'N/A'}</p>
-      <p>Branch: {_e(invoice.company_branch_name) or 'N/A'}</p>
-      <p>Account: {_e(invoice.company_account_name) or 'N/A'}</p>
-      <p>A/C No: {_e(invoice.company_account_number) or 'N/A'}</p>
-      <p>IFSC: {_e(invoice.company_ifsc_code) or 'N/A'}</p>
-    </div>
     <div class="invoice-sheet__totals">
       <p class="eyebrow">Tax breakup</p>
       <p>Taxable: {_fmt_currency(float(invoice.taxable_amount or 0), currency)}</p>
@@ -1178,14 +1219,19 @@ def _build_invoice_html(invoice: Invoice, products: list[Product]) -> str:
       <p class="muted-text">Authorized by {_e(invoice.company_name) or 'Billing company'}</p>
     </div>
   </section>
+
+  <section class="invoice-sheet__bank-section">
+    <p class="eyebrow">Payment details</p>
+    {payment_details_html}
+  </section>
 </div>
 </body>
 </html>"""
     return html
 
 
-def _build_invoice_pdf(invoice: Invoice, products: list[Product]) -> BytesIO:
-    html = _build_invoice_html(invoice, products)
+def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount]) -> BytesIO:
+    html = _build_invoice_html(invoice, products, invoice_bank_accounts)
     pdf_bytes = weasyprint.HTML(string=html).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
@@ -1209,7 +1255,18 @@ def download_invoice_pdf(
     product_ids = [item.product_id for item in (invoice.items or [])]
     products = db.query(Product).filter(Product.id.in_(product_ids)).all() if product_ids else []
 
-    pdf_buffer = _build_invoice_pdf(invoice, products)
+    invoice_bank_accounts = (
+      db.query(CompanyAccount)
+      .filter(
+        CompanyAccount.is_active.is_(True),
+        CompanyAccount.account_type == "bank",
+        CompanyAccount.display_on_invoice.is_(True),
+      )
+      .order_by(CompanyAccount.display_name.asc(), CompanyAccount.id.asc())
+      .all()
+    )
+
+    pdf_buffer = _build_invoice_pdf(invoice, products, invoice_bank_accounts)
     filename = f"invoice_{invoice.invoice_number or invoice.id}.pdf"
 
     return StreamingResponse(

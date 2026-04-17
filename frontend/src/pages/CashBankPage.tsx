@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import type { CompanyAccount, CompanyProfile, Ledger, Payment } from '../types/api';
@@ -17,6 +18,7 @@ function defaultDateRange() {
 }
 
 export default function CashBankPage() {
+  const navigate = useNavigate();
   const { activeFY } = useFY();
   const [period, setPeriod] = useState(() => ({
     fromDate: activeFY?.start_date ?? defaultDateRange().fromDate,
@@ -131,7 +133,18 @@ export default function CashBankPage() {
           <h1 className="page-title">Cash &amp; Bank</h1>
           <p className="section-copy">Track account-wise receipts, payments, and available balance in one register.</p>
         </div>
-        <div className="status-chip">{accountEntries.length} entries</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="status-chip">{accountEntries.length} entries</div>
+          <button
+            type="button"
+            className="button button--primary"
+            onClick={() => navigate('/cash-bank/accounts')}
+            title="Add or manage cash and bank accounts"
+            aria-label="Manage Accounts"
+          >
+            Manage Account
+          </button>
+        </div>
       </section>
 
       <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />

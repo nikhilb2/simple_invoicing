@@ -14,6 +14,7 @@ class CompanyAccountBase(BaseModel):
     account_name: str | None = None
     account_number: str | None = None
     ifsc_code: str | None = None
+    display_on_invoice: bool = True
     opening_balance: float = 0
     is_active: bool = True
 
@@ -46,6 +47,7 @@ class CompanyAccountUpdate(BaseModel):
     account_name: str | None = None
     account_number: str | None = None
     ifsc_code: str | None = None
+    display_on_invoice: bool | None = None
     opening_balance: float | None = None
     is_active: bool | None = None
 

@@ -143,11 +143,11 @@ export type CompanyProfileUpdate = {
   currency_code: string;
   email: string;
   website: string;
-  bank_name: string;
-  branch_name: string;
-  account_name: string;
-  account_number: string;
-  ifsc_code: string;
+  bank_name?: string;
+  branch_name?: string;
+  account_name?: string;
+  account_number?: string;
+  ifsc_code?: string;
 };
 
 export type CompanyAccountType = 'bank' | 'cash';
@@ -161,6 +161,7 @@ export type CompanyAccount = {
   account_name: string | null;
   account_number: string | null;
   ifsc_code: string | null;
+  display_on_invoice: boolean;
   opening_balance: number;
   is_active: boolean;
   created_by: number | null;
@@ -176,6 +177,7 @@ export type CompanyAccountCreate = {
   account_name?: string;
   account_number?: string;
   ifsc_code?: string;
+  display_on_invoice?: boolean;
   opening_balance?: number;
   is_active?: boolean;
 };
@@ -188,6 +190,7 @@ export type CompanyAccountUpdate = {
   account_name?: string;
   account_number?: string;
   ifsc_code?: string;
+  display_on_invoice?: boolean;
   opening_balance?: number;
   is_active?: boolean;
 };
