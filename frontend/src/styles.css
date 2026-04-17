@@ -1611,6 +1611,48 @@ textarea {
   border: 1px solid rgba(255, 139, 139, 0.25);
 }
 
+.tax-ledger-table {
+  min-width: 980px;
+}
+
+.tax-ledger-table tbody tr {
+  cursor: default;
+}
+
+.tax-ledger-table tbody tr:hover {
+  background: rgba(87, 209, 201, 0.04);
+}
+
+.tax-ledger-table tbody tr.tax-ledger-row--sales {
+  box-shadow: inset 3px 0 0 rgba(34, 197, 94, 0.55);
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.08) 0%, rgba(34, 197, 94, 0.01) 22%, transparent 60%);
+}
+
+.tax-ledger-table tbody tr.tax-ledger-row--purchase {
+  box-shadow: inset 3px 0 0 rgba(251, 146, 60, 0.55);
+  background: linear-gradient(90deg, rgba(251, 146, 60, 0.08) 0%, rgba(251, 146, 60, 0.01) 22%, transparent 60%);
+}
+
+.tax-ledger-type-cell {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tax-ledger-note-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #c8d8ff;
+  border: 1px solid rgba(168, 185, 220, 0.28);
+  background: rgba(148, 184, 255, 0.12);
+}
+
 .invoice-compact-card {
   border-radius: 20px;
   border: 1px solid rgba(148, 184, 255, 0.12);

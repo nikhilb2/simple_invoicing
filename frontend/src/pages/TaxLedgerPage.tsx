@@ -197,7 +197,7 @@ export default function TaxLedgerPage() {
 
         {!loading && taxLedger && taxLedger.entries.length > 0 ? (
           <div className="table-wrap">
-            <table className="table table--compact">
+            <table className="invoice-feed-table tax-ledger-table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -215,25 +215,35 @@ export default function TaxLedgerPage() {
                 </tr>
               </thead>
               <tbody>
-                {taxLedger.entries.map((entry) => (
-                  <tr key={`${entry.entry_type}-${entry.entry_id}-${entry.gst_rate}`}>
-                    <td>{new Date(entry.date).toLocaleDateString()}</td>
-                    <td>
-                      <strong>{entry.reference_number}</strong>
-                      <div className="table-subtext">{entry.particulars}</div>
-                    </td>
-                    <td>{entry.ledger_name}</td>
-                    <td>{entry.voucher_type}</td>
-                    <td>{entry.gst_rate.toFixed(2)}%</td>
-                    <td className="text-right">{formatCurrency(entry.taxable_amount, activeCurrencyCode)}</td>
-                    <td className="text-right">{entry.debit_sgst > 0 ? formatCurrency(entry.debit_sgst, activeCurrencyCode) : '-'}</td>
-                    <td className="text-right">{entry.debit_cgst > 0 ? formatCurrency(entry.debit_cgst, activeCurrencyCode) : '-'}</td>
-                    <td className="text-right">{entry.debit_igst > 0 ? formatCurrency(entry.debit_igst, activeCurrencyCode) : '-'}</td>
-                    <td className="text-right">{entry.credit_sgst > 0 ? formatCurrency(entry.credit_sgst, activeCurrencyCode) : '-'}</td>
-                    <td className="text-right">{entry.credit_cgst > 0 ? formatCurrency(entry.credit_cgst, activeCurrencyCode) : '-'}</td>
-                    <td className="text-right">{entry.credit_igst > 0 ? formatCurrency(entry.credit_igst, activeCurrencyCode) : '-'}</td>
-                  </tr>
-                ))}
+                {taxLedger.entries.map((entry) => {
+                  const rowClass = entry.source_voucher_type === 'sales' ? 'tax-ledger-row--sales' : 'tax-ledger-row--purchase';
+                  const typeBadgeClass = entry.source_voucher_type === 'sales' ? 'invoice-type-badge invoice-type-badge--sales' : 'invoice-type-badge invoice-type-badge--purchase';
+
+                  return (
+                    <tr key={`${entry.entry_type}-${entry.entry_id}-${entry.gst_rate}`} className={rowClass}>
+                      <td>{new Date(entry.date).toLocaleDateString()}</td>
+                      <td>
+                        <strong>{entry.reference_number}</strong>
+                        <div className="table-subtext">{entry.particulars}</div>
+                      </td>
+                      <td>{entry.ledger_name}</td>
+                      <td>
+                        <div className="tax-ledger-type-cell">
+                          <span className={typeBadgeClass}>{entry.source_voucher_type}</span>
+                          {entry.entry_type === 'credit_note' ? <span className="tax-ledger-note-tag">Credit Note</span> : null}
+                        </div>
+                      </td>
+                      <td>{entry.gst_rate.toFixed(2)}%</td>
+                      <td className="text-right">{formatCurrency(entry.taxable_amount, activeCurrencyCode)}</td>
+                      <td className="text-right">{entry.debit_sgst > 0 ? formatCurrency(entry.debit_sgst, activeCurrencyCode) : '-'}</td>
+                      <td className="text-right">{entry.debit_cgst > 0 ? formatCurrency(entry.debit_cgst, activeCurrencyCode) : '-'}</td>
+                      <td className="text-right">{entry.debit_igst > 0 ? formatCurrency(entry.debit_igst, activeCurrencyCode) : '-'}</td>
+                      <td className="text-right">{entry.credit_sgst > 0 ? formatCurrency(entry.credit_sgst, activeCurrencyCode) : '-'}</td>
+                      <td className="text-right">{entry.credit_cgst > 0 ? formatCurrency(entry.credit_cgst, activeCurrencyCode) : '-'}</td>
+                      <td className="text-right">{entry.credit_igst > 0 ? formatCurrency(entry.credit_igst, activeCurrencyCode) : '-'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
