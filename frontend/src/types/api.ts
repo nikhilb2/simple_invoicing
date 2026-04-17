@@ -370,6 +370,53 @@ export type DayBook = {
   financial_year_id: number | null;
 };
 
+export type TaxLedgerEntry = {
+  entry_id: number;
+  entry_type: 'invoice' | 'credit_note';
+  date: string;
+  voucher_type: string;
+  source_voucher_type: 'sales' | 'purchase';
+  reference_number: string;
+  ledger_name: string;
+  particulars: string;
+  gst_rate: number;
+  taxable_amount: number;
+  debit_cgst: number;
+  debit_sgst: number;
+  debit_igst: number;
+  debit_total_tax: number;
+  credit_cgst: number;
+  credit_sgst: number;
+  credit_igst: number;
+  credit_total_tax: number;
+};
+
+export type TaxLedgerTotals = {
+  debit_cgst: number;
+  debit_sgst: number;
+  debit_igst: number;
+  debit_total_tax: number;
+  credit_cgst: number;
+  credit_sgst: number;
+  credit_igst: number;
+  credit_total_tax: number;
+  net_cgst: number;
+  net_sgst: number;
+  net_igst: number;
+  net_total_tax: number;
+};
+
+export type TaxLedger = {
+  from_date: string;
+  to_date: string;
+  voucher_type: 'sales' | 'purchase' | null;
+  gst_rate: number | null;
+  entries: TaxLedgerEntry[];
+  totals: TaxLedgerTotals;
+  fy_label: string | null;
+  financial_year_id: number | null;
+};
+
 export type PaymentVoucherType = 'receipt' | 'payment' | 'opening_balance';
 
 export type Payment = {

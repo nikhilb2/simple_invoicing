@@ -103,3 +103,50 @@ class DayBookOut(BaseModel):
     entries: list[DayBookEntry]
     fy_label: str | None = None
     financial_year_id: int | None = None
+
+
+class TaxLedgerEntry(BaseModel):
+    entry_id: int
+    entry_type: str  # "invoice" or "credit_note"
+    date: datetime
+    voucher_type: str
+    source_voucher_type: str  # "sales" or "purchase"
+    reference_number: str
+    ledger_name: str
+    particulars: str
+    gst_rate: float
+    taxable_amount: float
+    debit_cgst: float
+    debit_sgst: float
+    debit_igst: float
+    debit_total_tax: float
+    credit_cgst: float
+    credit_sgst: float
+    credit_igst: float
+    credit_total_tax: float
+
+
+class TaxLedgerTotals(BaseModel):
+    debit_cgst: float
+    debit_sgst: float
+    debit_igst: float
+    debit_total_tax: float
+    credit_cgst: float
+    credit_sgst: float
+    credit_igst: float
+    credit_total_tax: float
+    net_cgst: float
+    net_sgst: float
+    net_igst: float
+    net_total_tax: float
+
+
+class TaxLedgerOut(BaseModel):
+    from_date: date
+    to_date: date
+    voucher_type: str | None = None
+    gst_rate: float | None = None
+    entries: list[TaxLedgerEntry]
+    totals: TaxLedgerTotals
+    fy_label: str | None = None
+    financial_year_id: int | None = None

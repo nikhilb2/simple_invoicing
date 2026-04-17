@@ -14,10 +14,12 @@ from src.api.deps import get_current_user, require_roles
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
 from src.models.company import CompanyProfile
+from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.invoice import Invoice
+from src.models.invoice import InvoiceItem
 from src.models.payment import Payment
 from src.models.user import User, UserRole
-from src.schemas.ledger import DayBookEntry, DayBookOut, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementOut, PaginatedLedgerOut
+from src.schemas.ledger import DayBookEntry, DayBookOut, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementOut, PaginatedLedgerOut, TaxLedgerEntry, TaxLedgerOut, TaxLedgerTotals
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
 from src.services.financial_year import get_active_fy
 
@@ -250,6 +252,33 @@ def _build_ledger_statement_data(
     )
 
 
+def _build_tax_ledger_totals(entries: list[TaxLedgerEntry]) -> TaxLedgerTotals:
+    debit_cgst = sum(entry.debit_cgst for entry in entries)
+    debit_sgst = sum(entry.debit_sgst for entry in entries)
+    debit_igst = sum(entry.debit_igst for entry in entries)
+    debit_total_tax = sum(entry.debit_total_tax for entry in entries)
+
+    credit_cgst = sum(entry.credit_cgst for entry in entries)
+    credit_sgst = sum(entry.credit_sgst for entry in entries)
+    credit_igst = sum(entry.credit_igst for entry in entries)
+    credit_total_tax = sum(entry.credit_total_tax for entry in entries)
+
+    return TaxLedgerTotals(
+        debit_cgst=debit_cgst,
+        debit_sgst=debit_sgst,
+        debit_igst=debit_igst,
+        debit_total_tax=debit_total_tax,
+        credit_cgst=credit_cgst,
+        credit_sgst=credit_sgst,
+        credit_igst=credit_igst,
+        credit_total_tax=credit_total_tax,
+        net_cgst=debit_cgst - credit_cgst,
+        net_sgst=debit_sgst - credit_sgst,
+        net_igst=debit_igst - credit_igst,
+        net_total_tax=debit_total_tax - credit_total_tax,
+    )
+
+
 @router.post("", response_model=LedgerOut, include_in_schema=False)
 @router.post("/", response_model=LedgerOut)
 def create_ledger(
@@ -407,6 +436,209 @@ def get_day_book(
         total_debit=sum(entry.debit for entry in entries),
         total_credit=sum(entry.credit for entry in entries),
         entries=entries,
+        fy_label=fy_label,
+        financial_year_id=financial_year_id,
+    )
+
+
+@router.get("/tax-ledger", response_model=TaxLedgerOut, include_in_schema=False)
+@router.get("/tax-ledger/", response_model=TaxLedgerOut)
+def get_tax_ledger(
+    from_date: date | None = Query(None),
+    to_date: date | None = Query(None),
+    voucher_type: str | None = Query(None, pattern="^(sales|purchase)$"),
+    gst_rate: float | None = Query(None, ge=0),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    fy_label: str | None = None
+    financial_year_id: int | None = None
+    if from_date is None or to_date is None:
+        active_fy = get_active_fy(db)
+        if active_fy is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No active financial year found. Please provide from_date and to_date, or activate a financial year.",
+            )
+        from_date = active_fy.start_date
+        to_date = active_fy.end_date
+        fy_label = active_fy.label
+        financial_year_id = active_fy.id
+
+    if from_date > to_date:
+        raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
+
+    period_start = datetime.combine(from_date, time.min)
+    period_end = datetime.combine(to_date, time.max)
+
+    invoice_query = (
+        db.query(
+            Invoice.id.label("entry_id"),
+            Invoice.invoice_date.label("entry_date"),
+            Invoice.voucher_type.label("source_voucher_type"),
+            Invoice.invoice_number.label("reference_number"),
+            Invoice.ledger_name.label("ledger_name"),
+            InvoiceItem.gst_rate.label("gst_rate"),
+            func.coalesce(func.sum(InvoiceItem.taxable_amount), 0).label("taxable_amount"),
+            func.coalesce(func.sum(InvoiceItem.cgst_amount), 0).label("cgst_amount"),
+            func.coalesce(func.sum(InvoiceItem.sgst_amount), 0).label("sgst_amount"),
+            func.coalesce(func.sum(InvoiceItem.igst_amount), 0).label("igst_amount"),
+        )
+        .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
+        .filter(Invoice.status == "active")
+        .filter(Invoice.invoice_date >= period_start)
+        .filter(Invoice.invoice_date <= period_end)
+    )
+
+    if voucher_type is not None:
+        invoice_query = invoice_query.filter(Invoice.voucher_type == voucher_type)
+    if gst_rate is not None:
+        invoice_query = invoice_query.filter(InvoiceItem.gst_rate == gst_rate)
+
+    invoice_rows = (
+        invoice_query
+        .group_by(
+            Invoice.id,
+            Invoice.invoice_date,
+            Invoice.voucher_type,
+            Invoice.invoice_number,
+            Invoice.ledger_name,
+            InvoiceItem.gst_rate,
+        )
+        .order_by(Invoice.invoice_date.asc(), Invoice.id.asc(), InvoiceItem.gst_rate.asc())
+        .all()
+    )
+
+    credit_note_query = (
+        db.query(
+            CreditNote.id.label("entry_id"),
+            CreditNote.created_at.label("entry_date"),
+            Invoice.voucher_type.label("source_voucher_type"),
+            CreditNote.credit_note_number.label("reference_number"),
+            Invoice.ledger_name.label("ledger_name"),
+            CreditNoteItem.gst_rate.label("gst_rate"),
+            func.coalesce(func.sum(CreditNoteItem.taxable_amount), 0).label("taxable_amount"),
+        func.coalesce(
+          func.sum(
+            case(
+              (func.coalesce(InvoiceItem.igst_amount, 0) > 0, 0),
+              else_=CreditNoteItem.tax_amount / 2,
+            )
+          ),
+          0,
+        ).label("cgst_amount"),
+        func.coalesce(
+          func.sum(
+            case(
+              (func.coalesce(InvoiceItem.igst_amount, 0) > 0, 0),
+              else_=CreditNoteItem.tax_amount / 2,
+            )
+          ),
+          0,
+        ).label("sgst_amount"),
+        func.coalesce(
+          func.sum(
+            case(
+              (func.coalesce(InvoiceItem.igst_amount, 0) > 0, CreditNoteItem.tax_amount),
+              else_=0,
+            )
+          ),
+          0,
+        ).label("igst_amount"),
+        )
+        .join(CreditNoteItem, CreditNoteItem.credit_note_id == CreditNote.id)
+        .join(Invoice, Invoice.id == CreditNoteItem.invoice_id)
+      .outerjoin(InvoiceItem, InvoiceItem.id == CreditNoteItem.invoice_item_id)
+        .filter(CreditNote.status == "active")
+        .filter(CreditNote.created_at >= period_start)
+        .filter(CreditNote.created_at <= period_end)
+    )
+
+    if voucher_type is not None:
+        credit_note_query = credit_note_query.filter(Invoice.voucher_type == voucher_type)
+    if gst_rate is not None:
+        credit_note_query = credit_note_query.filter(CreditNoteItem.gst_rate == gst_rate)
+
+    credit_note_rows = (
+        credit_note_query
+        .group_by(
+            CreditNote.id,
+            CreditNote.created_at,
+            Invoice.voucher_type,
+            CreditNote.credit_note_number,
+            Invoice.ledger_name,
+            CreditNoteItem.gst_rate,
+        )
+        .order_by(CreditNote.created_at.asc(), CreditNote.id.asc(), CreditNoteItem.gst_rate.asc())
+        .all()
+    )
+
+    entries: list[TaxLedgerEntry] = []
+    for row in invoice_rows:
+        cgst_amount = float(row.cgst_amount or 0)
+        sgst_amount = float(row.sgst_amount or 0)
+        igst_amount = float(row.igst_amount or 0)
+        total_tax = cgst_amount + sgst_amount + igst_amount
+
+        is_sales = row.source_voucher_type == "sales"
+        entries.append(TaxLedgerEntry(
+            entry_id=row.entry_id,
+            entry_type="invoice",
+            date=row.entry_date,
+            voucher_type=row.source_voucher_type.title(),
+            source_voucher_type=row.source_voucher_type,
+            reference_number=row.reference_number or f"INV-{row.entry_id}",
+            ledger_name=row.ledger_name or "Unknown ledger",
+            particulars=f"{row.source_voucher_type.title()} Invoice",
+            gst_rate=float(row.gst_rate or 0),
+            taxable_amount=float(row.taxable_amount or 0),
+            debit_cgst=cgst_amount if is_sales else 0.0,
+            debit_sgst=sgst_amount if is_sales else 0.0,
+            debit_igst=igst_amount if is_sales else 0.0,
+            debit_total_tax=total_tax if is_sales else 0.0,
+            credit_cgst=0.0 if is_sales else cgst_amount,
+            credit_sgst=0.0 if is_sales else sgst_amount,
+            credit_igst=0.0 if is_sales else igst_amount,
+            credit_total_tax=0.0 if is_sales else total_tax,
+        ))
+
+    for row in credit_note_rows:
+        cgst_amount = float(row.cgst_amount or 0)
+        sgst_amount = float(row.sgst_amount or 0)
+        igst_amount = float(row.igst_amount or 0)
+        total_tax = cgst_amount + sgst_amount + igst_amount
+
+        source_is_sales = row.source_voucher_type == "sales"
+        entries.append(TaxLedgerEntry(
+            entry_id=row.entry_id,
+            entry_type="credit_note",
+            date=row.entry_date,
+            voucher_type="Credit Note",
+            source_voucher_type=row.source_voucher_type,
+            reference_number=row.reference_number or f"CN-{row.entry_id}",
+            ledger_name=row.ledger_name or "Unknown ledger",
+            particulars=f"Credit Note against {row.source_voucher_type.title()} Invoice",
+            gst_rate=float(row.gst_rate or 0),
+            taxable_amount=float(row.taxable_amount or 0),
+            debit_cgst=0.0 if source_is_sales else cgst_amount,
+            debit_sgst=0.0 if source_is_sales else sgst_amount,
+            debit_igst=0.0 if source_is_sales else igst_amount,
+            debit_total_tax=0.0 if source_is_sales else total_tax,
+            credit_cgst=cgst_amount if source_is_sales else 0.0,
+            credit_sgst=sgst_amount if source_is_sales else 0.0,
+            credit_igst=igst_amount if source_is_sales else 0.0,
+            credit_total_tax=total_tax if source_is_sales else 0.0,
+        ))
+
+    entries.sort(key=lambda entry: (_make_aware(entry.date), entry.entry_id, entry.gst_rate))
+
+    return TaxLedgerOut(
+        from_date=from_date,
+        to_date=to_date,
+        voucher_type=voucher_type,
+        gst_rate=gst_rate,
+        entries=entries,
+        totals=_build_tax_ledger_totals(entries),
         fy_label=fy_label,
         financial_year_id=financial_year_id,
     )

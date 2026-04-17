@@ -17,6 +17,7 @@ const mainGroup: NavItem[] = [
   { to: '/invoices', label: 'Invoices' },
   { to: '/credit-notes', label: 'Credit Notes' },
   { to: '/day-book', label: 'Day Book' },
+  { to: '/tax-ledger', label: 'Tax Ledger' },
   { to: '/cash-bank', label: 'Cash & Bank' },
 ];
 
