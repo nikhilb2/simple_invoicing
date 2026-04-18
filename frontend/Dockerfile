@@ -6,7 +6,12 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-RUN npm run build
+ARG VITE_API_BASE_URL
+
+RUN if [ -n "$VITE_API_BASE_URL" ]; then \
+      echo "VITE_API_BASE_URL=$VITE_API_BASE_URL" > .env.production; \
+    fi && \
+    npm run build
 
 # Stage 2: Serve
 FROM --platform=$TARGETPLATFORM node:22-slim
