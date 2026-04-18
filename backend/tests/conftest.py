@@ -10,6 +10,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from app_main import app
 from src.api.deps import get_current_user
+import src.models  # noqa: F401 — ensures all models are registered with Base.metadata
 from src.models.user import User, UserRole
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -45,6 +46,14 @@ app.dependency_overrides[get_current_user] = override_get_current_user
 @pytest.fixture
 def client():
     return TestClient(app)
+
+@pytest.fixture
+def db_session():
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 @pytest.fixture(autouse=True)
 def setup_db():
