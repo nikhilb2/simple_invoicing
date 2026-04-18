@@ -800,6 +800,184 @@ textarea {
   padding: 2px;
 }
 
+.change-password-card {
+  padding: 26px;
+  overflow: hidden;
+}
+
+.change-password-card__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(148, 184, 255, 0.16);
+}
+
+.change-password-card__eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.change-password-card__title {
+  margin: 6px 0 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.26rem;
+  letter-spacing: -0.02em;
+}
+
+.change-password-card__badge {
+  white-space: nowrap;
+  border-radius: 999px;
+  border: 1px solid rgba(87, 209, 201, 0.4);
+  background: rgba(87, 209, 201, 0.14);
+  color: #9af4de;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 6px 10px;
+}
+
+.change-password-input-wrap {
+  position: relative;
+}
+
+.change-password-input-wrap .input {
+  padding-right: 88px;
+}
+
+.change-password-input-wrap__toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 64px;
+  padding: 7px 10px;
+  border-radius: 12px;
+}
+
+.change-password-input-wrap__toggle:hover {
+  transform: translateY(calc(-50% - 1px));
+}
+
+.change-password-strength {
+  margin-top: 6px;
+  display: grid;
+  gap: 6px;
+}
+
+.change-password-strength__bar {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.change-password-strength__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 180ms ease, background 180ms ease;
+}
+
+.change-password-strength__fill--very-weak {
+  background: #ff8b8b;
+}
+
+.change-password-strength__fill--weak {
+  background: #ffae70;
+}
+
+.change-password-strength__fill--fair {
+  background: #f6d67b;
+}
+
+.change-password-strength__fill--strong {
+  background: #7ddfa5;
+}
+
+.change-password-strength__fill--very-strong {
+  background: var(--accent);
+}
+
+.change-password-strength__label {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.change-password-guide {
+  padding: 24px;
+}
+
+.change-password-guide__title {
+  margin: 6px 0 0;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+}
+
+.change-password-guide__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.change-password-guide__list li {
+  border: 1px solid rgba(148, 184, 255, 0.14);
+  background: rgba(9, 18, 33, 0.55);
+  border-radius: 12px;
+  padding: 9px 12px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.change-password-guide__list li::before {
+  content: '○';
+  margin-right: 8px;
+  color: rgba(156, 173, 207, 0.8);
+}
+
+.change-password-guide__list li.is-pass {
+  color: var(--text);
+  border-color: rgba(87, 209, 201, 0.34);
+  background: rgba(87, 209, 201, 0.12);
+}
+
+.change-password-guide__list li.is-pass::before {
+  content: '✓';
+  color: var(--accent);
+}
+
+.change-password-guide__tip {
+  margin-top: 4px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 184, 255, 0.16);
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.change-password-guide__tip strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #d9edff;
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.change-password-guide__tip p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.87rem;
+  line-height: 1.45;
+}
+
 @keyframes toast-slide-in {
   from {
     opacity: 0;
@@ -1961,6 +2139,19 @@ textarea {
     width: 100%;
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .change-password-card,
+  .change-password-guide {
+    padding: 18px;
+  }
+
+  .change-password-card__header {
+    flex-direction: column;
+  }
+
+  .change-password-card__badge {
+    white-space: normal;
   }
 
   .invoice-feed-view__controls {

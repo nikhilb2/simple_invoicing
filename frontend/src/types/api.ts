@@ -466,6 +466,15 @@ export type UserProfile = {
   role: 'admin' | 'manager' | 'staff';
 };
 
+export type ChangePasswordRequest = {
+  current_password: string;
+  new_password: string;
+};
+
+export type ChangePasswordResponse = {
+  detail: string;
+};
+
 export type SmtpConfig = {
   id: number;
   name: string;
