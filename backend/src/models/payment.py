@@ -25,3 +25,17 @@ class Payment(Base):
 
     ledger = relationship("Buyer", backref="payments")
     account = relationship("CompanyAccount", back_populates="payments")
+    invoice_allocations = relationship("PaymentInvoiceAllocation", back_populates="payment", cascade="all, delete-orphan")
+
+
+class PaymentInvoiceAllocation(Base):
+    __tablename__ = "payment_invoice_allocations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=False)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False)
+    allocated_amount = Column(Numeric(10, 2), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    payment = relationship("Payment", back_populates="invoice_allocations")
+    invoice = relationship("Invoice", back_populates="payment_allocations")

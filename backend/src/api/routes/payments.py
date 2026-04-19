@@ -4,7 +4,7 @@ from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 import weasyprint
 
@@ -13,11 +13,12 @@ from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
 from src.models.company_account import CompanyAccount
 from src.models.company import CompanyProfile
-from src.models.payment import Payment
+from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.user import User, UserRole
 from src.schemas.payment import PaymentCreate, PaymentOut, PaymentUpdate
 from src.services.series import generate_next_number
 from src.services.financial_year import get_active_fy, get_fy_for_date
+from src.services.invoice_payments import sync_payment_allocations
 
 router = APIRouter()
 
@@ -37,6 +38,17 @@ def _to_payment_out(payment: Payment) -> PaymentOut:
     if payment.account is not None:
         result.account_display_name = payment.account.display_name
         result.account_type = payment.account.account_type
+    result.invoice_allocations = [
+        {
+            "id": allocation.id,
+            "invoice_id": allocation.invoice_id,
+            "invoice_number": allocation.invoice.invoice_number if allocation.invoice else None,
+            "invoice_date": allocation.invoice.invoice_date if allocation.invoice else None,
+            "due_date": allocation.invoice.due_date if allocation.invoice else None,
+            "allocated_amount": float(allocation.allocated_amount or 0),
+        }
+        for allocation in payment.invoice_allocations
+    ]
     return result
 
 
@@ -131,6 +143,8 @@ def create_payment(
         created_by=current_user.id,
     )
     db.add(payment)
+    db.flush()
+    sync_payment_allocations(db, payment=payment, invoice_allocations=payload.invoice_allocations)
     db.commit()
     db.refresh(payment)
 
@@ -153,12 +167,15 @@ def list_payments(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    query = db.query(Payment)
-    if ledger_id is not None:
-        query = query.filter(Payment.ledger_id == ledger_id)
-    if not include_cancelled:
-        query = query.filter(Payment.status == "active")
-    return [_to_payment_out(payment) for payment in query.order_by(Payment.date.desc()).all()]
+  query = db.query(Payment).options(
+    joinedload(Payment.account),
+    joinedload(Payment.invoice_allocations).joinedload(PaymentInvoiceAllocation.invoice),
+  )
+  if ledger_id is not None:
+    query = query.filter(Payment.ledger_id == ledger_id)
+  if not include_cancelled:
+    query = query.filter(Payment.status == "active")
+  return [_to_payment_out(payment) for payment in query.order_by(Payment.date.desc()).all()]
 
 
 @router.get("/{payment_id}", response_model=PaymentOut)
@@ -167,7 +184,15 @@ def get_payment(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    payment = db.query(Payment).filter(Payment.id == payment_id).first()
+    payment = (
+        db.query(Payment)
+        .options(
+            joinedload(Payment.account),
+            joinedload(Payment.invoice_allocations).joinedload(PaymentInvoiceAllocation.invoice),
+        )
+        .filter(Payment.id == payment_id)
+        .first()
+    )
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
     return _to_payment_out(payment)
@@ -180,14 +205,19 @@ def update_payment(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    payment = db.query(Payment).filter(Payment.id == payment_id, Payment.status == "active").first()
+    payment = (
+        db.query(Payment)
+        .options(joinedload(Payment.invoice_allocations))
+        .filter(Payment.id == payment_id, Payment.status == "active")
+        .first()
+    )
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
 
     next_ledger_id = payment.ledger_id
     _ensure_single_opening_balance(
         db,
-      next_ledger_id,
+        next_ledger_id,
         payload.voucher_type,
         exclude_payment_id=payment.id,
     )
@@ -204,6 +234,12 @@ def update_payment(
     payment.mode = payload.mode.strip() if payload.mode else None
     payment.reference = payload.reference.strip() if payload.reference else None
     payment.notes = payload.notes.strip() if payload.notes else None
+    sync_payment_allocations(
+      db,
+      payment=payment,
+      invoice_allocations=payload.invoice_allocations,
+      exclude_payment_id=payment.id,
+    )
     db.commit()
     db.refresh(payment)
     result = _to_payment_out(payment)

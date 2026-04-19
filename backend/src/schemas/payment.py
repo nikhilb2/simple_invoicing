@@ -1,9 +1,26 @@
 from datetime import datetime
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Optional
 
 
 PAYMENT_VOUCHER_TYPES = ("receipt", "payment", "opening_balance")
+
+
+class PaymentInvoiceAllocationCreate(BaseModel):
+    invoice_id: int
+    allocated_amount: float
+
+
+class PaymentInvoiceAllocationOut(BaseModel):
+    id: int | None = None
+    invoice_id: int
+    invoice_number: str | None = None
+    invoice_date: datetime | None = None
+    due_date: datetime | None = None
+    allocated_amount: float
+
+    class Config:
+        from_attributes = True
 
 
 class PaymentUpdate(BaseModel):
@@ -14,6 +31,7 @@ class PaymentUpdate(BaseModel):
     mode: str | None = None
     reference: str | None = None
     notes: str | None = None
+    invoice_allocations: list[PaymentInvoiceAllocationCreate] = Field(default_factory=list)
 
     @field_validator("voucher_type")
     @classmethod
@@ -44,6 +62,7 @@ class PaymentCreate(BaseModel):
     mode: str | None = None
     reference: str | None = None
     notes: str | None = None
+    invoice_allocations: list[PaymentInvoiceAllocationCreate] = Field(default_factory=list)
 
     @field_validator("voucher_type")
     @classmethod
@@ -83,6 +102,7 @@ class PaymentOut(BaseModel):
     warnings: List[str] = []
     created_by: int
     created_at: datetime
+    invoice_allocations: list[PaymentInvoiceAllocationOut] = Field(default_factory=list)
 
     class Config:
         from_attributes = True

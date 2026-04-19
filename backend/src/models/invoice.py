@@ -47,6 +47,7 @@ class Invoice(Base):
 
     ledger = relationship("Buyer", back_populates="invoices")
     items = relationship("InvoiceItem", back_populates="invoice", cascade="all, delete-orphan")
+    payment_allocations = relationship("PaymentInvoiceAllocation", back_populates="invoice", cascade="all, delete-orphan")
 
 
 class InvoiceItem(Base):
