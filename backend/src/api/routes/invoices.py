@@ -267,19 +267,19 @@ def _apply_payload_to_invoice(
         invoice.total_amount = float(raw_total)
 
 
-    def _to_invoice_out(
-      invoice: Invoice,
-      *,
-      payment_summary=None,
-    ) -> InvoiceOut:
-      result = InvoiceOut.model_validate(invoice)
-      if payment_summary is not None:
+def _to_invoice_out(
+    invoice: Invoice,
+    *,
+    payment_summary=None,
+) -> InvoiceOut:
+    result = InvoiceOut.model_validate(invoice)
+    if payment_summary is not None:
         result.paid_amount = payment_summary.paid_amount
         result.remaining_amount = payment_summary.remaining_amount
         result.outstanding_amount = payment_summary.outstanding_amount
         result.payment_status = payment_summary.payment_status
         result.due_in_days = payment_summary.due_in_days
-      return result
+    return result
 
 
 @router.post("", response_model=InvoiceOut, include_in_schema=False)

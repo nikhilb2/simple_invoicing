@@ -231,9 +231,28 @@ export type Invoice = {
   total_amount: number;
   invoice_date: string;
   due_date: string | null;
+  paid_amount: number;
+  remaining_amount: number;
+  outstanding_amount: number;
+  payment_status: 'unpaid' | 'partial' | 'paid';
+  due_in_days: number | null;
   created_at: string;
   items: InvoiceItem[];
   warnings?: string[];
+};
+
+export type OutstandingInvoice = {
+  id: number;
+  invoice_number: string | null;
+  invoice_date: string;
+  due_date: string | null;
+  total_amount: number;
+  paid_amount: number;
+  remaining_amount: number;
+  outstanding_amount: number;
+  payment_status: 'unpaid' | 'partial' | 'paid';
+  due_in_days: number | null;
+  suggested_allocation_amount: number | null;
 };
 
 export type InvoiceItem = {
@@ -419,6 +438,15 @@ export type TaxLedger = {
 
 export type PaymentVoucherType = 'receipt' | 'payment' | 'opening_balance';
 
+export type PaymentInvoiceAllocation = {
+  id?: number | null;
+  invoice_id: number;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  due_date?: string | null;
+  allocated_amount: number;
+};
+
 export type Payment = {
   id: number;
   ledger_id: number | null;
@@ -436,6 +464,7 @@ export type Payment = {
   created_by: number;
   created_at: string;
   warnings?: string[];
+  invoice_allocations: PaymentInvoiceAllocation[];
 };
 
 export type PaymentUpdate = {
@@ -446,6 +475,7 @@ export type PaymentUpdate = {
   mode?: string;
   reference?: string;
   notes?: string;
+  invoice_allocations?: PaymentInvoiceAllocation[];
 };
 
 export type PaymentCreate = {
@@ -457,6 +487,7 @@ export type PaymentCreate = {
   mode?: string;
   reference?: string;
   notes?: string;
+  invoice_allocations?: PaymentInvoiceAllocation[];
 };
 
 export type UserProfile = {
