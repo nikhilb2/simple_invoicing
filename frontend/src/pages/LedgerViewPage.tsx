@@ -132,6 +132,16 @@ export default function LedgerViewPage() {
   const [submittingEditPayment, setSubmittingEditPayment] = useState(false);
   const [confirmDeletePaymentId, setConfirmDeletePaymentId] = useState<number | null>(null);
   const [deletingPayment, setDeletingPayment] = useState(false);
+  const [allocationCreateSearch, setAllocationCreateSearch] = useState('');
+  const [allocationEditSearch, setAllocationEditSearch] = useState('');
+
+  useEffect(() => {
+    if (!showPaymentForm) setAllocationCreateSearch('');
+  }, [showPaymentForm]);
+
+  useEffect(() => {
+    if (!editingPayment) setAllocationEditSearch('');
+  }, [editingPayment]);
 
   useEffect(() => {
     if (!showActionsDropdown) return;
@@ -273,6 +283,8 @@ export default function LedgerViewPage() {
     voucherType: PaymentCreate['voucher_type'] | PaymentUpdate['voucher_type'];
     onChange: (allocations: PaymentInvoiceAllocation[]) => void;
     title: string;
+    searchQuery: string;
+    onSearchChange: (q: string) => void;
   }) {
     if (input.voucherType !== 'receipt' && input.voucherType !== 'payment') {
       return null;
@@ -280,6 +292,11 @@ export default function LedgerViewPage() {
 
     const allocatedTotal = sumAllocatedAmount(input.allocations);
     const remainingUnallocated = input.amount - allocatedTotal;
+    const filteredInvoices = input.searchQuery.trim()
+      ? input.outstanding.filter((inv) =>
+          (inv.invoice_number ?? '').toLowerCase().includes(input.searchQuery.trim().toLowerCase())
+        )
+      : input.outstanding;
 
     return (
       <div className="summary-box stack" style={{ gap: '12px' }}>
@@ -306,14 +323,28 @@ export default function LedgerViewPage() {
             : `Over-allocated by ${formatCurrency(Math.abs(remainingUnallocated), activeCurrencyCode)}`}
         </p>
 
+        {!input.loading && input.outstanding.length > 0 ? (
+          <input
+            type="search"
+            className="input"
+            placeholder="Search by invoice number…"
+            value={input.searchQuery}
+            onChange={(e) => input.onSearchChange(e.target.value)}
+            aria-label="Search invoices by number"
+          />
+        ) : null}
+
         {input.loading ? <p className="muted-text" style={{ margin: 0 }}>Loading invoice options...</p> : null}
         {!input.loading && input.outstanding.length === 0 ? (
           <p className="muted-text" style={{ margin: 0 }}>No outstanding invoices are available for this ledger.</p>
         ) : null}
+        {!input.loading && input.outstanding.length > 0 && filteredInvoices.length === 0 ? (
+          <p className="muted-text" style={{ margin: 0 }}>No invoices match your search.</p>
+        ) : null}
 
-        {!input.loading && input.outstanding.length > 0 ? (
-          <div className="stack" style={{ gap: '10px' }}>
-            {input.outstanding.map((invoice) => {
+        {!input.loading && filteredInvoices.length > 0 ? (
+          <div className="stack" style={{ gap: '10px', maxHeight: '320px', overflowY: 'auto', paddingRight: '4px' }}>
+            {filteredInvoices.map((invoice) => {
               const existingAllocation = (input.allocations ?? []).find((allocation) => allocation.invoice_id === invoice.id);
               const isSelected = Boolean(existingAllocation);
 
@@ -884,6 +915,8 @@ export default function LedgerViewPage() {
                   voucherType: paymentForm.voucher_type,
                   onChange: (invoice_allocations) => setPaymentForm((current) => ({ ...current, invoice_allocations })),
                   title: 'Allocate against invoices',
+                  searchQuery: allocationCreateSearch,
+                  onSearchChange: setAllocationCreateSearch,
                 })}
                 <button type="submit" className="button button--primary" disabled={submittingPayment} title="Save payment" aria-label="Save payment">
                   {submittingPayment ? 'Saving...' : 'Save'}
@@ -1053,6 +1086,8 @@ export default function LedgerViewPage() {
                   voucherType: editPaymentForm.voucher_type,
                   onChange: (invoice_allocations) => setEditPaymentForm((current) => ({ ...current, invoice_allocations })),
                   title: 'Edit invoice allocations',
+                  searchQuery: allocationEditSearch,
+                  onSearchChange: setAllocationEditSearch,
                 })}
                 <button type="submit" className="button button--primary" disabled={submittingEditPayment} title="Update payment" aria-label="Update payment">
                   {submittingEditPayment ? 'Saving...' : 'Update'}
