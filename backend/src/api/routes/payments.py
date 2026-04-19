@@ -57,12 +57,15 @@ def _find_existing_opening_balance(
 
 def _ensure_single_opening_balance(
     db: Session,
-    ledger_id: int,
+    ledger_id: int | None,
     voucher_type: str,
     exclude_payment_id: int | None = None,
 ) -> None:
     if voucher_type != "opening_balance":
         return
+
+    if ledger_id is None:
+        raise HTTPException(status_code=400, detail="opening_balance requires ledger_id")
 
     existing = _find_existing_opening_balance(
         db,
@@ -80,11 +83,14 @@ def create_payment(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
 ):
-    ledger = db.query(Ledger).filter(Ledger.id == payload.ledger_id).first()
-    if not ledger:
-        raise HTTPException(status_code=404, detail="Ledger not found")
-
     _ensure_single_opening_balance(db, payload.ledger_id, payload.voucher_type)
+
+    if payload.ledger_id is not None:
+        ledger = db.query(Ledger).filter(Ledger.id == payload.ledger_id).first()
+        if not ledger:
+            raise HTTPException(status_code=404, detail="Ledger not found")
+    elif payload.account_id is None:
+        raise HTTPException(status_code=400, detail="Either ledger_id or account_id is required")
 
     selected_account = None
     if payload.account_id is not None:
@@ -178,9 +184,10 @@ def update_payment(
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
 
+    next_ledger_id = payment.ledger_id
     _ensure_single_opening_balance(
         db,
-        payment.ledger_id,
+      next_ledger_id,
         payload.voucher_type,
         exclude_payment_id=payment.id,
     )
