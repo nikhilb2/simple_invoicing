@@ -105,3 +105,64 @@ def test_payment_supports_company_account_assignment_and_unassignment(client):
     entries = [entry for entry in day_book_response.json()["entries"] if entry["entry_type"] == "payment"]
     assert len(entries) == 1
     assert entries[0]["account_display_name"] is None
+
+
+def test_account_only_cash_bank_entry_lifecycle(client):
+    account_response = client.post(
+        "/api/company-accounts/",
+        json={
+            "account_type": "cash",
+            "display_name": "Cash Counter",
+            "opening_balance": 0,
+        },
+    )
+    assert account_response.status_code == 200, account_response.text
+    account_id = account_response.json()["id"]
+
+    create_response = client.post(
+        "/api/payments/",
+        json={
+            "voucher_type": "payment",
+            "amount": 1200,
+            "account_id": account_id,
+            "mode": "cash",
+            "notes": "ATM withdrawal",
+            "date": "2026-04-19T10:00:00",
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+    created = create_response.json()
+    assert created["ledger_id"] is None
+    assert created["account_id"] == account_id
+    assert created["notes"] == "ATM withdrawal"
+
+    update_response = client.put(
+        f"/api/payments/{created['id']}",
+        json={
+            "voucher_type": "receipt",
+            "amount": 800,
+            "account_id": account_id,
+            "mode": "cash",
+            "notes": "Cash deposit",
+            "date": "2026-04-20T09:30:00",
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
+    updated = update_response.json()
+    assert updated["voucher_type"] == "receipt"
+    assert updated["amount"] == 800
+    assert updated["notes"] == "Cash deposit"
+
+    delete_response = client.delete(f"/api/payments/{created['id']}")
+    assert delete_response.status_code == 200, delete_response.text
+
+    list_active_response = client.get("/api/payments/")
+    assert list_active_response.status_code == 200, list_active_response.text
+    active_ids = [item["id"] for item in list_active_response.json()]
+    assert created["id"] not in active_ids
+
+    list_all_response = client.get("/api/payments/", params={"include_cancelled": True})
+    assert list_all_response.status_code == 200, list_all_response.text
+    cancelled = [item for item in list_all_response.json() if item["id"] == created["id"]]
+    assert len(cancelled) == 1
+    assert cancelled[0]["status"] == "cancelled"

@@ -36,7 +36,7 @@ class PaymentUpdate(BaseModel):
 
 
 class PaymentCreate(BaseModel):
-    ledger_id: int
+    ledger_id: int | None = None
     voucher_type: str  # "receipt", "payment" or "opening_balance"
     amount: float
     account_id: int | None = None
@@ -67,7 +67,7 @@ class PaymentCreate(BaseModel):
 
 class PaymentOut(BaseModel):
     id: int
-    ledger_id: int
+    ledger_id: int | None = None
     voucher_type: str
     amount: float
     account_id: int | None = None

@@ -9,7 +9,7 @@ class Payment(Base):
     __tablename__ = "payments"
 
     id = Column(Integer, primary_key=True, index=True)
-    ledger_id = Column("buyer_id", Integer, ForeignKey("buyers.id"), nullable=False)
+    ledger_id = Column("buyer_id", Integer, ForeignKey("buyers.id"), nullable=True)
     voucher_type = Column(String, nullable=False)  # "receipt" or "payment"
     amount = Column(Numeric(10, 2), nullable=False)
     date = Column(DateTime, nullable=False, default=datetime.utcnow)

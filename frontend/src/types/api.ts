@@ -421,7 +421,7 @@ export type PaymentVoucherType = 'receipt' | 'payment' | 'opening_balance';
 
 export type Payment = {
   id: number;
-  ledger_id: number;
+  ledger_id: number | null;
   voucher_type: PaymentVoucherType;
   amount: number;
   account_id?: number | null;
@@ -449,7 +449,7 @@ export type PaymentUpdate = {
 };
 
 export type PaymentCreate = {
-  ledger_id: number;
+  ledger_id?: number | null;
   voucher_type: PaymentVoucherType;
   amount: number;
   account_id?: number | null;

@@ -175,3 +175,42 @@ def test_create_opening_balance_skips_payment_series_number_generation():
     payment = db.add.call_args.args[0]
     assert payment.payment_number is None
     assert result.warnings == []
+
+
+def test_create_payment_allows_account_only_entry_without_ledger():
+    payload = PaymentCreate(
+        ledger_id=None,
+        voucher_type="payment",
+        amount=300,
+        account_id=21,
+        date=datetime(2032, 6, 1, 9, 0),
+        mode="cash",
+        notes="Cash withdrawal",
+    )
+    db = MagicMock()
+    db.query().filter().first.return_value = SimpleNamespace(id=21)
+    active_fy = SimpleNamespace(id=20, start_date=date(2032, 4, 1), end_date=date(2033, 3, 31))
+    current_user = SimpleNamespace(id=9)
+
+    with patch("src.api.routes.payments.get_active_fy", return_value=active_fy), patch(
+        "src.api.routes.payments.get_fy_for_date", return_value=active_fy
+    ), patch(
+        "src.api.routes.payments.generate_next_number", return_value="PAY-2032-025"
+    ) as generate_mock, patch(
+        "src.api.routes.payments.PaymentOut.model_validate",
+        return_value=SimpleNamespace(warnings=[]),
+    ):
+        result = create_payment(payload, db=db, current_user=current_user)
+
+    generate_mock.assert_called_once_with(
+        db,
+        "payment",
+        20,
+        date(2032, 6, 1),
+        20,
+    )
+    payment = db.add.call_args.args[0]
+    assert payment.ledger_id is None
+    assert payment.account_id == 21
+    assert payment.notes == "Cash withdrawal"
+    assert result.warnings == []
