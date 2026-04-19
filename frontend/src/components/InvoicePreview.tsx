@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import type { Invoice } from '../types/api';
+import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import SendEmailModal from './SendEmailModal';
 
 type InvoicePreviewProps = {
@@ -93,6 +94,10 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
           <div>
             <p className="eyebrow">Invoice preview</p>
             <h2 id="invoice-preview-title" className="nav-panel__title">PDF invoice {invoice.invoice_number || `#${invoice.id}`}</h2>
+            <p className="muted-text" style={{ margin: '6px 0 0' }}>
+              Invoice date: {formatInvoiceDateLabel(invoice.invoice_date)}
+              {invoice.due_date ? ` · Due date: ${formatInvoiceDateLabel(invoice.due_date)}` : ' · No due date'}
+            </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151', whiteSpace: 'nowrap', fontWeight: '500' }}>
@@ -116,7 +121,7 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
                 }}
                 onBlur={() => {
                   // Set to 1 if empty when leaving the input
-                  if (copies === 0 || copies === '') {
+                  if (copies === 0) {
                     setCopies(1);
                   }
                 }}

@@ -25,6 +25,7 @@ from src.schemas.invoice import InvoiceCreate, InvoiceOut, PaginatedInvoiceOut
 from src.api.deps import get_current_user
 from src.services.series import generate_next_number
 from src.services.financial_year import get_active_fy, get_fy_for_date
+from src.services.invoice_payments import build_invoice_payment_summaries
 
 router = APIRouter()
 
@@ -161,8 +162,7 @@ def _apply_payload_to_invoice(
     if payload.invoice_date is not None:
         invoice.invoice_date = datetime.combine(payload.invoice_date, datetime.min.time())
 
-    if payload.due_date is not None:
-        invoice.due_date = datetime.combine(payload.due_date, datetime.min.time())
+    invoice.due_date = datetime.combine(payload.due_date, datetime.min.time()) if payload.due_date is not None else None
 
     invoice.tax_inclusive = payload.tax_inclusive
     invoice.apply_round_off = payload.apply_round_off
@@ -267,6 +267,21 @@ def _apply_payload_to_invoice(
         invoice.total_amount = float(raw_total)
 
 
+def _to_invoice_out(
+    invoice: Invoice,
+    *,
+    payment_summary=None,
+) -> InvoiceOut:
+    result = InvoiceOut.model_validate(invoice)
+    if payment_summary is not None:
+        result.paid_amount = payment_summary.paid_amount
+        result.remaining_amount = payment_summary.remaining_amount
+        result.outstanding_amount = payment_summary.outstanding_amount
+        result.payment_status = payment_summary.payment_status
+        result.due_in_days = payment_summary.due_in_days
+    return result
+
+
 @router.post("", response_model=InvoiceOut, include_in_schema=False)
 @router.post("/", response_model=InvoiceOut)
 def create_invoice(
@@ -307,7 +322,8 @@ def create_invoice(
             if not (active_fy.start_date <= inv_date <= active_fy.end_date):
                 warnings.append("invoice_date_outside_fy")
 
-        result = InvoiceOut.model_validate(invoice)
+        summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
+        result = _to_invoice_out(invoice, payment_summary=summary)
         result.warnings = warnings
         return result
     except HTTPException:
@@ -359,7 +375,7 @@ def list_invoices(
         others_total = total_listed - (credit_total + debit_total + cancelled_total)
 
         total = base.count()
-        items = (
+        invoices = (
             base.options(joinedload(Invoice.ledger), joinedload(Invoice.items))
             .order_by(Invoice.id.desc())
             .offset((page - 1) * page_size)
@@ -367,7 +383,10 @@ def list_invoices(
             .all()
         )
 
-        visible_page_total = sum((Decimal(item.total_amount or 0) for item in items), Decimal("0"))
+        payment_summaries = build_invoice_payment_summaries(db, invoices)
+        items = [_to_invoice_out(invoice, payment_summary=payment_summaries.get(invoice.id)) for invoice in invoices]
+
+        visible_page_total = sum((Decimal(str(item.total_amount or 0)) for item in items), Decimal("0"))
 
         return PaginatedInvoiceOut(
             items=items,
@@ -393,6 +412,78 @@ def list_invoices(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/dues", response_model=PaginatedInvoiceOut)
+def list_due_invoices(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=500),
+    search: str = Query(""),
+    ledger_id: int | None = Query(None),
+    due_date_from: date | None = Query(None),
+    due_date_to: date | None = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    try:
+      base = (
+        db.query(Invoice)
+        .options(joinedload(Invoice.ledger), joinedload(Invoice.items))
+        .filter(
+          Invoice.voucher_type == "sales",
+          Invoice.status == "active",
+          Invoice.due_date.isnot(None),
+        )
+      )
+
+      if ledger_id is not None:
+        base = base.filter(Invoice.ledger_id == ledger_id)
+      if search.strip():
+        base = base.filter(Invoice.ledger_name.ilike(f"%{search.strip()}%"))
+      if due_date_from is not None:
+        base = base.filter(Invoice.due_date >= datetime.combine(due_date_from, datetime.min.time()))
+      if due_date_to is not None:
+        base = base.filter(Invoice.due_date <= datetime.combine(due_date_to, datetime.max.time()))
+
+      invoices = base.order_by(Invoice.due_date.asc(), Invoice.invoice_date.asc(), Invoice.id.asc()).all()
+      payment_summaries = build_invoice_payment_summaries(db, invoices)
+      outstanding_invoices = [
+        invoice
+        for invoice in invoices
+        if payment_summaries[invoice.id].remaining_amount > 0
+      ]
+
+      total = len(outstanding_invoices)
+      page_start = (page - 1) * page_size
+      page_end = page_start + page_size
+      paged_invoices = outstanding_invoices[page_start:page_end]
+      items = [_to_invoice_out(invoice, payment_summary=payment_summaries.get(invoice.id)) for invoice in paged_invoices]
+
+      total_listed = sum((Decimal(str(invoice.total_amount or 0)) for invoice in outstanding_invoices), Decimal("0"))
+      visible_page_total = sum((Decimal(str(item.total_amount or 0)) for item in items), Decimal("0"))
+
+      return PaginatedInvoiceOut(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=(total + page_size - 1) // page_size if total > 0 else 1,
+        summary=PaginatedInvoiceOut.SummaryMeta(
+          total_listed=float(total_listed),
+          credit_total=0.0,
+          debit_total=float(total_listed),
+          cancelled_total=0.0,
+          active_total=float(total_listed),
+          others_total=0.0,
+          visible_page_total=float(visible_page_total),
+          visible_page_count=len(items),
+          filtered_count=total,
+          include_cancelled=False,
+          financial_year_id=None,
+        ),
+      )
+    except Exception as e:
+      raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{invoice_id}", response_model=InvoiceOut)
 def get_invoice(
     invoice_id: int,
@@ -407,7 +498,8 @@ def get_invoice(
     )
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
-    return invoice
+    summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
+    return _to_invoice_out(invoice, payment_summary=summary)
 
 
 @router.put("/{invoice_id}", response_model=InvoiceOut)
@@ -449,7 +541,8 @@ def update_invoice(
             if not (active_fy.start_date <= inv_date <= active_fy.end_date):
                 warnings.append("invoice_date_outside_fy")
 
-        result = InvoiceOut.model_validate(invoice)
+        summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
+        result = _to_invoice_out(invoice, payment_summary=summary)
         result.warnings = warnings
         return result
     except HTTPException:

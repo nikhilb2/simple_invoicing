@@ -1,6 +1,7 @@
 import { Eye, Pencil, RotateCcw, Trash2, FileText } from 'lucide-react';
 import type { Invoice } from '../types/api';
 import formatCurrency from '../utils/formatting';
+import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 
 interface InvoicesCompactCardProps {
   invoice: Invoice;
@@ -56,8 +57,13 @@ interface InvoicesCompactCardProps {
                 <p className="invoice-compact-card__meta">{invoice.ledger.phone_number}</p>
             )}
               <p className="invoice-compact-card__meta">
-              {new Date(invoice.invoice_date).toLocaleDateString()}
+              Invoice date: {formatInvoiceDateLabel(invoice.invoice_date)}
             </p>
+            {invoice.due_date ? (
+              <p className="invoice-compact-card__meta">
+                Due date: {formatInvoiceDateLabel(invoice.due_date)}
+              </p>
+            ) : null}
           </div>
         </div>
 

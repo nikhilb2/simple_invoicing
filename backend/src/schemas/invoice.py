@@ -74,6 +74,11 @@ class InvoiceOut(BaseModel):
     total_amount: float
     invoice_date: datetime
     due_date: datetime | None = None
+    paid_amount: float = 0
+    remaining_amount: float = 0
+    outstanding_amount: float = 0
+    payment_status: str = "unpaid"
+    due_in_days: int | None = None
     tax_inclusive: bool = False
     apply_round_off: bool = False
     round_off_amount: float = 0
@@ -106,3 +111,20 @@ class PaginatedInvoiceOut(BaseModel):
     page_size: int
     total_pages: int
     summary: SummaryMeta
+
+
+class OutstandingInvoiceOut(BaseModel):
+    id: int
+    invoice_number: str | None = None
+    invoice_date: datetime
+    due_date: datetime | None = None
+    total_amount: float
+    paid_amount: float = 0
+    remaining_amount: float = 0
+    outstanding_amount: float = 0
+    payment_status: str = "unpaid"
+    due_in_days: int | None = None
+    suggested_allocation_amount: float | None = None
+
+    class Config:
+        from_attributes = True

@@ -1,5 +1,6 @@
 import type { Invoice } from '../types/api';
 import formatCurrency from '../utils/formatting';
+import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 
 interface InvoicesTableProps {
   invoices: Invoice[];
@@ -15,6 +16,7 @@ export default function InvoicesTable({ invoices, currencyCode, onRowClick }: In
           <tr>
             <th>Invoice #</th>
             <th>Date</th>
+            <th>Due</th>
             <th>Buyer / Supplier</th>
             <th>Amount</th>
             <th>Type</th>
@@ -37,7 +39,10 @@ export default function InvoicesTable({ invoices, currencyCode, onRowClick }: In
                   {invoice.invoice_number}
                 </td>
                 <td>
-                  {new Date(invoice.invoice_date).toLocaleDateString()}
+                  {formatInvoiceDateLabel(invoice.invoice_date)}
+                </td>
+                <td>
+                  {formatInvoiceDateLabel(invoice.due_date)}
                 </td>
                 <td>
                   <div className="invoice-feed-table__ledger">{invoice.ledger?.name || 'Unknown'}</div>

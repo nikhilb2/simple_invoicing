@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, FileText, FilePlus, Mail, Pencil, ReceiptText, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
-import type { CompanyAccount, CompanyProfile, Invoice, Ledger, LedgerStatement, Payment, PaymentCreate, PaymentUpdate, Product } from '../types/api';
+import type { CompanyAccount, CompanyProfile, Invoice, Ledger, LedgerStatement, OutstandingInvoice, Payment, PaymentCreate, PaymentInvoiceAllocation, PaymentUpdate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
 import PaymentReceiptPreview from '../components/PaymentReceiptPreview';
 import StatementPreview from '../components/StatementPreview';
@@ -12,12 +12,84 @@ import SendEmailModal from '../components/SendEmailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import formatCurrency from '../utils/formatting';
 import { useFY } from '../context/FYContext';
+import { fetchOutstandingInvoices } from '../features/invoices/api';
+import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 
 function defaultDateRange() {
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
   const toIso = (d: Date) => d.toISOString().slice(0, 10);
   return { fromDate: toIso(firstDay), toDate: toIso(today) };
+}
+
+function createDefaultPaymentForm(ledgerId: number): PaymentCreate {
+  return {
+    ledger_id: ledgerId,
+    voucher_type: 'receipt',
+    amount: 0,
+    account_id: null,
+    date: new Date().toISOString().slice(0, 16),
+    mode: '',
+    reference: '',
+    notes: '',
+    invoice_allocations: [],
+  };
+}
+
+function createDefaultEditPaymentForm(): PaymentUpdate {
+  return {
+    voucher_type: 'receipt',
+    amount: 0,
+    account_id: null,
+    date: new Date().toISOString().slice(0, 16),
+    mode: '',
+    reference: '',
+    notes: '',
+    invoice_allocations: [],
+  };
+}
+
+function sumAllocatedAmount(allocations: PaymentInvoiceAllocation[] | undefined): number {
+  return (allocations ?? []).reduce((total, allocation) => total + Number(allocation.allocated_amount || 0), 0);
+}
+
+function buildSuggestedAllocations(invoices: OutstandingInvoice[]): PaymentInvoiceAllocation[] {
+  return invoices
+    .filter((invoice) => (invoice.suggested_allocation_amount || 0) > 0)
+    .map((invoice) => ({
+      invoice_id: invoice.id,
+      invoice_number: invoice.invoice_number,
+      invoice_date: invoice.invoice_date,
+      due_date: invoice.due_date,
+      allocated_amount: invoice.suggested_allocation_amount || 0,
+    }));
+}
+
+function upsertAllocation(
+  allocations: PaymentInvoiceAllocation[] | undefined,
+  invoice: OutstandingInvoice,
+  allocatedAmount: number,
+): PaymentInvoiceAllocation[] {
+  const nextAllocations = [...(allocations ?? [])];
+  const existingIndex = nextAllocations.findIndex((allocation) => allocation.invoice_id === invoice.id);
+  const nextAllocation: PaymentInvoiceAllocation = {
+    invoice_id: invoice.id,
+    invoice_number: invoice.invoice_number,
+    invoice_date: invoice.invoice_date,
+    due_date: invoice.due_date,
+    allocated_amount: allocatedAmount,
+  };
+
+  if (existingIndex >= 0) {
+    nextAllocations[existingIndex] = { ...nextAllocations[existingIndex], ...nextAllocation };
+    return nextAllocations;
+  }
+
+  return [...nextAllocations, nextAllocation];
+}
+
+function removeAllocation(allocations: PaymentInvoiceAllocation[] | undefined, invoiceId: number): PaymentInvoiceAllocation[] {
+  return (allocations ?? []).filter((allocation) => allocation.invoice_id !== invoiceId);
 }
 
 export default function LedgerViewPage() {
@@ -44,16 +116,9 @@ export default function LedgerViewPage() {
   }));
   const [refreshKey, setRefreshKey] = useState(0);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
-  const [paymentForm, setPaymentForm] = useState<PaymentCreate>({
-    ledger_id: ledgerId,
-    voucher_type: 'receipt',
-    amount: 0,
-    account_id: null,
-    date: new Date().toISOString().slice(0, 16),
-    mode: '',
-    reference: '',
-    notes: '',
-  });
+  const [paymentForm, setPaymentForm] = useState<PaymentCreate>(() => createDefaultPaymentForm(ledgerId));
+  const [outstandingInvoices, setOutstandingInvoices] = useState<OutstandingInvoice[]>([]);
+  const [loadingOutstandingInvoices, setLoadingOutstandingInvoices] = useState(false);
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [showStatementPreview, setShowStatementPreview] = useState(false);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
@@ -61,18 +126,22 @@ export default function LedgerViewPage() {
   const [showActionsDropdown, setShowActionsDropdown] = useState(false);
   const actionsDropdownRef = useRef<HTMLDivElement>(null);
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
-  const [editPaymentForm, setEditPaymentForm] = useState<PaymentUpdate>({
-    voucher_type: 'receipt',
-    amount: 0,
-    account_id: null,
-    date: new Date().toISOString().slice(0, 16),
-    mode: '',
-    reference: '',
-    notes: '',
-  });
+  const [editPaymentForm, setEditPaymentForm] = useState<PaymentUpdate>(() => createDefaultEditPaymentForm());
+  const [editOutstandingInvoices, setEditOutstandingInvoices] = useState<OutstandingInvoice[]>([]);
+  const [loadingEditOutstandingInvoices, setLoadingEditOutstandingInvoices] = useState(false);
   const [submittingEditPayment, setSubmittingEditPayment] = useState(false);
   const [confirmDeletePaymentId, setConfirmDeletePaymentId] = useState<number | null>(null);
   const [deletingPayment, setDeletingPayment] = useState(false);
+  const [allocationCreateSearch, setAllocationCreateSearch] = useState('');
+  const [allocationEditSearch, setAllocationEditSearch] = useState('');
+
+  useEffect(() => {
+    if (!showPaymentForm) setAllocationCreateSearch('');
+  }, [showPaymentForm]);
+
+  useEffect(() => {
+    if (!editingPayment) setAllocationEditSearch('');
+  }, [editingPayment]);
 
   useEffect(() => {
     if (!showActionsDropdown) return;
@@ -141,7 +210,203 @@ export default function LedgerViewPage() {
     });
   }, [activeFY]);
 
+  useEffect(() => {
+    if (!showPaymentForm) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadingOutstandingInvoices(true);
+        const invoices = await fetchOutstandingInvoices({
+          ledgerId,
+          voucherType: paymentForm.voucher_type as 'receipt' | 'payment',
+          amount: paymentForm.amount > 0 ? paymentForm.amount : undefined,
+        });
+        if (!cancelled) {
+          setOutstandingInvoices(invoices);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(getApiErrorMessage(err, 'Unable to load outstanding invoices'));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingOutstandingInvoices(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ledgerId, paymentForm.amount, paymentForm.voucher_type, showPaymentForm]);
+
+  useEffect(() => {
+    if (!editingPayment) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadingEditOutstandingInvoices(true);
+        const invoices = await fetchOutstandingInvoices({
+          ledgerId,
+          voucherType: editPaymentForm.voucher_type as 'receipt' | 'payment',
+          amount: editPaymentForm.amount > 0 ? editPaymentForm.amount : undefined,
+          paymentId: editingPayment.id,
+        });
+        if (!cancelled) {
+          setEditOutstandingInvoices(invoices);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(getApiErrorMessage(err, 'Unable to load invoice allocations'));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingEditOutstandingInvoices(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [editPaymentForm.amount, editPaymentForm.voucher_type, editingPayment, ledgerId]);
+
   const activeCurrencyCode = company?.currency_code || 'INR';
+
+  function renderAllocationSection(input: {
+    allocations: PaymentInvoiceAllocation[] | undefined;
+    amount: number;
+    outstanding: OutstandingInvoice[];
+    loading: boolean;
+    voucherType: PaymentCreate['voucher_type'] | PaymentUpdate['voucher_type'];
+    onChange: (allocations: PaymentInvoiceAllocation[]) => void;
+    title: string;
+    searchQuery: string;
+    onSearchChange: (q: string) => void;
+  }) {
+    if (input.voucherType !== 'receipt' && input.voucherType !== 'payment') {
+      return null;
+    }
+
+    const allocatedTotal = sumAllocatedAmount(input.allocations);
+    const remainingUnallocated = input.amount - allocatedTotal;
+    const filteredInvoices = input.searchQuery.trim()
+      ? input.outstanding.filter((inv) =>
+          (inv.invoice_number ?? '').toLowerCase().includes(input.searchQuery.trim().toLowerCase())
+        )
+      : input.outstanding;
+
+    return (
+      <div className="summary-box stack" style={{ gap: '12px' }}>
+        <div className="panel__header" style={{ marginBottom: 0 }}>
+          <div>
+            <p className="eyebrow">Invoice Allocation</p>
+            <h3 className="nav-panel__title" style={{ margin: 0 }}>{input.title}</h3>
+          </div>
+          <button
+            type="button"
+            className="button button--secondary button--small"
+            onClick={() => input.onChange(buildSuggestedAllocations(input.outstanding))}
+            disabled={input.loading || input.outstanding.length === 0 || input.amount <= 0}
+          >
+            Auto Select Oldest
+          </button>
+        </div>
+
+        <p className="muted-text" style={{ margin: 0 }}>
+          Allocated {formatCurrency(allocatedTotal, activeCurrencyCode)}
+          {' · '}
+          {remainingUnallocated >= 0
+            ? `Unallocated ${formatCurrency(remainingUnallocated, activeCurrencyCode)}`
+            : `Over-allocated by ${formatCurrency(Math.abs(remainingUnallocated), activeCurrencyCode)}`}
+        </p>
+
+        {!input.loading && input.outstanding.length > 0 ? (
+          <input
+            type="search"
+            className="input"
+            placeholder="Search by invoice number…"
+            value={input.searchQuery}
+            onChange={(e) => input.onSearchChange(e.target.value)}
+            aria-label="Search invoices by number"
+          />
+        ) : null}
+
+        {input.loading ? <p className="muted-text" style={{ margin: 0 }}>Loading invoice options...</p> : null}
+        {!input.loading && input.outstanding.length === 0 ? (
+          <p className="muted-text" style={{ margin: 0 }}>No outstanding invoices are available for this ledger.</p>
+        ) : null}
+        {!input.loading && input.outstanding.length > 0 && filteredInvoices.length === 0 ? (
+          <p className="muted-text" style={{ margin: 0 }}>No invoices match your search.</p>
+        ) : null}
+
+        {!input.loading && filteredInvoices.length > 0 ? (
+          <div className="stack" style={{ gap: '10px', maxHeight: '320px', overflowY: 'auto', paddingRight: '4px' }}>
+            {filteredInvoices.map((invoice) => {
+              const existingAllocation = (input.allocations ?? []).find((allocation) => allocation.invoice_id === invoice.id);
+              const isSelected = Boolean(existingAllocation);
+
+              return (
+                <div key={invoice.id} className="summary-box" style={{ padding: '14px' }}>
+                  <div style={{ display: 'grid', gap: '10px' }}>
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(event) => {
+                          if (!event.target.checked) {
+                            input.onChange(removeAllocation(input.allocations, invoice.id));
+                            return;
+                          }
+
+                          const defaultAmount = invoice.suggested_allocation_amount || invoice.remaining_amount;
+                          input.onChange(upsertAllocation(input.allocations, invoice, defaultAmount));
+                        }}
+                      />
+                      <div style={{ display: 'grid', gap: '4px', flex: 1 }}>
+                        <strong>{invoice.invoice_number || `#${invoice.id}`}</strong>
+                        <span className="table-subtext">
+                          Invoice {formatInvoiceDateLabel(invoice.invoice_date)}
+                          {' · '}
+                          Due {formatInvoiceDateLabel(invoice.due_date)}
+                          {' · '}
+                          Remaining {formatCurrency(invoice.remaining_amount, activeCurrencyCode)}
+                        </span>
+                        <span className="table-subtext">
+                          Status {invoice.payment_status}
+                          {typeof invoice.due_in_days === 'number' ? ` · ${invoice.due_in_days} days` : ''}
+                        </span>
+                      </div>
+                    </label>
+
+                    {isSelected ? (
+                      <div className="field" style={{ marginLeft: '28px' }}>
+                        <label htmlFor={`allocation-${input.title}-${invoice.id}`}>Allocated amount</label>
+                        <input
+                          id={`allocation-${input.title}-${invoice.id}`}
+                          className="input"
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={existingAllocation?.allocated_amount || ''}
+                          onChange={(event) => {
+                            const nextAmount = parseFloat(event.target.value) || 0;
+                            input.onChange(upsertAllocation(input.allocations, invoice, nextAmount));
+                          }}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   async function handleViewInvoice(invoiceId: number) {
     try {
@@ -164,16 +429,8 @@ export default function LedgerViewPage() {
       setError('');
       const res = await api.post<Payment>('/payments/', paymentForm);
       setShowPaymentForm(false);
-      setPaymentForm({
-        ledger_id: ledgerId,
-        voucher_type: 'receipt',
-        amount: 0,
-        account_id: null,
-        date: new Date().toISOString().slice(0, 16),
-        mode: '',
-        reference: '',
-        notes: '',
-      });
+      setPaymentForm(createDefaultPaymentForm(ledgerId));
+      setOutstandingInvoices([]);
       // Refresh statement
       setRefreshKey((k) => k + 1);
       if (res.data.warnings?.includes('invoice_date_outside_fy') && activeFY) {
@@ -201,6 +458,14 @@ export default function LedgerViewPage() {
         mode: res.data.mode || '',
         reference: res.data.reference || '',
         notes: res.data.notes || '',
+        invoice_allocations: (res.data.invoice_allocations ?? []).map((allocation) => ({
+          id: allocation.id,
+          invoice_id: allocation.invoice_id,
+          invoice_number: allocation.invoice_number,
+          invoice_date: allocation.invoice_date,
+          due_date: allocation.due_date,
+          allocated_amount: allocation.allocated_amount,
+        })),
       });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to load payment'));
@@ -219,6 +484,7 @@ export default function LedgerViewPage() {
       setError('');
       await api.put<Payment>(`/payments/${editingPayment.id}`, editPaymentForm);
       setEditingPayment(null);
+      setEditOutstandingInvoices([]);
       setRefreshKey((k) => k + 1);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to update payment'));
@@ -641,6 +907,17 @@ export default function LedgerViewPage() {
                     onChange={(e) => setPaymentForm((f) => ({ ...f, notes: e.target.value }))}
                   />
                 </div>
+                {renderAllocationSection({
+                  allocations: paymentForm.invoice_allocations,
+                  amount: paymentForm.amount,
+                  outstanding: outstandingInvoices,
+                  loading: loadingOutstandingInvoices,
+                  voucherType: paymentForm.voucher_type,
+                  onChange: (invoice_allocations) => setPaymentForm((current) => ({ ...current, invoice_allocations })),
+                  title: 'Allocate against invoices',
+                  searchQuery: allocationCreateSearch,
+                  onSearchChange: setAllocationCreateSearch,
+                })}
                 <button type="submit" className="button button--primary" disabled={submittingPayment} title="Save payment" aria-label="Save payment">
                   {submittingPayment ? 'Saving...' : 'Save'}
                 </button>
@@ -801,6 +1078,17 @@ export default function LedgerViewPage() {
                     onChange={(e) => setEditPaymentForm((f) => ({ ...f, notes: e.target.value }))}
                   />
                 </div>
+                {renderAllocationSection({
+                  allocations: editPaymentForm.invoice_allocations,
+                  amount: editPaymentForm.amount ?? 0,
+                  outstanding: editOutstandingInvoices,
+                  loading: loadingEditOutstandingInvoices,
+                  voucherType: editPaymentForm.voucher_type,
+                  onChange: (invoice_allocations) => setEditPaymentForm((current) => ({ ...current, invoice_allocations })),
+                  title: 'Edit invoice allocations',
+                  searchQuery: allocationEditSearch,
+                  onSearchChange: setAllocationEditSearch,
+                })}
                 <button type="submit" className="button button--primary" disabled={submittingEditPayment} title="Update payment" aria-label="Update payment">
                   {submittingEditPayment ? 'Saving...' : 'Update'}
                 </button>

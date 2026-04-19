@@ -19,9 +19,11 @@ from src.models.invoice import Invoice
 from src.models.invoice import InvoiceItem
 from src.models.payment import Payment
 from src.models.user import User, UserRole
+from src.schemas.invoice import OutstandingInvoiceOut
 from src.schemas.ledger import DayBookEntry, DayBookOut, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementOut, PaginatedLedgerOut, TaxLedgerEntry, TaxLedgerOut, TaxLedgerTotals
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
 from src.services.financial_year import get_active_fy
+from src.services.invoice_payments import auto_allocate_outstanding_invoices, get_outstanding_invoices_for_ledger
 
 router = APIRouter()
 
@@ -654,6 +656,44 @@ def get_ledger(
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
     return _serialize_ledger(db, ledger)
+
+@router.get("/{ledger_id}/unpaid-invoices", response_model=list[OutstandingInvoiceOut])
+def list_unpaid_invoices(
+    ledger_id: int,
+    voucher_type: str = Query("receipt", pattern="^(receipt|payment)$"),
+    amount: float | None = Query(None, gt=0),
+    payment_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    ledger = db.query(Ledger).filter(Ledger.id == ledger_id).first()
+    if not ledger:
+        raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
+
+    rows = get_outstanding_invoices_for_ledger(
+        db,
+        ledger_id,
+        voucher_type=voucher_type,
+        exclude_payment_id=payment_id,
+    )
+    suggestions = auto_allocate_outstanding_invoices(rows, amount) if amount is not None else {}
+
+    return [
+        OutstandingInvoiceOut(
+            id=invoice.id,
+            invoice_number=invoice.invoice_number,
+            invoice_date=invoice.invoice_date,
+            due_date=invoice.due_date,
+            total_amount=float(invoice.total_amount or 0),
+            paid_amount=summary.paid_amount,
+            remaining_amount=summary.remaining_amount,
+            outstanding_amount=summary.outstanding_amount,
+            payment_status=summary.payment_status,
+            due_in_days=summary.due_in_days,
+            suggested_allocation_amount=suggestions.get(invoice.id),
+        )
+        for invoice, summary in rows
+    ]
 
 
 @router.put("/{ledger_id}", response_model=LedgerOut)

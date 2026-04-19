@@ -12,6 +12,7 @@ import LedgerCombobox from '../components/LedgerCombobox';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import formatCurrency from '../utils/formatting';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../utils/invoiceTax';
+import { createDueDateFormState, formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../utils/invoiceDueDate.ts';
 import {
   applyOpeningBalanceSide,
   openingBalanceMagnitude,
@@ -68,6 +69,9 @@ export default function InvoicesPage() {
   const [listTab, setListTab] = useState<'invoices' | 'payments'>('invoices');
   const [loadingPayments, setLoadingPayments] = useState(false);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
+  const [dueDateMode, setDueDateMode] = useState<DueDateMode>('none');
+  const [dueDate, setDueDate] = useState('');
+  const [dueDateDays, setDueDateDays] = useState('');
   const [showLedgerModal, setShowLedgerModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
   const [showStockModal, setShowStockModal] = useState(false);
@@ -236,6 +240,12 @@ export default function InvoicesPage() {
   const activeCurrencyCode = company?.currency_code || 'USD';
   const selectedLedger = ledgers.find((entry) => entry.id === Number(selectedLedgerId));
   const composerInterstateSupply = isInterstateSupply(company?.gst, selectedLedger?.gst);
+  const resolvedDueDate = resolveDueDate({
+    mode: dueDateMode,
+    invoiceDate,
+    exactDate: dueDate,
+    daysFromInvoice: dueDateDays,
+  });
 
   function addItem() {
     const defaultProduct = products[0];
@@ -264,6 +274,9 @@ export default function InvoicesPage() {
     setItems([createItem(1, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))]);
     setNextItemId(2);
     setInvoiceDate(new Date().toISOString().slice(0, 10));
+    setDueDateMode('none');
+    setDueDate('');
+    setDueDateDays('');
   }
 
   function startEditingInvoice(invoice: Invoice) {
@@ -286,6 +299,10 @@ export default function InvoicesPage() {
     setApplyRoundOff(invoice.apply_round_off ?? false);
     setSelectedLedgerId(String(invoice.ledger_id));
     setInvoiceDate(invoice.invoice_date ? invoice.invoice_date.slice(0, 10) : new Date().toISOString().slice(0, 10));
+    const dueDateState = createDueDateFormState(invoice.due_date);
+    setDueDateMode(dueDateState.mode);
+    setDueDate(dueDateState.exactDate);
+    setDueDateDays(dueDateState.daysFromInvoice);
 
     const nextItems = invoice.items.map((line, index) => ({
       id: index + 1,
@@ -341,6 +358,7 @@ export default function InvoicesPage() {
         ledger_id: Number(selectedLedgerId),
         voucher_type: voucherType,
         invoice_date: invoiceDate,
+        due_date: resolvedDueDate,
         supplier_invoice_number: voucherType === 'purchase' ? (supplierInvoiceNumber.trim() || null) : null,
         tax_inclusive: taxInclusive,
         apply_round_off: applyRoundOff,
@@ -663,6 +681,64 @@ export default function InvoicesPage() {
                   </p>
                 ) : null}
               </div>
+
+              {voucherType !== 'payment' ? (
+                <>
+                  <div className="field">
+                    <label htmlFor="invoice-due-mode">Due date</label>
+                    <select
+                      id="invoice-due-mode"
+                      className="select"
+                      value={dueDateMode}
+                      onChange={(event) => setDueDateMode(event.target.value as DueDateMode)}
+                    >
+                      <option value="none">No due date</option>
+                      <option value="exact">Choose exact date</option>
+                      <option value="days">Set days from invoice date</option>
+                    </select>
+                  </div>
+
+                  {dueDateMode === 'exact' ? (
+                    <div className="field">
+                      <label htmlFor="invoice-due-date">Exact due date</label>
+                      <input
+                        id="invoice-due-date"
+                        className="input"
+                        type="date"
+                        value={dueDate}
+                        min={invoiceDate || undefined}
+                        onChange={(event) => setDueDate(event.target.value)}
+                      />
+                    </div>
+                  ) : null}
+
+                  {dueDateMode === 'days' ? (
+                    <div className="field">
+                      <label htmlFor="invoice-due-days">Days from invoice date</label>
+                      <input
+                        id="invoice-due-days"
+                        className="input"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={dueDateDays}
+                        onChange={(event) => setDueDateDays(event.target.value)}
+                        placeholder="0"
+                      />
+                    </div>
+                  ) : null}
+
+                  {dueDateMode !== 'none' ? (
+                    <div className="field" style={{ gridColumn: '1 / -1' }}>
+                      <p className="muted-text" style={{ margin: 0 }}>
+                        {resolvedDueDate
+                          ? `Resolved due date: ${formatInvoiceDateLabel(resolvedDueDate)}`
+                          : 'Select a valid due date or enter the number of days from the invoice date.'}
+                      </p>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
 
               {voucherType === 'purchase' ? (
                 <div className="field">
