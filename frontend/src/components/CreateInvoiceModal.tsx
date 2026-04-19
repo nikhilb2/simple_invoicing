@@ -4,6 +4,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import type { InvoiceCreate, Invoice, Ledger, Product } from '../types/api';
 import { useFY } from '../context/FYContext';
 import formatCurrency from '../utils/formatting';
+import { formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../utils/invoiceDueDate.ts';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../utils/invoiceTax';
 import ProductCombobox from './ProductCombobox';
 import LedgerCombobox from './LedgerCombobox';
@@ -45,6 +46,9 @@ export default function CreateInvoiceModal({
   const [voucherType, setVoucherType] = useState<'sales' | 'purchase'>(preselectedVoucherType || 'sales');
   const [taxInclusive, setTaxInclusive] = useState(false);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
+  const [dueDateMode, setDueDateMode] = useState<DueDateMode>('none');
+  const [dueDate, setDueDate] = useState('');
+  const [dueDateDays, setDueDateDays] = useState('');
   const [items, setItems] = useState<InvoiceFormItem[]>([createItem(1)]);
   const [nextItemId, setNextItemId] = useState(2);
   const [loading, setLoading] = useState(true);
@@ -120,6 +124,12 @@ export default function CreateInvoiceModal({
     (invoiceDate < activeFY.start_date || invoiceDate > activeFY.end_date);
   const selectedLedger = ledgers.find((ledger) => ledger.id === Number(selectedLedgerId));
   const composerInterstateSupply = isInterstateSupply(companyGst, selectedLedger?.gst);
+  const resolvedDueDate = resolveDueDate({
+    mode: dueDateMode,
+    invoiceDate,
+    exactDate: dueDate,
+    daysFromInvoice: dueDateDays,
+  });
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -129,6 +139,7 @@ export default function CreateInvoiceModal({
         ledger_id: Number(selectedLedgerId),
         voucher_type: voucherType,
         invoice_date: invoiceDate,
+        due_date: resolvedDueDate,
         tax_inclusive: taxInclusive,
         items: items.map((item) => ({
           product_id: Number(item.productId),
@@ -215,7 +226,59 @@ export default function CreateInvoiceModal({
                   </p>
                 ) : null}
               </div>
+
+              <div className="field">
+                <label htmlFor="modal-inv-due-mode">Due date</label>
+                <select
+                  id="modal-inv-due-mode"
+                  className="select"
+                  value={dueDateMode}
+                  onChange={(e) => setDueDateMode(e.target.value as DueDateMode)}
+                >
+                  <option value="none">No due date</option>
+                  <option value="exact">Choose exact date</option>
+                  <option value="days">Set days from invoice date</option>
+                </select>
+              </div>
+
+              {dueDateMode === 'exact' ? (
+                <div className="field">
+                  <label htmlFor="modal-inv-due-date">Exact due date</label>
+                  <input
+                    id="modal-inv-due-date"
+                    className="input"
+                    type="date"
+                    value={dueDate}
+                    min={invoiceDate || undefined}
+                    onChange={(e) => setDueDate(e.target.value)}
+                  />
+                </div>
+              ) : null}
+
+              {dueDateMode === 'days' ? (
+                <div className="field">
+                  <label htmlFor="modal-inv-due-days">Days from invoice date</label>
+                  <input
+                    id="modal-inv-due-days"
+                    className="input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={dueDateDays}
+                    onChange={(e) => setDueDateDays(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+              ) : null}
             </div>
+
+            {dueDateMode !== 'none' ? (
+              <p className="muted-text" style={{ margin: 0 }}>
+                {resolvedDueDate
+                  ? `Resolved due date: ${formatInvoiceDateLabel(resolvedDueDate)}`
+                  : 'Select a valid due date or enter the number of days from the invoice date.'}
+              </p>
+            ) : null}
 
             <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 0 }}>
               <input
