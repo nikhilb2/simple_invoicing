@@ -13,6 +13,7 @@ from src.api.routes.invoices import _build_invoice_pdf
 from src.api.routes.ledgers import _build_ledger_statement_data, _build_statement_html
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
+from src.models.company_account import CompanyAccount
 from src.models.company import CompanyProfile
 from src.models.invoice import Invoice
 from src.models.payment import Payment
@@ -92,7 +93,18 @@ async def send_invoice_email(
     product_ids = [item.product_id for item in (invoice.items or [])]
     products = db.query(Product).filter(Product.id.in_(product_ids)).all() if product_ids else []
 
-    pdf_buf = _build_invoice_pdf(invoice, products)
+    invoice_bank_accounts = (
+        db.query(CompanyAccount)
+        .filter(
+            CompanyAccount.is_active.is_(True),
+            CompanyAccount.account_type == "bank",
+            CompanyAccount.display_on_invoice.is_(True),
+        )
+        .order_by(CompanyAccount.display_name.asc(), CompanyAccount.id.asc())
+        .all()
+    )
+
+    pdf_buf = _build_invoice_pdf(invoice, products, invoice_bank_accounts)
     pdf_bytes = pdf_buf.read()
 
     inv_number = invoice.invoice_number or f"#{invoice.id}"
