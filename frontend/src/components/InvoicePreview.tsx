@@ -53,7 +53,9 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
       }
     };
 
-    loadPdf();
+    if (copies > 0) {
+      loadPdf();
+    }
 
     return () => {
       isMounted = false;
@@ -93,15 +95,42 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
             <h2 id="invoice-preview-title" className="nav-panel__title">PDF invoice {invoice.invoice_number || `#${invoice.id}`}</h2>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#6b7280', whiteSpace: 'nowrap' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151', whiteSpace: 'nowrap', fontWeight: '500' }}>
               Copies
               <input
                 type="number"
                 min={1}
                 max={10}
                 value={copies}
-                onChange={(e) => setCopies(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
-                style={{ width: '52px', padding: '4px 6px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '12px', textAlign: 'center' }}
+                onChange={(e) => {
+                  const newValue = e.target.value;
+                  if (newValue === '') {
+                    // Allow empty input while typing
+                    setCopies(0);
+                  } else {
+                    const parsed = parseInt(newValue, 10);
+                    if (!isNaN(parsed)) {
+                      setCopies(Math.min(10, Math.max(1, parsed)));
+                    }
+                  }
+                }}
+                onBlur={() => {
+                  // Set to 1 if empty when leaving the input
+                  if (copies === 0 || copies === '') {
+                    setCopies(1);
+                  }
+                }}
+                style={{ 
+                  width: '70px', 
+                  padding: '6px 8px', 
+                  border: '1px solid #d1d5db', 
+                  borderRadius: '6px', 
+                  fontSize: '13px', 
+                  textAlign: 'center',
+                  fontWeight: '500',
+                  transition: 'border-color 0.2s',
+                  color: '#d1d5db',
+                }}
               />
             </label>
             <div className="button-row">
