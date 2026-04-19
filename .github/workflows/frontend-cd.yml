@@ -32,12 +32,6 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
-      - name: Write frontend env file
-        run: |
-          cat > frontend/.env.production <<EOF
-          VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
-          EOF
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -54,12 +48,10 @@ jobs:
           context: frontend
           file: frontend/Dockerfile
           platforms: linux/amd64
+          build-args: |
+            VITE_API_BASE_URL=/api
           push: true
           tags: ${{ env.IMAGE }}
-
-      - name: Cleanup frontend env file
-        if: always()
-        run: rm -f frontend/.env.production
 
       - name: Configure kubeconfig
         run: |
