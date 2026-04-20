@@ -18,6 +18,7 @@ export default function PaymentReceiptPreview({
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
+  const [previewFailed, setPreviewFailed] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEscapeClose(onClose);
@@ -30,6 +31,7 @@ export default function PaymentReceiptPreview({
       setLoadingPdf(true);
       setPdfError('');
       setPdfUrl(null);
+      setPreviewFailed(false);
 
       try {
         const response = await api.get(`/payments/${paymentId}/pdf`, {
@@ -86,6 +88,11 @@ export default function PaymentReceiptPreview({
     iframeRef.current?.contentWindow?.print();
   };
 
+  const handleOpenInNewTab = () => {
+    if (!pdfUrl) return;
+    window.open(pdfUrl, '_blank', 'noopener,noreferrer');
+  };
+
   const label = paymentNumber || `#${paymentId}`;
 
   return (
@@ -101,7 +108,7 @@ export default function PaymentReceiptPreview({
               type="button"
               className="button button--secondary"
               onClick={handlePrintPdf}
-              disabled={!pdfUrl || loadingPdf}
+              disabled={!pdfUrl || loadingPdf || previewFailed}
               title="Print receipt"
               aria-label="Print receipt"
             >
@@ -131,12 +138,30 @@ export default function PaymentReceiptPreview({
         <div className="invoice-pdf-viewer" aria-live="polite">
           {loadingPdf ? <p className="muted-text">Loading PDF preview...</p> : null}
           {!loadingPdf && pdfError ? <p className="error-text">{pdfError}</p> : null}
-          {!loadingPdf && pdfUrl ? (
+          {!loadingPdf && previewFailed && pdfUrl ? (
+            <div style={{ display: 'grid', gap: '10px', justifyItems: 'center', textAlign: 'center', padding: '16px' }}>
+              <p className="muted-text">PDF preview is unavailable in this browser.</p>
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={handleOpenInNewTab}
+                title="Open PDF in a new browser tab"
+                aria-label="Open PDF in a new browser tab"
+              >
+                Open in New Tab
+              </button>
+            </div>
+          ) : null}
+          {!loadingPdf && pdfUrl && !previewFailed ? (
             <iframe
               ref={iframeRef}
               title={`Receipt ${label} PDF preview`}
               src={`${pdfUrl}#navpanes=0&toolbar=1&statusbar=0&messages=0`}
               className="invoice-pdf-viewer__frame"
+              onError={() => {
+                setPreviewFailed(true);
+                onError?.('PDF preview failed. Open the PDF in a new tab.');
+              }}
             />
           ) : null}
         </div>
