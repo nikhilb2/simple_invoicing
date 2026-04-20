@@ -1,6 +1,7 @@
 from io import BytesIO
 from html import escape
 from datetime import date, datetime
+from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -123,6 +124,37 @@ def _reverse_existing_invoice_inventory(db: Session, invoice: Invoice) -> None:
         )
 
 
+def _inventory_effect_for_voucher_type(quantity: int, voucher_type: str) -> int:
+    return -quantity if voucher_type == "sales" else quantity
+
+
+def _apply_inventory_delta_for_invoice_update(db: Session, invoice: Invoice, payload: InvoiceCreate) -> None:
+    existing_effect_by_product: dict[int, int] = defaultdict(int)
+    for item in invoice.items:
+        existing_effect_by_product[item.product_id] += _inventory_effect_for_voucher_type(
+            item.quantity,
+            invoice.voucher_type,
+        )
+
+    next_effect_by_product: dict[int, int] = defaultdict(int)
+    for item in payload.items:
+        next_effect_by_product[item.product_id] += _inventory_effect_for_voucher_type(
+            item.quantity,
+            payload.voucher_type,
+        )
+
+    for product_id in set(existing_effect_by_product) | set(next_effect_by_product):
+        quantity_delta = next_effect_by_product[product_id] - existing_effect_by_product[product_id]
+        if quantity_delta == 0:
+            continue
+        _change_inventory_quantity(
+            db,
+            product_id,
+            quantity_delta,
+            context=f"editing invoice {invoice.id}",
+        )
+
+
 def _apply_payload_to_invoice(
     db: Session,
     invoice: Invoice,
@@ -131,6 +163,7 @@ def _apply_payload_to_invoice(
     financial_year_id: int | None = None,
     active_financial_year_id: int | None = None,
     regenerate_number: bool = True,
+    apply_inventory_changes: bool = True,
 ) -> None:
     ledger = _require_ledger(db, payload.ledger_id)
     company = db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
@@ -188,17 +221,18 @@ def _apply_payload_to_invoice(
         if not product:
             raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
 
-        inventory = db.query(Inventory).filter(Inventory.product_id == item.product_id).first()
-        if payload.voucher_type == "sales" and (not inventory or inventory.quantity < item.quantity):
-            raise HTTPException(status_code=400, detail=f"Insufficient inventory for {product.name}")
+        if apply_inventory_changes:
+            inventory = db.query(Inventory).filter(Inventory.product_id == item.product_id).first()
+            if payload.voucher_type == "sales" and (not inventory or inventory.quantity < item.quantity):
+                raise HTTPException(status_code=400, detail=f"Insufficient inventory for {product.name}")
 
-        quantity_delta = -item.quantity if payload.voucher_type == "sales" else item.quantity
-        _change_inventory_quantity(
-            db,
-            item.product_id,
-            quantity_delta,
-            context=f"applying invoice {invoice.id or 'new'}",
-        )
+            quantity_delta = _inventory_effect_for_voucher_type(item.quantity, payload.voucher_type)
+            _change_inventory_quantity(
+                db,
+                item.product_id,
+                quantity_delta,
+                context=f"applying invoice {invoice.id or 'new'}",
+            )
 
         # Use custom unit_price if provided, otherwise use product price.
         # GST rate is snapshotted from the product at invoice time.
@@ -522,7 +556,7 @@ def update_invoice(
     try:
         active_fy = get_active_fy(db)
 
-        _reverse_existing_invoice_inventory(db, invoice)
+        _apply_inventory_delta_for_invoice_update(db, invoice, payload)
 
         for item in list(invoice.items):
             db.delete(item)
@@ -531,6 +565,7 @@ def update_invoice(
         _apply_payload_to_invoice(
             db, invoice, payload,
             regenerate_number=False,
+            apply_inventory_changes=False,
         )
         db.commit()
         db.refresh(invoice)
