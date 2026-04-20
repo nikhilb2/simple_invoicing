@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye, FileText, Pencil, Trash2, RotateCcw } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
@@ -50,6 +50,7 @@ const creditStatusMeta: Record<Invoice['credit_status'], { label: string; backgr
 export default function InvoicesPage() {
   const { activeFY } = useFY();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
@@ -142,6 +143,14 @@ export default function InvoicesPage() {
     if (res.error) {
       throw res.error;
     }
+  }
+
+  async function refreshInvoicesAfterMutation() {
+    await queryClient.invalidateQueries({
+      queryKey: invoiceQueryKeys.all,
+      refetchType: 'none',
+    });
+    await loadInvoicePageData();
   }
 
   async function loadPayments() {
@@ -390,7 +399,7 @@ export default function InvoicesPage() {
       }
 
       resetInvoiceForm();
-      await loadInvoicePageData();
+      await refreshInvoicesAfterMutation();
     } catch (err) {
       setError(getApiErrorMessage(err, editingInvoiceId ? 'Unable to update invoice' : 'Unable to create invoice'));
     } finally {
@@ -423,7 +432,7 @@ export default function InvoicesPage() {
       }
 
       setSuccess('Invoice deleted successfully. Inventory has been rolled back.');
-      await loadInvoicePageData();
+      await refreshInvoicesAfterMutation();
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to delete invoice'));
     } finally {
@@ -459,7 +468,7 @@ export default function InvoicesPage() {
       }
 
       setSuccess('Invoice cancelled. Inventory has been reversed.');
-      await loadInvoicePageData();
+      await refreshInvoicesAfterMutation();
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to cancel invoice'));
     } finally {
@@ -475,7 +484,7 @@ export default function InvoicesPage() {
       setSuccess('');
       await api.post(`/invoices/${invoiceId}/restore`);
       setSuccess('Invoice restored. Inventory has been re-applied.');
-      await loadInvoicePageData();
+      await refreshInvoicesAfterMutation();
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to restore invoice'));
     } finally {
