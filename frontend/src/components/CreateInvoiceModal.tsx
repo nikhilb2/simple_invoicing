@@ -139,7 +139,7 @@ export default function CreateInvoiceModal({
         ledger_id: Number(selectedLedgerId),
         voucher_type: voucherType,
         invoice_date: invoiceDate,
-        due_date: resolvedDueDate,
+        due_date: resolvedDueDate ?? invoiceDate,
         tax_inclusive: taxInclusive,
         items: items.map((item) => ({
           product_id: Number(item.productId),

@@ -367,7 +367,7 @@ export default function InvoicesPage() {
         ledger_id: Number(selectedLedgerId),
         voucher_type: voucherType,
         invoice_date: invoiceDate,
-        due_date: resolvedDueDate,
+        due_date: resolvedDueDate ?? invoiceDate,
         supplier_invoice_number: voucherType === 'purchase' ? (supplierInvoiceNumber.trim() || null) : null,
         tax_inclusive: taxInclusive,
         apply_round_off: applyRoundOff,
