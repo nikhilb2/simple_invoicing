@@ -159,7 +159,7 @@ export default function StatementPreview({ ledger, statement, company, currencyC
                   statement.entries.map((entry, idx) => (
                     <tr key={`${entry.entry_type}-${entry.entry_id}-${idx}`}>
                       <td>{new Date(entry.date).toLocaleDateString()}</td>
-                      <td>{entry.voucher_type} #{entry.entry_id}</td>
+                      <td>{entry.reference_number || `${entry.voucher_type} #${entry.entry_id}`}</td>
                       <td>{entry.particulars}</td>
                       <td className="right">{entry.debit > 0 ? formatCurrency(entry.debit, currencyCode) : ''}</td>
                       <td className="right">{entry.credit > 0 ? formatCurrency(entry.credit, currencyCode) : ''}</td>

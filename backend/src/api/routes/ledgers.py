@@ -209,6 +209,7 @@ def _build_ledger_statement_data(
             entry_type="invoice",
             date=invoice.invoice_date,
             voucher_type=invoice.voucher_type.title(),
+            reference_number=invoice.invoice_number,
             particulars=invoice.ledger_name or ledger.name,
             debit=float(invoice.total_amount) if invoice.voucher_type == "sales" else 0.0,
             credit=float(invoice.total_amount) if invoice.voucher_type == "purchase" else 0.0,
@@ -220,6 +221,7 @@ def _build_ledger_statement_data(
             entry_type="payment",
             date=payment.date,
             voucher_type=_format_voucher_label(payment.voucher_type),
+            reference_number=payment.payment_number,
             particulars=f"{_format_voucher_label(payment.voucher_type)}" + (f" ({payment.mode})" if payment.mode else ""),
             debit=debit,
             credit=credit,
@@ -232,6 +234,7 @@ def _build_ledger_statement_data(
             entry_type="credit_note",
             date=credit_note_entry.date,
             voucher_type=credit_note_entry.voucher_type,
+            reference_number=credit_note_entry.credit_note_number,
             particulars=credit_note_entry.particulars,
             debit=credit_note_entry.debit,
             credit=credit_note_entry.credit,
@@ -399,6 +402,7 @@ def get_day_book(
             entry_type="invoice",
             date=invoice.invoice_date,
             voucher_type=invoice.voucher_type.title(),
+            reference_number=invoice.invoice_number,
             ledger_name=invoice.ledger_name or "Unknown ledger",
             particulars=f"{invoice.voucher_type.title()} Invoice #{invoice.id}",
             debit=float(invoice.total_amount) if invoice.voucher_type == "sales" else 0.0,
@@ -412,6 +416,7 @@ def get_day_book(
         entry_type="payment",
         date=payment.date,
         voucher_type=_format_voucher_label(payment.voucher_type),
+        reference_number=payment.payment_number,
         ledger_name=ledger.name if ledger else "Unknown ledger",
         particulars=f"{_format_voucher_label(payment.voucher_type)} #{payment.id}" + (f" ({payment.mode})" if payment.mode else ""),
         debit=debit,
@@ -425,6 +430,7 @@ def get_day_book(
             entry_type="credit_note",
             date=credit_note_entry.date,
             voucher_type=credit_note_entry.voucher_type,
+            reference_number=credit_note_entry.credit_note_number,
             ledger_name=credit_note_entry.ledger_name,
             particulars=credit_note_entry.particulars,
             debit=credit_note_entry.debit,
@@ -851,10 +857,11 @@ def _build_statement_html(
         dr = _fmt_inr(entry.debit, currency) if entry.debit > 0 else ""
         cr = _fmt_inr(entry.credit, currency) if entry.credit > 0 else ""
         vtype = _e(entry.voucher_type)
+        ref_number = _e(entry.reference_number) if entry.reference_number else f"#{entry.entry_id}"
         entry_rows += f"""
         <tr>
           <td>{_e(entry_date)}</td>
-          <td>{vtype} #{entry.entry_id}</td>
+          <td>{ref_number}</td>
           <td>{_e(entry.particulars)}</td>
           <td class="right">{dr}</td>
           <td class="right">{cr}</td>

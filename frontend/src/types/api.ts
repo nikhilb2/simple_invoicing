@@ -346,6 +346,7 @@ export type LedgerStatementEntry = {
   entry_type: 'invoice' | 'payment' | 'credit_note';
   date: string;
   voucher_type: string;
+  reference_number?: string | null;
   particulars: string;
   debit: number;
   credit: number;
@@ -371,6 +372,7 @@ export type DayBookEntry = {
   entry_type: 'invoice' | 'payment' | 'credit_note';
   date: string;
   voucher_type: string;
+  reference_number?: string | null;
   ledger_name: string;
   particulars: string;
   debit: number;

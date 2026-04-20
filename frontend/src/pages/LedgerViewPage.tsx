@@ -722,7 +722,7 @@ export default function LedgerViewPage() {
               ? statement.entries.map((entry, idx) => (
                   <div key={`${entry.entry_type}-${entry.entry_id}-${idx}`} className="invoice-row">
                     <div className="invoice-row__meta">
-                      <strong>{entry.voucher_type} #{entry.entry_id}</strong>
+                      <strong>{entry.reference_number || `${entry.voucher_type} #${entry.entry_id}`}</strong>
                       <span className="table-subtext">{new Date(entry.date).toLocaleDateString()} · {entry.particulars}</span>
                       {entry.entry_type === 'payment' ? (
                         <span className="table-subtext">

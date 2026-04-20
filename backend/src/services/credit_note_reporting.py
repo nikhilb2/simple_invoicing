@@ -13,6 +13,7 @@ class CreditNoteLedgerEntry:
     entry_id: int
     date: datetime
     voucher_type: str
+    credit_note_number: str | None  # The credit note number
     ledger_name: str
     particulars: str
     debit: float
@@ -103,6 +104,7 @@ def get_credit_note_ledger_summary(
                 entry_id=credit_note_id,
                 date=bucket["date"],
                 voucher_type="Credit Note",
+                credit_note_number=bucket["credit_note_number"],
                 ledger_name=bucket["ledger_name"],
                 particulars=particulars,
                 debit=bucket["debit"],

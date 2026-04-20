@@ -62,6 +62,7 @@ class LedgerStatementEntry(BaseModel):
     entry_type: str  # "invoice" or "payment"
     date: datetime
     voucher_type: str
+    reference_number: str | None = None  # Invoice number, payment number, or credit note number
     particulars: str
     debit: float
     credit: float
@@ -87,6 +88,7 @@ class DayBookEntry(BaseModel):
     entry_type: str  # "invoice" or "payment"
     date: datetime
     voucher_type: str
+    reference_number: str | None = None  # Invoice number, payment number, or credit note number
     ledger_name: str
     particulars: str
     debit: float
