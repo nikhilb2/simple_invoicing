@@ -6,7 +6,7 @@ from io import BytesIO
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import case, func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 import weasyprint
 
@@ -17,13 +17,13 @@ from src.models.company import CompanyProfile
 from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.invoice import Invoice
 from src.models.invoice import InvoiceItem
-from src.models.payment import Payment
+from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.user import User, UserRole
 from src.schemas.invoice import OutstandingInvoiceOut
-from src.schemas.ledger import DayBookEntry, DayBookOut, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementOut, PaginatedLedgerOut, TaxLedgerEntry, TaxLedgerOut, TaxLedgerTotals
+from src.schemas.ledger import DayBookEntry, DayBookOut, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementInvoiceAllocation, LedgerStatementOut, PaginatedLedgerOut, TaxLedgerEntry, TaxLedgerOut, TaxLedgerTotals
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
 from src.services.financial_year import get_active_fy
-from src.services.invoice_payments import auto_allocate_outstanding_invoices, get_outstanding_invoices_for_ledger
+from src.services.invoice_payments import auto_allocate_outstanding_invoices, build_invoice_payment_summaries, get_outstanding_invoices_for_ledger
 
 router = APIRouter()
 
@@ -188,11 +188,26 @@ def _build_ledger_statement_data(
 
     period_payments = (
         _active_payments_query(db)
+      .options(
+        joinedload(Payment.account),
+        joinedload(Payment.invoice_allocations).joinedload(PaymentInvoiceAllocation.invoice),
+      )
         .filter(Payment.ledger_id == ledger.id)
         .filter(Payment.date >= period_start)
         .filter(Payment.date <= period_end)
         .order_by(Payment.date.asc(), Payment.id.asc())
         .all()
+    )
+
+    payment_allocation_invoices_by_id: dict[int, Invoice] = {}
+    for payment in period_payments:
+      for allocation in payment.invoice_allocations:
+        if allocation.invoice is not None:
+          payment_allocation_invoices_by_id[allocation.invoice.id] = allocation.invoice
+
+    payment_invoice_summaries = build_invoice_payment_summaries(
+      db,
+      list(payment_allocation_invoices_by_id.values()),
     )
 
     period_credit_note_summary = get_credit_note_ledger_summary(
@@ -216,6 +231,19 @@ def _build_ledger_statement_data(
         ))
     for payment in period_payments:
         debit, credit = _payment_debit_credit(payment)
+        entry_allocations = []
+        for allocation in payment.invoice_allocations:
+          summary = payment_invoice_summaries.get(allocation.invoice_id)
+          entry_allocations.append(
+            LedgerStatementInvoiceAllocation(
+              invoice_id=allocation.invoice_id,
+              invoice_number=allocation.invoice.invoice_number if allocation.invoice else None,
+              invoice_date=allocation.invoice.invoice_date if allocation.invoice else None,
+              due_date=allocation.invoice.due_date if allocation.invoice else None,
+              payment_status=summary.payment_status if summary else None,
+              allocated_amount=float(allocation.allocated_amount or 0),
+            )
+          )
         entries.append(LedgerStatementEntry(
             entry_id=payment.id,
             entry_type="payment",
@@ -225,8 +253,9 @@ def _build_ledger_statement_data(
             particulars=f"{_format_voucher_label(payment.voucher_type)}" + (f" ({payment.mode})" if payment.mode else ""),
             debit=debit,
             credit=credit,
-        account_display_name=payment.account.display_name if payment.account else None,
-        account_type=payment.account.account_type if payment.account else None,
+            account_display_name=payment.account.display_name if payment.account else None,
+            account_type=payment.account.account_type if payment.account else None,
+            invoice_allocations=entry_allocations,
         ))
     for credit_note_entry in period_credit_note_summary.entries:
         entries.append(LedgerStatementEntry(

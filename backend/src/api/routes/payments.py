@@ -18,7 +18,7 @@ from src.models.user import User, UserRole
 from src.schemas.payment import PaymentCreate, PaymentOut, PaymentUpdate
 from src.services.series import generate_next_number
 from src.services.financial_year import get_active_fy, get_fy_for_date
-from src.services.invoice_payments import sync_payment_allocations
+from src.services.invoice_payments import build_invoice_payment_summaries, sync_payment_allocations
 
 router = APIRouter()
 
@@ -283,7 +283,11 @@ def _fmt_amt(value: float, currency_code: str | None = None) -> str:
         return f"{value:,.2f}"
 
 
-def _build_receipt_html(payment: Payment, company: CompanyProfile | None) -> str:
+def _build_receipt_html(
+  payment: Payment,
+  company: CompanyProfile | None,
+  allocation_status_by_invoice_id: dict[int, str] | None = None,
+) -> str:
     ledger = payment.ledger
     account = payment.account
 
@@ -346,14 +350,66 @@ def _build_receipt_html(payment: Payment, company: CompanyProfile | None) -> str
       <td>{notes}</td>
     </tr>""" if notes else ""
 
+    allocation_status_by_invoice_id = allocation_status_by_invoice_id or {}
+
+    allocation_rows = []
+    total_allocated_amount = 0.0
+    for allocation in payment.invoice_allocations:
+        amount = float(allocation.allocated_amount or 0)
+        total_allocated_amount += amount
+        invoice = allocation.invoice
+        invoice_number = _re(invoice.invoice_number) if invoice and invoice.invoice_number else f"#{allocation.invoice_id}"
+        invoice_date = invoice.invoice_date.strftime("%d %b %Y") if invoice and invoice.invoice_date else "-"
+        due_date = invoice.due_date.strftime("%d %b %Y") if invoice and invoice.due_date else "-"
+        payment_status = "N/A"
+        if invoice and invoice.id in allocation_status_by_invoice_id:
+          payment_status = allocation_status_by_invoice_id[invoice.id].title()
+        allocation_rows.append(
+            f"""
+            <tr>
+              <td>{invoice_number}</td>
+              <td>{invoice_date}</td>
+              <td>{due_date}</td>
+              <td>{_re(payment_status)}</td>
+              <td class="amount-cell">{_fmt_amt(amount, currency)}</td>
+            </tr>"""
+        )
+
+    allocation_section_html = ""
+    if allocation_rows:
+        allocation_section_html = f"""
+  <section class="allocations-section">
+    <p class="allocations-title">Allocated Invoices</p>
+    <table class="allocations-table">
+      <thead>
+        <tr>
+          <th>Invoice</th>
+          <th>Invoice Date</th>
+          <th>Due Date</th>
+          <th>Status</th>
+          <th class="amount-cell">Allocated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {''.join(allocation_rows)}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="4">Total Allocated</td>
+          <td class="amount-cell">{_fmt_amt(total_allocated_amount, currency)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </section>"""
+
     html = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <style>
   @page {{
-    size: A5 landscape;
-    margin: 12mm 16mm;
+    size: A4;
+    margin: 12mm 14mm;
   }}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
@@ -481,6 +537,43 @@ def _build_receipt_html(payment: Payment, company: CompanyProfile | None) -> str
     font-size: 8px;
     color: #9ca3af;
   }}
+  .allocations-section {{
+    margin: 4px 0 14px;
+  }}
+  .allocations-title {{
+    font-size: 8px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b7280;
+    margin-bottom: 6px;
+  }}
+  .allocations-table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }}
+  .allocations-table th,
+  .allocations-table td {{
+    padding: 5px 6px;
+    border-bottom: 1px solid #f3f4f6;
+    text-align: left;
+  }}
+  .allocations-table th {{
+    color: #6b7280;
+    text-transform: uppercase;
+    font-size: 7.5px;
+    letter-spacing: 0.05em;
+  }}
+  .allocations-table tfoot td {{
+    font-weight: 600;
+    border-top: 1px solid #d1d5db;
+    border-bottom: 0;
+  }}
+  .amount-cell {{
+    text-align: right !important;
+    white-space: nowrap;
+  }}
   .footer {{
     margin-top: 14px;
     border-top: 1px solid #e5e7eb;
@@ -538,6 +631,8 @@ def _build_receipt_html(payment: Payment, company: CompanyProfile | None) -> str
     {notes_html}
   </table>
 
+  {allocation_section_html}
+
   <section class="amount-block">
     <p class="amount-label">{voucher_label} Amount</p>
     <p class="amount-big">{amount_fmt}</p>
@@ -561,6 +656,11 @@ def download_payment_pdf(
 ):
     payment = (
         db.query(Payment)
+      .options(
+        joinedload(Payment.ledger),
+        joinedload(Payment.account),
+        joinedload(Payment.invoice_allocations).joinedload(PaymentInvoiceAllocation.invoice),
+      )
         .filter(Payment.id == payment_id, Payment.status == "active")
         .first()
     )
@@ -569,7 +669,18 @@ def download_payment_pdf(
 
     company = db.query(CompanyProfile).first()
 
-    html = _build_receipt_html(payment, company)
+    allocations_by_invoice_id = {
+      allocation.invoice.id: allocation.invoice
+      for allocation in payment.invoice_allocations
+      if allocation.invoice is not None
+    }
+    invoice_summaries = build_invoice_payment_summaries(db, list(allocations_by_invoice_id.values()))
+    allocation_status_by_invoice_id = {
+      invoice_id: summary.payment_status
+      for invoice_id, summary in invoice_summaries.items()
+    }
+
+    html = _build_receipt_html(payment, company, allocation_status_by_invoice_id)
     pdf_bytes = weasyprint.HTML(string=html).write_pdf()
     buf = BytesIO(pdf_bytes)
 

@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from src.core.validation import normalize_gstin
 
@@ -57,6 +57,15 @@ class PaginatedLedgerOut(BaseModel):
     total_pages: int
 
 
+class LedgerStatementInvoiceAllocation(BaseModel):
+    invoice_id: int
+    invoice_number: str | None = None
+    invoice_date: datetime | None = None
+    due_date: datetime | None = None
+    payment_status: str | None = None
+    allocated_amount: float
+
+
 class LedgerStatementEntry(BaseModel):
     entry_id: int
     entry_type: str  # "invoice" or "payment"
@@ -68,6 +77,7 @@ class LedgerStatementEntry(BaseModel):
     credit: float
     account_display_name: str | None = None
     account_type: str | None = None
+    invoice_allocations: list[LedgerStatementInvoiceAllocation] = Field(default_factory=list)
 
 
 class LedgerStatementOut(BaseModel):

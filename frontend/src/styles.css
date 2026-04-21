@@ -1174,6 +1174,90 @@ textarea {
   gap: 6px;
 }
 
+.receipt-allocation-strip {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(8, 16, 29, 0.56);
+  border: 1px solid rgba(148, 184, 255, 0.14);
+  display: grid;
+  gap: 8px;
+}
+
+.receipt-allocation-strip__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.receipt-allocation-strip__title {
+  color: #c7d7f4;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.receipt-allocation-strip__total {
+  color: #e9f0ff;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.receipt-allocation-strip__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 112px;
+  overflow-y: auto;
+}
+
+.receipt-allocation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  border: 1px solid rgba(148, 184, 255, 0.24);
+  background: rgba(148, 184, 255, 0.1);
+  white-space: nowrap;
+}
+
+.receipt-allocation-chip__invoice {
+  color: #e9f0ff;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.receipt-allocation-chip__status {
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.receipt-allocation-chip__status--full {
+  color: #7ce9b0;
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.receipt-allocation-chip__status--partial {
+  color: #f6d67b;
+  background: rgba(246, 214, 123, 0.16);
+}
+
+.receipt-allocation-chip__status--unpaid {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.16);
+}
+
+.receipt-allocation-chip__amount {
+  color: #cdd9ef;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
 .table-row__actions {
   display: flex;
   gap: 8px;

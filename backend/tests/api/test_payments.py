@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 
-from src.api.routes.payments import create_payment, update_payment
+from src.api.routes.payments import _build_receipt_html, create_payment, update_payment
 from src.models.buyer import Buyer as Ledger
 from src.schemas.payment import PaymentCreate, PaymentUpdate
 
@@ -214,3 +214,68 @@ def test_create_payment_allows_account_only_entry_without_ledger():
     assert payment.account_id == 21
     assert payment.notes == "Cash withdrawal"
     assert result.warnings == []
+
+
+def test_receipt_html_includes_invoice_allocations_section_when_present():
+    invoice = SimpleNamespace(
+        id=41,
+        invoice_number="INV-0041",
+        invoice_date=datetime(2032, 6, 1, 0, 0),
+        due_date=datetime(2032, 6, 15, 0, 0),
+    )
+    payment = SimpleNamespace(
+        id=12,
+        voucher_type="receipt",
+        payment_number="PAY-0012",
+        date=datetime(2032, 6, 10, 11, 30),
+        amount=500,
+        mode="bank",
+        reference="TXN-123",
+        notes="Part payment",
+        ledger=SimpleNamespace(name="Acme Retail", address="Mumbai", phone_number="9999999999", gst="27ABCDE1234F1Z5"),
+        account=SimpleNamespace(display_name="HDFC Current", account_type="bank", bank_name="HDFC"),
+        invoice_allocations=[SimpleNamespace(invoice_id=41, allocated_amount=120, invoice=invoice)],
+    )
+    company = SimpleNamespace(
+        name="Respawn Pvt Ltd",
+        address="Bengaluru",
+        gst="29ABCDE1234F1Z5",
+        phone_number="8888888888",
+        email="billing@example.com",
+        currency_code="INR",
+    )
+
+    html = _build_receipt_html(payment, company, {41: "partial"})
+
+    assert "Allocated Invoices" in html
+    assert "INV-0041" in html
+    assert "Partial" in html
+    assert "Total Allocated" in html
+
+
+def test_receipt_html_hides_invoice_allocations_section_when_absent():
+    payment = SimpleNamespace(
+        id=14,
+        voucher_type="receipt",
+        payment_number="PAY-0014",
+        date=datetime(2032, 6, 12, 10, 0),
+        amount=700,
+        mode="cash",
+        reference=None,
+        notes=None,
+        ledger=SimpleNamespace(name="Walk-in", address="", phone_number="", gst=""),
+        account=None,
+        invoice_allocations=[],
+    )
+    company = SimpleNamespace(
+        name="Respawn Pvt Ltd",
+        address="Bengaluru",
+        gst="",
+        phone_number="",
+        email="",
+        currency_code="INR",
+    )
+
+    html = _build_receipt_html(payment, company, {})
+
+    assert "Allocated Invoices" not in html

@@ -725,10 +725,54 @@ export default function LedgerViewPage() {
                       <strong>{entry.reference_number || `${entry.voucher_type} #${entry.entry_id}`}</strong>
                       <span className="table-subtext">{new Date(entry.date).toLocaleDateString()} · {entry.particulars}</span>
                       {entry.entry_type === 'payment' ? (
-                        <span className="table-subtext">
-                          Account: {entry.account_display_name || 'Unallocated'}
-                          {entry.account_type ? ` (${entry.account_type})` : ''}
-                        </span>
+                        <>
+                          <span className="table-subtext">
+                            Account: {entry.account_display_name || 'Unallocated'}
+                            {entry.account_type ? ` (${entry.account_type})` : ''}
+                          </span>
+                          {entry.invoice_allocations && entry.invoice_allocations.length > 0 ? (
+                            <div className="receipt-allocation-strip">
+                              <div className="receipt-allocation-strip__header">
+                                <span className="receipt-allocation-strip__title">
+                                  Allocated invoices ({entry.invoice_allocations.length})
+                                </span>
+                                <span className="receipt-allocation-strip__total">
+                                  {formatCurrency(sumAllocatedAmount(entry.invoice_allocations as PaymentInvoiceAllocation[]), activeCurrencyCode)}
+                                </span>
+                              </div>
+                              <div className="receipt-allocation-strip__chips">
+                                {entry.invoice_allocations.map((allocation) => (
+                                  <span
+                                    key={`${entry.entry_id}-${allocation.invoice_id}`}
+                                    className="receipt-allocation-chip"
+                                  >
+                                    <span className="receipt-allocation-chip__invoice">
+                                      {allocation.invoice_number || `#${allocation.invoice_id}`}
+                                    </span>
+                                    <span
+                                      className={`receipt-allocation-chip__status receipt-allocation-chip__status--${
+                                        allocation.payment_status === 'paid'
+                                          ? 'full'
+                                          : allocation.payment_status === 'partial'
+                                            ? 'partial'
+                                            : 'unpaid'
+                                      }`}
+                                    >
+                                      {allocation.payment_status === 'paid'
+                                        ? 'Full'
+                                        : allocation.payment_status === 'partial'
+                                          ? 'Partial'
+                                          : 'Unpaid'}
+                                    </span>
+                                    <span className="receipt-allocation-chip__amount">
+                                      {formatCurrency(allocation.allocated_amount || 0, activeCurrencyCode)}
+                                    </span>
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                        </>
                       ) : null}
                     </div>
                     <span className="invoice-row__price">

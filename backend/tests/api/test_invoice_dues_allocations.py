@@ -176,3 +176,54 @@ def test_unpaid_invoices_returns_oldest_first_suggestions(client):
 
         assert by_id[oldest["id"]]["suggested_allocation_amount"] == 100
         assert by_id[newest["id"]]["suggested_allocation_amount"] == 50
+
+
+def test_ledger_statement_payment_entry_includes_invoice_allocations(client):
+    today = datetime.utcnow().date()
+
+    with patch(
+        "src.api.routes.invoices._generate_next_number",
+        return_value="INV-000401",
+    ), patch(
+        "src.api.routes.payments.generate_next_number",
+        return_value="PAY-000401",
+    ):
+        ledger_id = _create_ledger(client)
+        product_id = _create_product(client)
+        _add_inventory(client, product_id)
+
+        invoice = _create_invoice(
+            client,
+            ledger_id,
+            product_id,
+            200,
+            (today + timedelta(days=7)).isoformat(),
+            today.isoformat(),
+        )
+
+        receipt = _create_receipt(
+            client,
+            ledger_id,
+            120,
+            [{"invoice_id": invoice["id"], "allocated_amount": 120}],
+            datetime.utcnow().isoformat(),
+        )
+
+        statement_response = client.get(
+            f"/api/ledgers/{ledger_id}/statement",
+            params={"from_date": "2000-01-01", "to_date": "2100-12-31"},
+        )
+        assert statement_response.status_code == 200, statement_response.text
+        entries = statement_response.json()["entries"]
+
+        payment_entry = next(
+            entry
+            for entry in entries
+            if entry["entry_type"] == "payment" and entry["entry_id"] == receipt["id"]
+        )
+        assert payment_entry["invoice_allocations"]
+        allocation = payment_entry["invoice_allocations"][0]
+        assert allocation["invoice_id"] == invoice["id"]
+        assert allocation["invoice_number"] == invoice["invoice_number"]
+        assert allocation["allocated_amount"] == 120
+        assert allocation["payment_status"] == "partial"
