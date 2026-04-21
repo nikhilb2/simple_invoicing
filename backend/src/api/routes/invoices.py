@@ -732,9 +732,9 @@ def _build_pdf_payment_details_html(invoice_bank_accounts: list[CompanyAccount])
         blocks.append(
             (
                 '<div class="invoice-sheet__bank-card">'
-                f"<p class=\"invoice-sheet__bank-card-title\">{_e(account.display_name)}</p>"
                 f"<p>Bank: {_e(account.bank_name) or 'N/A'}</p>"
                 f"<p>Branch: {_e(account.branch_name) or 'N/A'}</p>"
+          f"<p>Account Name: {_e(account.account_name) or 'N/A'}</p>"
                 f"<p>A/C No: {_e(account.account_number) or 'N/A'}</p>"
                 f"<p>IFSC: {_e(account.ifsc_code) or 'N/A'}</p>"
                 "</div>"

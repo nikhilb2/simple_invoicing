@@ -3,6 +3,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import type {
   CompanyAccount,
   CompanyAccountCreate,
+  CompanyProfile,
   CompanyAccountType,
   CompanyAccountUpdate,
 } from '../types/api';
@@ -48,11 +49,19 @@ const EMPTY_CREATE_DRAFT: AccountDraft = {
   is_active: true,
 };
 
+function buildCreateDraft(defaultBankAccountName: string): AccountDraft {
+  return {
+    ...EMPTY_CREATE_DRAFT,
+    account_name: defaultBankAccountName,
+  };
+}
+
 export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
   const [accounts, setAccounts] = useState<CompanyAccount[]>([]);
   const [drafts, setDrafts] = useState<Record<number, AccountDraft>>({});
   const [loading, setLoading] = useState(true);
-  const [createDraft, setCreateDraft] = useState<AccountDraft>(EMPTY_CREATE_DRAFT);
+  const [companyName, setCompanyName] = useState('');
+  const [createDraft, setCreateDraft] = useState<AccountDraft>(() => buildCreateDraft(''));
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState<Record<number, boolean>>({});
   const [error, setError] = useState('');
@@ -81,6 +90,29 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
 
   useEffect(() => {
     void loadAccounts();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<CompanyProfile>('/company/');
+        if (cancelled) return;
+        const nextCompanyName = res.data.name?.trim() || '';
+        setCompanyName(nextCompanyName);
+        setCreateDraft((current) => {
+          if (current.account_type !== 'bank') return current;
+          if (current.account_name.trim()) return current;
+          return { ...current, account_name: nextCompanyName };
+        });
+      } catch {
+        // Keep form usable even if company profile fails to load.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   function patchDraft(id: number, patch: Partial<AccountDraft>) {
@@ -117,7 +149,7 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
       const created = res.data;
       setAccounts((current) => [...current, created].sort((a, b) => a.display_name.localeCompare(b.display_name)));
       setDrafts((current) => ({ ...current, [created.id]: toDraft(created) }));
-      setCreateDraft(EMPTY_CREATE_DRAFT);
+      setCreateDraft(buildCreateDraft(companyName));
       setSuccess('Account added successfully.');
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to create account'));
@@ -219,7 +251,10 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
                         account_type: nextType,
                         bank_name: nextType === 'cash' ? '' : current.bank_name,
                         branch_name: nextType === 'cash' ? '' : current.branch_name,
-                        account_name: nextType === 'cash' ? '' : current.account_name,
+                        account_name:
+                          nextType === 'cash'
+                            ? ''
+                            : (current.account_name.trim() || companyName),
                         account_number: nextType === 'cash' ? '' : current.account_number,
                         ifsc_code: nextType === 'cash' ? '' : current.ifsc_code,
                         display_on_invoice: nextType === 'cash' ? false : current.display_on_invoice,
@@ -282,6 +317,16 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
                         value={createDraft.account_number}
                         onChange={(event) => setCreateDraft((current) => ({ ...current, account_number: event.target.value }))}
                         placeholder="1234567890"
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="new-account-name">Bank account name</label>
+                      <input
+                        id="new-account-name"
+                        className="input"
+                        value={createDraft.account_name}
+                        onChange={(event) => setCreateDraft((current) => ({ ...current, account_name: event.target.value }))}
+                        placeholder={companyName || 'Company name'}
                       />
                     </div>
                     <div className="field">
@@ -412,6 +457,16 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
                             className="input"
                             value={draft.account_number}
                             onChange={(event) => patchDraft(account.id, { account_number: event.target.value })}
+                            disabled={!isAdmin}
+                          />
+                        </div>
+                        <div className="field">
+                          <label htmlFor={`account-name-${account.id}`}>Bank account name</label>
+                          <input
+                            id={`account-name-${account.id}`}
+                            className="input"
+                            value={draft.account_name}
+                            onChange={(event) => patchDraft(account.id, { account_name: event.target.value })}
                             disabled={!isAdmin}
                           />
                         </div>
