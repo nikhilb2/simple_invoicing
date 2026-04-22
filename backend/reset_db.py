@@ -55,6 +55,11 @@ def main() -> None:
         action="store_true",
         help="Do not run admin seed after migrations",
     )
+    parser.add_argument(
+        "--with-demo",
+        action="store_true",
+        help="Seed demo data (company, buyers, products, invoices, receipts) after admin seed",
+    )
     args = parser.parse_args()
 
     print("Resetting database schema...")
@@ -73,6 +78,11 @@ def main() -> None:
         print("Seeding admin user...")
         run_script("seed_admin.py")
         print("Seed complete.")
+
+    if args.with_demo:
+        print("Seeding demo data...")
+        run_script("seed_demo.py")
+        print("Demo seed complete.")
 
     print("Database reset finished.")
 
