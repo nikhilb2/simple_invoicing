@@ -35,10 +35,13 @@ from src.models.invoice_series import InvoiceSeries
 from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.product import Product
 from src.models.user import User
-from src.services.financial_year import get_active_fy
 from src.services.series import generate_next_number
 
 random.seed(42)
+
+TARGET_FY_LABEL = "2026-27"
+TARGET_FY_START = date(2026, 4, 1)
+TARGET_FY_END = date(2027, 3, 31)
 
 # ---------------------------------------------------------------------------
 # Static demo data definitions
@@ -176,6 +179,31 @@ def _is_interstate(company_gst: str | None, buyer_gst: str | None) -> bool:
     return company_gst[:2] != buyer_gst[:2]
 
 
+def _ensure_target_financial_year(db) -> FinancialYear:
+    """Create/activate FY 2026-27 and return it."""
+    fy = db.query(FinancialYear).filter(FinancialYear.label == TARGET_FY_LABEL).first()
+    if fy is None:
+        fy = FinancialYear(
+            label=TARGET_FY_LABEL,
+            start_date=TARGET_FY_START,
+            end_date=TARGET_FY_END,
+            is_active=True,
+        )
+        db.add(fy)
+    else:
+        fy.start_date = TARGET_FY_START
+        fy.end_date = TARGET_FY_END
+        fy.is_active = True
+
+    db.query(FinancialYear).filter(FinancialYear.label != TARGET_FY_LABEL).update(
+        {"is_active": False},
+        synchronize_session=False,
+    )
+    db.commit()
+    db.refresh(fy)
+    return fy
+
+
 # ---------------------------------------------------------------------------
 # Deletion — reverse FK dependency order
 # ---------------------------------------------------------------------------
@@ -280,23 +308,45 @@ def _seed_invoices(
     buyers: list,
     products: list,
     fy,
-) -> list:
+) -> tuple[list, set[int]]:
     fy_id = fy.id if fy else None
     today = date.today()
     invoices = []
+    protected_due_invoice_ids: set[int] = set()
+
+    # Keep invoice dates inside FY 2026-27.
+    date_floor = fy.start_date if fy else TARGET_FY_START
+    date_ceiling = min(today, fy.end_date) if fy else today
+
+    if date_ceiling < date_floor:
+        date_ceiling = date_floor
 
     for i in range(100):
-        # Spread dates across the past 6 months
-        invoice_date = today - timedelta(days=random.randint(0, 180))
+        # Spread invoices across FY 2026-27 up to today's date.
+        spread_days = (date_ceiling - date_floor).days
+        invoice_date = date_floor + timedelta(days=random.randint(0, max(spread_days, 0)))
         buyer = random.choice(buyers)
         selected = random.sample(products, random.randint(2, 5))
         interstate = _is_interstate(company.gst, buyer.gst)
+
+        # Guarantee some overdue invoices with pending balances for the Due Invoices page.
+        due_date = None
+        if i < 45:
+            overdue_days = random.randint(5, 45)
+            due_base = today - timedelta(days=overdue_days)
+            due_base = max(date_floor, min(due_base, date_ceiling))
+            invoice_date = max(date_floor, due_base - timedelta(days=random.randint(5, 25)))
+            due_date = due_base
+        elif i < 75:
+            lead_days = random.randint(7, 45)
+            due_date = min(TARGET_FY_END, invoice_date + timedelta(days=lead_days))
 
         invoice = Invoice(
             total_amount=0,
             created_by=admin_id,
             financial_year_id=fy_id,
             invoice_date=datetime.combine(invoice_date, datetime.min.time()),
+            due_date=datetime.combine(due_date, datetime.min.time()) if due_date is not None else None,
             # Buyer snapshot
             ledger_id=buyer.id,
             ledger_name=buyer.name,
@@ -384,6 +434,9 @@ def _seed_invoices(
 
         invoices.append(invoice)
 
+        if i < 20:
+            protected_due_invoice_ids.add(invoice.id)
+
         if (i + 1) % 25 == 0:
             db.commit()
             print(f"    {i + 1}/100 invoices committed")
@@ -391,7 +444,7 @@ def _seed_invoices(
     db.commit()
     for inv in invoices:
         db.refresh(inv)
-    return invoices
+    return invoices, protected_due_invoice_ids
 
 
 def _seed_receipts(
@@ -401,6 +454,7 @@ def _seed_receipts(
     invoices: list,
     bank_acc: CompanyAccount,
     fy,
+    excluded_invoice_ids: set[int],
 ) -> list:
     fy_id = fy.id if fy else None
     today = date.today()
@@ -426,7 +480,7 @@ def _seed_receipts(
         # Only consider invoices that still have an outstanding balance
         candidates = [
             inv for inv in by_buyer[buyer.id]
-            if remaining[inv.id] > Decimal("0.01")
+            if remaining[inv.id] > Decimal("0.01") and inv.id not in excluded_invoice_ids
         ]
         if not candidates:
             continue
@@ -494,11 +548,8 @@ def seed_all(db) -> None:
         print("ERROR: Admin user not found. Run `python seed_admin.py` first.")
         sys.exit(1)
 
-    fy = get_active_fy(db)
-    if fy:
-        print(f"  Active financial year: {fy.label}")
-    else:
-        print("  No active financial year — financial_year_id will be NULL")
+    fy = _ensure_target_financial_year(db)
+    print(f"  Active financial year forced to: {fy.label} ({fy.start_date} to {fy.end_date})")
 
     _delete_demo_data(db)
 
@@ -508,11 +559,11 @@ def seed_all(db) -> None:
     products = _seed_products(db)
 
     print("  Creating invoices...")
-    invoices = _seed_invoices(db, admin.id, company, buyers, products, fy)
+    invoices, protected_due_invoice_ids = _seed_invoices(db, admin.id, company, buyers, products, fy)
     print(f"  Invoices: {len(invoices)}")
 
     print("  Creating receipts...")
-    _seed_receipts(db, admin.id, buyers, invoices, bank_acc, fy)
+    _seed_receipts(db, admin.id, buyers, invoices, bank_acc, fy, protected_due_invoice_ids)
 
 
 def main() -> None:
