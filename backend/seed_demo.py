@@ -7,7 +7,7 @@ products, inventory, invoices, credit notes, payments) and recreates:
   * 1 bank account + 1 cash account
   * 10 buyers / ledgers
   * 25 products with 500 units of inventory each
-  * 100 sales invoices with 2-5 line items each
+    * 100 sales invoices + 40 purchase invoices with 2-5 line items each
   * 50 payment receipts with invoice allocations
 
 Usage:
@@ -42,6 +42,8 @@ random.seed(42)
 TARGET_FY_LABEL = "2026-27"
 TARGET_FY_START = date(2026, 4, 1)
 TARGET_FY_END = date(2027, 3, 31)
+SALES_INVOICE_COUNT = 100
+PURCHASE_INVOICE_COUNT = 40
 
 # ---------------------------------------------------------------------------
 # Static demo data definitions
@@ -208,6 +210,7 @@ def _ensure_series_for_financial_year(db, fy: FinancialYear) -> None:
     """Ensure FY-scoped numbering series exists for sales and payment vouchers."""
     defaults = {
         "sales": "INV",
+        "purchase": "PINV",
         "payment": "PAY",
     }
 
@@ -379,7 +382,7 @@ def _seed_invoices(
     if date_ceiling < date_floor:
         date_ceiling = date_floor
 
-    for i in range(100):
+    for i in range(SALES_INVOICE_COUNT):
         # Spread invoices across FY 2026-27 up to today's date.
         spread_days = (date_ceiling - date_floor).days
         invoice_date = date_floor + timedelta(days=random.randint(0, max(spread_days, 0)))
@@ -497,12 +500,137 @@ def _seed_invoices(
 
         if (i + 1) % 25 == 0:
             db.commit()
-            print(f"    {i + 1}/100 invoices committed")
+            print(f"    {i + 1}/{SALES_INVOICE_COUNT} sales invoices committed")
 
     db.commit()
     for inv in invoices:
         db.refresh(inv)
     return invoices, protected_due_invoice_ids
+
+
+def _seed_purchase_invoices(
+    db,
+    admin_id: int,
+    company: CompanyProfile,
+    buyers: list,
+    products: list,
+    fy,
+) -> list:
+    fy_id = fy.id if fy else None
+    today = date.today()
+    invoices = []
+
+    date_floor = fy.start_date if fy else TARGET_FY_START
+    date_ceiling = min(today, fy.end_date) if fy else today
+    if date_ceiling < date_floor:
+        date_ceiling = date_floor
+
+    for i in range(PURCHASE_INVOICE_COUNT):
+        spread_days = (date_ceiling - date_floor).days
+        invoice_date = date_floor + timedelta(days=random.randint(0, max(spread_days, 0)))
+        vendor = random.choice(buyers)
+        selected = random.sample(products, random.randint(2, 5))
+        interstate = _is_interstate(company.gst, vendor.gst)
+
+        due_date = min(TARGET_FY_END, invoice_date + timedelta(days=random.randint(15, 45)))
+
+        invoice = Invoice(
+            total_amount=0,
+            created_by=admin_id,
+            financial_year_id=fy_id,
+            invoice_date=datetime.combine(invoice_date, datetime.min.time()),
+            due_date=datetime.combine(due_date, datetime.min.time()),
+            ledger_id=vendor.id,
+            ledger_name=vendor.name,
+            ledger_address=vendor.address,
+            ledger_gst=vendor.gst,
+            ledger_phone=vendor.phone_number,
+            company_name=company.name,
+            company_address=company.address,
+            company_gst=company.gst,
+            company_phone=company.phone_number,
+            company_email=company.email,
+            company_website=company.website,
+            company_currency_code=company.currency_code,
+            company_bank_name=company.bank_name,
+            company_branch_name=company.branch_name,
+            company_account_name=company.account_name,
+            company_account_number=company.account_number,
+            company_ifsc_code=company.ifsc_code,
+            voucher_type="purchase",
+            supplier_invoice_number=f"SUP-{TARGET_FY_LABEL}-{i + 1:04d}",
+            tax_inclusive=False,
+            apply_round_off=False,
+            round_off_amount=0.0,
+        )
+        db.add(invoice)
+        db.flush()
+
+        invoice.invoice_number = generate_next_number(db, "purchase", fy_id, invoice_date)
+
+        taxable_total = Decimal("0")
+        items: list[InvoiceItem] = []
+
+        for product in selected:
+            qty = random.randint(5, 25)
+            unit_price = Decimal(str(product.price))
+            gst_rate = Decimal(str(product.gst_rate or 0))
+            taxable = _money(unit_price * qty)
+            tax = _money(taxable * gst_rate / Decimal("100"))
+
+            if interstate:
+                cgst, sgst, igst = 0.0, 0.0, float(tax)
+            else:
+                half = float(_money(tax / Decimal("2")))
+                cgst, sgst, igst = half, half, 0.0
+
+            item = InvoiceItem(
+                invoice_id=invoice.id,
+                product_id=product.id,
+                quantity=qty,
+                hsn_sac=product.hsn_sac,
+                unit_price=float(unit_price),
+                gst_rate=float(gst_rate),
+                taxable_amount=float(taxable),
+                tax_amount=float(tax),
+                cgst_amount=cgst,
+                sgst_amount=sgst,
+                igst_amount=igst,
+                line_total=float(_money(taxable + tax)),
+            )
+            items.append(item)
+            taxable_total += taxable
+
+            # Purchase vouchers restock inventory.
+            inv = db.query(Inventory).filter(Inventory.product_id == product.id).first()
+            if inv:
+                inv.quantity += qty
+
+        db.add_all(items)
+
+        taxable_total = _money(taxable_total)
+        cgst_total = _money(sum(Decimal(str(it.cgst_amount or 0)) for it in items))
+        sgst_total = _money(sum(Decimal(str(it.sgst_amount or 0)) for it in items))
+        igst_total = _money(sum(Decimal(str(it.igst_amount or 0)) for it in items))
+        tax_total = _money(cgst_total + sgst_total + igst_total)
+
+        invoice.taxable_amount = float(taxable_total)
+        invoice.total_tax_amount = float(tax_total)
+        invoice.cgst_amount = float(cgst_total)
+        invoice.sgst_amount = float(sgst_total)
+        invoice.igst_amount = float(igst_total)
+        invoice.total_amount = float(_money(taxable_total + tax_total))
+
+        invoices.append(invoice)
+
+        if (i + 1) % 20 == 0:
+            db.commit()
+            print(f"    {i + 1}/{PURCHASE_INVOICE_COUNT} purchase invoices committed")
+
+    db.commit()
+    for inv in invoices:
+        db.refresh(inv)
+    return invoices
 
 
 def _seed_receipts(
@@ -619,7 +747,11 @@ def seed_all(db) -> None:
 
     print("  Creating invoices...")
     invoices, protected_due_invoice_ids = _seed_invoices(db, admin.id, company, buyers, products, fy)
-    print(f"  Invoices: {len(invoices)}")
+    print(f"  Sales invoices: {len(invoices)}")
+
+    print("  Creating purchase invoices...")
+    purchase_invoices = _seed_purchase_invoices(db, admin.id, company, buyers, products, fy)
+    print(f"  Purchase invoices: {len(purchase_invoices)}")
 
     print("  Creating receipts...")
     _seed_receipts(db, admin.id, buyers, invoices, bank_acc, fy, protected_due_invoice_ids)
