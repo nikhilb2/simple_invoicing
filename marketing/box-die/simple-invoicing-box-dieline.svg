@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="331mm" height="246mm" viewBox="0 0 331 246" version="1.1">
+  <title>Simple Invoicing Software Box Dieline</title>
+  <desc>Print-ready software box dieline with cut, fold, bleed, and safe-area guides.</desc>
+
+  <defs>
+    <style>
+      .label { font-family: 'Helvetica Neue', Arial, sans-serif; fill: #0d1b2e; }
+      .brand-title { font-family: 'Helvetica Neue', Arial, sans-serif; font-weight: 700; fill: #f3f9ff; }
+      .brand-copy { font-family: 'Helvetica Neue', Arial, sans-serif; fill: #d4e7ff; }
+      .meta { font-family: 'Helvetica Neue', Arial, sans-serif; fill: #29415d; }
+      .cut { fill: none; stroke: #d12b2b; stroke-width: 0.35; }
+      .fold { fill: none; stroke: #2576c9; stroke-width: 0.3; stroke-dasharray: 2.2 1.4; }
+      .bleed { fill: none; stroke: #ca5f00; stroke-width: 0.25; stroke-dasharray: 1.6 1.2; }
+      .safe { fill: none; stroke: #2d8f43; stroke-width: 0.25; stroke-dasharray: 1.6 1.2; }
+    </style>
+
+    <linearGradient id="panelGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#08111f"/>
+      <stop offset="65%" stop-color="#10233e"/>
+      <stop offset="100%" stop-color="#163359"/>
+    </linearGradient>
+
+    <linearGradient id="accentGlow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#57d1c9"/>
+      <stop offset="100%" stop-color="#6be4ff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Dimensions (in mm) -->
+  <!-- Bleed: 3 all around -->
+  <!-- Net panel starts at x=3, y=3 -->
+  <!-- Widths: glue 15, back 120, side 35, front 120, side 35 -->
+  <!-- Heights: top flap 30, body 180, bottom flap 30 -->
+
+  <!-- Bleed border -->
+  <rect class="bleed" x="0.5" y="0.5" width="330" height="245"/>
+
+  <!-- Artwork backgrounds in body area -->
+  <rect x="18" y="33" width="120" height="180" fill="url(#panelGradient)"/>
+  <rect x="138" y="33" width="35" height="180" fill="#0b1930"/>
+  <rect x="173" y="33" width="120" height="180" fill="url(#panelGradient)"/>
+  <rect x="293" y="33" width="35" height="180" fill="#0b1930"/>
+
+  <!-- Back panel motif -->
+  <circle cx="104" cy="86" r="36" fill="#1a3d6e" opacity="0.36"/>
+  <circle cx="71" cy="145" r="50" fill="#0a2447" opacity="0.42"/>
+  <rect x="36" y="168" width="84" height="4" rx="2" fill="url(#accentGlow)" opacity="0.9"/>
+
+  <!-- Front panel motif -->
+  <circle cx="236" cy="86" r="45" fill="#1d4f86" opacity="0.34"/>
+  <circle cx="264" cy="160" r="30" fill="#2f7a8f" opacity="0.26"/>
+  <rect x="199" y="168" width="78" height="4" rx="2" fill="url(#accentGlow)" opacity="0.9"/>
+  <rect x="300" y="76" width="20" height="95" rx="1" fill="#153556" opacity="0.8"/>
+
+  <!-- Front panel content -->
+  <text class="brand-title" x="187" y="76" font-size="9">SIMPLE INVOICING</text>
+  <text class="brand-copy" x="187" y="88" font-size="4.8">Stock and Billing Software</text>
+  <text class="brand-copy" x="187" y="106" font-size="4.4">Run inventory and invoicing without spreadsheet drag.</text>
+
+  <text class="brand-copy" x="187" y="124" font-size="4.2">- Product catalog and pricing</text>
+  <text class="brand-copy" x="187" y="132" font-size="4.2">- Live stock adjustment</text>
+  <text class="brand-copy" x="187" y="140" font-size="4.2">- Multi-line invoice generation</text>
+  <text class="brand-copy" x="187" y="148" font-size="4.2">- GST-ready tax fields</text>
+
+  <rect x="187" y="178" width="88" height="22" rx="2" fill="#0a1b32" opacity="0.75" stroke="#57d1c9" stroke-width="0.35"/>
+  <text class="brand-copy" x="193" y="187" font-size="4">Ideal for:</text>
+  <text class="brand-copy" x="193" y="194" font-size="4">Retail shops, distributors,</text>
+  <text class="brand-copy" x="193" y="200" font-size="4">and service-led businesses.</text>
+
+  <!-- Right side panel content -->
+  <text class="brand-copy" x="311" y="191" font-size="3.3" text-anchor="middle" transform="rotate(-90 311 191)">SIDE PANEL</text>
+  <text class="brand-copy" x="318" y="190" font-size="3" text-anchor="middle" transform="rotate(-90 318 190)">STOCK + BILLING</text>
+
+  <!-- Back panel content -->
+  <text class="brand-title" x="30" y="55" font-size="7.2">WHY TEAMS CHOOSE IT</text>
+  <text class="brand-copy" x="30" y="69" font-size="4.2">Fast invoice creation with stock-aware validation.</text>
+  <text class="brand-copy" x="30" y="77" font-size="4.2">Ledger, cash-bank, and day-book workflows included.</text>
+  <text class="brand-copy" x="30" y="85" font-size="4.2">Responsive web interface for desktop and mobile.</text>
+
+  <text class="brand-title" x="30" y="103" font-size="6">WHAT IS INSIDE</text>
+  <text class="brand-copy" x="30" y="114" font-size="4.2">- Invoices, credit notes, and due tracking</text>
+  <text class="brand-copy" x="30" y="122" font-size="4.2">- Product inventory and stock movement logs</text>
+  <text class="brand-copy" x="30" y="130" font-size="4.2">- Customer ledgers and payment recording</text>
+  <text class="brand-copy" x="30" y="138" font-size="4.2">- Backup and restore tools</text>
+
+  <rect x="30" y="150" width="96" height="44" rx="2" fill="#081827" opacity="0.8" stroke="#57d1c9" stroke-width="0.35"/>
+  <text class="brand-copy" x="35" y="161" font-size="4.1">System overview:</text>
+  <text class="brand-copy" x="35" y="169" font-size="4">Frontend: React + Vite</text>
+  <text class="brand-copy" x="35" y="177" font-size="4">Backend: Python API</text>
+  <text class="brand-copy" x="35" y="185" font-size="4">Database: PostgreSQL</text>
+
+  <!-- Spine content -->
+  <text class="brand-title" x="156" y="189" font-size="6" transform="rotate(-90 156 189)">SIMPLE INVOICING</text>
+  <text class="brand-copy" x="164" y="187" font-size="3.8" transform="rotate(-90 164 187)">Stock and Billing Software</text>
+
+  <!-- Top and bottom flap text -->
+  <text class="meta" x="58" y="21" font-size="4.5">Top tuck flap</text>
+  <text class="meta" x="219" y="21" font-size="4.5">Top tuck flap</text>
+  <text class="meta" x="301" y="21" font-size="3.8">Top side flap</text>
+  <text class="meta" x="56" y="232" font-size="4.5">Bottom lock flap</text>
+  <text class="meta" x="215" y="232" font-size="4.5">Bottom lock flap</text>
+  <text class="meta" x="301" y="232" font-size="3.8">Bottom side flap</text>
+
+  <!-- Glue flap -->
+  <rect x="3" y="33" width="15" height="180" fill="#f6f8fb"/>
+  <text class="label" x="10.5" y="120" font-size="4" text-anchor="middle" transform="rotate(-90 10.5 120)">GLUE FLAP</text>
+
+  <!-- Cut lines (outer contour) -->
+  <path class="cut" d="M3 3 H328 V33 H18 V213 H328 V243 H3 V213 H18 V33 H3 Z"/>
+
+  <!-- Inner cut splits for top flaps -->
+  <line class="cut" x1="18" y1="3" x2="18" y2="33"/>
+  <line class="cut" x1="138" y1="3" x2="138" y2="33"/>
+  <line class="cut" x1="173" y1="3" x2="173" y2="33"/>
+  <line class="cut" x1="293" y1="3" x2="293" y2="33"/>
+  <line class="cut" x1="328" y1="3" x2="328" y2="33"/>
+
+  <!-- Inner cut splits for bottom flaps -->
+  <line class="cut" x1="18" y1="213" x2="18" y2="243"/>
+  <line class="cut" x1="138" y1="213" x2="138" y2="243"/>
+  <line class="cut" x1="173" y1="213" x2="173" y2="243"/>
+  <line class="cut" x1="293" y1="213" x2="293" y2="243"/>
+  <line class="cut" x1="328" y1="213" x2="328" y2="243"/>
+
+  <!-- Fold lines -->
+  <line class="fold" x1="18" y1="33" x2="18" y2="213"/>
+  <line class="fold" x1="138" y1="33" x2="138" y2="213"/>
+  <line class="fold" x1="173" y1="33" x2="173" y2="213"/>
+  <line class="fold" x1="293" y1="33" x2="293" y2="213"/>
+  <line class="fold" x1="3" y1="33" x2="328" y2="33"/>
+  <line class="fold" x1="3" y1="213" x2="328" y2="213"/>
+
+  <!-- Safe areas for body panels (5 mm inset) -->
+  <rect class="safe" x="23" y="38" width="110" height="170"/>
+  <rect class="safe" x="143" y="38" width="25" height="170"/>
+  <rect class="safe" x="178" y="38" width="110" height="170"/>
+  <rect class="safe" x="298" y="38" width="25" height="170"/>
+
+  <!-- Legend -->
+  <rect x="242" y="6" width="82" height="22" fill="#ffffff" fill-opacity="0.9" stroke="#1f2f43" stroke-width="0.2"/>
+  <line class="cut" x1="246" y1="12" x2="259" y2="12"/>
+  <text class="label" x="261" y="13.5" font-size="3.6">Cut line</text>
+  <line class="fold" x1="246" y1="17" x2="259" y2="17"/>
+  <text class="label" x="261" y="18.5" font-size="3.6">Fold line</text>
+  <line class="safe" x1="246" y1="22" x2="259" y2="22"/>
+  <text class="label" x="261" y="23.5" font-size="3.6">Safe area</text>
+
+  <!-- Technical note -->
+  <text class="label" x="6" y="249" font-size="0">.</text>
+</svg>
