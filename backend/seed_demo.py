@@ -204,6 +204,64 @@ def _ensure_target_financial_year(db) -> FinancialYear:
     return fy
 
 
+def _ensure_series_for_financial_year(db, fy: FinancialYear) -> None:
+    """Ensure FY-scoped numbering series exists for sales and payment vouchers."""
+    defaults = {
+        "sales": "INV",
+        "payment": "PAY",
+    }
+
+    for voucher_type, default_prefix in defaults.items():
+        existing = (
+            db.query(InvoiceSeries)
+            .filter(
+                InvoiceSeries.voucher_type == voucher_type,
+                InvoiceSeries.financial_year_id == fy.id,
+            )
+            .first()
+        )
+        if existing:
+            continue
+
+        # Clone format settings from any existing series for this voucher type.
+        # If none exists, create a sensible default so generate_next_number()
+        # never falls back to INV-000000/PAY-000000.
+        template = (
+            db.query(InvoiceSeries)
+            .filter(InvoiceSeries.voucher_type == voucher_type)
+            .order_by(InvoiceSeries.id.asc())
+            .first()
+        )
+
+        if template is not None:
+            series = InvoiceSeries(
+                voucher_type=voucher_type,
+                financial_year_id=fy.id,
+                prefix=template.prefix,
+                suffix=template.suffix,
+                include_year=template.include_year,
+                year_format=template.year_format,
+                separator=template.separator,
+                next_sequence=1,
+                pad_digits=template.pad_digits,
+            )
+        else:
+            series = InvoiceSeries(
+                voucher_type=voucher_type,
+                financial_year_id=fy.id,
+                prefix=default_prefix,
+                suffix="",
+                include_year=True,
+                year_format="YYYY",
+                separator="-",
+                next_sequence=1,
+                pad_digits=3,
+            )
+        db.add(series)
+
+    db.commit()
+
+
 # ---------------------------------------------------------------------------
 # Deletion — reverse FK dependency order
 # ---------------------------------------------------------------------------
@@ -552,6 +610,7 @@ def seed_all(db) -> None:
     print(f"  Active financial year forced to: {fy.label} ({fy.start_date} to {fy.end_date})")
 
     _delete_demo_data(db)
+    _ensure_series_for_financial_year(db, fy)
 
     company = _seed_company(db)
     bank_acc, _cash_acc = _seed_accounts(db, admin.id)
