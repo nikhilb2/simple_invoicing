@@ -2,10 +2,12 @@ import math
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from src.api.deps import get_current_user
+from src.api.deps import get_active_company, get_current_user
 from src.db.session import get_db
+from src.models.company import CompanyProfile
 from src.models.credit_note import CreditNote, CreditNoteInvoiceRef
 from src.models.user import User
 from src.schemas.credit_note import CreditNoteCreate, CreditNoteOut, PaginatedCreditNoteOut
@@ -26,8 +28,10 @@ def create_credit_note_endpoint(
     payload: CreditNoteCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    cn = create_credit_note(payload, db, current_user.id)
+    company_id = getattr(active_company, "id", None)
+    cn = create_credit_note(payload, db, current_user.id, company_id=company_id)
     db.refresh(cn)
     return _to_out(cn)
 
@@ -45,7 +49,9 @@ def list_credit_notes(
     date_to: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
+    company_id = getattr(active_company, "id", None)
     q = (
         db.query(CreditNote)
         .options(
@@ -53,6 +59,8 @@ def list_credit_notes(
             joinedload(CreditNote.items),
         )
     )
+    if company_id is not None:
+        q = q.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
 
     if ledger_id is not None:
         q = q.filter(CreditNote.ledger_id == ledger_id)
@@ -94,14 +102,19 @@ def get_credit_note(
     cn_id: int,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
+    company_id = getattr(active_company, "id", None)
+    filters = [CreditNote.id == cn_id]
+    if company_id is not None:
+        filters.append(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
     cn = (
         db.query(CreditNote)
         .options(
             joinedload(CreditNote.invoice_refs),
             joinedload(CreditNote.items),
         )
-        .filter(CreditNote.id == cn_id)
+        .filter(*filters)
         .first()
     )
     if not cn:
@@ -114,7 +127,9 @@ def cancel_credit_note_endpoint(
     cn_id: int,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    cn = cancel_credit_note(cn_id, db)
+    company_id = getattr(active_company, "id", None)
+    cn = cancel_credit_note(cn_id, db, company_id=company_id)
     db.refresh(cn)
     return _to_out(cn)

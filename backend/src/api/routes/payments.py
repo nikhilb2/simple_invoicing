@@ -161,7 +161,12 @@ def create_payment(
     )
     db.add(payment)
     db.flush()
-    sync_payment_allocations(db, payment=payment, invoice_allocations=payload.invoice_allocations)
+    sync_payment_allocations(
+      db,
+      payment=payment,
+      invoice_allocations=payload.invoice_allocations,
+      company_id=company_id,
+    )
     db.commit()
     db.refresh(payment)
 
@@ -271,6 +276,7 @@ def update_payment(
       payment=payment,
       invoice_allocations=payload.invoice_allocations,
       exclude_payment_id=payment.id,
+      company_id=company_id,
     )
     db.commit()
     db.refresh(payment)
