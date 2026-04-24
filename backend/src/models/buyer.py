@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.db.base import Base
@@ -8,6 +8,7 @@ class Buyer(Base):
     __tablename__ = "buyers"
 
     id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("company_profiles.id"), nullable=True, index=True)
     name = Column(String, nullable=False, index=True)
     address = Column(String, nullable=False)
     gst = Column(String, nullable=True, unique=True, index=True)

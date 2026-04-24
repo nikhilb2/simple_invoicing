@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, Integer, String, Enum
+from sqlalchemy import Column, Integer, String, Enum, ForeignKey
 from src.db.base import Base
 
 
@@ -17,3 +17,4 @@ class User(Base):
     full_name = Column(String, nullable=False)
     hashed_password = Column(String, nullable=False)
     role = Column(Enum(UserRole), default=UserRole.staff, nullable=False)
+    active_company_id = Column(Integer, ForeignKey("company_profiles.id"), nullable=True, index=True)

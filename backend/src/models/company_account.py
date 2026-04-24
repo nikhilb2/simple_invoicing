@@ -10,6 +10,7 @@ class CompanyAccount(Base):
     __tablename__ = "company_accounts"
 
     id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("company_profiles.id"), nullable=True, index=True)
     account_type = Column(String, nullable=False, default="bank")  # "bank" or "cash"
     display_name = Column(String, nullable=False, index=True)
     bank_name = Column(String, nullable=True)

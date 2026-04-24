@@ -9,6 +9,7 @@ class CreditNote(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     credit_note_number = Column(String, nullable=False, unique=True, index=True)
+    company_id = Column(Integer, ForeignKey("company_profiles.id"), nullable=True, index=True)
     ledger_id = Column(Integer, ForeignKey("buyers.id"), nullable=False)
     financial_year_id = Column(Integer, ForeignKey("financial_years.id"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -44,6 +45,7 @@ class CreditNoteItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     credit_note_id = Column(Integer, ForeignKey("credit_notes.id"), nullable=False)
+    company_id = Column(Integer, ForeignKey("company_profiles.id"), nullable=True, index=True)
     invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True)
     invoice_item_id = Column(Integer, ForeignKey("invoice_items.id"), nullable=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)

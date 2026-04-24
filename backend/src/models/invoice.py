@@ -9,6 +9,7 @@ class Invoice(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     invoice_number = Column(String, nullable=True, unique=True, index=True)
+    company_id = Column(Integer, ForeignKey("company_profiles.id"), nullable=True, index=True)
     ledger_id = Column("buyer_id", Integer, ForeignKey("buyers.id"), nullable=True)
     ledger_name = Column("buyer_name", String, nullable=True)
     ledger_address = Column("buyer_address", String, nullable=True)

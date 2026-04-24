@@ -7,6 +7,7 @@ class InvoiceSeries(Base):
     __tablename__ = "invoice_series"
 
     id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("company_profiles.id"), nullable=True, index=True)
     voucher_type = Column(String, nullable=False)  # sales | purchase | payment
     financial_year_id = Column(Integer, ForeignKey("financial_years.id"), nullable=True)
     prefix = Column(String, nullable=False)

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Integer, String, Numeric, func
+from sqlalchemy import Column, DateTime, Integer, String, Numeric, ForeignKey, func
 from src.db.base import Base
 
 
@@ -6,6 +6,7 @@ class Product(Base):
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("company_profiles.id"), nullable=True, index=True)
     sku = Column(String, unique=True, index=True, nullable=False)
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
