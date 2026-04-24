@@ -30,3 +30,18 @@ class CompanyProfileOut(CompanyProfileBase):
 
     class Config:
         from_attributes = True
+
+
+class CompanyListItem(BaseModel):
+    id: int
+    name: str
+    gst: str = ""
+    currency_code: str | None = None
+    is_active: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class CompanySelectOut(BaseModel):
+    active_company_id: int

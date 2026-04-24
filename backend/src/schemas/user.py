@@ -14,6 +14,7 @@ class UserOut(BaseModel):
     email: EmailStr
     full_name: str
     role: UserRole
+    active_company_id: int | None = None
 
     class Config:
         from_attributes = True
