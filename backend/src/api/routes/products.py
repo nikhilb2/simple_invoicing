@@ -2,12 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from src.db.session import get_db
+from src.models.company import CompanyProfile
 from src.models.inventory import Inventory
-from src.models.invoice import InvoiceItem
+from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
 from src.models.user import User, UserRole
 from src.schemas.product import PaginatedProductOut, ProductCreate, ProductOut
-from src.api.deps import get_current_user, require_roles
+from src.api.deps import get_active_company, get_current_user, require_roles
 
 router = APIRouter()
 
@@ -18,16 +19,18 @@ def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
     if payload.gst_rate < 0 or payload.gst_rate > 100:
         raise HTTPException(status_code=400, detail="GST rate must be between 0 and 100")
 
     sku = payload.sku.strip().upper()
-    existing = db.query(Product).filter(Product.sku == sku).first()
+    existing = db.query(Product).filter(Product.company_id == active_company.id, Product.sku == sku).first()
     if existing:
         raise HTTPException(status_code=400, detail="Product with this SKU already exists")
 
     product = Product(
+        company_id=active_company.id,
         sku=sku,
         name=payload.name.strip(),
         description=payload.description.strip() if payload.description else None,
@@ -39,10 +42,10 @@ def create_product(
     db.flush()  # get product.id before committing
 
     if payload.initial_quantity != 0:
-        inventory = Inventory(product_id=product.id, quantity=payload.initial_quantity)
+        inventory = Inventory(company_id=active_company.id, product_id=product.id, quantity=payload.initial_quantity)
         db.add(inventory)
     else:
-        inventory = Inventory(product_id=product.id, quantity=0)
+        inventory = Inventory(company_id=active_company.id, product_id=product.id, quantity=0)
         db.add(inventory)
 
     db.commit()
@@ -58,8 +61,9 @@ def list_products(
     search: str = Query(""),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    query = db.query(Product)
+    query = db.query(Product).filter(Product.company_id == active_company.id)
     if search.strip():
         query = query.filter(Product.name.ilike(f"%{search.strip()}%"))
     total = query.count()
@@ -84,16 +88,21 @@ def update_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
     if payload.gst_rate < 0 or payload.gst_rate > 100:
         raise HTTPException(status_code=400, detail="GST rate must be between 0 and 100")
 
-    product = db.query(Product).filter(Product.id == product_id).first()
+    product = db.query(Product).filter(Product.id == product_id, Product.company_id == active_company.id).first()
     if not product:
         raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
 
     sku = payload.sku.strip().upper()
-    sku_owner = db.query(Product).filter(Product.sku == sku, Product.id != product_id).first()
+    sku_owner = db.query(Product).filter(
+        Product.company_id == active_company.id,
+        Product.sku == sku,
+        Product.id != product_id,
+    ).first()
     if sku_owner:
         raise HTTPException(status_code=400, detail="Product with this SKU already exists")
 
@@ -114,16 +123,25 @@ def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    product = db.query(Product).filter(Product.id == product_id).first()
+    product = db.query(Product).filter(Product.id == product_id, Product.company_id == active_company.id).first()
     if not product:
         raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
 
-    has_invoice_items = db.query(InvoiceItem.id).filter(InvoiceItem.product_id == product_id).first()
+    has_invoice_items = (
+        db.query(InvoiceItem.id)
+        .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
+        .filter(InvoiceItem.product_id == product_id, Invoice.company_id == active_company.id)
+        .first()
+    )
     if has_invoice_items:
         raise HTTPException(status_code=400, detail="Cannot delete product linked to invoices")
 
-    inventory = db.query(Inventory).filter(Inventory.product_id == product_id).first()
+    inventory = db.query(Inventory).filter(
+        Inventory.product_id == product_id,
+        Inventory.company_id == active_company.id,
+    ).first()
     if inventory:
         db.delete(inventory)
 

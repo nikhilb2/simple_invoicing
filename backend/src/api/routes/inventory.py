@@ -4,12 +4,13 @@ from sqlalchemy.orm import Session
 from typing import Literal
 
 from src.db.session import get_db
+from src.models.company import CompanyProfile
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
 from src.models.user import User, UserRole
 from src.schemas.inventory import InventoryAdjust, InventoryOut, PaginatedInventoryOut
-from src.api.deps import get_current_user, require_roles
+from src.api.deps import get_active_company, get_current_user, require_roles
 
 router = APIRouter()
 
@@ -19,14 +20,21 @@ def adjust_inventory(
     payload: InventoryAdjust,
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    product = db.query(Product).filter(Product.id == payload.product_id).first()
+    product = db.query(Product).filter(
+        Product.id == payload.product_id,
+        Product.company_id == active_company.id,
+    ).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    inventory = db.query(Inventory).filter(Inventory.product_id == payload.product_id).first()
+    inventory = db.query(Inventory).filter(
+        Inventory.product_id == payload.product_id,
+        Inventory.company_id == active_company.id,
+    ).first()
     if not inventory:
-        inventory = Inventory(product_id=payload.product_id, quantity=0)
+        inventory = Inventory(company_id=active_company.id, product_id=payload.product_id, quantity=0)
         db.add(inventory)
 
     inventory.quantity += payload.quantity
@@ -47,6 +55,7 @@ def list_inventory(
     page_size: int = Query(20, ge=1, le=500),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
     # Subquery: last invoice_date per product (non-cancelled invoices)
     last_sold_subq = (
@@ -55,7 +64,10 @@ def list_inventory(
             func.max(Invoice.invoice_date).label("last_sold_at"),
         )
         .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
-        .filter(Invoice.status != "cancelled")
+        .filter(
+            Invoice.status != "cancelled",
+            Invoice.company_id == active_company.id,
+        )
         .group_by(InvoiceItem.product_id)
         .subquery()
     )
@@ -64,6 +76,10 @@ def list_inventory(
         db.query(Inventory, Product, last_sold_subq.c.last_sold_at)
         .join(Product, Inventory.product_id == Product.id)
         .outerjoin(last_sold_subq, last_sold_subq.c.product_id == Inventory.product_id)
+        .filter(
+            Inventory.company_id == active_company.id,
+            Product.company_id == active_company.id,
+        )
     )
 
     if search.strip():

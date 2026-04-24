@@ -37,6 +37,7 @@ def generate_next_number(
     financial_year_id: Optional[int] = None,
     invoice_date: Optional[date] = None,
     active_financial_year_id: Optional[int] = None,
+    company_id: Optional[int] = None,
 ) -> str:
     """Atomically increment the series counter and return the formatted number.
 
@@ -69,18 +70,21 @@ def generate_next_number(
             .with_for_update()
             .first()
         )
+        if series is not None and company_id is not None and series.company_id != company_id:
+            series = None
 
     if series is None:
         # Fallback: NULL financial_year_id row (legacy / backward compat)
-        series = (
+        fallback_query = (
             db.query(InvoiceSeries)
             .filter(
                 InvoiceSeries.voucher_type == voucher_type,
                 InvoiceSeries.financial_year_id.is_(None),
             )
-            .with_for_update()
-            .first()
         )
+        if company_id is not None:
+            fallback_query = fallback_query.filter(InvoiceSeries.company_id == company_id)
+        series = fallback_query.with_for_update().first()
 
     if not series:
         return "INV-000000"
@@ -102,6 +106,8 @@ def generate_next_number(
             )
             .first()
         )
+        if active_series is not None and company_id is not None and active_series.company_id != company_id:
+            active_series = None
         if active_series is not None:
             format_series = active_series
 

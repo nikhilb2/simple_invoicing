@@ -1,6 +1,7 @@
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from src.core.security import decode_token
@@ -48,14 +49,20 @@ def get_active_company(
     current_user: User = Depends(get_current_user),
     requested_company_id: int | None = Depends(get_requested_company_id),
 ) -> CompanyProfile:
+    user_state = inspect(current_user)
+
+    def _persist_active_company(company_id: int) -> None:
+        if user_state.persistent:
+            current_user.active_company_id = company_id
+            db.commit()
+            db.refresh(current_user)
+
     if requested_company_id is not None:
         requested_company = db.query(CompanyProfile).filter(CompanyProfile.id == requested_company_id).first()
         if not requested_company:
             raise HTTPException(status_code=404, detail="Company not found")
         if current_user.active_company_id != requested_company.id:
-            current_user.active_company_id = requested_company.id
-            db.commit()
-            db.refresh(current_user)
+            _persist_active_company(requested_company.id)
         return requested_company
 
     if current_user.active_company_id is not None:
@@ -65,11 +72,25 @@ def get_active_company(
 
     fallback_company = db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
     if fallback_company is None:
-        raise HTTPException(status_code=404, detail="No companies configured")
+        fallback_company = CompanyProfile(
+            name="",
+            address="",
+            gst="",
+            phone_number="",
+            currency_code="USD",
+            email="",
+            website="",
+            bank_name="",
+            branch_name="",
+            account_name="",
+            account_number="",
+            ifsc_code="",
+        )
+        db.add(fallback_company)
+        db.commit()
+        db.refresh(fallback_company)
 
-    current_user.active_company_id = fallback_company.id
-    db.commit()
-    db.refresh(current_user)
+    _persist_active_company(fallback_company.id)
     return fallback_company
 
 

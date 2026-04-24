@@ -4,9 +4,11 @@ from typing import Optional
 
 from src.api.deps import require_roles
 from src.db.session import get_db
+from src.models.company import CompanyProfile
 from src.models.invoice_series import InvoiceSeries
 from src.models.user import User, UserRole
 from src.schemas.invoice_series import InvoiceSeriesOut, InvoiceSeriesUpdate
+from src.api.deps import get_active_company
 
 router = APIRouter()
 
@@ -17,8 +19,9 @@ def list_invoice_series(
     financial_year_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.admin)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    q = db.query(InvoiceSeries)
+    q = db.query(InvoiceSeries).filter(InvoiceSeries.company_id == active_company.id)
     if financial_year_id is not None:
         q = q.filter(InvoiceSeries.financial_year_id == financial_year_id)
     return q.order_by(InvoiceSeries.id.asc()).all()
@@ -30,8 +33,12 @@ def update_invoice_series(
     payload: InvoiceSeriesUpdate,
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.admin)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    series = db.query(InvoiceSeries).filter(InvoiceSeries.id == series_id).first()
+    series = db.query(InvoiceSeries).filter(
+        InvoiceSeries.id == series_id,
+        InvoiceSeries.company_id == active_company.id,
+    ).first()
     if not series:
         raise HTTPException(status_code=404, detail=f"Invoice series {series_id} not found")
 
