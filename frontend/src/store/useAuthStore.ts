@@ -49,6 +49,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     try {
       const res = await api.get<UserProfile>('/auth/me');
+      if (typeof res.data.active_company_id === 'number') {
+        localStorage.setItem('active_company_id', String(res.data.active_company_id));
+      } else {
+        localStorage.removeItem('active_company_id');
+      }
       set({ userRole: res.data.role });
     } catch {
       set({ userRole: null });
@@ -69,6 +74,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: () => {
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');
+    localStorage.removeItem('active_company_id');
     set({ token: null, userEmail: null, userRole: null });
   },
 }));
