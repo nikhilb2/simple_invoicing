@@ -1112,8 +1112,6 @@ def _build_day_book_html(
     company_gst = f"GST: {_e(company.gst)}" if company and company.gst else ""
     company_phone = f"Phone: {_e(company.phone_number)}" if company and company.phone_number else ""
     company_details = " &middot; ".join(p for p in [company_gst, company_phone] if p)
-    logo_url = _e(str(getattr(company, "logo_url", ""))) if company and getattr(company, "logo_url", None) else ""
-    logo_markup = f'<img src="{logo_url}" alt="Company logo" class="company-logo" />' if logo_url else '<div class="logo-slot">Logo</div>'
 
     closing_balance = total_debit - total_credit
 
@@ -1152,23 +1150,7 @@ def _build_day_book_html(
     margin-bottom: 14px;
   }}
   .sheet__company {{
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-  }}
-  .company-logo,
-  .logo-slot {{
-    width: 56px;
-    height: 56px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 8px;
-    color: #9ca3af;
-    object-fit: contain;
-    background: #f9fafb;
+    display: block;
   }}
   .sheet__header h3 {{
     font-size: 15px;
@@ -1276,7 +1258,6 @@ def _build_day_book_html(
 <div class=\"sheet\">
   <header class=\"sheet__header\">
     <div class=\"sheet__company\">
-      {logo_markup}
       <div>
         <p class=\"eyebrow\">Issued by</p>
         <h3>{company_name}</h3>
