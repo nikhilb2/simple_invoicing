@@ -25,6 +25,7 @@ export default function DayBookPage() {
   const [dayBook, setDayBook] = useState<DayBook | null>(null);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState<'pdf' | 'csv' | null>(null);
   const [error, setError] = useState('');
 
   const activeCurrencyCode = company?.currency_code || 'USD';
@@ -65,6 +66,32 @@ export default function DayBookPage() {
       toDate: activeFY?.end_date ?? defaultDateRange().toDate,
     });
   }, [activeFY]);
+
+  async function handleDownload(format: 'pdf' | 'csv') {
+    try {
+      setDownloading(format);
+      setError('');
+
+      const response = await api.get(`/ledgers/day-book/${format}`, {
+        params: {
+          from_date: period.fromDate,
+          to_date: period.toDate,
+        },
+        responseType: 'blob',
+      });
+
+      const url = window.URL.createObjectURL(response.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `day_book_${period.fromDate}_${period.toDate}.${format}`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(getApiErrorMessage(err, `Unable to download day book ${format.toUpperCase()}`));
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   return (
     <div className="page-grid">
@@ -109,6 +136,25 @@ export default function DayBookPage() {
                 onChange={(event) => setPeriod((current) => ({ ...current, toDate: event.target.value }))}
               />
             </div>
+          </div>
+
+          <div className="button-row">
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => { void handleDownload('pdf'); }}
+              disabled={downloading !== null}
+            >
+              {downloading === 'pdf' ? 'Downloading PDF...' : 'Download PDF'}
+            </button>
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={() => { void handleDownload('csv'); }}
+              disabled={downloading !== null}
+            >
+              {downloading === 'csv' ? 'Downloading CSV...' : 'Download CSV'}
+            </button>
           </div>
 
           <div className="summary-box">
