@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from src.models.credit_note import CreditNote, CreditNoteItem
@@ -120,18 +120,17 @@ def get_outstanding_invoices_for_ledger(
     *,
     voucher_type: str,
     exclude_payment_id: int | None = None,
+    company_id: int | None = None,
 ) -> list[tuple[Invoice, InvoicePaymentSummary]]:
     invoice_voucher_type = "sales" if voucher_type == "receipt" else "purchase"
-    invoices = (
-        db.query(Invoice)
-        .filter(
-            Invoice.ledger_id == ledger_id,
-            Invoice.voucher_type == invoice_voucher_type,
-            Invoice.status == "active",
-        )
-        .order_by(Invoice.invoice_date.asc(), Invoice.id.asc())
-        .all()
+    invoices_query = db.query(Invoice).filter(
+        Invoice.ledger_id == ledger_id,
+        Invoice.voucher_type == invoice_voucher_type,
+        Invoice.status == "active",
     )
+    if company_id is not None:
+        invoices_query = invoices_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+    invoices = invoices_query.order_by(Invoice.invoice_date.asc(), Invoice.id.asc()).all()
     summaries = build_invoice_payment_summaries(db, invoices, exclude_payment_id=exclude_payment_id)
     outstanding_rows = [
         (invoice, summaries[invoice.id])
@@ -181,6 +180,7 @@ def validate_payment_allocations(
     payment_amount: float,
     invoice_allocations,
     exclude_payment_id: int | None = None,
+    company_id: int | None = None,
 ) -> list[tuple[Invoice, Decimal]]:
     if not invoice_allocations:
         return []
@@ -195,7 +195,10 @@ def validate_payment_allocations(
     if len(set(invoice_ids)) != len(invoice_ids):
         raise HTTPException(status_code=400, detail="Each invoice may only appear once in invoice_allocations")
 
-    invoices = db.query(Invoice).filter(Invoice.id.in_(invoice_ids)).all()
+    invoices_query = db.query(Invoice).filter(Invoice.id.in_(invoice_ids))
+    if company_id is not None:
+        invoices_query = invoices_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+    invoices = invoices_query.all()
     invoice_map = {invoice.id: invoice for invoice in invoices}
     missing_ids = sorted(set(invoice_ids) - set(invoice_map))
     if missing_ids:
@@ -245,6 +248,7 @@ def sync_payment_allocations(
     payment: Payment,
     invoice_allocations,
     exclude_payment_id: int | None = None,
+    company_id: int | None = None,
 ) -> None:
     normalized = validate_payment_allocations(
         db,
@@ -253,6 +257,7 @@ def sync_payment_allocations(
         payment_amount=float(payment.amount or 0),
         invoice_allocations=invoice_allocations,
         exclude_payment_id=exclude_payment_id,
+        company_id=company_id,
     )
 
     for existing_allocation in list(payment.invoice_allocations):

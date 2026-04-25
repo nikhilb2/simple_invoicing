@@ -5,10 +5,10 @@ import weasyprint
 from fastapi import APIRouter, Body, Depends, HTTPException
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
-from src.api.deps import require_roles
+from src.api.deps import get_active_company, require_roles
 from src.api.routes.invoices import _build_invoice_pdf
 from src.api.routes.ledgers import _build_ledger_statement_data, _build_statement_html
 from src.db.session import get_db
@@ -67,16 +67,20 @@ async def send_invoice_email(
     payload: EmailSendRequest | None = Body(default=None),
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
+    company_id = getattr(active_company, "id", None)
     if payload is None:
         payload = EmailSendRequest()
 
-    invoice = (
+    invoice_query = (
         db.query(Invoice)
         .options(joinedload(Invoice.items), joinedload(Invoice.ledger))
         .filter(Invoice.id == invoice_id)
-        .first()
     )
+    if company_id is not None:
+        invoice_query = invoice_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+    invoice = invoice_query.first()
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
 
@@ -87,11 +91,16 @@ async def send_invoice_email(
             detail="No recipient email address. Provide 'to' in the request body or add an email to the ledger.",
         )
 
-    company = db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    company = active_company if company_id is not None else db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
     currency_code = invoice.company_currency_code or (company.currency_code if company else "INR")
 
     product_ids = [item.product_id for item in (invoice.items or [])]
-    products = db.query(Product).filter(Product.id.in_(product_ids)).all() if product_ids else []
+    products = []
+    if product_ids:
+        product_query = db.query(Product).filter(Product.id.in_(product_ids))
+        if company_id is not None:
+            product_query = product_query.filter(or_(Product.company_id == company_id, Product.company_id.is_(None)))
+        products = product_query.all()
 
     invoice_bank_accounts = (
         db.query(CompanyAccount)
@@ -101,8 +110,10 @@ async def send_invoice_email(
             CompanyAccount.display_on_invoice.is_(True),
         )
         .order_by(CompanyAccount.display_name.asc(), CompanyAccount.id.asc())
-        .all()
     )
+    if company_id is not None:
+        invoice_bank_accounts = invoice_bank_accounts.filter(or_(CompanyAccount.company_id == company_id, CompanyAccount.company_id.is_(None)))
+    invoice_bank_accounts = invoice_bank_accounts.all()
 
     pdf_buf = _build_invoice_pdf(invoice, products, invoice_bank_accounts)
     pdf_bytes = pdf_buf.read()
@@ -155,11 +166,16 @@ async def send_ledger_statement_email(
     payload: StatementEmailSendRequest,
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
+    company_id = getattr(active_company, "id", None)
     if payload.from_date > payload.to_date:
         raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
 
-    ledger = db.query(Ledger).filter(Ledger.id == ledger_id).first()
+    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
+    if company_id is not None:
+        ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+    ledger = ledger_query.first()
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
 
@@ -170,10 +186,10 @@ async def send_ledger_statement_email(
             detail="No recipient email address. Provide 'to' in the request body or add an email to the ledger.",
         )
 
-    company = db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    company = active_company if company_id is not None else db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
     currency_code = company.currency_code if company and company.currency_code else "INR"
 
-    statement_data = _build_ledger_statement_data(db, ledger, payload.from_date, payload.to_date)
+    statement_data = _build_ledger_statement_data(db, ledger, payload.from_date, payload.to_date, company_id=company_id)
 
     html_pdf = _build_statement_html(
         ledger=ledger,
@@ -239,11 +255,16 @@ async def send_payment_reminder_email(
     payload: EmailSendRequest | None = Body(default=None),
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
+    company_id = getattr(active_company, "id", None)
     if payload is None:
         payload = EmailSendRequest()
 
-    ledger = db.query(Ledger).filter(Ledger.id == ledger_id).first()
+    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
+    if company_id is not None:
+        ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+    ledger = ledger_query.first()
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
 
@@ -254,38 +275,42 @@ async def send_payment_reminder_email(
             detail="No recipient email address. Provide 'to' in the request body or add an email to the ledger.",
         )
 
-    company = db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    company = active_company if company_id is not None else db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
     currency_code = company.currency_code if company and company.currency_code else "INR"
 
-    credit_note_summary = get_credit_note_ledger_summary(db, ledger_id=ledger_id)
+    credit_note_summary = get_credit_note_ledger_summary(db, ledger_id=ledger_id, company_id=company_id)
 
     # Outstanding balance = active sales invoices − active sales credit notes − active receipts for this ledger
-    total_sales = float(
+    total_sales_query = (
         db.query(func.coalesce(func.sum(Invoice.total_amount), 0))
         .filter(Invoice.ledger_id == ledger_id, Invoice.voucher_type == "sales", Invoice.status == "active")
-        .scalar()
     )
-    total_receipts = float(
+    if company_id is not None:
+        total_sales_query = total_sales_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+    total_sales = float(total_sales_query.scalar())
+
+    total_receipts_query = (
         db.query(func.coalesce(func.sum(Payment.amount), 0))
         .filter(Payment.ledger_id == ledger_id, Payment.voucher_type == "receipt", Payment.status == "active")
-        .scalar()
     )
+    if company_id is not None:
+        total_receipts_query = total_receipts_query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+    total_receipts = float(total_receipts_query.scalar())
     outstanding_balance = total_sales - credit_note_summary.sales_credit_total - total_receipts
 
-    last_payment = (
-        db.query(Payment)
-        .filter(Payment.ledger_id == ledger_id, Payment.status == "active")
-        .order_by(Payment.date.desc())
-        .first()
-    )
+    last_payment_query = db.query(Payment).filter(Payment.ledger_id == ledger_id, Payment.status == "active")
+    if company_id is not None:
+        last_payment_query = last_payment_query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+    last_payment = last_payment_query.order_by(Payment.date.desc()).first()
     last_payment_date = last_payment.date.strftime("%d %b %Y") if last_payment else None
 
-    sales_invoices = (
+    sales_invoices_query = (
         db.query(Invoice)
         .filter(Invoice.ledger_id == ledger_id, Invoice.voucher_type == "sales", Invoice.status == "active")
-        .order_by(Invoice.invoice_date.asc(), Invoice.id.asc())
-        .all()
     )
+    if company_id is not None:
+        sales_invoices_query = sales_invoices_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+    sales_invoices = sales_invoices_query.order_by(Invoice.invoice_date.asc(), Invoice.id.asc()).all()
     unpaid_invoices = []
     for inv in sales_invoices:
         net_amount = float(inv.total_amount) - credit_note_summary.sales_credit_by_invoice.get(inv.id, 0.0)

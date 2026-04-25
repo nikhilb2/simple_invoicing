@@ -173,8 +173,42 @@ export default function InvoicesAdvancedView() {
   }, [invoicesQuery.data?.summary, invoices]);
   const currentPageBreakdown = useMemo(() => calculateBreakdown(invoices), [invoices]);
 
-  if (fyLoading || (!shouldUseAllFY && !activeFY) || !company) {
+  if (fyLoading || companyQuery.isLoading || productsQuery.isLoading) {
     return <div className="p-8 text-center">Loading...</div>;
+  }
+
+  if (!shouldUseAllFY && !activeFY) {
+    return (
+      <div className="invoice-feed-view stack">
+        <section className="panel">
+          <div className="panel__header">
+            <div>
+              <p className="eyebrow">Invoices</p>
+              <h1 className="page-title" style={{ margin: 0 }}>Invoice Feed</h1>
+            </div>
+          </div>
+          <div className="empty-state" style={{ gap: 12 }}>
+            <p>No active financial year is set for this company.</p>
+            <div className="button-row" style={{ justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={() => setAllowAllFY(true)}
+              >
+                Search all FY
+              </button>
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={() => navigate('/company')}
+              >
+                Open Company Setup
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
   }
 
   return (

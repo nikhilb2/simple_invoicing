@@ -5,12 +5,13 @@ from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 import weasyprint
 
-from src.api.deps import get_current_user, require_roles
+from src.api.deps import get_active_company, get_current_user, require_roles
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
 from src.models.company import CompanyProfile
@@ -44,28 +45,36 @@ def _make_aware(dt: datetime) -> datetime:
     return dt
 
 
-def _active_invoices_query(db: Session):
-    return db.query(Invoice).filter(Invoice.status == "active")
+def _active_invoices_query(db: Session, company_id: int | None = None):
+  query = db.query(Invoice).filter(Invoice.status == "active")
+  if company_id is not None:
+    query = query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+  return query
 
 
-def _active_payments_query(db: Session):
-    return db.query(Payment).filter(Payment.status == "active")
+def _active_payments_query(db: Session, company_id: int | None = None):
+  query = db.query(Payment).filter(Payment.status == "active")
+  if company_id is not None:
+    query = query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+  return query
 
 
-def _get_opening_balance_payment(db: Session, ledger_id: int) -> Payment | None:
-  return (
+def _get_opening_balance_payment(db: Session, ledger_id: int, company_id: int | None = None) -> Payment | None:
+  query = (
     db.query(Payment)
     .filter(
       Payment.ledger_id == ledger_id,
       Payment.voucher_type == "opening_balance",
       Payment.status == "active",
     )
-    .first()
   )
+  if company_id is not None:
+    query = query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+  return query.first()
 
 
-def _serialize_ledger(db: Session, ledger: Ledger) -> LedgerOut:
-  opening_balance_payment = _get_opening_balance_payment(db, ledger.id)
+def _serialize_ledger(db: Session, ledger: Ledger, company_id: int | None = None) -> LedgerOut:
+  opening_balance_payment = _get_opening_balance_payment(db, ledger.id, company_id=company_id)
   return LedgerOut(
     id=ledger.id,
     name=ledger.name,
@@ -83,8 +92,8 @@ def _serialize_ledger(db: Session, ledger: Ledger) -> LedgerOut:
   )
 
 
-def _default_opening_balance_date(db: Session) -> tuple[datetime, int | None]:
-  active_fy = get_active_fy(db)
+def _default_opening_balance_date(db: Session, company_id: int | None = None) -> tuple[datetime, int | None]:
+  active_fy = get_active_fy(db, company_id=company_id)
   if active_fy is not None:
     return datetime.combine(active_fy.start_date, time.min), active_fy.id
   return datetime.utcnow(), None
@@ -95,8 +104,9 @@ def _sync_opening_balance(
   ledger_id: int,
   opening_balance: float | None,
   current_user_id: int,
+  company_id: int | None = None,
 ) -> None:
-  existing = _get_opening_balance_payment(db, ledger_id)
+  existing = _get_opening_balance_payment(db, ledger_id, company_id=company_id)
   normalized = None if opening_balance is None or opening_balance == 0 else float(opening_balance)
 
   if normalized is None:
@@ -108,9 +118,10 @@ def _sync_opening_balance(
     existing.amount = normalized
     return
 
-  opening_date, fy_id = _default_opening_balance_date(db)
+  opening_date, fy_id = _default_opening_balance_date(db, company_id=company_id)
   db.add(Payment(
     ledger_id=ledger_id,
+    company_id=company_id,
     voucher_type="opening_balance",
     amount=normalized,
     date=opening_date,
@@ -143,12 +154,13 @@ def _build_ledger_statement_data(
     ledger: Ledger,
     from_date: date,
     to_date: date,
+  company_id: int | None = None,
 ) -> LedgerStatementData:
     period_start = datetime.combine(from_date, time.min)
     period_end = datetime.combine(to_date, time.max)
 
     opening_totals = (
-        _active_invoices_query(db)
+        _active_invoices_query(db, company_id=company_id)
         .with_entities(
             func.coalesce(func.sum(case((Invoice.voucher_type == "sales", Invoice.total_amount), else_=0)), 0),
             func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", Invoice.total_amount), else_=0)), 0),
@@ -159,7 +171,7 @@ def _build_ledger_statement_data(
     )
 
     opening_payment_totals = (
-        _active_payments_query(db)
+        _active_payments_query(db, company_id=company_id)
         .with_entities(
             func.coalesce(func.sum(case((Payment.voucher_type == "payment", Payment.amount), else_=0)), 0),
             func.coalesce(func.sum(case((Payment.voucher_type == "receipt", Payment.amount), else_=0)), 0),
@@ -174,11 +186,12 @@ def _build_ledger_statement_data(
     opening_credit_note_summary = get_credit_note_ledger_summary(
         db,
         ledger_id=ledger.id,
+      company_id=company_id,
         created_before=period_start,
     )
 
     period_invoices = (
-        _active_invoices_query(db)
+        _active_invoices_query(db, company_id=company_id)
         .filter(Invoice.ledger_id == ledger.id)
         .filter(Invoice.invoice_date >= period_start)
         .filter(Invoice.invoice_date <= period_end)
@@ -187,7 +200,7 @@ def _build_ledger_statement_data(
     )
 
     period_payments = (
-        _active_payments_query(db)
+        _active_payments_query(db, company_id=company_id)
       .options(
         joinedload(Payment.account),
         joinedload(Payment.invoice_allocations).joinedload(PaymentInvoiceAllocation.invoice),
@@ -213,6 +226,7 @@ def _build_ledger_statement_data(
     period_credit_note_summary = get_credit_note_ledger_summary(
         db,
         ledger_id=ledger.id,
+      company_id=company_id,
         created_from=period_start,
         created_to=period_end,
     )
@@ -319,10 +333,15 @@ def create_ledger(
     payload: LedgerCreate,
     db: Session = Depends(get_db),
   current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+  active_company: CompanyProfile = Depends(get_active_company),
 ):
+  company_id = getattr(active_company, "id", None)
   gst = payload.gst
   if gst:
-    existing_ledger = db.query(Ledger).filter(Ledger.gst == gst).first()
+    existing_query = db.query(Ledger).filter(Ledger.gst == gst)
+    if company_id is not None:
+      existing_query = existing_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+    existing_ledger = existing_query.first()
     if existing_ledger:
       raise HTTPException(status_code=400, detail="Ledger with this GST already exists")
 
@@ -338,13 +357,23 @@ def create_ledger(
     account_name=payload.account_name.strip() if payload.account_name else None,
     account_number=payload.account_number.strip() if payload.account_number else None,
     ifsc_code=payload.ifsc_code.strip().upper() if payload.ifsc_code else None,
+    company_id=company_id,
   )
   db.add(ledger)
-  db.flush()
-  _sync_opening_balance(db, ledger.id, payload.opening_balance, current_user.id)
-  db.commit()
+  try:
+    db.flush()
+    _sync_opening_balance(db, ledger.id, payload.opening_balance, current_user.id, company_id=company_id)
+    db.commit()
+  except IntegrityError as exc:
+    db.rollback()
+    if "ix_buyers_gst" in str(exc.orig) or "buyers_gst_key" in str(exc.orig):
+      raise HTTPException(
+        status_code=400,
+        detail="Buyer with this GST already exists. Run latest migrations to enable per-company GST uniqueness.",
+      )
+    raise
   db.refresh(ledger)
-  return _serialize_ledger(db, ledger)
+  return _serialize_ledger(db, ledger, company_id=company_id)
 
 
 @router.get("", response_model=PaginatedLedgerOut, include_in_schema=False)
@@ -355,8 +384,12 @@ def list_ledgers(
     search: str = Query(""),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
+    company_id = getattr(active_company, "id", None)
     query = db.query(Ledger)
+    if company_id is not None:
+      query = query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
     if search.strip():
         query = query.filter(Ledger.name.ilike(f"%{search.strip()}%"))
     total = query.count()
@@ -381,11 +414,13 @@ def get_day_book(
     to_date: date | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
+    company_id = getattr(active_company, "id", None)
     fy_label: str | None = None
     financial_year_id: int | None = None
     if from_date is None or to_date is None:
-        active_fy = get_active_fy(db)
+        active_fy = get_active_fy(db, company_id=company_id)
         if active_fy is None:
             raise HTTPException(
                 status_code=400,
@@ -403,7 +438,7 @@ def get_day_book(
     period_end = datetime.combine(to_date, time.max)
 
     invoices = (
-        _active_invoices_query(db)
+        _active_invoices_query(db, company_id=company_id)
         .filter(Invoice.invoice_date >= period_start)
         .filter(Invoice.invoice_date <= period_end)
         .order_by(Invoice.invoice_date.asc(), Invoice.id.asc())
@@ -411,7 +446,7 @@ def get_day_book(
     )
 
     payments = (
-        _active_payments_query(db)
+        _active_payments_query(db, company_id=company_id)
         .filter(Payment.date >= period_start)
         .filter(Payment.date <= period_end)
         .order_by(Payment.date.asc(), Payment.id.asc())
@@ -420,6 +455,7 @@ def get_day_book(
 
     credit_note_summary = get_credit_note_ledger_summary(
         db,
+        company_id=company_id,
         created_from=period_start,
         created_to=period_end,
     )
@@ -438,21 +474,24 @@ def get_day_book(
             credit=float(invoice.total_amount) if invoice.voucher_type == "purchase" else 0.0,
         ))
     for payment in payments:
-      ledger = db.query(Ledger).filter(Ledger.id == payment.ledger_id).first()
-      debit, credit = _payment_debit_credit(payment)
-      entries.append(DayBookEntry(
-        entry_id=payment.id,
-        entry_type="payment",
-        date=payment.date,
-        voucher_type=_format_voucher_label(payment.voucher_type),
-        reference_number=payment.payment_number,
-        ledger_name=ledger.name if ledger else "Unknown ledger",
-        particulars=f"{_format_voucher_label(payment.voucher_type)} #{payment.id}" + (f" ({payment.mode})" if payment.mode else ""),
-        debit=debit,
-        credit=credit,
-        account_display_name=payment.account.display_name if payment.account else None,
-        account_type=payment.account.account_type if payment.account else None,
-      ))
+        ledger_query = db.query(Ledger).filter(Ledger.id == payment.ledger_id)
+        if company_id is not None:
+            ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+        ledger = ledger_query.first()
+        debit, credit = _payment_debit_credit(payment)
+        entries.append(DayBookEntry(
+            entry_id=payment.id,
+            entry_type="payment",
+            date=payment.date,
+            voucher_type=_format_voucher_label(payment.voucher_type),
+            reference_number=payment.payment_number,
+            ledger_name=ledger.name if ledger else "Unknown ledger",
+            particulars=f"{_format_voucher_label(payment.voucher_type)} #{payment.id}" + (f" ({payment.mode})" if payment.mode else ""),
+            debit=debit,
+            credit=credit,
+            account_display_name=payment.account.display_name if payment.account else None,
+            account_type=payment.account.account_type if payment.account else None,
+        ))
     for credit_note_entry in credit_note_summary.entries:
         entries.append(DayBookEntry(
             entry_id=credit_note_entry.entry_id,
@@ -487,11 +526,13 @@ def get_tax_ledger(
     gst_rate: float | None = Query(None, ge=0),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
+    company_id = getattr(active_company, "id", None)
     fy_label: str | None = None
     financial_year_id: int | None = None
     if from_date is None or to_date is None:
-        active_fy = get_active_fy(db)
+        active_fy = get_active_fy(db, company_id=company_id)
         if active_fy is None:
             raise HTTPException(
                 status_code=400,
@@ -526,6 +567,8 @@ def get_tax_ledger(
         .filter(Invoice.invoice_date >= period_start)
         .filter(Invoice.invoice_date <= period_end)
     )
+    if company_id is not None:
+        invoice_query = invoice_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
 
     if voucher_type is not None:
         invoice_query = invoice_query.filter(Invoice.voucher_type == voucher_type)
@@ -590,6 +633,8 @@ def get_tax_ledger(
         .filter(CreditNote.created_at >= period_start)
         .filter(CreditNote.created_at <= period_end)
     )
+    if company_id is not None:
+      credit_note_query = credit_note_query.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
 
     if voucher_type is not None:
         credit_note_query = credit_note_query.filter(Invoice.voucher_type == voucher_type)
@@ -686,11 +731,16 @@ def get_ledger(
     ledger_id: int,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    ledger = db.query(Ledger).filter(Ledger.id == ledger_id).first()
+    company_id = getattr(active_company, "id", None)
+    query = db.query(Ledger).filter(Ledger.id == ledger_id)
+    if company_id is not None:
+        query = query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+    ledger = query.first()
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
-    return _serialize_ledger(db, ledger)
+    return _serialize_ledger(db, ledger, company_id=company_id)
 
 @router.get("/{ledger_id}/unpaid-invoices", response_model=list[OutstandingInvoiceOut])
 def list_unpaid_invoices(
@@ -700,8 +750,13 @@ def list_unpaid_invoices(
     payment_id: int | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    ledger = db.query(Ledger).filter(Ledger.id == ledger_id).first()
+    company_id = getattr(active_company, "id", None)
+    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
+    if company_id is not None:
+      ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+    ledger = ledger_query.first()
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
 
@@ -710,6 +765,7 @@ def list_unpaid_invoices(
         ledger_id,
         voucher_type=voucher_type,
         exclude_payment_id=payment_id,
+        company_id=company_id,
     )
     suggestions = auto_allocate_outstanding_invoices(rows, amount) if amount is not None else {}
 
@@ -737,14 +793,22 @@ def update_ledger(
     payload: LedgerCreate,
     db: Session = Depends(get_db),
   current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+  active_company: CompanyProfile = Depends(get_active_company),
 ):
-    ledger = db.query(Ledger).filter(Ledger.id == ledger_id).first()
+    company_id = getattr(active_company, "id", None)
+    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
+    if company_id is not None:
+        ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+    ledger = ledger_query.first()
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
 
     gst = payload.gst
     if gst:
-        gst_owner = db.query(Ledger).filter(Ledger.gst == gst, Ledger.id != ledger_id).first()
+        gst_owner_query = db.query(Ledger).filter(Ledger.gst == gst, Ledger.id != ledger_id)
+        if company_id is not None:
+          gst_owner_query = gst_owner_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+        gst_owner = gst_owner_query.first()
         if gst_owner:
             raise HTTPException(status_code=400, detail="Ledger with this GST already exists")
 
@@ -759,11 +823,20 @@ def update_ledger(
     ledger.account_name = payload.account_name.strip() if payload.account_name else None
     ledger.account_number = payload.account_number.strip() if payload.account_number else None
     ledger.ifsc_code = payload.ifsc_code.strip().upper() if payload.ifsc_code else None
-    _sync_opening_balance(db, ledger.id, payload.opening_balance, current_user.id)
+    _sync_opening_balance(db, ledger.id, payload.opening_balance, current_user.id, company_id=company_id)
 
-    db.commit()
+    try:
+      db.commit()
+    except IntegrityError as exc:
+      db.rollback()
+      if "ix_buyers_gst" in str(exc.orig) or "buyers_gst_key" in str(exc.orig):
+        raise HTTPException(
+          status_code=400,
+          detail="Buyer with this GST already exists. Run latest migrations to enable per-company GST uniqueness.",
+        )
+      raise
     db.refresh(ledger)
-    return _serialize_ledger(db, ledger)
+    return _serialize_ledger(db, ledger, company_id=company_id)
 
 
 @router.delete("/{ledger_id}")
@@ -771,16 +844,27 @@ def delete_ledger(
     ledger_id: int,
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    ledger = db.query(Ledger).filter(Ledger.id == ledger_id).first()
+    company_id = getattr(active_company, "id", None)
+    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
+    if company_id is not None:
+        ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+    ledger = ledger_query.first()
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
 
-    has_invoices = db.query(Invoice.id).filter(Invoice.ledger_id == ledger_id).first()
+    has_invoices_query = db.query(Invoice.id).filter(Invoice.ledger_id == ledger_id)
+    if company_id is not None:
+        has_invoices_query = has_invoices_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+    has_invoices = has_invoices_query.first()
     if has_invoices:
         raise HTTPException(status_code=400, detail="Cannot delete ledger linked to invoices")
 
-    has_payments = db.query(Payment.id).filter(Payment.ledger_id == ledger_id).first()
+    has_payments_query = db.query(Payment.id).filter(Payment.ledger_id == ledger_id)
+    if company_id is not None:
+        has_payments_query = has_payments_query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+    has_payments = has_payments_query.first()
     if has_payments:
         raise HTTPException(status_code=400, detail="Cannot delete ledger linked to payments")
 
@@ -796,11 +880,13 @@ def get_ledger_statement(
     to_date: date | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
+    company_id = getattr(active_company, "id", None)
     fy_label: str | None = None
     financial_year_id: int | None = None
     if from_date is None or to_date is None:
-        active_fy = get_active_fy(db)
+        active_fy = get_active_fy(db, company_id=company_id)
         if active_fy is None:
             raise HTTPException(
                 status_code=400,
@@ -814,11 +900,14 @@ def get_ledger_statement(
     if from_date > to_date:
         raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
 
-    ledger = db.query(Ledger).filter(Ledger.id == ledger_id).first()
+    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
+    if company_id is not None:
+      ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+    ledger = ledger_query.first()
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
 
-    statement_data = _build_ledger_statement_data(db, ledger, from_date, to_date)
+    statement_data = _build_ledger_statement_data(db, ledger, from_date, to_date, company_id=company_id)
 
     return LedgerStatementOut(
         ledger=ledger,
@@ -1142,18 +1231,23 @@ def download_ledger_statement_pdf(
     to_date: date = Query(...),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
+    company_id = getattr(active_company, "id", None)
     if from_date > to_date:
         raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
 
-    ledger = db.query(Ledger).filter(Ledger.id == ledger_id).first()
+    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
+    if company_id is not None:
+        ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+    ledger = ledger_query.first()
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
 
-    company = db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    company = active_company if company_id is not None else db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
     currency = company.currency_code if company and company.currency_code else "INR"
 
-    statement_data = _build_ledger_statement_data(db, ledger, from_date, to_date)
+    statement_data = _build_ledger_statement_data(db, ledger, from_date, to_date, company_id=company_id)
 
     html = _build_statement_html(
         ledger=ledger,

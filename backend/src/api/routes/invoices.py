@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 from decimal import Decimal, ROUND_HALF_UP
@@ -23,7 +23,7 @@ from src.models.inventory import Inventory
 from src.models.product import Product
 from src.models.user import User
 from src.schemas.invoice import InvoiceCreate, InvoiceOut, PaginatedInvoiceOut
-from src.api.deps import get_current_user
+from src.api.deps import get_active_company, get_current_user
 from src.services.series import generate_next_number
 from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.invoice_payments import build_invoice_payment_summaries
@@ -54,21 +54,42 @@ def _generate_next_number(
     financial_year_id: int | None = None,
     invoice_date: date | None = None,
     active_financial_year_id: int | None = None,
+    company_id: int | None = None,
 ) -> str:
-    return generate_next_number(db, voucher_type, financial_year_id, invoice_date, active_financial_year_id)
+    return generate_next_number(
+        db,
+        voucher_type,
+        financial_year_id,
+        invoice_date,
+        active_financial_year_id,
+        company_id=company_id,
+    )
 
 
-def _require_ledger(db: Session, ledger_id: int) -> Ledger:
-    ledger = db.query(Ledger).filter(Ledger.id == ledger_id).first()
+def _require_ledger(db: Session, ledger_id: int, company_id: int | None) -> Ledger:
+    query = db.query(Ledger).filter(Ledger.id == ledger_id)
+    if company_id is not None:
+        query = query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+    ledger = query.first()
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
     return ledger
 
 
-def _change_inventory_quantity(db: Session, product_id: int, quantity_delta: int, *, context: str) -> None:
-    inventory = db.query(Inventory).filter(Inventory.product_id == product_id).first()
+def _change_inventory_quantity(
+    db: Session,
+    product_id: int,
+    quantity_delta: int,
+    *,
+    company_id: int | None,
+    context: str,
+) -> None:
+    query = db.query(Inventory).filter(Inventory.product_id == product_id)
+    if company_id is not None:
+        query = query.filter(or_(Inventory.company_id == company_id, Inventory.company_id.is_(None)))
+    inventory = query.first()
     if not inventory:
-        inventory = Inventory(product_id=product_id, quantity=0)
+        inventory = Inventory(company_id=company_id, product_id=product_id, quantity=0)
         db.add(inventory)
         db.flush()
 
@@ -120,6 +141,7 @@ def _reverse_existing_invoice_inventory(db: Session, invoice: Invoice) -> None:
             db,
             item.product_id,
             reverse_delta,
+            company_id=invoice.company_id,
             context=f"reversing invoice {invoice.id}",
         )
 
@@ -128,7 +150,13 @@ def _inventory_effect_for_voucher_type(quantity: int, voucher_type: str) -> int:
     return -quantity if voucher_type == "sales" else quantity
 
 
-def _apply_inventory_delta_for_invoice_update(db: Session, invoice: Invoice, payload: InvoiceCreate) -> None:
+def _apply_inventory_delta_for_invoice_update(
+    db: Session,
+    invoice: Invoice,
+    payload: InvoiceCreate,
+    *,
+    company_id: int | None,
+) -> None:
     existing_effect_by_product: dict[int, int] = defaultdict(int)
     for item in invoice.items:
         existing_effect_by_product[item.product_id] += _inventory_effect_for_voucher_type(
@@ -147,10 +175,19 @@ def _apply_inventory_delta_for_invoice_update(db: Session, invoice: Invoice, pay
         quantity_delta = next_effect_by_product[product_id] - existing_effect_by_product[product_id]
         if quantity_delta == 0:
             continue
+
+        product_query = db.query(Product).filter(Product.id == product_id)
+        if company_id is not None:
+            product_query = product_query.filter(or_(Product.company_id == company_id, Product.company_id.is_(None)))
+        product = product_query.first()
+        if not product:
+            raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
+
         _change_inventory_quantity(
             db,
             product_id,
             quantity_delta,
+          company_id=company_id,
             context=f"editing invoice {invoice.id}",
         )
 
@@ -159,15 +196,18 @@ def _apply_payload_to_invoice(
     db: Session,
     invoice: Invoice,
     payload: InvoiceCreate,
+  active_company: CompanyProfile | None = None,
     created_by: int | None = None,
     financial_year_id: int | None = None,
     active_financial_year_id: int | None = None,
     regenerate_number: bool = True,
     apply_inventory_changes: bool = True,
 ) -> None:
-    ledger = _require_ledger(db, payload.ledger_id)
-    company = db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    company = active_company or db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    company_id = company.id if company else None
+    ledger = _require_ledger(db, payload.ledger_id, company_id)
 
+    invoice.company_id = company_id
     invoice.ledger_id = ledger.id
     invoice.ledger_name = ledger.name
     invoice.ledger_address = ledger.address
@@ -203,6 +243,7 @@ def _apply_payload_to_invoice(
         invoice.invoice_number = _generate_next_number(
             db, invoice.voucher_type, financial_year_id, payload.invoice_date,
             active_financial_year_id,
+            company_id=company_id,
         )
 
     if not payload.items:
@@ -217,12 +258,18 @@ def _apply_payload_to_invoice(
         if item.quantity <= 0:
             raise HTTPException(status_code=400, detail="Item quantity must be greater than zero")
 
-        product = db.query(Product).filter(Product.id == item.product_id).first()
+        product_query = db.query(Product).filter(Product.id == item.product_id)
+        if company_id is not None:
+            product_query = product_query.filter(or_(Product.company_id == company_id, Product.company_id.is_(None)))
+        product = product_query.first()
         if not product:
             raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
 
         if apply_inventory_changes:
-            inventory = db.query(Inventory).filter(Inventory.product_id == item.product_id).first()
+            inventory_query = db.query(Inventory).filter(Inventory.product_id == item.product_id)
+            if company_id is not None:
+                inventory_query = inventory_query.filter(or_(Inventory.company_id == company_id, Inventory.company_id.is_(None)))
+            inventory = inventory_query.first()
             if payload.voucher_type == "sales" and (not inventory or inventory.quantity < item.quantity):
                 raise HTTPException(status_code=400, detail=f"Insufficient inventory for {product.name}")
 
@@ -231,6 +278,7 @@ def _apply_payload_to_invoice(
                 db,
                 item.product_id,
                 quantity_delta,
+                company_id=company_id,
                 context=f"applying invoice {invoice.id or 'new'}",
             )
 
@@ -322,15 +370,16 @@ def create_invoice(
     payload: InvoiceCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
     try:
-        active_fy = get_active_fy(db)
+        active_fy = get_active_fy(db, company_id=active_company.id)
 
         # Determine which FY this invoice belongs to based on its date.
         # If the invoice date falls within a different FY, use that FY.
         fy_for_invoice = active_fy
         if payload.invoice_date:
-            date_fy = get_fy_for_date(db, payload.invoice_date)
+            date_fy = get_fy_for_date(db, payload.invoice_date, company_id=active_company.id)
             if date_fy is not None:
                 fy_for_invoice = date_fy
         fy_id = fy_for_invoice.id if fy_for_invoice else None
@@ -338,11 +387,15 @@ def create_invoice(
         invoice = Invoice(
             total_amount=0,
             created_by=current_user.id,
+            company_id=active_company.id,
         )
         db.add(invoice)
         db.flush()
         _apply_payload_to_invoice(
-            db, invoice, payload,
+            db,
+            invoice,
+            payload,
+            active_company,
             created_by=current_user.id,
             financial_year_id=fy_id,
             active_financial_year_id=active_fy.id if active_fy else None,
@@ -380,68 +433,69 @@ def list_invoices(
     product_id: int | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
     try:
-        base = db.query(Invoice)
-        if not show_cancelled:
-            base = base.filter(Invoice.status == "active")
-        if financial_year_id is not None:
-            base = base.filter(Invoice.financial_year_id == financial_year_id)
-        if search.strip():
-            base = base.filter(Invoice.ledger_name.ilike(f"%{search.strip()}%"))
-        if product_id is not None:
-            product_subq = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id).subquery()
-            base = base.filter(Invoice.id.in_(product_subq))
+      base = db.query(Invoice).filter(Invoice.company_id == active_company.id)
+      if not show_cancelled:
+        base = base.filter(Invoice.status == "active")
+      if financial_year_id is not None:
+        base = base.filter(Invoice.financial_year_id == financial_year_id)
+      if search.strip():
+        base = base.filter(Invoice.ledger_name.ilike(f"%{search.strip()}%"))
+      if product_id is not None:
+        product_subq = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id).subquery()
+        base = base.filter(Invoice.id.in_(product_subq))
 
-        summary_row = base.with_entities(
-          func.coalesce(func.sum(Invoice.total_amount), 0),
-          func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", Invoice.total_amount), else_=0)), 0),
-          func.coalesce(func.sum(case((Invoice.voucher_type == "sales", Invoice.total_amount), else_=0)), 0),
-          func.coalesce(func.sum(case((Invoice.status == "cancelled", Invoice.total_amount), else_=0)), 0),
-          func.coalesce(func.sum(case((Invoice.status == "active", Invoice.total_amount), else_=0)), 0),
-        ).one()
+      summary_row = base.with_entities(
+        func.coalesce(func.sum(Invoice.total_amount), 0),
+        func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", Invoice.total_amount), else_=0)), 0),
+        func.coalesce(func.sum(case((Invoice.voucher_type == "sales", Invoice.total_amount), else_=0)), 0),
+        func.coalesce(func.sum(case((Invoice.status == "cancelled", Invoice.total_amount), else_=0)), 0),
+        func.coalesce(func.sum(case((Invoice.status == "active", Invoice.total_amount), else_=0)), 0),
+      ).one()
 
-        total_listed = Decimal(summary_row[0] or 0)
-        credit_total = Decimal(summary_row[1] or 0)
-        debit_total = Decimal(summary_row[2] or 0)
-        cancelled_total = Decimal(summary_row[3] or 0)
-        active_total = Decimal(summary_row[4] or 0)
-        others_total = total_listed - (credit_total + debit_total + cancelled_total)
+      total_listed = Decimal(summary_row[0] or 0)
+      credit_total = Decimal(summary_row[1] or 0)
+      debit_total = Decimal(summary_row[2] or 0)
+      cancelled_total = Decimal(summary_row[3] or 0)
+      active_total = Decimal(summary_row[4] or 0)
+      others_total = total_listed - (credit_total + debit_total + cancelled_total)
 
-        total = base.count()
-        invoices = (
-            base.options(joinedload(Invoice.ledger), joinedload(Invoice.items))
-            .order_by(Invoice.id.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
-            .all()
-        )
+      total = base.count()
+      invoices = (
+        base.options(joinedload(Invoice.ledger), joinedload(Invoice.items))
+        .order_by(Invoice.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+      )
 
-        payment_summaries = build_invoice_payment_summaries(db, invoices)
-        items = [_to_invoice_out(invoice, payment_summary=payment_summaries.get(invoice.id)) for invoice in invoices]
+      payment_summaries = build_invoice_payment_summaries(db, invoices)
+      items = [_to_invoice_out(invoice, payment_summary=payment_summaries.get(invoice.id)) for invoice in invoices]
 
-        visible_page_total = sum((Decimal(str(item.total_amount or 0)) for item in items), Decimal("0"))
+      visible_page_total = sum((Decimal(str(item.total_amount or 0)) for item in items), Decimal("0"))
 
-        return PaginatedInvoiceOut(
-            items=items,
-            total=total,
-            page=page,
-            page_size=page_size,
-            total_pages=(total + page_size - 1) // page_size if total > 0 else 1,
-          summary=PaginatedInvoiceOut.SummaryMeta(
-            total_listed=float(total_listed),
-            credit_total=float(credit_total),
-            debit_total=float(debit_total),
-            cancelled_total=float(cancelled_total),
-            active_total=float(active_total),
-            others_total=float(others_total),
-            visible_page_total=float(visible_page_total),
-            visible_page_count=len(items),
-            filtered_count=total,
-            include_cancelled=show_cancelled,
-            financial_year_id=financial_year_id,
-          ),
-        )
+      return PaginatedInvoiceOut(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=(total + page_size - 1) // page_size if total > 0 else 1,
+        summary=PaginatedInvoiceOut.SummaryMeta(
+          total_listed=float(total_listed),
+          credit_total=float(credit_total),
+          debit_total=float(debit_total),
+          cancelled_total=float(cancelled_total),
+          active_total=float(active_total),
+          others_total=float(others_total),
+          visible_page_total=float(visible_page_total),
+          visible_page_count=len(items),
+          filtered_count=total,
+          include_cancelled=show_cancelled,
+          financial_year_id=financial_year_id,
+        ),
+      )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -456,66 +510,68 @@ def list_due_invoices(
     due_date_to: date | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
     try:
-      base = (
-        db.query(Invoice)
-        .options(joinedload(Invoice.ledger), joinedload(Invoice.items))
-        .filter(
-          Invoice.voucher_type == "sales",
-          Invoice.status == "active",
-          Invoice.due_date.isnot(None),
+        base = (
+            db.query(Invoice)
+            .options(joinedload(Invoice.ledger), joinedload(Invoice.items))
+            .filter(
+                Invoice.company_id == active_company.id,
+                Invoice.voucher_type == "sales",
+                Invoice.status == "active",
+                Invoice.due_date.isnot(None),
+            )
         )
-      )
 
-      if ledger_id is not None:
-        base = base.filter(Invoice.ledger_id == ledger_id)
-      if search.strip():
-        base = base.filter(Invoice.ledger_name.ilike(f"%{search.strip()}%"))
-      if due_date_from is not None:
-        base = base.filter(Invoice.due_date >= datetime.combine(due_date_from, datetime.min.time()))
-      if due_date_to is not None:
-        base = base.filter(Invoice.due_date <= datetime.combine(due_date_to, datetime.max.time()))
+        if ledger_id is not None:
+            base = base.filter(Invoice.ledger_id == ledger_id)
+        if search.strip():
+            base = base.filter(Invoice.ledger_name.ilike(f"%{search.strip()}%"))
+        if due_date_from is not None:
+            base = base.filter(Invoice.due_date >= datetime.combine(due_date_from, datetime.min.time()))
+        if due_date_to is not None:
+            base = base.filter(Invoice.due_date <= datetime.combine(due_date_to, datetime.max.time()))
 
-      invoices = base.order_by(Invoice.due_date.asc(), Invoice.invoice_date.asc(), Invoice.id.asc()).all()
-      payment_summaries = build_invoice_payment_summaries(db, invoices)
-      outstanding_invoices = [
-        invoice
-        for invoice in invoices
-        if payment_summaries[invoice.id].remaining_amount > 0
-      ]
+        invoices = base.order_by(Invoice.due_date.asc(), Invoice.invoice_date.asc(), Invoice.id.asc()).all()
+        payment_summaries = build_invoice_payment_summaries(db, invoices)
+        outstanding_invoices = [
+            invoice
+            for invoice in invoices
+            if payment_summaries[invoice.id].remaining_amount > 0
+        ]
 
-      total = len(outstanding_invoices)
-      page_start = (page - 1) * page_size
-      page_end = page_start + page_size
-      paged_invoices = outstanding_invoices[page_start:page_end]
-      items = [_to_invoice_out(invoice, payment_summary=payment_summaries.get(invoice.id)) for invoice in paged_invoices]
+        total = len(outstanding_invoices)
+        page_start = (page - 1) * page_size
+        page_end = page_start + page_size
+        paged_invoices = outstanding_invoices[page_start:page_end]
+        items = [_to_invoice_out(invoice, payment_summary=payment_summaries.get(invoice.id)) for invoice in paged_invoices]
 
-      total_listed = sum((Decimal(str(invoice.total_amount or 0)) for invoice in outstanding_invoices), Decimal("0"))
-      visible_page_total = sum((Decimal(str(item.total_amount or 0)) for item in items), Decimal("0"))
+        total_listed = sum((Decimal(str(invoice.total_amount or 0)) for invoice in outstanding_invoices), Decimal("0"))
+        visible_page_total = sum((Decimal(str(item.total_amount or 0)) for item in items), Decimal("0"))
 
-      return PaginatedInvoiceOut(
-        items=items,
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=(total + page_size - 1) // page_size if total > 0 else 1,
-        summary=PaginatedInvoiceOut.SummaryMeta(
-          total_listed=float(total_listed),
-          credit_total=0.0,
-          debit_total=float(total_listed),
-          cancelled_total=0.0,
-          active_total=float(total_listed),
-          others_total=0.0,
-          visible_page_total=float(visible_page_total),
-          visible_page_count=len(items),
-          filtered_count=total,
-          include_cancelled=False,
-          financial_year_id=None,
-        ),
-      )
+        return PaginatedInvoiceOut(
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=(total + page_size - 1) // page_size if total > 0 else 1,
+            summary=PaginatedInvoiceOut.SummaryMeta(
+                total_listed=float(total_listed),
+                credit_total=0.0,
+                debit_total=float(total_listed),
+                cancelled_total=0.0,
+                active_total=float(total_listed),
+                others_total=0.0,
+                visible_page_total=float(visible_page_total),
+                visible_page_count=len(items),
+                filtered_count=total,
+                include_cancelled=False,
+                financial_year_id=None,
+            ),
+        )
     except Exception as e:
-      raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{invoice_id}", response_model=InvoiceOut)
@@ -523,11 +579,12 @@ def get_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
     invoice = (
         db.query(Invoice)
         .options(joinedload(Invoice.ledger), joinedload(Invoice.items))
-        .filter(Invoice.id == invoice_id)
+        .filter(Invoice.id == invoice_id, Invoice.company_id == active_company.id)
         .first()
     )
     if not invoice:
@@ -542,8 +599,14 @@ def update_invoice(
     payload: InvoiceCreate,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    invoice = db.query(Invoice).options(joinedload(Invoice.items)).filter(Invoice.id == invoice_id).first()
+    invoice = (
+        db.query(Invoice)
+        .options(joinedload(Invoice.items))
+        .filter(Invoice.id == invoice_id, Invoice.company_id == active_company.id)
+        .first()
+    )
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
 
@@ -554,16 +617,24 @@ def update_invoice(
         )
 
     try:
-        active_fy = get_active_fy(db)
+        active_fy = get_active_fy(db, company_id=active_company.id)
 
-        _apply_inventory_delta_for_invoice_update(db, invoice, payload)
+        _apply_inventory_delta_for_invoice_update(
+            db,
+            invoice,
+            payload,
+            company_id=active_company.id,
+        )
 
         for item in list(invoice.items):
             db.delete(item)
         db.flush()
 
         _apply_payload_to_invoice(
-            db, invoice, payload,
+            db,
+            invoice,
+            payload,
+            active_company,
             regenerate_number=False,
             apply_inventory_changes=False,
         )
@@ -1437,18 +1508,25 @@ def download_invoice_pdf(
     copies: int = Query(default=1, ge=1, le=10),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
     invoice = (
         db.query(Invoice)
         .options(joinedload(Invoice.items), joinedload(Invoice.ledger))
-        .filter(Invoice.id == invoice_id)
+        .filter(Invoice.id == invoice_id, Invoice.company_id == active_company.id)
         .first()
     )
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
 
     product_ids = [item.product_id for item in (invoice.items or [])]
-    products = db.query(Product).filter(Product.id.in_(product_ids)).all() if product_ids else []
+    products = (
+      db.query(Product)
+      .filter(Product.id.in_(product_ids), Product.company_id == active_company.id)
+      .all()
+      if product_ids
+      else []
+    )
 
     invoice_bank_accounts = (
       db.query(CompanyAccount)
@@ -1456,6 +1534,7 @@ def download_invoice_pdf(
         CompanyAccount.is_active.is_(True),
         CompanyAccount.account_type == "bank",
         CompanyAccount.display_on_invoice.is_(True),
+        CompanyAccount.company_id == active_company.id,
       )
       .order_by(CompanyAccount.display_name.asc(), CompanyAccount.id.asc())
       .all()
@@ -1476,8 +1555,14 @@ def cancel_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    invoice = db.query(Invoice).options(joinedload(Invoice.items)).filter(Invoice.id == invoice_id).first()
+    invoice = (
+        db.query(Invoice)
+        .options(joinedload(Invoice.items))
+        .filter(Invoice.id == invoice_id, Invoice.company_id == active_company.id)
+        .first()
+    )
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
 
@@ -1503,8 +1588,14 @@ def restore_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    invoice = db.query(Invoice).options(joinedload(Invoice.items)).filter(Invoice.id == invoice_id).first()
+    invoice = (
+        db.query(Invoice)
+        .options(joinedload(Invoice.items))
+        .filter(Invoice.id == invoice_id, Invoice.company_id == active_company.id)
+        .first()
+    )
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
 
@@ -1519,6 +1610,7 @@ def restore_invoice(
                 db,
                 item.product_id,
                 restore_delta,
+              company_id=active_company.id,
                 context=f"restoring invoice {invoice.id}",
             )
         invoice.status = "active"

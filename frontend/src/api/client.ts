@@ -15,8 +15,12 @@ type RetryableRequestConfig = InternalAxiosRequestConfig & {
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
+  const activeCompanyId = localStorage.getItem('active_company_id');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  if (activeCompanyId) {
+    config.headers['X-Company-Id'] = activeCompanyId;
   }
   return config;
 });

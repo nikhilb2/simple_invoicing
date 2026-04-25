@@ -5,9 +5,11 @@ from sqlalchemy.orm import Session
 
 from src.api.deps import get_current_user, require_roles
 from src.db.session import get_db
+from src.models.company import CompanyProfile
 from src.models.company_account import CompanyAccount
 from src.models.user import User, UserRole
 from src.schemas.company_account import CompanyAccountCreate, CompanyAccountOut, CompanyAccountUpdate
+from src.api.deps import get_active_company
 
 router = APIRouter()
 
@@ -18,8 +20,10 @@ def create_company_account(
     payload: CompanyAccountCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
     account = CompanyAccount(
+        company_id=active_company.id,
         account_type=payload.account_type,
         display_name=payload.display_name,
         bank_name=payload.bank_name.strip() if payload.bank_name else None,
@@ -45,8 +49,9 @@ def list_company_accounts(
     include_inactive: bool = Query(False),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    query = db.query(CompanyAccount)
+    query = db.query(CompanyAccount).filter(CompanyAccount.company_id == active_company.id)
     if not include_inactive:
         query = query.filter(CompanyAccount.is_active.is_(True))
     return query.order_by(CompanyAccount.display_name.asc(), CompanyAccount.id.asc()).all()
@@ -57,8 +62,12 @@ def get_company_account(
     account_id: int,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    account = db.query(CompanyAccount).filter(CompanyAccount.id == account_id).first()
+    account = db.query(CompanyAccount).filter(
+        CompanyAccount.id == account_id,
+        CompanyAccount.company_id == active_company.id,
+    ).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     return account
@@ -70,8 +79,12 @@ def update_company_account(
     payload: CompanyAccountUpdate,
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    account = db.query(CompanyAccount).filter(CompanyAccount.id == account_id).first()
+    account = db.query(CompanyAccount).filter(
+        CompanyAccount.id == account_id,
+        CompanyAccount.company_id == active_company.id,
+    ).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
 
@@ -109,8 +122,12 @@ def deactivate_company_account(
     account_id: int,
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
-    account = db.query(CompanyAccount).filter(CompanyAccount.id == account_id).first()
+    account = db.query(CompanyAccount).filter(
+        CompanyAccount.id == account_id,
+        CompanyAccount.company_id == active_company.id,
+    ).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
 

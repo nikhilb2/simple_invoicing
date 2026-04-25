@@ -2,6 +2,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.models.credit_note import CreditNote, CreditNoteItem
@@ -31,6 +32,7 @@ class CreditNoteLedgerSummary:
 def get_credit_note_ledger_summary(
     db: Session,
     ledger_id: int | None = None,
+    company_id: int | None = None,
     created_before: datetime | None = None,
     created_from: datetime | None = None,
     created_to: datetime | None = None,
@@ -44,6 +46,8 @@ def get_credit_note_ledger_summary(
 
     if ledger_id is not None:
         query = query.filter(CreditNote.ledger_id == ledger_id)
+    if company_id is not None:
+        query = query.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
     if created_before is not None:
         query = query.filter(CreditNote.created_at < created_before)
     if created_from is not None:

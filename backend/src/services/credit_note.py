@@ -3,6 +3,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from fastapi import HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.models.buyer import Buyer as Ledger
@@ -26,10 +27,20 @@ def _is_interstate(company_gst: Optional[str], ledger_gst: Optional[str]) -> boo
     return company_gst[:2] != ledger_gst[:2]
 
 
-def _change_inventory_quantity(db: Session, product_id: int, quantity_delta: int, *, context: str) -> None:
-    inventory = db.query(Inventory).filter(Inventory.product_id == product_id).first()
+def _change_inventory_quantity(
+    db: Session,
+    product_id: int,
+    quantity_delta: int,
+    *,
+    context: str,
+    company_id: int | None = None,
+) -> None:
+    inventory_query = db.query(Inventory).filter(Inventory.product_id == product_id)
+    if company_id is not None:
+        inventory_query = inventory_query.filter(or_(Inventory.company_id == company_id, Inventory.company_id.is_(None)))
+    inventory = inventory_query.first()
     if not inventory:
-        inventory = Inventory(product_id=product_id, quantity=0)
+        inventory = Inventory(product_id=product_id, quantity=0, company_id=company_id)
         db.add(inventory)
         db.flush()
 
@@ -38,9 +49,12 @@ def _change_inventory_quantity(db: Session, product_id: int, quantity_delta: int
         raise HTTPException(status_code=400, detail=f"Insufficient inventory while {context}")
 
 
-def _recompute_credit_status(invoice_id: int, db: Session) -> None:
+def _recompute_credit_status(invoice_id: int, db: Session, company_id: int | None = None) -> None:
     """Recalculate and persist credit_status for a single invoice."""
-    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    invoice_query = db.query(Invoice).filter(Invoice.id == invoice_id)
+    if company_id is not None:
+        invoice_query = invoice_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+    invoice = invoice_query.first()
     if not invoice:
         return
 
@@ -48,15 +62,17 @@ def _recompute_credit_status(invoice_id: int, db: Session) -> None:
     from sqlalchemy import func
     from src.models.credit_note import CreditNoteItem as CNItem, CreditNote as CN
 
-    result = (
+    result_query = (
         db.query(func.sum(CNItem.line_total))
         .join(CN, CN.id == CNItem.credit_note_id)
         .filter(
             CNItem.invoice_id == invoice_id,
             CN.status == "active",
         )
-        .scalar()
     )
+    if company_id is not None:
+        result_query = result_query.filter(or_(CN.company_id == company_id, CN.company_id.is_(None)))
+    result = result_query.scalar()
     credited_total = Decimal(str(result or 0))
     invoice_total = Decimal(str(invoice.taxable_amount or 0))
 
@@ -72,18 +88,21 @@ def create_credit_note(
     payload: CreditNoteCreate,
     db: Session,
     current_user_id: int,
+    company_id: int | None = None,
 ) -> CreditNote:
     # ── 1. Validate ledger ───────────────────────────────────────────────────
-    ledger = db.query(Ledger).filter(Ledger.id == payload.ledger_id).first()
+    ledger_query = db.query(Ledger).filter(Ledger.id == payload.ledger_id)
+    if company_id is not None:
+        ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+    ledger = ledger_query.first()
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {payload.ledger_id} not found")
 
     # ── 2. Validate all invoices belong to this ledger ───────────────────────
-    invoices = (
-        db.query(Invoice)
-        .filter(Invoice.id.in_(payload.invoice_ids))
-        .all()
-    )
+    invoices_query = db.query(Invoice).filter(Invoice.id.in_(payload.invoice_ids))
+    if company_id is not None:
+        invoices_query = invoices_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+    invoices = invoices_query.all()
     found_ids = {inv.id for inv in invoices}
     missing = set(payload.invoice_ids) - found_ids
     if missing:
@@ -138,15 +157,17 @@ def create_credit_note(
 
     if payload.credit_note_type != "discount":
         for cn_item in payload.items:
-            already_credited = (
+            already_credited_query = (
                 db.query(func.sum(CreditNoteItem.quantity))
                 .join(CN, CN.id == CreditNoteItem.credit_note_id)
                 .filter(
                     CreditNoteItem.invoice_item_id == cn_item.invoice_item_id,
                     CN.status == "active",
                 )
-                .scalar()
-            ) or 0
+            )
+            if company_id is not None:
+                already_credited_query = already_credited_query.filter(or_(CN.company_id == company_id, CN.company_id.is_(None)))
+            already_credited = already_credited_query.scalar() or 0
 
             original_qty = invoice_item_map[cn_item.invoice_item_id].quantity
             if already_credited + cn_item.quantity > original_qty:
@@ -159,10 +180,10 @@ def create_credit_note(
                 )
 
     # ── 4. Resolve financial year ────────────────────────────────────────────
-    active_fy = get_active_fy(db)
+    active_fy = get_active_fy(db, company_id=company_id)
     fy = active_fy
     cn_date = datetime.utcnow().date()
-    dated_fy = get_fy_for_date(db, cn_date)
+    dated_fy = get_fy_for_date(db, cn_date, company_id=company_id)
     if dated_fy:
         fy = dated_fy
     fy_id = fy.id if fy else None
@@ -174,6 +195,7 @@ def create_credit_note(
         fy_id,
         cn_date,
         active_fy.id if active_fy else None,
+        company_id=company_id,
     )
 
     # ── 6. Calculate totals ──────────────────────────────────────────────────
@@ -242,6 +264,7 @@ def create_credit_note(
     cn = CreditNote(
         credit_note_number=cn_number,
         ledger_id=payload.ledger_id,
+        company_id=company_id,
         financial_year_id=fy_id,
         created_by=current_user_id,
         credit_note_type=payload.credit_note_type,
@@ -262,30 +285,36 @@ def create_credit_note(
 
     # ── 9. Persist items ─────────────────────────────────────────────────────
     for item_data in built_items:
-        db.add(CreditNoteItem(credit_note_id=cn.id, **item_data))
+        db.add(CreditNoteItem(credit_note_id=cn.id, company_id=company_id, **item_data))
 
     if payload.credit_note_type == "return":
         for item_data in built_items:
+            kwargs = {"company_id": company_id} if company_id is not None else {}
             _change_inventory_quantity(
                 db,
                 item_data["product_id"],
                 item_data["quantity"],
                 context=f"creating return credit note {cn.id}",
+                **kwargs,
             )
 
     db.flush()
 
     # ── 10. Recompute credit_status for all referenced invoices ──────────────
     for inv_id in payload.invoice_ids:
-        _recompute_credit_status(inv_id, db)
+        kwargs = {"company_id": company_id} if company_id is not None else {}
+        _recompute_credit_status(inv_id, db, **kwargs)
 
     db.commit()
     db.refresh(cn)
     return cn
 
 
-def cancel_credit_note(cn_id: int, db: Session) -> CreditNote:
-    cn = db.query(CreditNote).filter(CreditNote.id == cn_id).first()
+def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -> CreditNote:
+    query = db.query(CreditNote).filter(CreditNote.id == cn_id)
+    if company_id is not None:
+        query = query.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
+    cn = query.first()
     if not cn:
         raise HTTPException(status_code=404, detail="Credit note not found")
     if cn.status == "cancelled":
@@ -300,17 +329,20 @@ def cancel_credit_note(cn_id: int, db: Session) -> CreditNote:
     if cn.credit_note_type == "return":
         for item in cn.items:
             if item.product_id and item.quantity:
+                kwargs = {"company_id": company_id} if company_id is not None else {}
                 _change_inventory_quantity(
                     db,
                     item.product_id,
                     -item.quantity,
                     context=f"cancelling return credit note {cn.id}",
+                    **kwargs,
                 )
 
     db.flush()
 
     for inv_id in affected_invoice_ids:
-        _recompute_credit_status(inv_id, db)
+        kwargs = {"company_id": company_id} if company_id is not None else {}
+        _recompute_credit_status(inv_id, db, **kwargs)
 
     db.commit()
     db.refresh(cn)

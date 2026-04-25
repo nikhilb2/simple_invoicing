@@ -135,6 +135,18 @@ export type CompanyProfile = {
   ifsc_code: string | null;
 };
 
+export type CompanyListItem = {
+  id: number;
+  name: string;
+  gst: string;
+  currency_code: string | null;
+  is_active: boolean;
+};
+
+export type CompanySelectOut = {
+  active_company_id: number;
+};
+
 export type CompanyProfileUpdate = {
   name: string;
   address: string;
@@ -505,6 +517,7 @@ export type UserProfile = {
   email: string;
   full_name: string;
   role: 'admin' | 'manager' | 'staff';
+  active_company_id: number | null;
 };
 
 export type ChangePasswordRequest = {
