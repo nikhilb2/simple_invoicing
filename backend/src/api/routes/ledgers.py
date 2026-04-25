@@ -1,7 +1,8 @@
+import csv
 from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
 from html import escape
-from io import BytesIO
+from io import BytesIO, StringIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -36,6 +37,13 @@ class LedgerStatementData:
     period_credit: float
     closing_balance: float
     entries: list[LedgerStatementEntry]
+
+
+@dataclass
+class DayBookData:
+  total_debit: float
+  total_credit: float
+  entries: list[DayBookEntry]
 
 
 def _make_aware(dt: datetime) -> datetime:
@@ -147,6 +155,97 @@ def _payment_debit_credit(payment: Payment) -> tuple[float, float]:
       return amount, 0.0
     return 0.0, abs(amount)
   return 0.0, 0.0
+
+
+def _build_day_book_data(
+    db: Session,
+    from_date: date,
+    to_date: date,
+    company_id: int | None = None,
+  ) -> DayBookData:
+    period_start = datetime.combine(from_date, time.min)
+    period_end = datetime.combine(to_date, time.max)
+
+    invoices = (
+      _active_invoices_query(db, company_id=company_id)
+      .filter(Invoice.invoice_date >= period_start)
+      .filter(Invoice.invoice_date <= period_end)
+      .order_by(Invoice.invoice_date.asc(), Invoice.id.asc())
+      .all()
+    )
+
+    payments = (
+      _active_payments_query(db, company_id=company_id)
+      .options(joinedload(Payment.account))
+      .filter(Payment.date >= period_start)
+      .filter(Payment.date <= period_end)
+      .order_by(Payment.date.asc(), Payment.id.asc())
+      .all()
+    )
+
+    credit_note_summary = get_credit_note_ledger_summary(
+      db,
+      company_id=company_id,
+      created_from=period_start,
+      created_to=period_end,
+    )
+
+    ledgers_by_id: dict[int, Ledger] = {}
+    ledger_ids = {payment.ledger_id for payment in payments if payment.ledger_id is not None}
+    if ledger_ids:
+      ledger_query = db.query(Ledger).filter(Ledger.id.in_(ledger_ids))
+      if company_id is not None:
+        ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+      ledgers_by_id = {ledger.id: ledger for ledger in ledger_query.all()}
+
+    entries: list[DayBookEntry] = []
+    for invoice in invoices:
+      entries.append(DayBookEntry(
+        entry_id=invoice.id,
+        entry_type="invoice",
+        date=invoice.invoice_date,
+        voucher_type=invoice.voucher_type.title(),
+        reference_number=invoice.invoice_number,
+        ledger_name=invoice.ledger_name or "Unknown ledger",
+        particulars=f"{invoice.voucher_type.title()} Invoice #{invoice.id}",
+        debit=float(invoice.total_amount) if invoice.voucher_type == "sales" else 0.0,
+        credit=float(invoice.total_amount) if invoice.voucher_type == "purchase" else 0.0,
+      ))
+    for payment in payments:
+      debit, credit = _payment_debit_credit(payment)
+      payment_ledger = ledgers_by_id.get(payment.ledger_id) if payment.ledger_id is not None else None
+      entries.append(DayBookEntry(
+        entry_id=payment.id,
+        entry_type="payment",
+        date=payment.date,
+        voucher_type=_format_voucher_label(payment.voucher_type),
+        reference_number=payment.payment_number,
+        ledger_name=payment_ledger.name if payment_ledger else "Unknown ledger",
+        particulars=f"{_format_voucher_label(payment.voucher_type)} #{payment.id}" + (f" ({payment.mode})" if payment.mode else ""),
+        debit=debit,
+        credit=credit,
+        account_display_name=payment.account.display_name if payment.account else None,
+        account_type=payment.account.account_type if payment.account else None,
+      ))
+    for credit_note_entry in credit_note_summary.entries:
+      entries.append(DayBookEntry(
+        entry_id=credit_note_entry.entry_id,
+        entry_type="credit_note",
+        date=credit_note_entry.date,
+        voucher_type=credit_note_entry.voucher_type,
+        reference_number=credit_note_entry.credit_note_number,
+        ledger_name=credit_note_entry.ledger_name,
+        particulars=credit_note_entry.particulars,
+        debit=credit_note_entry.debit,
+        credit=credit_note_entry.credit,
+      ))
+    entries.sort(key=lambda entry: _make_aware(entry.date))
+
+    return DayBookData(
+      total_debit=sum(entry.debit for entry in entries),
+      total_credit=sum(entry.credit for entry in entries),
+      entries=entries,
+    )
 
 
 def _build_ledger_statement_data(
@@ -434,86 +533,111 @@ def get_day_book(
     if from_date > to_date:
         raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
 
-    period_start = datetime.combine(from_date, time.min)
-    period_end = datetime.combine(to_date, time.max)
-
-    invoices = (
-        _active_invoices_query(db, company_id=company_id)
-        .filter(Invoice.invoice_date >= period_start)
-        .filter(Invoice.invoice_date <= period_end)
-        .order_by(Invoice.invoice_date.asc(), Invoice.id.asc())
-        .all()
+    day_book_data = _build_day_book_data(
+      db,
+      from_date=from_date,
+      to_date=to_date,
+      company_id=company_id,
     )
-
-    payments = (
-        _active_payments_query(db, company_id=company_id)
-        .filter(Payment.date >= period_start)
-        .filter(Payment.date <= period_end)
-        .order_by(Payment.date.asc(), Payment.id.asc())
-        .all()
-    )
-
-    credit_note_summary = get_credit_note_ledger_summary(
-        db,
-        company_id=company_id,
-        created_from=period_start,
-        created_to=period_end,
-    )
-
-    entries = []
-    for invoice in invoices:
-        entries.append(DayBookEntry(
-            entry_id=invoice.id,
-            entry_type="invoice",
-            date=invoice.invoice_date,
-            voucher_type=invoice.voucher_type.title(),
-            reference_number=invoice.invoice_number,
-            ledger_name=invoice.ledger_name or "Unknown ledger",
-            particulars=f"{invoice.voucher_type.title()} Invoice #{invoice.id}",
-            debit=float(invoice.total_amount) if invoice.voucher_type == "sales" else 0.0,
-            credit=float(invoice.total_amount) if invoice.voucher_type == "purchase" else 0.0,
-        ))
-    for payment in payments:
-        ledger_query = db.query(Ledger).filter(Ledger.id == payment.ledger_id)
-        if company_id is not None:
-            ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
-        ledger = ledger_query.first()
-        debit, credit = _payment_debit_credit(payment)
-        entries.append(DayBookEntry(
-            entry_id=payment.id,
-            entry_type="payment",
-            date=payment.date,
-            voucher_type=_format_voucher_label(payment.voucher_type),
-            reference_number=payment.payment_number,
-            ledger_name=ledger.name if ledger else "Unknown ledger",
-            particulars=f"{_format_voucher_label(payment.voucher_type)} #{payment.id}" + (f" ({payment.mode})" if payment.mode else ""),
-            debit=debit,
-            credit=credit,
-            account_display_name=payment.account.display_name if payment.account else None,
-            account_type=payment.account.account_type if payment.account else None,
-        ))
-    for credit_note_entry in credit_note_summary.entries:
-        entries.append(DayBookEntry(
-            entry_id=credit_note_entry.entry_id,
-            entry_type="credit_note",
-            date=credit_note_entry.date,
-            voucher_type=credit_note_entry.voucher_type,
-            reference_number=credit_note_entry.credit_note_number,
-            ledger_name=credit_note_entry.ledger_name,
-            particulars=credit_note_entry.particulars,
-            debit=credit_note_entry.debit,
-            credit=credit_note_entry.credit,
-        ))
-    entries.sort(key=lambda e: _make_aware(e.date))
 
     return DayBookOut(
         from_date=from_date,
         to_date=to_date,
-        total_debit=sum(entry.debit for entry in entries),
-        total_credit=sum(entry.credit for entry in entries),
-        entries=entries,
+      total_debit=day_book_data.total_debit,
+      total_credit=day_book_data.total_credit,
+      entries=day_book_data.entries,
         fy_label=fy_label,
         financial_year_id=financial_year_id,
+    )
+
+
+@router.get("/day-book/pdf")
+def download_day_book_pdf(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+  ):
+    company_id = getattr(active_company, "id", None)
+    if from_date > to_date:
+      raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
+
+    company = active_company if company_id is not None else db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    currency = company.currency_code if company and company.currency_code else "INR"
+
+    day_book_data = _build_day_book_data(
+      db,
+      from_date=from_date,
+      to_date=to_date,
+      company_id=company_id,
+    )
+
+    html = _build_day_book_html(
+      company=company,
+      from_date=from_date,
+      to_date=to_date,
+      entries=day_book_data.entries,
+      total_debit=day_book_data.total_debit,
+      total_credit=day_book_data.total_credit,
+      currency=currency,
+    )
+
+    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+    buf = BytesIO(pdf_bytes)
+    filename = f"day_book_{from_date}_{to_date}.pdf"
+
+    return StreamingResponse(
+      buf,
+      media_type="application/pdf",
+      headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/day-book/csv")
+def download_day_book_csv(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+  ):
+    company_id = getattr(active_company, "id", None)
+    if from_date > to_date:
+      raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
+
+    day_book_data = _build_day_book_data(
+      db,
+      from_date=from_date,
+      to_date=to_date,
+      company_id=company_id,
+    )
+
+    csv_buffer = StringIO(newline="")
+    writer = csv.writer(csv_buffer)
+    writer.writerow(["Date", "Voucher Type", "Reference", "Ledger", "Particulars", "Debit", "Credit"])
+
+    for entry in day_book_data.entries:
+      writer.writerow([
+        entry.date.date().isoformat(),
+        entry.voucher_type,
+        entry.reference_number or "",
+        entry.ledger_name,
+        entry.particulars,
+        f"{entry.debit:.2f}" if entry.debit > 0 else "",
+        f"{entry.credit:.2f}" if entry.credit > 0 else "",
+      ])
+
+    writer.writerow([])
+    writer.writerow(["", "", "", "", "Totals", f"{day_book_data.total_debit:.2f}", f"{day_book_data.total_credit:.2f}"])
+
+    csv_bytes = csv_buffer.getvalue().encode("utf-8-sig")
+    filename = f"day_book_{from_date}_{to_date}.csv"
+
+    return StreamingResponse(
+      BytesIO(csv_bytes),
+      media_type="text/csv; charset=utf-8",
+      headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -955,6 +1079,261 @@ def _fmt_inr(value: float, currency: str = "INR") -> str:
             return f"{value:,.2f} {currency}"
     except Exception:
         return f"{value:,.2f}"
+
+
+def _build_day_book_html(
+    company: CompanyProfile | None,
+    from_date: date,
+    to_date: date,
+    entries: list[DayBookEntry],
+    total_debit: float,
+    total_credit: float,
+    currency: str = "INR",
+) -> str:
+    entry_rows = ""
+    for entry in entries:
+        entry_date = entry.date.strftime("%d %b %Y") if entry.date else "N/A"
+        dr = _fmt_inr(entry.debit, currency) if entry.debit > 0 else ""
+        cr = _fmt_inr(entry.credit, currency) if entry.credit > 0 else ""
+        reference = _e(entry.reference_number) if entry.reference_number else f"{_e(entry.voucher_type)} #{entry.entry_id}"
+        entry_rows += f"""
+        <tr>
+          <td>{_e(entry_date)}</td>
+          <td>{_e(entry.voucher_type)}</td>
+          <td>{reference}</td>
+          <td>{_e(entry.ledger_name)}</td>
+          <td>{_e(entry.particulars)}</td>
+          <td class=\"right\">{dr}</td>
+          <td class=\"right\">{cr}</td>
+        </tr>"""
+
+    company_name = _e(company.name) if company else "Company"
+    company_address = _e(company.address) if company else ""
+    company_gst = f"GST: {_e(company.gst)}" if company and company.gst else ""
+    company_phone = f"Phone: {_e(company.phone_number)}" if company and company.phone_number else ""
+    company_details = " &middot; ".join(p for p in [company_gst, company_phone] if p)
+    logo_url = _e(str(getattr(company, "logo_url", ""))) if company and getattr(company, "logo_url", None) else ""
+    logo_markup = f'<img src="{logo_url}" alt="Company logo" class="company-logo" />' if logo_url else '<div class="logo-slot">Logo</div>'
+
+    closing_balance = total_debit - total_credit
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset=\"utf-8\">
+<style>
+  @page {{
+    size: A4;
+    margin: 15mm 18mm;
+  }}
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{
+    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-size: 10px;
+    color: #1f2937;
+    line-height: 1.45;
+  }}
+  .eyebrow {{
+    font-size: 8px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6b7280;
+    margin-bottom: 2px;
+  }}
+  .sheet {{ width: 100%; }}
+  .sheet__header {{
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding-bottom: 14px;
+    border-bottom: 2px solid #e5e7eb;
+    margin-bottom: 14px;
+  }}
+  .sheet__company {{
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }}
+  .company-logo,
+  .logo-slot {{
+    width: 56px;
+    height: 56px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+    color: #9ca3af;
+    object-fit: contain;
+    background: #f9fafb;
+  }}
+  .sheet__header h3 {{
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 3px;
+  }}
+  .sheet__header p {{
+    font-size: 9px;
+    color: #6b7280;
+    margin-bottom: 1px;
+  }}
+  .sheet__meta {{ text-align: right; }}
+  .sheet__meta h2 {{
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }}
+  .badge {{
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 600;
+    color: #1a56db;
+    background: #eff6ff;
+    margin-bottom: 6px;
+  }}
+  .summary {{
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }}
+  .summary-item {{
+    flex: 1;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 10px 12px;
+    text-align: center;
+  }}
+  .summary-item .label {{
+    font-size: 8px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6b7280;
+    margin-bottom: 2px;
+  }}
+  .summary-item .value {{
+    font-size: 13px;
+    font-weight: 700;
+    color: #1f2937;
+  }}
+  .summary-item.highlight .value {{
+    color: #1a56db;
+    font-size: 15px;
+  }}
+  table {{
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 14px;
+    font-size: 9px;
+  }}
+  thead th {{
+    background: #f3f4f6;
+    color: #374151;
+    font-weight: 600;
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 7px 8px;
+    border-bottom: 2px solid #d1d5db;
+    text-align: left;
+  }}
+  thead th.right {{ text-align: right; }}
+  tbody td {{
+    padding: 6px 8px;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: top;
+  }}
+  tbody td.right {{ text-align: right; }}
+  tbody tr:last-child td {{ border-bottom: 2px solid #d1d5db; }}
+  .footer {{
+    margin-top: 8px;
+    text-align: right;
+  }}
+  .footer .total-label {{
+    font-size: 8px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6b7280;
+    margin-bottom: 2px;
+  }}
+  .footer .total-value {{
+    font-size: 18px;
+    font-weight: 700;
+    color: #1a56db;
+  }}
+  .muted {{ font-size: 8px; color: #9ca3af; }}
+</style>
+</head>
+<body>
+<div class=\"sheet\">
+  <header class=\"sheet__header\">
+    <div class=\"sheet__company\">
+      {logo_markup}
+      <div>
+        <p class=\"eyebrow\">Issued by</p>
+        <h3>{company_name}</h3>
+        <p>{company_address}</p>
+        <p>{company_details}</p>
+      </div>
+    </div>
+    <div class=\"sheet__meta\">
+      <span class=\"badge\">Day Book</span>
+      <h2>{from_date.strftime('%d %b %Y')} &ndash; {to_date.strftime('%d %b %Y')}</h2>
+      <p>{len(entries)} voucher entries</p>
+    </div>
+  </header>
+
+  <section class=\"summary\">
+    <div class=\"summary-item\">
+      <p class=\"label\">Total Debit</p>
+      <p class=\"value\">{_fmt_inr(total_debit, currency)}</p>
+    </div>
+    <div class=\"summary-item\">
+      <p class=\"label\">Total Credit</p>
+      <p class=\"value\">{_fmt_inr(total_credit, currency)}</p>
+    </div>
+    <div class=\"summary-item highlight\">
+      <p class=\"label\">Net Movement</p>
+      <p class=\"value\">{_fmt_inr(closing_balance, currency)}</p>
+    </div>
+  </section>
+
+  <section>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Voucher</th>
+          <th>Reference</th>
+          <th>Ledger</th>
+          <th>Particulars</th>
+          <th class=\"right\">Debit</th>
+          <th class=\"right\">Credit</th>
+        </tr>
+      </thead>
+      <tbody>
+        {entry_rows if entry_rows else '<tr><td colspan="7" style="text-align:center;color:#9ca3af;">No entries in this period</td></tr>'}
+      </tbody>
+    </table>
+  </section>
+
+  <section class=\"footer\">
+    <p class=\"total-label\">Net Movement</p>
+    <p class=\"total-value\">{_fmt_inr(closing_balance, currency)}</p>
+    <p class=\"muted\">Generated on {datetime.utcnow().strftime('%d %b %Y %H:%M UTC')}</p>
+  </section>
+</div>
+</body>
+</html>"""
+    return html
 
 
 def _build_statement_html(
