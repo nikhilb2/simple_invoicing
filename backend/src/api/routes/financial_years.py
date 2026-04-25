@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_active_company, get_current_user
@@ -102,9 +103,21 @@ def create_financial_year(
         is_active=False,
     )
     db.add(fy)
-    db.flush()  # get fy.id before committing
-    _seed_series_for_fy(db, fy.id, active_company.id)
-    db.commit()
+    try:
+        db.flush()  # get fy.id before committing
+        _seed_series_for_fy(db, fy.id, active_company.id)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if "uq_financial_years_label" in str(exc.orig):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Financial year '{payload.label}' already exists in another company under legacy global constraint. "
+                    "Run latest migrations to enable per-company FY labels."
+                ),
+            )
+        raise
     db.refresh(fy)
     return fy
 

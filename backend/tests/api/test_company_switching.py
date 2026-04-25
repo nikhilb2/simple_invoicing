@@ -41,6 +41,14 @@ def _ledger_payload(name: str, gst: str):
     }
 
 
+def _financial_year_payload(label: str, start_date: str, end_date: str):
+    return {
+        "label": label,
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+
+
 def _ensure_admin_user(db: Session) -> User:
     user = db.query(User).filter(User.email == "test@example.com").first()
     if user:
@@ -191,6 +199,37 @@ def test_ledger_same_gst_allowed_across_companies_and_blocked_within_company(cli
             headers=_headers(company_b_id),
         )
         assert duplicate_same_company.status_code == 400
+    finally:
+        _restore_user_override(old_override)
+
+
+def test_financial_year_same_label_allowed_across_companies(client):
+    old_override = _with_persistent_user_override()
+    try:
+        company_a_id = _create_company(client, "FY Scope A")
+        company_b_id = _create_company(client, "FY Scope B")
+
+        create_a = client.post(
+            "/api/financial-years/",
+            json=_financial_year_payload("2026-27", "2026-04-01", "2027-03-31"),
+            headers=_headers(company_a_id),
+        )
+        assert create_a.status_code == 201, create_a.text
+
+        create_b = client.post(
+            "/api/financial-years/",
+            json=_financial_year_payload("2026-27", "2026-04-01", "2027-03-31"),
+            headers=_headers(company_b_id),
+        )
+        assert create_b.status_code == 201, create_b.text
+
+        list_a = client.get("/api/financial-years/", headers=_headers(company_a_id))
+        assert list_a.status_code == 200, list_a.text
+        assert [fy["label"] for fy in list_a.json()] == ["2026-27"]
+
+        list_b = client.get("/api/financial-years/", headers=_headers(company_b_id))
+        assert list_b.status_code == 200, list_b.text
+        assert [fy["label"] for fy in list_b.json()] == ["2026-27"]
     finally:
         _restore_user_override(old_override)
 
