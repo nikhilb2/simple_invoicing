@@ -6,6 +6,7 @@ from io import BytesIO
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import case, func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 import weasyprint
@@ -359,9 +360,18 @@ def create_ledger(
     company_id=company_id,
   )
   db.add(ledger)
-  db.flush()
-  _sync_opening_balance(db, ledger.id, payload.opening_balance, current_user.id, company_id=company_id)
-  db.commit()
+  try:
+    db.flush()
+    _sync_opening_balance(db, ledger.id, payload.opening_balance, current_user.id, company_id=company_id)
+    db.commit()
+  except IntegrityError as exc:
+    db.rollback()
+    if "ix_buyers_gst" in str(exc.orig) or "buyers_gst_key" in str(exc.orig):
+      raise HTTPException(
+        status_code=400,
+        detail="Buyer with this GST already exists. Run latest migrations to enable per-company GST uniqueness.",
+      )
+    raise
   db.refresh(ledger)
   return _serialize_ledger(db, ledger, company_id=company_id)
 
@@ -815,7 +825,16 @@ def update_ledger(
     ledger.ifsc_code = payload.ifsc_code.strip().upper() if payload.ifsc_code else None
     _sync_opening_balance(db, ledger.id, payload.opening_balance, current_user.id, company_id=company_id)
 
-    db.commit()
+    try:
+      db.commit()
+    except IntegrityError as exc:
+      db.rollback()
+      if "ix_buyers_gst" in str(exc.orig) or "buyers_gst_key" in str(exc.orig):
+        raise HTTPException(
+          status_code=400,
+          detail="Buyer with this GST already exists. Run latest migrations to enable per-company GST uniqueness.",
+        )
+      raise
     db.refresh(ledger)
     return _serialize_ledger(db, ledger, company_id=company_id)
 

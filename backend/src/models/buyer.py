@@ -11,7 +11,7 @@ class Buyer(Base):
     company_id = Column(Integer, ForeignKey("company_profiles.id"), nullable=True, index=True)
     name = Column(String, nullable=False, index=True)
     address = Column(String, nullable=False)
-    gst = Column(String, nullable=True, unique=True, index=True)
+    gst = Column(String, nullable=True, index=True)
     phone_number = Column(String, nullable=False)
     email = Column(String, nullable=True)
     website = Column(String, nullable=True)

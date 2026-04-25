@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_active_company, get_current_user, require_roles
@@ -45,7 +46,16 @@ def create_buyer(
         company_id=company_id,
     )
     db.add(buyer)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if "ix_buyers_gst" in str(exc.orig) or "buyers_gst_key" in str(exc.orig):
+            raise HTTPException(
+                status_code=400,
+                detail="Buyer with this GST already exists. Run latest migrations to enable per-company GST uniqueness.",
+            )
+        raise
     db.refresh(buyer)
     return buyer
 
