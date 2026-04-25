@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 from typing import Literal
 
@@ -72,14 +72,18 @@ def list_inventory(
         .subquery()
     )
 
+    quantity_expr = func.coalesce(Inventory.quantity, 0)
     query = (
-        db.query(Inventory, Product, last_sold_subq.c.last_sold_at)
-        .join(Product, Inventory.product_id == Product.id)
-        .outerjoin(last_sold_subq, last_sold_subq.c.product_id == Inventory.product_id)
-        .filter(
-            Inventory.company_id == active_company.id,
-            Product.company_id == active_company.id,
+        db.query(Product, quantity_expr.label("quantity"), last_sold_subq.c.last_sold_at)
+        .outerjoin(
+            Inventory,
+            and_(
+                Inventory.product_id == Product.id,
+                Inventory.company_id == active_company.id,
+            ),
         )
+        .outerjoin(last_sold_subq, last_sold_subq.c.product_id == Product.id)
+        .filter(Product.company_id == active_company.id)
     )
 
     if search.strip():
@@ -91,30 +95,31 @@ def list_inventory(
     if sort_by == "name":
         order_col = Product.name
     elif sort_by == "quantity":
-        order_col = Inventory.quantity
+        order_col = quantity_expr
     elif sort_by == "date_added":
         order_col = Product.created_at
     else:  # last_sold
         order_col = last_sold_subq.c.last_sold_at
+
+    total = query.count()
 
     if sort_order == "desc":
         query = query.order_by(order_col.desc().nulls_last())
     else:
         query = query.order_by(order_col.asc().nulls_last())
 
-    total = query.count()
     rows = query.offset((page - 1) * page_size).limit(page_size).all()
     items = [
         InventoryOut(
-            product_id=inv.product_id,
-            product_name=prod.name,
-            sku=prod.sku,
-            price=float(prod.price),
-            quantity=inv.quantity,
-            date_added=prod.created_at,
+            product_id=product.id,
+            product_name=product.name,
+            sku=product.sku,
+            price=float(product.price),
+            quantity=int(quantity),
+            date_added=product.created_at,
             last_sold_at=last_sold_at,
         )
-        for inv, prod, last_sold_at in rows
+        for product, quantity, last_sold_at in rows
     ]
     return PaginatedInventoryOut(
         items=items,
