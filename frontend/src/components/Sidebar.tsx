@@ -48,6 +48,7 @@ function fyFromStartYear(year: number) {
 }
 
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
+  const showCompanySwitcher = false;
   const { isAdmin, isAuthenticated, userEmail, logout } = useAuth();
   const { activeFY, fyList, switchFY, createFY } = useFY();
 
@@ -100,6 +101,10 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   }, [isOpen, onClose]);
 
   useEffect(() => {
+    if (!showCompanySwitcher) {
+      return;
+    }
+
     if (!isAuthenticated) {
       setCompanyList([]);
       setCompanyError('');
@@ -128,7 +133,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, showCompanySwitcher]);
 
   const handleCompanySwitch = async (companyId: number) => {
     if (companySwitchingId !== null) return;
@@ -255,100 +260,104 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
         {/* FY section — above footer */}
         <div style={{ padding: '12px 10px', borderTop: '1px solid var(--sidebar-border)' }}>
-          <p className="sidebar__group-label" style={{ marginBottom: '6px' }}>Company</p>
-          <div ref={companyDropdownRef} style={{ position: 'relative', marginBottom: '12px' }}>
-            <button
-              className="button button--ghost"
-              style={{ width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-              onClick={() => setCompanyDropdownOpen((v) => !v)}
-              aria-haspopup="listbox"
-              aria-expanded={companyDropdownOpen}
-            >
-              <span>{activeCompany?.name?.trim() || 'Select company'}</span>
-              <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>▾</span>
-            </button>
-            {companyDropdownOpen && (
-              <div
-                role="listbox"
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  right: 0,
-                  top: 'calc(100% + 4px)',
-                  background: 'var(--bg-card-strong)',
-                  border: '1px solid var(--line-strong)',
-                  borderRadius: '0.5rem',
-                  boxShadow: '0 4px 24px rgba(0,0,0,0.45)',
-                  zIndex: 100,
-                  overflow: 'hidden',
-                  color: 'var(--text)',
-                }}
-              >
-                {companyLoading && (
-                  <p style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', opacity: 0.7 }}>Loading companies...</p>
-                )}
-                {!companyLoading && companyList.length === 0 && (
-                  <p style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', opacity: 0.6 }}>No companies found</p>
-                )}
-                {companyList.map((company) => (
-                  <button
-                    key={company.id}
-                    role="option"
-                    aria-selected={company.is_active}
+          {showCompanySwitcher && (
+            <>
+              <p className="sidebar__group-label" style={{ marginBottom: '6px' }}>Company</p>
+              <div ref={companyDropdownRef} style={{ position: 'relative', marginBottom: '12px' }}>
+                <button
+                  className="button button--ghost"
+                  style={{ width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  onClick={() => setCompanyDropdownOpen((v) => !v)}
+                  aria-haspopup="listbox"
+                  aria-expanded={companyDropdownOpen}
+                >
+                  <span>{activeCompany?.name?.trim() || 'Select company'}</span>
+                  <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>▾</span>
+                </button>
+                {companyDropdownOpen && (
+                  <div
+                    role="listbox"
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '0.5rem 0.75rem',
-                      background: 'none',
-                      border: 'none',
-                      cursor: companySwitchingId === null ? 'pointer' : 'wait',
-                      fontWeight: company.is_active ? 700 : 400,
-                      fontSize: '0.875rem',
-                      color: 'inherit',
-                    }}
-                    disabled={companySwitchingId !== null}
-                    onClick={() => {
-                      void handleCompanySwitch(company.id);
-                      setCompanyDropdownOpen(false);
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      top: 'calc(100% + 4px)',
+                      background: 'var(--bg-card-strong)',
+                      border: '1px solid var(--line-strong)',
+                      borderRadius: '0.5rem',
+                      boxShadow: '0 4px 24px rgba(0,0,0,0.45)',
+                      zIndex: 100,
+                      overflow: 'hidden',
+                      color: 'var(--text)',
                     }}
                   >
-                    <span style={{ width: '1rem' }}>{company.is_active ? '✓' : ''}</span>
-                    {company.name || `Company #${company.id}`}
-                  </button>
-                ))}
-                <hr style={{ margin: '0.25rem 0', border: 'none', borderTop: '1px solid var(--line)' }} />
-                <button
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: '0.5rem 0.75rem',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '0.875rem',
-                    color: 'inherit',
-                    fontWeight: 500,
-                  }}
-                  onClick={() => {
-                    setCompanyDropdownOpen(false);
-                    setNewCompanyName('');
-                    setNewCompanyError('');
-                    setNewCompanyModalOpen(true);
-                  }}
-                >
-                  + New Company
-                </button>
+                    {companyLoading && (
+                      <p style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', opacity: 0.7 }}>Loading companies...</p>
+                    )}
+                    {!companyLoading && companyList.length === 0 && (
+                      <p style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', opacity: 0.6 }}>No companies found</p>
+                    )}
+                    {companyList.map((company) => (
+                      <button
+                        key={company.id}
+                        role="option"
+                        aria-selected={company.is_active}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '0.5rem 0.75rem',
+                          background: 'none',
+                          border: 'none',
+                          cursor: companySwitchingId === null ? 'pointer' : 'wait',
+                          fontWeight: company.is_active ? 700 : 400,
+                          fontSize: '0.875rem',
+                          color: 'inherit',
+                        }}
+                        disabled={companySwitchingId !== null}
+                        onClick={() => {
+                          void handleCompanySwitch(company.id);
+                          setCompanyDropdownOpen(false);
+                        }}
+                      >
+                        <span style={{ width: '1rem' }}>{company.is_active ? '✓' : ''}</span>
+                        {company.name || `Company #${company.id}`}
+                      </button>
+                    ))}
+                    <hr style={{ margin: '0.25rem 0', border: 'none', borderTop: '1px solid var(--line)' }} />
+                    <button
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '0.5rem 0.75rem',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '0.875rem',
+                        color: 'inherit',
+                        fontWeight: 500,
+                      }}
+                      onClick={() => {
+                        setCompanyDropdownOpen(false);
+                        setNewCompanyName('');
+                        setNewCompanyError('');
+                        setNewCompanyModalOpen(true);
+                      }}
+                    >
+                      + New Company
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          {companyError && (
-            <p style={{ marginTop: '-6px', marginBottom: '8px', color: 'var(--error, #ef4444)', fontSize: '0.8rem' }}>
-              {companyError}
-            </p>
+              {companyError && (
+                <p style={{ marginTop: '-6px', marginBottom: '8px', color: 'var(--error, #ef4444)', fontSize: '0.8rem' }}>
+                  {companyError}
+                </p>
+              )}
+            </>
           )}
 
           <p className="sidebar__group-label" style={{ marginBottom: '6px' }}>Financial Year</p>
@@ -457,7 +466,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
       {/* New FY Modal */}
       <AnimatePresence>
-        {newCompanyModalOpen && (
+        {showCompanySwitcher && newCompanyModalOpen && (
           <motion.div
             className="modal-overlay"
             initial={{ opacity: 0 }}
