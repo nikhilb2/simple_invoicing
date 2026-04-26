@@ -62,6 +62,12 @@ export default function InventoryPage() {
   }
 
   async function applyAdjustment(productId: number) {
+    const row = rows.find((entry) => entry.product_id === productId);
+    if (row && !row.maintain_inventory) {
+      setError(`Inventory is disabled for ${row.product_name}. Enable Maintain inventory on the product first.`);
+      return;
+    }
+
     const delta = Number(adjusting[productId] ?? '0');
     if (delta === 0) return;
 
@@ -151,7 +157,9 @@ export default function InventoryPage() {
                     {/* Product info */}
                     <div className="table-row__meta" style={{ flex: '1 1 180px' }}>
                       <strong>{row.product_name}</strong>
-                      <span className="table-subtext">{row.sku}</span>
+                      <span className="table-subtext">
+                        {row.sku} • {row.maintain_inventory ? 'Tracked' : 'Untracked'}
+                      </span>
                     </div>
 
                     {/* Qty pill */}
@@ -181,13 +189,13 @@ export default function InventoryPage() {
                         onKeyDown={(e) => { if (e.key === 'Enter') void applyAdjustment(row.product_id); }}
                         style={{ width: 88 }}
                         aria-label={`Adjust quantity for ${row.product_name}`}
-                        disabled={submittingId === row.product_id}
+                        disabled={submittingId === row.product_id || !row.maintain_inventory}
                       />
                       <button
                         type="button"
                         className="button button--secondary"
                         onClick={() => void applyAdjustment(row.product_id)}
-                        disabled={submittingId === row.product_id || !adjusting[row.product_id]}
+                        disabled={submittingId === row.product_id || !adjusting[row.product_id] || !row.maintain_inventory}
                         title={`Apply adjustment for ${row.product_name}`}
                         aria-label={`Apply adjustment for ${row.product_name}`}
                         style={{ whiteSpace: 'nowrap' }}

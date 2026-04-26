@@ -29,6 +29,7 @@ export default function ProductsPage() {
     hsn_sac: '',
     price: '',
     gst_rate: '0',
+    maintain_inventory: true,
     initial_quantity: '0',
   });
 
@@ -60,7 +61,7 @@ export default function ProductsPage() {
   }, [page, search]);
 
   function resetForm() {
-    setForm({ sku: '', name: '', description: '', hsn_sac: '', price: '', gst_rate: '0', initial_quantity: '0' });
+    setForm({ sku: '', name: '', description: '', hsn_sac: '', price: '', gst_rate: '0', maintain_inventory: true, initial_quantity: '0' });
     setEditingProductId(null);
   }
 
@@ -75,6 +76,7 @@ export default function ProductsPage() {
       hsn_sac: product.hsn_sac ?? '',
       price: String(product.price),
       gst_rate: String(product.gst_rate),
+      maintain_inventory: product.maintain_inventory,
       initial_quantity: '0',
     });
   }
@@ -94,6 +96,7 @@ export default function ProductsPage() {
         hsn_sac: form.hsn_sac.trim(),
         price: Number(form.price),
         gst_rate: Number(form.gst_rate),
+        maintain_inventory: form.maintain_inventory,
         ...(editingProductId ? {} : { initial_quantity: Number(form.initial_quantity) }),
       };
 
@@ -243,7 +246,21 @@ export default function ProductsPage() {
                   placeholder="Optional details for operators and quoting."
                 />
               </div>
-              {!editingProductId ? (
+              <div className="field field--full" style={{ marginBottom: 0 }}>
+                <label htmlFor="maintain-inventory" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 0 }}>
+                  <input
+                    id="maintain-inventory"
+                    type="checkbox"
+                    checked={form.maintain_inventory}
+                    onChange={(event) => setForm((current) => ({ ...current, maintain_inventory: event.target.checked }))}
+                  />
+                  Maintain inventory for this product
+                </label>
+                <span className="field-hint">
+                  Turn this off for service-style items such as service charges.
+                </span>
+              </div>
+              {!editingProductId && form.maintain_inventory ? (
                 <div className="field">
                   <label htmlFor="initial-quantity">Initial stock quantity</label>
                   <input
@@ -322,6 +339,7 @@ export default function ProductsPage() {
                       <strong>{product.name}</strong>
                       <span className="table-subtext">
                         {product.sku}
+                        {product.maintain_inventory ? ' • Tracked' : ' • Untracked'}
                         {product.hsn_sac ? ` • HSN/SAC ${product.hsn_sac}` : ''}
                         {` • GST ${product.gst_rate}%`}
                         {product.description ? ` • ${product.description}` : ''}

@@ -13,6 +13,7 @@ class InventoryOut(BaseModel):
     product_name: str
     sku: str
     price: float
+    maintain_inventory: bool
     quantity: int
     date_added: Optional[datetime] = None
     last_sold_at: Optional[datetime] = None

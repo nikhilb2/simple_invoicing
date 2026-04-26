@@ -99,7 +99,7 @@ export default function InvoicesPage() {
     ifsc_code: '',
   });
   const [ledgerOpeningBalanceSide, setLedgerOpeningBalanceSide] = useState<OpeningBalanceSide>('debit');
-  const [productForm, setProductForm] = useState({ name: '', sku: '', hsn_sac: '', price: '', gst_rate: '0' });
+  const [productForm, setProductForm] = useState({ name: '', sku: '', hsn_sac: '', price: '', gst_rate: '0', maintain_inventory: true });
   const [stockForm, setStockForm] = useState({ productId: '', adjustment: '' });
   const [ledgerSubmitting, setLedgerSubmitting] = useState(false);
   const [productSubmitting, setProductSubmitting] = useState(false);
@@ -558,11 +558,12 @@ export default function InvoicesPage() {
         hsn_sac: productForm.hsn_sac.trim(),
         price: Number(productForm.price),
         gst_rate: Number(productForm.gst_rate),
+        maintain_inventory: productForm.maintain_inventory,
       };
 
       const response = await api.post<Product>('/products/', payload);
       setProducts((current) => [...current, response.data].sort((a, b) => a.name.localeCompare(b.name)));
-      setProductForm({ name: '', sku: '', hsn_sac: '', price: '', gst_rate: '0' });
+      setProductForm({ name: '', sku: '', hsn_sac: '', price: '', gst_rate: '0', maintain_inventory: true });
       setShowProductModal(false);
       setSuccess('Product created successfully.');
     } catch (err) {
@@ -583,6 +584,12 @@ export default function InvoicesPage() {
         product_id: Number(stockForm.productId),
         quantity: Number(stockForm.adjustment),
       };
+
+      const selectedProduct = products.find((product) => product.id === payload.product_id);
+      if (selectedProduct && !selectedProduct.maintain_inventory) {
+        setError(`Inventory is disabled for ${selectedProduct.name}. Enable Maintain inventory on the product first.`);
+        return;
+      }
 
       await api.post('/inventory/adjust', payload);
       setStockForm({ productId: '', adjustment: '' });
@@ -1262,6 +1269,18 @@ export default function InvoicesPage() {
                   required
                 />
               </div>
+              <div className="field field--full" style={{ marginBottom: 0 }}>
+                <label htmlFor="modal-product-maintain-inventory" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 0 }}>
+                  <input
+                    id="modal-product-maintain-inventory"
+                    type="checkbox"
+                    checked={productForm.maintain_inventory}
+                    onChange={(event) => setProductForm((current) => ({ ...current, maintain_inventory: event.target.checked }))}
+                  />
+                  Maintain inventory for this product
+                </label>
+                <small className="field-hint">Disable this for service charges and other non-stock items.</small>
+              </div>
 
               <div className="button-row">
                 <button type="button" className="button button--ghost" onClick={() => setShowProductModal(false)} title="Cancel product creation" aria-label="Cancel product creation">
@@ -1287,6 +1306,13 @@ export default function InvoicesPage() {
             </div>
 
             <form className="stack" onSubmit={handleUpdateStock}>
+              {stockForm.productId ? (
+                <div className="field-hint">
+                  {products.find((product) => product.id === Number(stockForm.productId))?.maintain_inventory
+                    ? 'Inventory tracking is enabled for this product.'
+                    : 'Inventory is disabled for this product. Enable Maintain inventory on the product before adjusting stock.'}
+                </div>
+              ) : null}
               <div className="field">
                 <label htmlFor="modal-stock-product">Product</label>
                 <ProductCombobox
@@ -1318,7 +1344,17 @@ export default function InvoicesPage() {
                 <button type="button" className="button button--ghost" onClick={() => setShowStockModal(false)} title="Cancel stock update" aria-label="Cancel stock update">
                   Cancel
                 </button>
-                <button className="button button--primary" disabled={stockSubmitting} title="Update stock" aria-label="Update stock">
+                <button
+                  className="button button--primary"
+                  disabled={
+                    stockSubmitting ||
+                    (stockForm.productId
+                      ? !products.find((product) => product.id === Number(stockForm.productId))?.maintain_inventory
+                      : false)
+                  }
+                  title="Update stock"
+                  aria-label="Update stock"
+                >
                   {stockSubmitting ? 'Updating stock...' : 'Update stock'}
                 </button>
               </div>
