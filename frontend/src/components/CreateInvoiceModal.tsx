@@ -27,8 +27,8 @@ type CreateInvoiceModalProps = {
   /** Pre-selected voucher type */
   preselectedVoucherType?: 'sales' | 'purchase';
   onClose: () => void;
-  /** Called after a successful invoice creation with a success message and optional FY warning */
-  onCreated: (message: string, warningMessage?: string) => void;
+  /** Called after a successful invoice creation with message, optional FY warning, and created invoice */
+  onCreated: (message: string, warningMessage: string | undefined, invoice: Invoice) => void;
   onError: (message: string) => void;
 };
 
@@ -158,7 +158,7 @@ export default function CreateInvoiceModal({
         res.data.warnings?.includes('invoice_date_outside_fy') && activeFY
           ? `⚠️ This date is outside the active financial year (${activeFY.label}). The invoice was still created.`
           : undefined;
-      onCreated(msg, warningMsg);
+      onCreated(msg, warningMsg, res.data);
     } catch (err) {
       onError(getApiErrorMessage(err, 'Unable to create invoice'));
     } finally {

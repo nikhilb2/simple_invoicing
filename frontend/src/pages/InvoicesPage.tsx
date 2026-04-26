@@ -400,6 +400,7 @@ export default function InvoicesPage() {
             ? ` ⚠️ Date is outside the active financial year (${activeFY.label}).`
             : '';
         setSuccess(baseMsg + warningNote);
+        setPreviewInvoice(res.data);
       }
 
       resetInvoiceForm();

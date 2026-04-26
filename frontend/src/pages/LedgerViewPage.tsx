@@ -992,11 +992,12 @@ export default function LedgerViewPage() {
         <CreateInvoiceModal
           preselectedLedgerId={ledgerId}
           onClose={() => setShowInvoiceModal(false)}
-          onCreated={(_msg, warningMsg) => {
+          onCreated={(msg, warningMsg, createdInvoice) => {
             setShowInvoiceModal(false);
+            setPreviewInvoice(createdInvoice);
             setRefreshKey((k) => k + 1);
             setError('');
-            if (warningMsg) setSuccess(warningMsg);
+            setSuccess(warningMsg ?? msg);
           }}
           onError={(msg) => setError(msg)}
         />
