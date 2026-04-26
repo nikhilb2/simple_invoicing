@@ -136,6 +136,15 @@ def _assign_item_tax_split(
 
 def _reverse_existing_invoice_inventory(db: Session, invoice: Invoice) -> None:
     for item in invoice.items:
+        product_query = db.query(Product).filter(Product.id == item.product_id)
+        if invoice.company_id is not None:
+            product_query = product_query.filter(or_(Product.company_id == invoice.company_id, Product.company_id.is_(None)))
+        product = product_query.first()
+        if not product:
+            raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
+        if not product.maintain_inventory:
+            continue
+
         reverse_delta = item.quantity if invoice.voucher_type == "sales" else -item.quantity
         _change_inventory_quantity(
             db,
@@ -182,6 +191,8 @@ def _apply_inventory_delta_for_invoice_update(
         product = product_query.first()
         if not product:
             raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
+        if not product.maintain_inventory:
+          continue
 
         _change_inventory_quantity(
             db,
@@ -266,7 +277,7 @@ def _apply_payload_to_invoice(
         if not product:
             raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
 
-        if apply_inventory_changes:
+        if apply_inventory_changes and product.maintain_inventory:
             inventory_query = db.query(Inventory).filter(Inventory.product_id == item.product_id)
             if company_id is not None:
                 inventory_query = inventory_query.filter(or_(Inventory.company_id == company_id, Inventory.company_id.is_(None)))
@@ -1626,12 +1637,20 @@ def restore_invoice(
     try:
         # Re-apply inventory changes (reverse the reversal)
         for item in invoice.items:
+            product_query = db.query(Product).filter(Product.id == item.product_id)
+            product_query = product_query.filter(or_(Product.company_id == active_company.id, Product.company_id.is_(None)))
+            product = product_query.first()
+            if not product:
+                raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
+            if not product.maintain_inventory:
+                continue
+
             restore_delta = -item.quantity if invoice.voucher_type == "sales" else item.quantity
             _change_inventory_quantity(
                 db,
                 item.product_id,
                 restore_delta,
-              company_id=active_company.id,
+                company_id=active_company.id,
                 context=f"restoring invoice {invoice.id}",
             )
         invoice.status = "active"

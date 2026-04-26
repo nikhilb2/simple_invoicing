@@ -10,6 +10,7 @@ from src.models.buyer import Buyer as Ledger
 from src.models.credit_note import CreditNote, CreditNoteInvoiceRef, CreditNoteItem
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
+from src.models.product import Product
 from src.schemas.credit_note import CreditNoteCreate
 from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.series import generate_next_number
@@ -289,6 +290,15 @@ def create_credit_note(
 
     if payload.credit_note_type == "return":
         for item_data in built_items:
+            product_query = db.query(Product).filter(Product.id == item_data["product_id"])
+            if company_id is not None:
+                product_query = product_query.filter(or_(Product.company_id == company_id, Product.company_id.is_(None)))
+            product = product_query.first()
+            if not product:
+                raise HTTPException(status_code=404, detail=f"Product {item_data['product_id']} not found")
+            if not getattr(product, "maintain_inventory", True):
+                continue
+
             kwargs = {"company_id": company_id} if company_id is not None else {}
             _change_inventory_quantity(
                 db,
@@ -329,6 +339,15 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
     if cn.credit_note_type == "return":
         for item in cn.items:
             if item.product_id and item.quantity:
+                product_query = db.query(Product).filter(Product.id == item.product_id)
+                if company_id is not None:
+                    product_query = product_query.filter(or_(Product.company_id == company_id, Product.company_id.is_(None)))
+                product = product_query.first()
+                if not product:
+                    raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
+                if not getattr(product, "maintain_inventory", True):
+                    continue
+
                 kwargs = {"company_id": company_id} if company_id is not None else {}
                 _change_inventory_quantity(
                     db,

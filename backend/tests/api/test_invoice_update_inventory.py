@@ -24,16 +24,17 @@ def _create_ledger(client, name: str, gst: str):
     return response.json()["id"]
 
 
-def _create_product(client):
+def _create_product(client, *, sku: str = "UPD-INV-001", maintain_inventory: bool = True):
     response = client.post(
         "/api/products/",
         json={
-            "sku": "UPD-INV-001",
+            "sku": sku,
             "name": "Inventory Update Product",
             "description": "",
             "hsn_sac": "9988",
             "price": 100,
             "gst_rate": 18,
+            "maintain_inventory": maintain_inventory,
         },
     )
     assert response.status_code == 200, response.text
@@ -102,3 +103,53 @@ def test_update_purchase_invoice_succeeds_when_current_inventory_is_zero(client,
         updated_inventory = db_session.query(Inventory).filter(Inventory.product_id == product_id).first()
         assert updated_inventory is not None
         assert updated_inventory.quantity == 2
+
+
+def test_sales_invoice_allows_untracked_product_without_inventory(client, db_session):
+    with patch("src.api.routes.invoices._generate_next_number", return_value="SAL-UNTRACKED-001"):
+        sales_ledger_id = _create_ledger(client, name="Sales Ledger Untracked", gst="27ABCDE9999F1Z5")
+        product_id = _create_product(client, sku="UPD-INV-UNTRACK-1", maintain_inventory=False)
+
+        create_response = client.post(
+            "/api/invoices/",
+            json={
+                "ledger_id": sales_ledger_id,
+                "voucher_type": "sales",
+                "tax_inclusive": False,
+                "apply_round_off": False,
+                "items": [{"product_id": product_id, "quantity": 5, "unit_price": 100}],
+            },
+        )
+
+        assert create_response.status_code == 200, create_response.text
+        inventory = db_session.query(Inventory).filter(Inventory.product_id == product_id).first()
+        assert inventory is None
+
+
+def test_update_sales_invoice_with_untracked_product_does_not_create_inventory(client, db_session):
+    with patch("src.api.routes.invoices._generate_next_number", return_value="SAL-UNTRACKED-002"):
+        sales_ledger_id = _create_ledger(client, name="Sales Ledger Update", gst="27ABCDE8888F1Z5")
+        product_id = _create_product(client, sku="UPD-INV-UNTRACK-2", maintain_inventory=False)
+
+        invoice = _create_invoice(
+            client,
+            ledger_id=sales_ledger_id,
+            voucher_type="sales",
+            product_id=product_id,
+            quantity=1,
+        )
+
+        update_response = client.put(
+            f"/api/invoices/{invoice['id']}",
+            json={
+                "ledger_id": sales_ledger_id,
+                "voucher_type": "sales",
+                "tax_inclusive": False,
+                "apply_round_off": False,
+                "items": [{"product_id": product_id, "quantity": 3, "unit_price": 100}],
+            },
+        )
+
+        assert update_response.status_code == 200, update_response.text
+        inventory = db_session.query(Inventory).filter(Inventory.product_id == product_id).first()
+        assert inventory is None
