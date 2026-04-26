@@ -12,6 +12,7 @@ export type Product = {
   hsn_sac: string | null;
   price: number;
   gst_rate: number;
+  maintain_inventory: boolean;
   created_at: string | null;
 };
 
@@ -22,6 +23,7 @@ export type ProductCreate = {
   hsn_sac: string;
   price: number;
   gst_rate: number;
+  maintain_inventory: boolean;
   initial_quantity?: number;
 };
 
@@ -30,6 +32,7 @@ export type InventoryRow = {
   product_name: string;
   sku: string;
   price: number;
+  maintain_inventory: boolean;
   quantity: number;
   date_added: string | null;
   last_sold_at: string | null;
