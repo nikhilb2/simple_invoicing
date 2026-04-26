@@ -282,6 +282,22 @@ test.describe('Invoices', () => {
     await expect(page.locator('#invoice-supplier-ref')).not.toBeVisible();
   });
 
+  test('reference notes field is visible for sales invoices', async ({ authedPage: page }) => {
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    await page.selectOption('#invoice-voucher-type', 'sales');
+    await expect(page.locator('#invoice-reference-notes')).toBeVisible();
+  });
+
+  test('reference notes field is hidden for purchase invoices', async ({ authedPage: page }) => {
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    await page.selectOption('#invoice-voucher-type', 'purchase');
+    await expect(page.locator('#invoice-reference-notes')).not.toBeVisible();
+  });
+
   test('supplier invoice # field is visible for purchase invoices', async ({ authedPage: page }) => {
     await page.click('[href="/invoices"]');
     await page.waitForTimeout(500);
@@ -356,6 +372,29 @@ test.describe('Invoices', () => {
 
     // Supplier ref field should be populated
     await expect(page.locator('#invoice-supplier-ref')).toHaveValue(supplierRef);
+  });
+
+  test('edit preserves reference notes for sales invoice', async ({ authedPage: page }) => {
+    const { sku, ledgerName } = await seedInvoiceData(page);
+    const referenceNotes = `PO-${Date.now().toString(36).toUpperCase()}`;
+
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    await page.selectOption('#invoice-voucher-type', 'sales');
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
+    const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId, sku);
+    await page.locator('[id^="invoice-quantity-"]').first().fill('2');
+    await page.fill('#invoice-reference-notes', referenceNotes);
+    await page.click('button:has-text("Create invoice")');
+    await expectSuccess(page, 'Sales invoice created');
+
+    await openInvoiceFeed(page);
+    const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
+    await invoiceCard.locator('button[title="Edit"]').click();
+
+    await expect(page.locator('#invoice-reference-notes')).toHaveValue(referenceNotes);
   });
 
   test('tax-inclusive checkbox is unchecked by default', async ({ authedPage: page }) => {
