@@ -17,6 +17,7 @@ class InvoiceCreate(BaseModel):
     invoice_date: Optional[date] = None
     due_date: Optional[date] = None
     supplier_invoice_number: str | None = None
+    reference_notes: str | None = None
     tax_inclusive: bool = False
     apply_round_off: bool = False
     items: List[InvoiceItemCreate]
@@ -63,6 +64,7 @@ class InvoiceOut(BaseModel):
     company_ifsc_code: str | None = None
     voucher_type: str
     supplier_invoice_number: str | None = None
+    reference_notes: str | None = None
     status: str = "active"
     credit_status: str = "not_credited"
     ledger: LedgerOut | None = None

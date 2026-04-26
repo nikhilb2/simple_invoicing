@@ -62,6 +62,7 @@ export default function InvoicesPage() {
   const [taxInclusive, setTaxInclusive] = useState(false);
   const [applyRoundOff, setApplyRoundOff] = useState(false);
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
+  const [referenceNotes, setReferenceNotes] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
   const [paymentReference, setPaymentReference] = useState('');
   const [selectedPaymentAccountId, setSelectedPaymentAccountId] = useState('');
@@ -273,6 +274,7 @@ export default function InvoicesPage() {
   function resetInvoiceForm() {
     setEditingInvoiceId(null);
     setSupplierInvoiceNumber('');
+    setReferenceNotes('');
     setTaxInclusive(false);
     setApplyRoundOff(false);
     setPaymentMode('cash');
@@ -304,6 +306,7 @@ export default function InvoicesPage() {
     setEditingInvoiceId(invoice.id);
     setVoucherType(invoice.voucher_type);
     setSupplierInvoiceNumber(invoice.supplier_invoice_number ?? '');
+    setReferenceNotes(invoice.voucher_type === 'sales' ? (invoice.reference_notes ?? '') : '');
     setTaxInclusive(invoice.tax_inclusive ?? false);
     setApplyRoundOff(invoice.apply_round_off ?? false);
     setSelectedLedgerId(String(invoice.ledger_id));
@@ -369,6 +372,7 @@ export default function InvoicesPage() {
         invoice_date: invoiceDate,
         due_date: resolvedDueDate ?? invoiceDate,
         supplier_invoice_number: voucherType === 'purchase' ? (supplierInvoiceNumber.trim() || null) : null,
+        reference_notes: voucherType === 'sales' ? (referenceNotes.trim() || null) : null,
         tax_inclusive: taxInclusive,
         apply_round_off: applyRoundOff,
         items: items.map((item) => ({
@@ -760,6 +764,23 @@ export default function InvoicesPage() {
                     onChange={(event) => setSupplierInvoiceNumber(event.target.value)}
                     placeholder="Supplier's invoice number"
                   />
+                </div>
+              ) : null}
+
+              {voucherType === 'sales' ? (
+                <div className="field">
+                  <label htmlFor="invoice-reference-notes">Reference Notes</label>
+                  <input
+                    id="invoice-reference-notes"
+                    className="input"
+                    type="text"
+                    value={referenceNotes}
+                    onChange={(event) => setReferenceNotes(event.target.value)}
+                    placeholder="PO number or customer reference"
+                  />
+                  <p className="muted-text" style={{ marginBottom: 0 }}>
+                    Optional: include PO number or any customer-provided reference.
+                  </p>
                 </div>
               ) : null}
 

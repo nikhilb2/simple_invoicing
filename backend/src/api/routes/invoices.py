@@ -227,6 +227,7 @@ def _apply_payload_to_invoice(
     invoice.company_ifsc_code = company.ifsc_code if company else None
     invoice.voucher_type = payload.voucher_type
     invoice.supplier_invoice_number = payload.supplier_invoice_number
+    invoice.reference_notes = payload.reference_notes
     if created_by is not None:
         invoice.created_by = created_by
     if financial_year_id is not None:
@@ -1189,6 +1190,13 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     )
     tax_breakup_rows = _build_pdf_tax_breakup_rows(invoice, currency)
     payment_details_html = _build_pdf_payment_details_html(invoice_bank_accounts)
+    reference_notes_html = ""
+    if invoice.reference_notes:
+        reference_notes_html = f"""
+  <section class=\"invoice-sheet__reference-notes\">
+    <p class=\"eyebrow\">Reference notes</p>
+    <p class=\"invoice-sheet__reference-notes-value\">{_e(invoice.reference_notes)}</p>
+  </section>"""
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -1273,6 +1281,17 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     font-size: 9px;
     color: #4b5563;
     margin-bottom: 1px;
+  }}
+  .invoice-sheet__reference-notes {{
+    border: 1px dashed #d1d5db;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    background: #f9fafb;
+  }}
+  .invoice-sheet__reference-notes-value {{
+    font-size: 9px;
+    color: #374151;
   }}
   .invoice-sheet__table {{
     width: 100%;
@@ -1419,6 +1438,8 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     <p>{_e(invoice.ledger_address) or 'Address not provided'}</p>
     <p>{billto_details}</p>
   </section>
+
+  {reference_notes_html}
 
   <section>
     <table class="invoice-sheet__table">
