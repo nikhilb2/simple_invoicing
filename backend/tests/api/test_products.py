@@ -69,3 +69,76 @@ def test_search_products(client):
     response = client.get("/api/products/?search=Apple")
 
     assert response.status_code == 200
+
+
+def test_create_untracked_product_skips_inventory(client, db_session):
+    response = client.post(
+        "/api/products/",
+        json={
+            "sku": "SERV001",
+            "name": "Service Charge",
+            "price": 250,
+            "gst_rate": 18,
+            "maintain_inventory": False,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["maintain_inventory"] is False
+
+    from src.models.inventory import Inventory
+
+    inventory = db_session.query(Inventory).filter(Inventory.product_id == payload["id"]).first()
+    assert inventory is None
+
+
+def test_create_untracked_product_rejects_initial_quantity(client):
+    response = client.post(
+        "/api/products/",
+        json={
+            "sku": "SERV002",
+            "name": "Service Charge",
+            "price": 100,
+            "gst_rate": 18,
+            "maintain_inventory": False,
+            "initial_quantity": 10,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Initial quantity is only allowed when maintain inventory is enabled"
+
+
+def test_toggle_untracked_product_on_creates_inventory_row(client, db_session):
+    create_response = client.post(
+        "/api/products/",
+        json={
+            "sku": "SERV003",
+            "name": "AMC Plan",
+            "price": 499,
+            "gst_rate": 18,
+            "maintain_inventory": False,
+        },
+    )
+    assert create_response.status_code == 200
+    product_id = create_response.json()["id"]
+
+    update_response = client.put(
+        f"/api/products/{product_id}",
+        json={
+            "sku": "SERV003",
+            "name": "AMC Plan",
+            "price": 499,
+            "gst_rate": 18,
+            "maintain_inventory": True,
+        },
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["maintain_inventory"] is True
+
+    from src.models.inventory import Inventory
+
+    inventory = db_session.query(Inventory).filter(Inventory.product_id == product_id).first()
+    assert inventory is not None
+    assert inventory.quantity == 0

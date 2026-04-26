@@ -28,6 +28,8 @@ def adjust_inventory(
     ).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
+    if not product.maintain_inventory:
+        raise HTTPException(status_code=400, detail="Inventory is disabled for this product")
 
     inventory = db.query(Inventory).filter(
         Inventory.product_id == payload.product_id,
@@ -115,6 +117,7 @@ def list_inventory(
             product_name=product.name,
             sku=product.sku,
             price=float(product.price),
+            maintain_inventory=bool(product.maintain_inventory),
             quantity=int(quantity),
             date_added=product.created_at,
             last_sold_at=last_sold_at,

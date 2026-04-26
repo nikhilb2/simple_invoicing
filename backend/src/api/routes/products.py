@@ -37,15 +37,23 @@ def create_product(
         hsn_sac=payload.hsn_sac,
         price=payload.price,
         gst_rate=payload.gst_rate,
+        maintain_inventory=payload.maintain_inventory,
     )
     db.add(product)
     db.flush()  # get product.id before committing
 
-    if payload.initial_quantity != 0:
-        inventory = Inventory(company_id=active_company.id, product_id=product.id, quantity=payload.initial_quantity)
-        db.add(inventory)
-    else:
-        inventory = Inventory(company_id=active_company.id, product_id=product.id, quantity=0)
+    if not payload.maintain_inventory and payload.initial_quantity != 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Initial quantity is only allowed when maintain inventory is enabled",
+        )
+
+    if payload.maintain_inventory:
+        inventory = Inventory(
+            company_id=active_company.id,
+            product_id=product.id,
+            quantity=payload.initial_quantity,
+        )
         db.add(inventory)
 
     db.commit()
@@ -112,6 +120,16 @@ def update_product(
     product.hsn_sac = payload.hsn_sac
     product.price = payload.price
     product.gst_rate = payload.gst_rate
+    was_tracking_inventory = bool(product.maintain_inventory)
+    product.maintain_inventory = payload.maintain_inventory
+
+    if not was_tracking_inventory and payload.maintain_inventory:
+        inventory = db.query(Inventory).filter(
+            Inventory.product_id == product_id,
+            Inventory.company_id == active_company.id,
+        ).first()
+        if not inventory:
+            db.add(Inventory(company_id=active_company.id, product_id=product_id, quantity=0))
 
     db.commit()
     db.refresh(product)
