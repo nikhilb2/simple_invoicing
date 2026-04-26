@@ -233,6 +233,7 @@ export type Invoice = {
   apply_round_off: boolean;
   round_off_amount: number;
   supplier_invoice_number?: string | null;
+  reference_notes?: string | null;
   ledger: Ledger | null;
   taxable_amount: number;
   total_tax_amount: number;
@@ -348,6 +349,7 @@ export type InvoiceCreate = {
   invoice_date?: string;
   due_date?: string;
   supplier_invoice_number?: string | null;
+  reference_notes?: string | null;
   tax_inclusive?: boolean;
   apply_round_off?: boolean;
   items: InvoiceItemInput[];

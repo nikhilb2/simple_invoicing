@@ -49,6 +49,7 @@ export default function CreateInvoiceModal({
   const [dueDateMode, setDueDateMode] = useState<DueDateMode>('none');
   const [dueDate, setDueDate] = useState('');
   const [dueDateDays, setDueDateDays] = useState('');
+  const [referenceNotes, setReferenceNotes] = useState('');
   const [items, setItems] = useState<InvoiceFormItem[]>([createItem(1)]);
   const [nextItemId, setNextItemId] = useState(2);
   const [loading, setLoading] = useState(true);
@@ -140,6 +141,7 @@ export default function CreateInvoiceModal({
         voucher_type: voucherType,
         invoice_date: invoiceDate,
         due_date: resolvedDueDate ?? invoiceDate,
+        reference_notes: voucherType === 'sales' ? (referenceNotes.trim() || null) : null,
         tax_inclusive: taxInclusive,
         items: items.map((item) => ({
           product_id: Number(item.productId),
@@ -267,6 +269,20 @@ export default function CreateInvoiceModal({
                     value={dueDateDays}
                     onChange={(e) => setDueDateDays(e.target.value)}
                     placeholder="0"
+                  />
+                </div>
+              ) : null}
+
+              {voucherType === 'sales' ? (
+                <div className="field" style={{ gridColumn: '1 / -1' }}>
+                  <label htmlFor="modal-inv-reference-notes">Reference Notes</label>
+                  <input
+                    id="modal-inv-reference-notes"
+                    className="input"
+                    type="text"
+                    value={referenceNotes}
+                    onChange={(e) => setReferenceNotes(e.target.value)}
+                    placeholder="PO number or customer reference"
                   />
                 </div>
               ) : null}
