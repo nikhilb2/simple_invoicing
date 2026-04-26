@@ -12,6 +12,7 @@ class ProductCreate(BaseModel):
     hsn_sac: Optional[str] = None
     price: float
     gst_rate: float = 0
+    maintain_inventory: bool = True
     initial_quantity: int = 0
 
     @field_validator("hsn_sac")
@@ -28,6 +29,7 @@ class ProductOut(BaseModel):
     hsn_sac: Optional[str]
     price: float
     gst_rate: float
+    maintain_inventory: bool
     created_at: Optional[datetime] = None
 
     class Config:
