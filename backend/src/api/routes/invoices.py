@@ -806,6 +806,15 @@ def _build_pdf_tax_breakup_rows(invoice: Invoice, currency: str) -> str:
   )
 
 
+def _pdf_unit_price_including_tax(item: InvoiceItem) -> float:
+    quantity = Decimal(str(item.quantity or 0))
+    if quantity <= 0:
+        return float(item.unit_price or 0)
+
+    line_total = Decimal(str(item.line_total or 0))
+    return float(_money(line_total / quantity))
+
+
 def _build_pdf_payment_details_html(invoice_bank_accounts: list[CompanyAccount]) -> str:
     if not invoice_bank_accounts:
         return '<p class="muted-text">No bank account marked to display on invoice.</p>'
@@ -857,7 +866,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
           <td>{sku}</td>
           <td>{hsn}</td>
           <td class="right">{item.quantity}</td>
-          <td class="right">{_fmt_currency(float(item.unit_price), currency)}</td>
+          <td class="right">{_fmt_currency(_pdf_unit_price_including_tax(item), currency)}</td>
           {tax_row_cells}
           <td class="right">{_fmt_currency(float(item.line_total), currency)}</td>
         </tr>"""
@@ -1084,7 +1093,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
           <th>SKU</th>
           <th>HSN/SAC</th>
           <th class="right">Qty</th>
-          <th class="right">Unit Price</th>
+          <th class="right">Unit Price <span style="font-size: 7px; font-weight: 500; text-transform: none;">(with tax)</span></th>
           {tax_header_cells}
           <th class="right">Amount</th>
         </tr>
@@ -1158,7 +1167,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
           <td>{sku}</td>
           <td>{hsn}</td>
           <td class="right">{item.quantity}</td>
-          <td class="right">{_fmt_currency(float(item.unit_price), currency)}</td>
+          <td class="right">{_fmt_currency(_pdf_unit_price_including_tax(item), currency)}</td>
           {tax_row_cells}
           <td class="right">{_fmt_currency(float(item.line_total), currency)}</td>
         </tr>"""
@@ -1461,7 +1470,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
           <th>SKU</th>
           <th>HSN/SAC</th>
           <th class="right">Qty</th>
-          <th class="right">Unit Price</th>
+          <th class="right">Unit Price <span style="font-size: 7px; font-weight: 500; text-transform: none;">(with tax)</span></th>
           {tax_header_cells}
           <th class="right">Amount</th>
         </tr>

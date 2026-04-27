@@ -140,6 +140,35 @@ def test_intrastate_odd_paise_total_tax_is_adjusted_and_split_equally(db_session
     assert "GST Split" not in html
 
 
+def test_pdf_unit_price_always_displays_tax_inclusive_value(db_session):
+    user, ledger = _seed_common(db_session)
+    product = _create_product_with_inventory(db_session, "UNIT01", 100.00, 18)
+    invoice = _new_invoice(db_session)
+
+    payload = InvoiceCreate(
+        ledger_id=ledger.id,
+        voucher_type="sales",
+        tax_inclusive=False,
+        items=[InvoiceItemCreate(product_id=product.id, quantity=2, unit_price=100.00)],
+    )
+
+    _apply_payload_to_invoice(
+        db_session,
+        invoice,
+        payload,
+        created_by=user.id,
+        regenerate_number=False,
+    )
+    db_session.flush()
+    db_session.refresh(invoice)
+
+    html = _build_invoice_html(invoice, [product])
+
+    # Unit price column should always show tax-inclusive per-unit amount.
+    assert "118.00</td>" in html
+    assert "100.00</td>" not in html
+
+
 def test_intrastate_three_line_case_keeps_itemwise_cgst_sgst_equal(db_session):
     user, ledger = _seed_common(db_session)
     p1 = _create_product_with_inventory(db_session, "MS02", 254.24, 18)
