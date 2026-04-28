@@ -384,8 +384,9 @@ export default function InvoicesPage() {
       };
 
       if (editingInvoiceId) {
-        await api.put<Invoice>(`/invoices/${editingInvoiceId}`, payload);
+        const res = await api.put<Invoice>(`/invoices/${editingInvoiceId}`, payload);
         setSuccess('Invoice updated successfully. Inventory has been recalculated.');
+        setPreviewInvoice(res.data);
         if (searchParams.has('edit')) {
           setSearchParams((prev) => { prev.delete('edit'); return prev; }, { replace: true });
         }
