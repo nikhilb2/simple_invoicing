@@ -4,7 +4,6 @@ import { Link, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../../api/client';
 import type { CompanyAccount, CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerCreate, Payment, PaymentCreate, Product } from '../../types/api';
 import InvoicePreview from '../../components/InvoicePreview';
-import ConfirmDialog from '../../components/ConfirmDialog';
 import StatusToasts from '../../components/StatusToasts';
 import ProductCombobox from '../../components/ProductCombobox';
 import LedgerCombobox from '../../components/LedgerCombobox';
@@ -27,7 +26,6 @@ export default function InvoicesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [companyAccounts, setCompanyAccounts] = useState<CompanyAccount[]>([]);
   const [selectedLedgerId, setSelectedLedgerId] = useState('');
@@ -40,9 +38,6 @@ export default function InvoicesPage() {
   const [paymentReference, setPaymentReference] = useState('');
   const [selectedPaymentAccountId, setSelectedPaymentAccountId] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [listTab, setListTab] = useState<'invoices' | 'payments'>('invoices');
-  const [loadingPayments, setLoadingPayments] = useState(false);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [dueDateMode, setDueDateMode] = useState<DueDateMode>('none');
   const [dueDate, setDueDate] = useState('');
@@ -80,23 +75,14 @@ export default function InvoicesPage() {
   const [items, setItems] = useState<InvoiceFormItem[]>([createItem(1)]);
   const [nextItemId, setNextItemId] = useState(2);
   const [editingInvoiceId, setEditingInvoiceId] = useState<number | null>(null);
-  const [deletingInvoiceId, setDeletingInvoiceId] = useState<number | null>(null);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [pendingDeleteInvoiceId, setPendingDeleteInvoiceId] = useState<number | null>(null);
-  const [cancellingInvoiceId, setCancellingInvoiceId] = useState<number | null>(null);
-  const [restoringInvoiceId, setRestoringInvoiceId] = useState<number | null>(null);
-  const [showCancelDialog, setShowCancelDialog] = useState(false);
-  const [pendingCancelInvoiceId, setPendingCancelInvoiceId] = useState<number | null>(null);
-  const [pendingCancelInvoiceNumber, setPendingCancelInvoiceNumber] = useState<string | null>(null);
-  const [showCancelled, setShowCancelled] = useState(false);
+  const showCancelled = false;
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [invoicePage, setInvoicePage] = useState(1);
-  const [invoiceTotalPages, setInvoiceTotalPages] = useState(1);
+  const invoicePage = 1;
   const [invoiceTotal, setInvoiceTotal] = useState(0);
-  const [invoiceSearch, setInvoiceSearch] = useState('');
+  const invoiceSearch = '';
   const invoicePageSize = 20;
   const financialYearId = activeFY?.id;
 
@@ -127,18 +113,6 @@ export default function InvoicesPage() {
     await loadInvoicePageData();
   }
 
-  async function loadPayments() {
-    try {
-      setLoadingPayments(true);
-      const res = await api.get<Payment[]>('/payments/');
-      setPayments(res.data);
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to load payment vouchers'));
-    } finally {
-      setLoadingPayments(false);
-    }
-  }
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -162,9 +136,7 @@ export default function InvoicesPage() {
 
     setProducts(composerQuery.data.products);
     setLedgers(composerQuery.data.ledgers);
-    setInvoices(composerQuery.data.invoices);
     setInvoiceTotal(composerQuery.data.invoiceTotal);
-    setInvoiceTotalPages(composerQuery.data.invoiceTotalPages);
     setCompany(composerQuery.data.company);
     setSelectedLedgerId((current) => current || String(composerQuery.data.ledgers[0]?.id ?? ''));
     setItems((current) =>
@@ -195,8 +167,6 @@ export default function InvoicesPage() {
     }
     setError(getApiErrorMessage(composerQuery.error, 'Unable to load invoice data'));
   }, [composerQuery.error]);
-
-  const loading = composerQuery.isLoading || composerQuery.isFetching;
 
   const totalAmount = items.reduce((sum, item) => {
     const product = products.find((entry) => entry.id === Number(item.productId));
@@ -323,9 +293,6 @@ export default function InvoicesPage() {
         await api.post<Payment>('/payments/', payload);
         setSuccess('Payment voucher created successfully.');
         resetInvoiceForm();
-        if (listTab === 'payments') {
-          await loadPayments();
-        }
       } catch (err) {
         setError(getApiErrorMessage(err, 'Unable to create payment voucher'));
       } finally {
@@ -383,91 +350,6 @@ export default function InvoicesPage() {
       setError(getApiErrorMessage(err, editingInvoiceId ? 'Unable to update invoice' : 'Unable to create invoice'));
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  async function handleDeleteInvoice(invoiceId: number) {
-    setPendingDeleteInvoiceId(invoiceId);
-    setShowDeleteDialog(true);
-  }
-
-  function cancelDeleteInvoice() {
-    setShowDeleteDialog(false);
-    setPendingDeleteInvoiceId(null);
-  }
-
-  async function confirmDeleteInvoice() {
-    if (pendingDeleteInvoiceId === null) return;
-    setShowDeleteDialog(false);
-
-    try {
-      setDeletingInvoiceId(pendingDeleteInvoiceId);
-      setError('');
-      setSuccess('');
-      await api.delete(`/invoices/${pendingDeleteInvoiceId}`);
-
-      if (editingInvoiceId === pendingDeleteInvoiceId) {
-        resetInvoiceForm();
-      }
-
-      setSuccess('Invoice deleted successfully. Inventory has been rolled back.');
-      await refreshInvoicesAfterMutation();
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to delete invoice'));
-    } finally {
-      setDeletingInvoiceId(null);
-      setPendingDeleteInvoiceId(null);
-    }
-  }
-
-  async function handleCancelInvoice(invoiceId: number, invoiceNumber: string | null) {
-    setPendingCancelInvoiceId(invoiceId);
-    setPendingCancelInvoiceNumber(invoiceNumber);
-    setShowCancelDialog(true);
-  }
-
-  function dismissCancelDialog() {
-    setShowCancelDialog(false);
-    setPendingCancelInvoiceId(null);
-    setPendingCancelInvoiceNumber(null);
-  }
-
-  async function confirmCancelInvoice() {
-    if (pendingCancelInvoiceId === null) return;
-    setShowCancelDialog(false);
-
-    try {
-      setCancellingInvoiceId(pendingCancelInvoiceId);
-      setError('');
-      setSuccess('');
-      await api.delete(`/invoices/${pendingCancelInvoiceId}`);
-
-      if (editingInvoiceId === pendingCancelInvoiceId) {
-        resetInvoiceForm();
-      }
-
-      setSuccess('Invoice cancelled. Inventory has been reversed.');
-      await refreshInvoicesAfterMutation();
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to cancel invoice'));
-    } finally {
-      setCancellingInvoiceId(null);
-      setPendingCancelInvoiceId(null);
-    }
-  }
-
-  async function handleRestoreInvoice(invoiceId: number) {
-    try {
-      setRestoringInvoiceId(invoiceId);
-      setError('');
-      setSuccess('');
-      await api.post(`/invoices/${invoiceId}/restore`);
-      setSuccess('Invoice restored. Inventory has been re-applied.');
-      await refreshInvoicesAfterMutation();
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to restore invoice'));
-    } finally {
-      setRestoringInvoiceId(null);
     }
   }
 
@@ -1026,30 +908,6 @@ export default function InvoicesPage() {
           stockSubmitting={stockSubmitting}
           onSubmit={handleUpdateStock}
           onClose={() => setShowStockModal(false)}
-        />
-      ) : null}
-
-      {showDeleteDialog ? (
-        <ConfirmDialog
-          message={`Are you sure you want to delete invoice #${pendingDeleteInvoiceId}? Inventory will be rolled back.`}
-          title="Delete invoice"
-          confirmText="Delete"
-          cancelText="Cancel"
-          danger={true}
-          onConfirm={() => void confirmDeleteInvoice()}
-          onCancel={cancelDeleteInvoice}
-        />
-      ) : null}
-
-      {showCancelDialog ? (
-        <ConfirmDialog
-          message={`Are you sure you want to cancel invoice ${pendingCancelInvoiceNumber ?? `#${pendingCancelInvoiceId}`}? Inventory will be reversed. The invoice will remain visible when showing cancelled invoices.`}
-          title="Cancel invoice"
-          confirmText="Cancel invoice"
-          cancelText="Keep"
-          danger={true}
-          onConfirm={() => void confirmCancelInvoice()}
-          onCancel={dismissCancelDialog}
         />
       ) : null}
     </div>
