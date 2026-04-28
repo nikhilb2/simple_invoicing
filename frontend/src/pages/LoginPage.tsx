@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { getApiErrorMessage } from '../api/client';
@@ -27,6 +27,10 @@ export default function LoginPage() {
       setSubmitting(false);
     }
   }
+
+  useEffect(() => {
+    document.title = 'Login | Simple Invoicing';
+  }, []);
 
   return (
     <div className="login-page">
@@ -106,7 +110,7 @@ export default function LoginPage() {
             />
           </div>
 
-          <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
+          <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => { }} />
 
           <button className="button button--primary" disabled={submitting} title="Open dashboard" aria-label="Open dashboard">
             {submitting ? 'Signing in...' : 'Open dashboard'}
