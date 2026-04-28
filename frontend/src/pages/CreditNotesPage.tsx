@@ -5,6 +5,7 @@ import { cancelCreditNote, createCreditNote, listCreditNotes } from '../api/cred
 import api, { getApiErrorMessage } from '../api/client';
 import LedgerCombobox from '../components/LedgerCombobox';
 import StatusToasts from '../components/StatusToasts';
+import { invoiceCreditStatusMeta } from '../common/invoiceCreditStatus';
 import type {
   CompanyProfile,
   CreditNote,
@@ -24,12 +25,6 @@ type SelectedLineItem = {
   item: Invoice['items'][number];
   productName: string;
   quantityKey: string;
-};
-
-const creditStatusStyles: Record<Invoice['credit_status'], { background: string; color: string; label: string }> = {
-  not_credited: { background: '#e0f2fe', color: '#075985', label: 'Not credited' },
-  partially_credited: { background: '#fef3c7', color: '#92400e', label: 'Partially credited' },
-  fully_credited: { background: '#dcfce7', color: '#166534', label: 'Fully credited' },
 };
 
 const creditNoteTypeLabels: Record<CreditNoteType, string> = {
@@ -505,7 +500,7 @@ export default function CreditNotesPage() {
 
                   <div className="stack" style={{ gap: '10px' }}>
                     {filteredInvoices.map((invoice) => {
-                      const creditStatus = creditStatusStyles[invoice.credit_status];
+                      const creditStatus = invoiceCreditStatusMeta[invoice.credit_status];
                       const checked = selectedInvoiceMap.has(invoice.id);
                       return (
                         <label
