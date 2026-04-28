@@ -31,9 +31,11 @@ test.describe('Invoices', () => {
     // 2. Add inventory
     await page.click('[href="/inventory"]');
     await page.waitForTimeout(500);
-    await selectComboboxOption(page, 'inventory-product', sku);
-    await page.fill('#inventory-quantity', '50');
-    await page.click('button:has-text("Apply adjustment")');
+    await page.getByRole('searchbox', { name: 'Search inventory by name or SKU' }).fill(sku);
+    const inventoryRow = page.locator('.inventory-feed-row', { hasText: sku }).first();
+    await expect(inventoryRow).toBeVisible();
+    await inventoryRow.getByLabel(new RegExp(`Adjust quantity for .*${sku}`)).fill('50');
+    await inventoryRow.getByRole('button', { name: /Apply adjustment for/i }).click();
     await expectSuccess(page, 'Inventory updated');
 
     // 3. Create ledger
@@ -52,6 +54,70 @@ test.describe('Invoices', () => {
   test('displays invoice composer heading', async ({ authedPage: page }) => {
     await page.click('[href="/invoices"]');
     await expect(page.locator('h1')).toContainText('Invoice composer');
+  });
+
+  test('creates a ledger from the quick-create modal and selects it in the composer', async ({ authedPage: page }) => {
+    const ledgerName = `QuickLedger-${Date.now().toString(36)}`;
+
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+    await page.getByRole('button', { name: 'Add ledger' }).click();
+
+    const modal = page.getByRole('dialog', { name: 'Create ledger' });
+    await expect(modal).toBeVisible();
+
+    await modal.locator('#modal-ledger-name').fill(ledgerName);
+    await modal.locator('#modal-ledger-address').fill('Quick ledger address');
+    await modal.locator('#modal-ledger-gst').fill(uniqueGstin());
+    await modal.locator('#modal-ledger-phone').fill('+91 9999999999');
+    await modal.getByRole('button', { name: 'Save ledger' }).click();
+
+    await expectSuccess(page, 'Ledger added and selected for this invoice.');
+    await expect(modal).toHaveCount(0);
+    await expect(page.locator('#invoice-ledger')).toHaveValue(new RegExp(ledgerName));
+  });
+
+  test('creates a product from the quick-create modal and makes it selectable on the invoice form', async ({ authedPage: page }) => {
+    const sku = uniqueSku();
+    const productName = `Quick Product ${sku}`;
+
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+    await page.getByRole('button', { name: 'Add product' }).click();
+
+    const modal = page.getByRole('dialog', { name: 'Create product' });
+    await expect(modal).toBeVisible();
+
+    await modal.locator('#modal-product-name').fill(productName);
+    await modal.locator('#modal-product-sku').fill(sku);
+    await modal.locator('#modal-product-price').fill('125');
+    await modal.locator('#modal-product-gst-rate').fill('18');
+    await modal.getByRole('button', { name: 'Save product' }).click();
+
+    await expectSuccess(page, 'Product created successfully.');
+    await expect(modal).toHaveCount(0);
+
+    const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await selectComboboxOption(page, productInputId, sku);
+    await expect(page.locator(`#${productInputId}`)).toHaveValue(`${productName} (${sku})`);
+  });
+
+  test('updates stock from the invoice quick action modal', async ({ authedPage: page }) => {
+    const { sku } = await seedInvoiceData(page);
+
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+    await page.getByRole('button', { name: 'Update stock' }).click();
+
+    const modal = page.getByRole('dialog', { name: 'Update stock' });
+    await expect(modal).toBeVisible();
+
+    await selectComboboxOption(page, 'modal-stock-product', sku);
+    await modal.locator('#modal-stock-adjustment').fill('7');
+    await modal.getByRole('button', { name: 'Update stock' }).click();
+
+    await expectSuccess(page, 'Stock updated successfully.');
+    await expect(modal).toHaveCount(0);
   });
 
   test('paginates invoices and supports search', async ({ authedPage: page }) => {

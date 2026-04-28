@@ -2,33 +2,39 @@ import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../../api/client';
-import type { CompanyAccount, CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerCreate, Payment, PaymentCreate, Product } from '../../types/api';
+import type { CompanyAccount, CompanyProfile, Invoice, InvoiceCreate, Ledger, Payment, PaymentCreate, Product } from '../../types/api';
 import InvoicePreview from '../../components/InvoicePreview';
 import StatusToasts from '../../components/StatusToasts';
 import ProductCombobox from '../../components/ProductCombobox';
 import LedgerCombobox from '../../components/LedgerCombobox';
-import { useEscapeClose } from '../../hooks/useEscapeClose';
 import formatCurrency from '../../utils/formatting';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../../utils/invoiceTax';
 import { createDueDateFormState, formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../../utils/invoiceDueDate.ts';
-import { type OpeningBalanceSide } from '../../utils/openingBalance';
 import { useFY } from '../../context/FYContext';
 import { fetchInvoiceById, fetchInvoiceComposerData } from '../../features/invoices/api';
 import { invoiceQueryKeys } from '../../features/invoices/queryKeys';
+import { useInvoiceComposerStore } from '../../store/useInvoiceComposerStore';
 import LedgerQuickCreateModal from './components/LedgerQuickCreateModal';
 import ProductQuickCreateModal from './components/ProductQuickCreateModal';
 import StockUpdateModal from './components/StockUpdateModal';
-import { createItem, type InvoiceFormItem, type ProductFormState, type StockFormState } from './types';
+import { createItem, type InvoiceFormItem } from './types';
 
 export default function InvoicesPage() {
   const { activeFY } = useFY();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const selectedLedgerId = useInvoiceComposerStore((state) => state.selectedLedgerId);
+  const setSelectedLedgerId = useInvoiceComposerStore((state) => state.setSelectedLedgerId);
+  const openLedgerCreateModal = useInvoiceComposerStore((state) => state.openLedgerCreateModal);
+  const openProductCreateModal = useInvoiceComposerStore((state) => state.openProductCreateModal);
+  const openStockUpdateModal = useInvoiceComposerStore((state) => state.openStockUpdateModal);
+  const feedbackError = useInvoiceComposerStore((state) => state.feedbackError);
+  const feedbackSuccess = useInvoiceComposerStore((state) => state.feedbackSuccess);
+  const clearFeedback = useInvoiceComposerStore((state) => state.clearFeedback);
   const [products, setProducts] = useState<Product[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [companyAccounts, setCompanyAccounts] = useState<CompanyAccount[]>([]);
-  const [selectedLedgerId, setSelectedLedgerId] = useState('');
   const [voucherType, setVoucherType] = useState<'sales' | 'purchase' | 'payment'>('sales');
   const [taxInclusive, setTaxInclusive] = useState(false);
   const [applyRoundOff, setApplyRoundOff] = useState(false);
@@ -42,36 +48,6 @@ export default function InvoicesPage() {
   const [dueDateMode, setDueDateMode] = useState<DueDateMode>('none');
   const [dueDate, setDueDate] = useState('');
   const [dueDateDays, setDueDateDays] = useState('');
-  const [showLedgerModal, setShowLedgerModal] = useState(false);
-  const [showProductModal, setShowProductModal] = useState(false);
-  const [showStockModal, setShowStockModal] = useState(false);
-
-  useEscapeClose(() => {
-    if (showStockModal) setShowStockModal(false);
-    else if (showProductModal) setShowProductModal(false);
-    else if (showLedgerModal) setShowLedgerModal(false);
-  });
-
-  const [ledgerForm, setLedgerForm] = useState<LedgerCreate>({
-    name: '',
-    address: '',
-    gst: '',
-    opening_balance: null,
-    phone_number: '',
-    email: '',
-    website: '',
-    bank_name: '',
-    branch_name: '',
-    account_name: '',
-    account_number: '',
-    ifsc_code: '',
-  });
-  const [ledgerOpeningBalanceSide, setLedgerOpeningBalanceSide] = useState<OpeningBalanceSide>('debit');
-  const [productForm, setProductForm] = useState<ProductFormState>({ name: '', sku: '', hsn_sac: '', price: '', gst_rate: '0', maintain_inventory: true });
-  const [stockForm, setStockForm] = useState<StockFormState>({ productId: '', adjustment: '' });
-  const [ledgerSubmitting, setLedgerSubmitting] = useState(false);
-  const [productSubmitting, setProductSubmitting] = useState(false);
-  const [stockSubmitting, setStockSubmitting] = useState(false);
   const [items, setItems] = useState<InvoiceFormItem[]>([createItem(1)]);
   const [nextItemId, setNextItemId] = useState(2);
   const [editingInvoiceId, setEditingInvoiceId] = useState<number | null>(null);
@@ -138,7 +114,9 @@ export default function InvoicesPage() {
     setLedgers(composerQuery.data.ledgers);
     setInvoiceTotal(composerQuery.data.invoiceTotal);
     setCompany(composerQuery.data.company);
-    setSelectedLedgerId((current) => current || String(composerQuery.data.ledgers[0]?.id ?? ''));
+    if (!selectedLedgerId) {
+      setSelectedLedgerId(String(composerQuery.data.ledgers[0]?.id ?? ''));
+    }
     setItems((current) =>
       current.map((item, index) => {
         const defaultProduct = composerQuery.data.products[index] ?? composerQuery.data.products[0];
@@ -149,7 +127,7 @@ export default function InvoicesPage() {
         };
       })
     );
-  }, [composerQuery.data]);
+  }, [composerQuery.data, selectedLedgerId, setSelectedLedgerId]);
 
   // Handle ?edit=<id> query param — triggered from invoice feed or any other page
   useEffect(() => {
@@ -353,113 +331,6 @@ export default function InvoicesPage() {
     }
   }
 
-  async function handleCreateLedger(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    try {
-      setLedgerSubmitting(true);
-      setError('');
-
-      const payload: LedgerCreate = {
-        name: ledgerForm.name.trim(),
-        address: ledgerForm.address.trim(),
-        gst: ledgerForm.gst.trim().toUpperCase(),
-        opening_balance: ledgerForm.opening_balance,
-        phone_number: ledgerForm.phone_number.trim(),
-        email: ledgerForm.email.trim(),
-        website: ledgerForm.website.trim(),
-        bank_name: ledgerForm.bank_name.trim(),
-        branch_name: ledgerForm.branch_name.trim(),
-        account_name: ledgerForm.account_name.trim(),
-        account_number: ledgerForm.account_number.trim(),
-        ifsc_code: ledgerForm.ifsc_code.trim().toUpperCase(),
-      };
-
-      const response = await api.post<Ledger>('/ledgers/', payload);
-      setLedgers((current) => [...current, response.data].sort((a, b) => a.name.localeCompare(b.name)));
-      setSelectedLedgerId(String(response.data.id));
-      setLedgerForm({
-        name: '',
-        address: '',
-        gst: '',
-        opening_balance: null,
-        phone_number: '',
-        email: '',
-        website: '',
-        bank_name: '',
-        branch_name: '',
-        account_name: '',
-        account_number: '',
-        ifsc_code: '',
-      });
-      setLedgerOpeningBalanceSide('debit');
-      setShowLedgerModal(false);
-      setSuccess('Ledger added and selected for this invoice.');
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to create ledger'));
-    } finally {
-      setLedgerSubmitting(false);
-    }
-  }
-
-  async function handleCreateProduct(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    try {
-      setProductSubmitting(true);
-      setError('');
-
-      const payload = {
-        name: productForm.name.trim(),
-        sku: productForm.sku.trim().toUpperCase(),
-        hsn_sac: productForm.hsn_sac.trim(),
-        price: Number(productForm.price),
-        gst_rate: Number(productForm.gst_rate),
-        maintain_inventory: productForm.maintain_inventory,
-      };
-
-      const response = await api.post<Product>('/products/', payload);
-      setProducts((current) => [...current, response.data].sort((a, b) => a.name.localeCompare(b.name)));
-      setProductForm({ name: '', sku: '', hsn_sac: '', price: '', gst_rate: '0', maintain_inventory: true });
-      setShowProductModal(false);
-      setSuccess('Product created successfully.');
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to create product'));
-    } finally {
-      setProductSubmitting(false);
-    }
-  }
-
-  async function handleUpdateStock(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    try {
-      setStockSubmitting(true);
-      setError('');
-
-      const payload = {
-        product_id: Number(stockForm.productId),
-        quantity: Number(stockForm.adjustment),
-      };
-
-      const selectedProduct = products.find((product) => product.id === payload.product_id);
-      if (selectedProduct && !selectedProduct.maintain_inventory) {
-        setError(`Inventory is disabled for ${selectedProduct.name}. Enable Maintain inventory on the product first.`);
-        return;
-      }
-
-      await api.post('/inventory/adjust', payload);
-      setStockForm({ productId: '', adjustment: '' });
-      setShowStockModal(false);
-      await loadInvoicePageData();
-      setSuccess('Stock updated successfully.');
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to update stock'));
-    } finally {
-      setStockSubmitting(false);
-    }
-  }
-
   return (
     <div className="page-grid">
       <section className="page-hero">
@@ -471,7 +342,18 @@ export default function InvoicesPage() {
         <div className="status-chip">{invoiceTotal} invoices listed</div>
       </section>
 
-      <StatusToasts error={error} success={success} onClearError={() => setError('')} onClearSuccess={() => setSuccess('')} />
+      <StatusToasts
+        error={error || feedbackError}
+        success={success || feedbackSuccess}
+        onClearError={() => {
+          setError('');
+          clearFeedback();
+        }}
+        onClearSuccess={() => {
+          setSuccess('');
+          clearFeedback();
+        }}
+      />
 
       <section className="content-grid content-grid--single">
         <article className="panel stack">
@@ -649,16 +531,16 @@ export default function InvoicesPage() {
               ) : null}
 
               <div className="button-row">
-                <button type="button" className="button button--secondary" onClick={() => setShowLedgerModal(true)} title="Add ledger" aria-label="Add ledger">
+                <button type="button" className="button button--secondary" onClick={openLedgerCreateModal} title="Add ledger" aria-label="Add ledger">
                   Add ledger
                 </button>
                 {voucherType !== 'payment' ? (
-                  <button type="button" className="button button--secondary" onClick={() => setShowProductModal(true)} title="Add product" aria-label="Add product">
+                  <button type="button" className="button button--secondary" onClick={openProductCreateModal} title="Add product" aria-label="Add product">
                     Add product
                   </button>
                 ) : null}
                 {voucherType !== 'payment' ? (
-                  <button type="button" className="button button--secondary" onClick={() => setShowStockModal(true)} title="Update stock" aria-label="Update stock">
+                  <button type="button" className="button button--secondary" onClick={openStockUpdateModal} title="Update stock" aria-label="Update stock">
                     Update stock
                   </button>
                 ) : null}
@@ -870,17 +752,7 @@ export default function InvoicesPage() {
 
       </section>
 
-      {showLedgerModal ? (
-        <LedgerQuickCreateModal
-          ledgerForm={ledgerForm}
-          setLedgerForm={setLedgerForm}
-          ledgerOpeningBalanceSide={ledgerOpeningBalanceSide}
-          setLedgerOpeningBalanceSide={setLedgerOpeningBalanceSide}
-          ledgerSubmitting={ledgerSubmitting}
-          onSubmit={handleCreateLedger}
-          onClose={() => setShowLedgerModal(false)}
-        />
-      ) : null}
+      <LedgerQuickCreateModal />
 
       {previewInvoice ? (
         <InvoicePreview
@@ -890,26 +762,9 @@ export default function InvoicesPage() {
         />
       ) : null}
 
-      {showProductModal ? (
-        <ProductQuickCreateModal
-          productForm={productForm}
-          setProductForm={setProductForm}
-          productSubmitting={productSubmitting}
-          onSubmit={handleCreateProduct}
-          onClose={() => setShowProductModal(false)}
-        />
-      ) : null}
+      <ProductQuickCreateModal />
 
-      {showStockModal ? (
-        <StockUpdateModal
-          products={products}
-          stockForm={stockForm}
-          setStockForm={setStockForm}
-          stockSubmitting={stockSubmitting}
-          onSubmit={handleUpdateStock}
-          onClose={() => setShowStockModal(false)}
-        />
-      ) : null}
+      <StockUpdateModal />
     </div>
   );
 }

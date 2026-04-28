@@ -1,25 +1,72 @@
-import type { Dispatch, FormEvent, SetStateAction } from 'react';
+import { useState, type FormEvent } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import api, { getApiErrorMessage } from '../../../api/client';
 import ProductCombobox from '../../../components/ProductCombobox';
-import type { Product } from '../../../types/api';
+import { useEscapeClose } from '../../../hooks/useEscapeClose';
+import { fetchProducts } from '../../../features/invoices/api';
+import { invoiceQueryKeys } from '../../../features/invoices/queryKeys';
+import { useInvoiceComposerStore } from '../../../store/useInvoiceComposerStore';
 import type { StockFormState } from '../types';
 
-type StockUpdateModalProps = {
-  products: Product[];
-  stockForm: StockFormState;
-  setStockForm: Dispatch<SetStateAction<StockFormState>>;
-  stockSubmitting: boolean;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onClose: () => void;
-};
+function createInitialStockForm(): StockFormState {
+  return { productId: '', adjustment: '' };
+}
 
-export default function StockUpdateModal({
-  products,
-  stockForm,
-  setStockForm,
-  stockSubmitting,
-  onSubmit,
-  onClose,
-}: StockUpdateModalProps) {
+export default function StockUpdateModal() {
+  const queryClient = useQueryClient();
+  const showStockUpdateModal = useInvoiceComposerStore((state) => state.showStockUpdateModal);
+  const closeStockUpdateModal = useInvoiceComposerStore((state) => state.closeStockUpdateModal);
+  const setFeedbackError = useInvoiceComposerStore((state) => state.setFeedbackError);
+  const setFeedbackSuccess = useInvoiceComposerStore((state) => state.setFeedbackSuccess);
+  const [stockForm, setStockForm] = useState<StockFormState>(createInitialStockForm());
+  const [stockSubmitting, setStockSubmitting] = useState(false);
+  const productsQuery = useQuery({
+    queryKey: invoiceQueryKeys.products,
+    queryFn: fetchProducts,
+    enabled: showStockUpdateModal,
+  });
+  const products = productsQuery.data ?? [];
+
+  useEscapeClose(() => {
+    if (showStockUpdateModal) {
+      closeStockUpdateModal();
+    }
+  });
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    try {
+      setStockSubmitting(true);
+      setFeedbackError('');
+
+      const payload = {
+        product_id: Number(stockForm.productId),
+        quantity: Number(stockForm.adjustment),
+      };
+
+      const selectedProduct = products.find((product) => product.id === payload.product_id);
+      if (selectedProduct && !selectedProduct.maintain_inventory) {
+        setFeedbackError(`Inventory is disabled for ${selectedProduct.name}. Enable Maintain inventory on the product first.`);
+        return;
+      }
+
+      await api.post('/inventory/adjust', payload);
+      setStockForm(createInitialStockForm());
+      closeStockUpdateModal();
+      setFeedbackSuccess('Stock updated successfully.');
+      await queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
+    } catch (err) {
+      setFeedbackError(getApiErrorMessage(err, 'Unable to update stock'));
+    } finally {
+      setStockSubmitting(false);
+    }
+  }
+
+  if (!showStockUpdateModal) {
+    return null;
+  }
+
   const selectedProduct = stockForm.productId
     ? products.find((product) => product.id === Number(stockForm.productId))
     : null;
@@ -34,7 +81,7 @@ export default function StockUpdateModal({
           </div>
         </div>
 
-        <form className="stack" onSubmit={onSubmit}>
+        <form className="stack" onSubmit={handleSubmit}>
           {stockForm.productId ? (
             <div className="field-hint">
               {selectedProduct?.maintain_inventory
@@ -70,12 +117,13 @@ export default function StockUpdateModal({
           </div>
 
           <div className="button-row">
-            <button type="button" className="button button--ghost" onClick={onClose} title="Cancel stock update" aria-label="Cancel stock update">
+            <button type="button" className="button button--ghost" onClick={closeStockUpdateModal} title="Cancel stock update" aria-label="Cancel stock update">
               Cancel
             </button>
             <button
               className="button button--primary"
               disabled={
+                productsQuery.isLoading ||
                 stockSubmitting ||
                 (stockForm.productId
                   ? !products.find((product) => product.id === Number(stockForm.productId))?.maintain_inventory

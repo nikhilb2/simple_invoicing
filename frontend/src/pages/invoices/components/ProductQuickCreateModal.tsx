@@ -1,21 +1,63 @@
-import type { Dispatch, FormEvent, SetStateAction } from 'react';
+import { useState, type FormEvent } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import api, { getApiErrorMessage } from '../../../api/client';
+import { useEscapeClose } from '../../../hooks/useEscapeClose';
+import { invoiceQueryKeys } from '../../../features/invoices/queryKeys';
+import { useInvoiceComposerStore } from '../../../store/useInvoiceComposerStore';
 import type { ProductFormState } from '../types';
 
-type ProductQuickCreateModalProps = {
-  productForm: ProductFormState;
-  setProductForm: Dispatch<SetStateAction<ProductFormState>>;
-  productSubmitting: boolean;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onClose: () => void;
-};
+function createInitialProductForm(): ProductFormState {
+  return { name: '', sku: '', hsn_sac: '', price: '', gst_rate: '0', maintain_inventory: true };
+}
 
-export default function ProductQuickCreateModal({
-  productForm,
-  setProductForm,
-  productSubmitting,
-  onSubmit,
-  onClose,
-}: ProductQuickCreateModalProps) {
+export default function ProductQuickCreateModal() {
+  const queryClient = useQueryClient();
+  const showProductCreateModal = useInvoiceComposerStore((state) => state.showProductCreateModal);
+  const closeProductCreateModal = useInvoiceComposerStore((state) => state.closeProductCreateModal);
+  const setFeedbackError = useInvoiceComposerStore((state) => state.setFeedbackError);
+  const setFeedbackSuccess = useInvoiceComposerStore((state) => state.setFeedbackSuccess);
+  const [productForm, setProductForm] = useState<ProductFormState>(createInitialProductForm());
+  const [productSubmitting, setProductSubmitting] = useState(false);
+
+  useEscapeClose(() => {
+    if (showProductCreateModal) {
+      closeProductCreateModal();
+    }
+  });
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    try {
+      setProductSubmitting(true);
+      setFeedbackError('');
+
+      const payload = {
+        name: productForm.name.trim(),
+        sku: productForm.sku.trim().toUpperCase(),
+        hsn_sac: productForm.hsn_sac.trim(),
+        price: Number(productForm.price),
+        gst_rate: Number(productForm.gst_rate),
+        maintain_inventory: productForm.maintain_inventory,
+      };
+
+      await api.post('/products/', payload);
+      setProductForm(createInitialProductForm());
+      closeProductCreateModal();
+      setFeedbackSuccess('Product created successfully.');
+      await queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
+      await queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.products });
+    } catch (err) {
+      setFeedbackError(getApiErrorMessage(err, 'Unable to create product'));
+    } finally {
+      setProductSubmitting(false);
+    }
+  }
+
+  if (!showProductCreateModal) {
+    return null;
+  }
+
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="product-modal-title">
       <div className="modal-panel">
@@ -26,7 +68,7 @@ export default function ProductQuickCreateModal({
           </div>
         </div>
 
-        <form className="stack" onSubmit={onSubmit}>
+        <form className="stack" onSubmit={handleSubmit}>
           <div className="field">
             <label htmlFor="modal-product-name">Product name</label>
             <input
@@ -102,7 +144,7 @@ export default function ProductQuickCreateModal({
           </div>
 
           <div className="button-row">
-            <button type="button" className="button button--ghost" onClick={onClose} title="Cancel product creation" aria-label="Cancel product creation">
+            <button type="button" className="button button--ghost" onClick={closeProductCreateModal} title="Cancel product creation" aria-label="Cancel product creation">
               Cancel
             </button>
             <button className="button button--primary" disabled={productSubmitting} title="Save product" aria-label="Save product">

@@ -1,5 +1,10 @@
-import type { Dispatch, FormEvent, SetStateAction } from 'react';
+import { useState, type FormEvent } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import api, { getApiErrorMessage } from '../../../api/client';
 import type { LedgerCreate } from '../../../types/api';
+import { useEscapeClose } from '../../../hooks/useEscapeClose';
+import { invoiceQueryKeys } from '../../../features/invoices/queryKeys';
+import { useInvoiceComposerStore } from '../../../store/useInvoiceComposerStore';
 import {
   applyOpeningBalanceSide,
   openingBalanceMagnitude,
@@ -7,25 +12,80 @@ import {
   type OpeningBalanceSide,
 } from '../../../utils/openingBalance';
 
-type LedgerQuickCreateModalProps = {
-  ledgerForm: LedgerCreate;
-  setLedgerForm: Dispatch<SetStateAction<LedgerCreate>>;
-  ledgerOpeningBalanceSide: OpeningBalanceSide;
-  setLedgerOpeningBalanceSide: Dispatch<SetStateAction<OpeningBalanceSide>>;
-  ledgerSubmitting: boolean;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onClose: () => void;
-};
+function createInitialLedgerForm(): LedgerCreate {
+  return {
+    name: '',
+    address: '',
+    gst: '',
+    opening_balance: null,
+    phone_number: '',
+    email: '',
+    website: '',
+    bank_name: '',
+    branch_name: '',
+    account_name: '',
+    account_number: '',
+    ifsc_code: '',
+  };
+}
 
-export default function LedgerQuickCreateModal({
-  ledgerForm,
-  setLedgerForm,
-  ledgerOpeningBalanceSide,
-  setLedgerOpeningBalanceSide,
-  ledgerSubmitting,
-  onSubmit,
-  onClose,
-}: LedgerQuickCreateModalProps) {
+export default function LedgerQuickCreateModal() {
+  const queryClient = useQueryClient();
+  const showLedgerCreateModal = useInvoiceComposerStore((state) => state.showLedgerCreateModal);
+  const closeLedgerCreateModal = useInvoiceComposerStore((state) => state.closeLedgerCreateModal);
+  const setSelectedLedgerId = useInvoiceComposerStore((state) => state.setSelectedLedgerId);
+  const setFeedbackError = useInvoiceComposerStore((state) => state.setFeedbackError);
+  const setFeedbackSuccess = useInvoiceComposerStore((state) => state.setFeedbackSuccess);
+  const [ledgerForm, setLedgerForm] = useState<LedgerCreate>(createInitialLedgerForm());
+  const [ledgerOpeningBalanceSide, setLedgerOpeningBalanceSide] = useState<OpeningBalanceSide>('debit');
+  const [ledgerSubmitting, setLedgerSubmitting] = useState(false);
+
+  useEscapeClose(() => {
+    if (showLedgerCreateModal) {
+      closeLedgerCreateModal();
+    }
+  });
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    try {
+      setLedgerSubmitting(true);
+      setFeedbackError('');
+
+      const payload: LedgerCreate = {
+        name: ledgerForm.name.trim(),
+        address: ledgerForm.address.trim(),
+        gst: ledgerForm.gst.trim().toUpperCase(),
+        opening_balance: ledgerForm.opening_balance,
+        phone_number: ledgerForm.phone_number.trim(),
+        email: ledgerForm.email.trim(),
+        website: ledgerForm.website.trim(),
+        bank_name: ledgerForm.bank_name.trim(),
+        branch_name: ledgerForm.branch_name.trim(),
+        account_name: ledgerForm.account_name.trim(),
+        account_number: ledgerForm.account_number.trim(),
+        ifsc_code: ledgerForm.ifsc_code.trim().toUpperCase(),
+      };
+
+      const response = await api.post<{ id: number }>('/ledgers/', payload);
+      setSelectedLedgerId(String(response.data.id));
+      setLedgerForm(createInitialLedgerForm());
+      setLedgerOpeningBalanceSide('debit');
+      closeLedgerCreateModal();
+      setFeedbackSuccess('Ledger added and selected for this invoice.');
+      await queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
+    } catch (err) {
+      setFeedbackError(getApiErrorMessage(err, 'Unable to create ledger'));
+    } finally {
+      setLedgerSubmitting(false);
+    }
+  }
+
+  if (!showLedgerCreateModal) {
+    return null;
+  }
+
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="ledger-modal-title">
       <div className="modal-panel">
@@ -36,7 +96,7 @@ export default function LedgerQuickCreateModal({
           </div>
         </div>
 
-        <form className="stack" onSubmit={onSubmit}>
+        <form className="stack" onSubmit={handleSubmit}>
           <div className="field">
             <label htmlFor="modal-ledger-name">Name</label>
             <input
@@ -198,7 +258,7 @@ export default function LedgerQuickCreateModal({
           </div>
 
           <div className="button-row">
-            <button type="button" className="button button--ghost" onClick={onClose} title="Cancel ledger creation" aria-label="Cancel ledger creation">
+            <button type="button" className="button button--ghost" onClick={closeLedgerCreateModal} title="Cancel ledger creation" aria-label="Cancel ledger creation">
               Cancel
             </button>
             <button className="button button--primary" disabled={ledgerSubmitting} title="Save ledger" aria-label="Save ledger">
