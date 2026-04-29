@@ -192,7 +192,7 @@ export default function StatementPreview({ ledger, statement, company, currencyC
           fromDate={statement.from_date}
           toDate={statement.to_date}
           onClose={() => setShowEmailModal(false)}
-          onSuccess={(message) => {
+          onSuccess={() => {
             setShowEmailModal(false);
             // Could show success toast here if needed
           }}

@@ -17,8 +17,6 @@ import { useInvoiceCancelStore } from '../store/useInvoiceCancelStore';
 import { fetchCompanyProfile, fetchInvoicePage, fetchProducts } from '../features/invoices/api';
 import { invoiceQueryKeys } from '../features/invoices/queryKeys';
 
-type ViewType = 'card' | 'table';
-
 type Breakdown = {
   credit: number;
   debit: number;

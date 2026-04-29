@@ -102,6 +102,8 @@ export default function LedgerViewPage() {
   const [statement, setStatement] = useState<LedgerStatement | null>(null);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [companyAccounts, setCompanyAccounts] = useState<CompanyAccount[]>([]);
+    // Products are loaded with ledger data for future allocation/product flows.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [products, setProducts] = useState<Product[]>([]);
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [previewReceiptId, setPreviewReceiptId] = useState<number | null>(null);
@@ -1010,7 +1012,7 @@ export default function LedgerViewPage() {
           defaultTo={ledger?.email || ''}
           defaultSubject={`Payment Reminder from ${company?.name || 'Company'}`}
           onClose={() => setShowEmailModal(false)}
-          onSuccess={(message) => {
+          onSuccess={() => {
             setShowEmailModal(false);
             setError('');
             // Could show success message here

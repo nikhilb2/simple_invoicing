@@ -16,6 +16,15 @@ type SendEmailModalProps = {
   toDate?: string;
 };
 
+type EmailPayload = {
+  to: string;
+  cc?: string;
+  subject: string;
+  message?: string;
+  from_date?: string;
+  to_date?: string;
+};
+
 export default function SendEmailModal({
   type,
   entityId,
@@ -58,7 +67,7 @@ export default function SendEmailModal({
 
     setSending(true);
     try {
-      const payload: any = {
+      const payload: EmailPayload = {
         to: to.trim(),
         cc: cc.trim() || undefined,
         subject: subject.trim(),

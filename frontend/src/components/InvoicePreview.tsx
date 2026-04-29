@@ -213,7 +213,7 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
           defaultTo={invoice.ledger?.email || ''}
           defaultSubject={`Invoice ${invoice.invoice_number || `#${invoice.id}`} from ${invoice.company_name || 'Company'}`}
           onClose={() => setShowEmailModal(false)}
-          onSuccess={(message) => {
+          onSuccess={() => {
             setShowEmailModal(false);
             // Could show success toast here if needed
           }}
