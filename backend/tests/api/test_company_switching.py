@@ -184,6 +184,36 @@ def test_company_creation_capability_endpoint_reports_current_state(client, db_s
         _restore_user_override(old_override)
 
 
+def test_company_creation_capability_defaults_to_one_without_settings_row(client, db_session: Session):
+    old_override = _with_persistent_user_override()
+    try:
+        settings_row = db_session.query(GlobalSettings).filter(GlobalSettings.id == 1).first()
+        if settings_row:
+            db_session.delete(settings_row)
+            db_session.commit()
+
+        initial_capability = client.get("/api/company/companies/capability")
+        assert initial_capability.status_code == 200, initial_capability.text
+        assert initial_capability.json() == {
+            "max_companies": 1,
+            "current_companies": 0,
+            "can_create_company": True,
+        }
+
+        first_create = client.post("/api/company/companies", json=_company_payload("Fallback One"))
+        assert first_create.status_code == 200, first_create.text
+
+        capped_capability = client.get("/api/company/companies/capability")
+        assert capped_capability.status_code == 200, capped_capability.text
+        assert capped_capability.json() == {
+            "max_companies": 1,
+            "current_companies": 1,
+            "can_create_company": False,
+        }
+    finally:
+        _restore_user_override(old_override)
+
+
 def test_company_header_scopes_ledger_queries(client):
     old_override = _with_persistent_user_override()
     try:
