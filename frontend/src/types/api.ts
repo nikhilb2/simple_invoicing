@@ -150,6 +150,12 @@ export type CompanySelectOut = {
   active_company_id: number;
 };
 
+export type CompanyCreationCapOut = {
+  max_companies: number;
+  current_companies: number;
+  can_create_company: boolean;
+};
+
 export type CompanyProfileUpdate = {
   name: string;
   address: string;

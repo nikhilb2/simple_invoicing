@@ -5,7 +5,13 @@ import { Link, NavLink } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useFY } from '../context/FYContext';
-import type { CompanyListItem, CompanyProfile, CompanyProfileUpdate, CompanySelectOut } from '../types/api';
+import type {
+  CompanyCreationCapOut,
+  CompanyListItem,
+  CompanyProfile,
+  CompanyProfileUpdate,
+  CompanySelectOut,
+} from '../types/api';
 
 type NavItem = { to: string; label: string; end?: boolean };
 
@@ -62,6 +68,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [companyLoading, setCompanyLoading] = useState(false);
   const [companySwitchingId, setCompanySwitchingId] = useState<number | null>(null);
   const [companyError, setCompanyError] = useState('');
+  const [canCreateCompany, setCanCreateCompany] = useState(true);
   const [newCompanyModalOpen, setNewCompanyModalOpen] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newCompanySubmitting, setNewCompanySubmitting] = useState(false);
@@ -108,6 +115,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     if (!isAuthenticated) {
       setCompanyList([]);
       setCompanyError('');
+      setCanCreateCompany(false);
       return;
     }
 
@@ -116,11 +124,16 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       setCompanyLoading(true);
       setCompanyError('');
       try {
-        const res = await api.get<CompanyListItem[]>('/company/companies');
+        const [companiesRes, capabilityRes] = await Promise.all([
+          api.get<CompanyListItem[]>('/company/companies'),
+          api.get<CompanyCreationCapOut>('/company/companies/capability'),
+        ]);
         if (cancelled) return;
-        setCompanyList(res.data);
+        setCompanyList(companiesRes.data);
+        setCanCreateCompany(capabilityRes.data.can_create_company);
       } catch (error) {
         if (cancelled) return;
+        setCanCreateCompany(false);
         setCompanyError(getApiErrorMessage(error, 'Failed to load companies'));
       } finally {
         if (!cancelled) {
@@ -326,29 +339,33 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                         {company.name || `Company #${company.id}`}
                       </button>
                     ))}
-                    <hr style={{ margin: '0.25rem 0', border: 'none', borderTop: '1px solid var(--line)' }} />
-                    <button
-                      style={{
-                        display: 'block',
-                        width: '100%',
-                        textAlign: 'left',
-                        padding: '0.5rem 0.75rem',
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        fontSize: '0.875rem',
-                        color: 'inherit',
-                        fontWeight: 500,
-                      }}
-                      onClick={() => {
-                        setCompanyDropdownOpen(false);
-                        setNewCompanyName('');
-                        setNewCompanyError('');
-                        setNewCompanyModalOpen(true);
-                      }}
-                    >
-                      + New Company
-                    </button>
+                    {canCreateCompany && (
+                      <>
+                        <hr style={{ margin: '0.25rem 0', border: 'none', borderTop: '1px solid var(--line)' }} />
+                        <button
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: '0.5rem 0.75rem',
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontSize: '0.875rem',
+                            color: 'inherit',
+                            fontWeight: 500,
+                          }}
+                          onClick={() => {
+                            setCompanyDropdownOpen(false);
+                            setNewCompanyName('');
+                            setNewCompanyError('');
+                            setNewCompanyModalOpen(true);
+                          }}
+                        >
+                          + New Company
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
