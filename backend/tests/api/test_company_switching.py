@@ -5,6 +5,8 @@ from app_main import app
 from src.api.deps import get_current_user
 from src.db.session import get_db
 from src.models.user import User, UserRole
+from src.models.global_settings import GlobalSettings
+import pytest
 
 
 def _company_payload(name: str, gst: str = ""):
@@ -118,6 +120,96 @@ def test_company_create_list_and_select(client):
         active_after = [item for item in listed_after.json() if item["is_active"]]
         assert len(active_after) == 1
         assert active_after[0]["id"] == company_b_id
+    finally:
+        _restore_user_override(old_override)
+
+
+@pytest.fixture(autouse=True)
+def _set_default_test_company_cap(db_session: Session):
+    settings_row = db_session.query(GlobalSettings).filter(GlobalSettings.id == 1).first()
+    if not settings_row:
+        settings_row = GlobalSettings(id=1, max_companies=10)
+        db_session.add(settings_row)
+    else:
+        settings_row.max_companies = 10
+    db_session.commit()
+
+
+def test_company_creation_is_blocked_when_global_cap_reached(client, db_session: Session):
+    old_override = _with_persistent_user_override()
+    try:
+        settings_row = db_session.query(GlobalSettings).filter(GlobalSettings.id == 1).first()
+        settings_row.max_companies = 1
+        db_session.commit()
+
+        first_create = client.post("/api/company/companies", json=_company_payload("Cap One"))
+        assert first_create.status_code == 200, first_create.text
+
+        blocked_create = client.post("/api/company/companies", json=_company_payload("Cap Two"))
+        assert blocked_create.status_code == 403
+        assert "Company creation limit reached" in blocked_create.text
+    finally:
+        _restore_user_override(old_override)
+
+
+def test_company_creation_capability_endpoint_reports_current_state(client, db_session: Session):
+    old_override = _with_persistent_user_override()
+    try:
+        settings_row = db_session.query(GlobalSettings).filter(GlobalSettings.id == 1).first()
+        settings_row.max_companies = 2
+        db_session.commit()
+
+        first_create = client.post("/api/company/companies", json=_company_payload("Cap State A"))
+        assert first_create.status_code == 200, first_create.text
+
+        capability = client.get("/api/company/companies/capability")
+        assert capability.status_code == 200, capability.text
+        assert capability.json() == {
+            "max_companies": 2,
+            "current_companies": 1,
+            "can_create_company": True,
+        }
+
+        second_create = client.post("/api/company/companies", json=_company_payload("Cap State B"))
+        assert second_create.status_code == 200, second_create.text
+
+        capability_after = client.get("/api/company/companies/capability")
+        assert capability_after.status_code == 200, capability_after.text
+        assert capability_after.json() == {
+            "max_companies": 2,
+            "current_companies": 2,
+            "can_create_company": False,
+        }
+    finally:
+        _restore_user_override(old_override)
+
+
+def test_company_creation_capability_defaults_to_one_without_settings_row(client, db_session: Session):
+    old_override = _with_persistent_user_override()
+    try:
+        settings_row = db_session.query(GlobalSettings).filter(GlobalSettings.id == 1).first()
+        if settings_row:
+            db_session.delete(settings_row)
+            db_session.commit()
+
+        initial_capability = client.get("/api/company/companies/capability")
+        assert initial_capability.status_code == 200, initial_capability.text
+        assert initial_capability.json() == {
+            "max_companies": 1,
+            "current_companies": 0,
+            "can_create_company": True,
+        }
+
+        first_create = client.post("/api/company/companies", json=_company_payload("Fallback One"))
+        assert first_create.status_code == 200, first_create.text
+
+        capped_capability = client.get("/api/company/companies/capability")
+        assert capped_capability.status_code == 200, capped_capability.text
+        assert capped_capability.json() == {
+            "max_companies": 1,
+            "current_companies": 1,
+            "can_create_company": False,
+        }
     finally:
         _restore_user_override(old_override)
 

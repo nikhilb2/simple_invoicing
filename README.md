@@ -177,6 +177,21 @@ make down                             # Stop all services
 
 See the [Makefile](Makefile) for all available commands.
 
+## Company Creation Cap
+
+Company creation is capped globally and enforced by backend validation.
+
+- The cap value is stored in PostgreSQL table `global_settings` column `max_companies`.
+- The UI does not provide any setting to change this value.
+- To change the allowed number of companies, update PostgreSQL directly:
+
+```sql
+UPDATE global_settings
+SET max_companies = 5,
+	updated_at = NOW()
+WHERE id = 1;
+```
+
 ## Roadmap
 
 - [ ] Multi-currency support

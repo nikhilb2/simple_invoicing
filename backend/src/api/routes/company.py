@@ -1,13 +1,36 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_active_company, get_current_user, require_roles
 from src.db.session import get_db
 from src.models.company import CompanyProfile
+from src.models.global_settings import GlobalSettings
 from src.models.user import User, UserRole
-from src.schemas.company import CompanyListItem, CompanyProfileOut, CompanyProfileUpdate, CompanySelectOut
+from src.schemas.company import (
+    CompanyCreationCapOut,
+    CompanyListItem,
+    CompanyProfileOut,
+    CompanyProfileUpdate,
+    CompanySelectOut,
+)
 
 router = APIRouter()
+
+
+def _get_max_companies(db: Session) -> int:
+    settings_row = db.query(GlobalSettings).filter(GlobalSettings.id == 1).first()
+    return settings_row.max_companies if settings_row else 1
+
+
+def _get_company_creation_capability(db: Session) -> CompanyCreationCapOut:
+    current_companies = db.query(func.count(CompanyProfile.id)).scalar() or 0
+    max_companies = _get_max_companies(db)
+    return CompanyCreationCapOut(
+        max_companies=max_companies,
+        current_companies=current_companies,
+        can_create_company=current_companies < max_companies,
+    )
 
 
 def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> CompanyProfile:
@@ -82,10 +105,28 @@ def create_company_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
 ):
+    cap = _get_company_creation_capability(db)
+    if not cap.can_create_company:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Company creation limit reached. "
+                "Update global_settings.max_companies directly in PostgreSQL to allow more companies."
+            ),
+        )
+
     profile = _create_company_profile(db, payload)
     if current_user.active_company_id is None:
         _set_active_company(db, current_user, profile.id)
     return profile
+
+
+@router.get("/companies/capability", response_model=CompanyCreationCapOut)
+def get_company_creation_capability(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return _get_company_creation_capability(db)
 
 
 @router.post("/select/{company_id}", response_model=CompanySelectOut)
