@@ -77,7 +77,7 @@ export default function InvoiceDuesPage() {
         if (cancelled) return;
         setCompany(companyProfile);
         setLedgers(ledgerList);
-      } catch (err) {
+      } catch {
         if (!cancelled) {
           setError('Unable to load dues page filters');
         }
@@ -109,7 +109,7 @@ export default function InvoiceDuesPage() {
         setItems(response.items);
         setTotal(response.total);
         setTotalPages(response.total_pages);
-      } catch (err) {
+      } catch {
         if (!cancelled) {
           setItems([]);
           setTotal(0);
@@ -133,7 +133,7 @@ export default function InvoiceDuesPage() {
       setError('');
       const invoice = await fetchInvoiceById(invoiceId);
       setPreviewInvoice(invoice);
-    } catch (err) {
+    } catch {
       setError('Unable to load invoice preview');
     }
   }

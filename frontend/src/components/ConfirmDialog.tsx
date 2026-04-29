@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 
 type ConfirmDialogProps = {
