@@ -54,8 +54,8 @@ function fyFromStartYear(year: number) {
 }
 
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
-  const showCompanySwitcher = false;
   const { isAdmin, isAuthenticated, userEmail, logout } = useAuth();
+  const showCompanySwitcher = isAuthenticated;
   const { activeFY, fyList, switchFY, createFY } = useFY();
 
   const [fyDropdownOpen, setFyDropdownOpen] = useState(false);
