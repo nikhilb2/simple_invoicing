@@ -8,3 +8,4 @@ from src.models.company_account import CompanyAccount
 from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.smtp_config import SMTPConfig
 from src.models.user_shortcut import UserShortcut
+from src.models.global_settings import GlobalSettings
