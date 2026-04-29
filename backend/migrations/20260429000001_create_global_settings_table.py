@@ -17,8 +17,8 @@ def up(conn) -> None:
         )
     """))
     conn.execute(text("""
-        INSERT INTO global_settings (id, max_companies)
-        VALUES (1, 1)
+        INSERT INTO global_settings (id, max_companies, created_at, updated_at)
+        VALUES (1, 1, NOW(), NOW())
         ON CONFLICT (id) DO NOTHING
     """))
 

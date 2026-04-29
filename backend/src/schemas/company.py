@@ -45,3 +45,9 @@ class CompanyListItem(BaseModel):
 
 class CompanySelectOut(BaseModel):
     active_company_id: int
+
+
+class CompanyCreationCapOut(BaseModel):
+    max_companies: int
+    current_companies: int
+    can_create_company: bool
