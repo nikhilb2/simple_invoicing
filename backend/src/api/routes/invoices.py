@@ -815,6 +815,15 @@ def _pdf_unit_price_including_tax(item: InvoiceItem) -> float:
     return float(_money(line_total / quantity))
 
 
+  def _pdf_display_unit(unit: str | None) -> str:
+    normalized_unit = (unit or "Pieces").strip()
+    if not normalized_unit:
+      normalized_unit = "Pieces"
+    if normalized_unit.lower() == "pieces":
+      return "Pcs"
+    return normalized_unit
+
+
 def _build_pdf_payment_details_html(invoice_bank_accounts: list[CompanyAccount]) -> str:
     if not invoice_bank_accounts:
         return '<p class="muted-text">No bank account marked to display on invoice.</p>'
