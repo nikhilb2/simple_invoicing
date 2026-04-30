@@ -79,7 +79,7 @@ def _require_ledger(db: Session, ledger_id: int, company_id: int | None) -> Ledg
 def _change_inventory_quantity(
     db: Session,
     product_id: int,
-    quantity_delta: int,
+  quantity_delta: Decimal,
     *,
     company_id: int | None,
     context: str,
@@ -93,8 +93,8 @@ def _change_inventory_quantity(
         db.add(inventory)
         db.flush()
 
-    inventory.quantity += quantity_delta
-    if inventory.quantity < 0:
+    inventory.quantity = Decimal(str(inventory.quantity or 0)) + quantity_delta
+    if Decimal(str(inventory.quantity or 0)) < 0:
         raise HTTPException(status_code=400, detail=f"Insufficient inventory while {context}")
 
 
@@ -155,8 +155,9 @@ def _reverse_existing_invoice_inventory(db: Session, invoice: Invoice) -> None:
         )
 
 
-def _inventory_effect_for_voucher_type(quantity: int, voucher_type: str) -> int:
-    return -quantity if voucher_type == "sales" else quantity
+def _inventory_effect_for_voucher_type(quantity: float, voucher_type: str) -> Decimal:
+  quantity_value = Decimal(str(quantity))
+  return -quantity_value if voucher_type == "sales" else quantity_value
 
 
 def _apply_inventory_delta_for_invoice_update(
@@ -166,14 +167,14 @@ def _apply_inventory_delta_for_invoice_update(
     *,
     company_id: int | None,
 ) -> None:
-    existing_effect_by_product: dict[int, int] = defaultdict(int)
+    existing_effect_by_product: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     for item in invoice.items:
         existing_effect_by_product[item.product_id] += _inventory_effect_for_voucher_type(
             item.quantity,
             invoice.voucher_type,
         )
 
-    next_effect_by_product: dict[int, int] = defaultdict(int)
+    next_effect_by_product: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     for item in payload.items:
         next_effect_by_product[item.product_id] += _inventory_effect_for_voucher_type(
             item.quantity,
@@ -267,7 +268,8 @@ def _apply_payload_to_invoice(
     tax_total = Decimal("0")
     created_items: list[InvoiceItem] = []
     for item in payload.items:
-        if item.quantity <= 0:
+        quantity_value = Decimal(str(item.quantity))
+        if quantity_value <= 0:
             raise HTTPException(status_code=400, detail="Item quantity must be greater than zero")
 
         product_query = db.query(Product).filter(Product.id == item.product_id)
@@ -277,12 +279,18 @@ def _apply_payload_to_invoice(
         if not product:
             raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
 
+        if not product.allow_decimal and quantity_value != quantity_value.to_integral_value():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Quantity for {product.name} must be a whole number",
+            )
+
         if apply_inventory_changes and product.maintain_inventory:
             inventory_query = db.query(Inventory).filter(Inventory.product_id == item.product_id)
             if company_id is not None:
                 inventory_query = inventory_query.filter(or_(Inventory.company_id == company_id, Inventory.company_id.is_(None)))
             inventory = inventory_query.first()
-            if payload.voucher_type == "sales" and (not inventory or inventory.quantity < item.quantity):
+            if payload.voucher_type == "sales" and (not inventory or Decimal(str(inventory.quantity or 0)) < quantity_value):
                 raise HTTPException(status_code=400, detail=f"Insufficient inventory for {product.name}")
 
             quantity_delta = _inventory_effect_for_voucher_type(item.quantity, payload.voucher_type)
@@ -301,11 +309,11 @@ def _apply_payload_to_invoice(
 
         if payload.tax_inclusive:
             # Entered price already includes tax; back-calculate taxable amount
-            line_total = _money(unit_price * Decimal(item.quantity))
+            line_total = _money(unit_price * quantity_value)
             taxable_amount = _money(line_total / (1 + gst_rate / Decimal("100")))
             tax_amount = _money(line_total - taxable_amount)
         else:
-            taxable_amount = _money(unit_price * Decimal(item.quantity))
+            taxable_amount = _money(unit_price * quantity_value)
             tax_amount = _money(taxable_amount * gst_rate / Decimal("100"))
             line_total = _money(taxable_amount + tax_amount)
 
@@ -315,7 +323,7 @@ def _apply_payload_to_invoice(
         invoice_item = InvoiceItem(
             invoice_id=invoice.id,
             product_id=product.id,
-            quantity=item.quantity,
+            quantity=float(quantity_value),
             hsn_sac=product.hsn_sac,
             unit_price=float(unit_price),
             gst_rate=float(gst_rate),

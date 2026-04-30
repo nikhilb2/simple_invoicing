@@ -6,7 +6,7 @@ from src.schemas.ledger import LedgerOut
 
 class InvoiceItemCreate(BaseModel):
     product_id: int
-    quantity: int
+    quantity: float
     unit_price: float | None = None
     description: str | None = None
 
@@ -27,7 +27,7 @@ class InvoiceItemOut(BaseModel):
     id: int
     product_id: int
     hsn_sac: str | None = None
-    quantity: int
+    quantity: float
     unit_price: float
     gst_rate: float
     taxable_amount: float
