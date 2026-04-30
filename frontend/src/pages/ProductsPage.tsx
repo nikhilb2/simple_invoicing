@@ -5,6 +5,7 @@ import type { CompanyProfile, PaginatedProducts, Product, ProductCreate } from '
 import StatusToasts from '../components/StatusToasts';
 import ConfirmDialog from '../components/ConfirmDialog';
 import formatCurrency from '../utils/formatting';
+import EmptyState from '../components/EmptyState';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -315,22 +316,15 @@ export default function ProductsPage() {
           </div>
 
           <div className="table-list">
-            {loading ? <div className="empty-state">Loading products...</div> : null}
+            {loading ? <EmptyState message="Loading products..." /> : null}
             {!loading && products.length === 0 && !search ? (
-              <div className="empty-state">
-                <p style={{ fontWeight: 600, marginBottom: '8px' }}>No products yet</p>
-                <p style={{ marginBottom: '16px' }}>Add your first product to start building your catalog.</p>
-                <button
-                  type="button"
-                  className="button button--primary"
-                  onClick={() => document.getElementById('sku')?.focus()}
-                >
-                  Create your first product
-                </button>
-              </div>
+              <EmptyState
+                message="No products registered yet. Add your first product to start building your catalog."
+                action={{ label: 'Add First Product', onClick: () => document.getElementById('sku')?.focus() }}
+              />
             ) : null}
             {!loading && products.length === 0 && search ? (
-              <div className="empty-state">No products match your search.</div>
+              <EmptyState message="No products match your search." />
             ) : null}
             {!loading
               ? products.map((product) => (

@@ -5,9 +5,20 @@ test.describe('Invoices', () => {
     await page.goto('/invoices-view');
     await expect(page.locator('h1')).toContainText('Invoice Feed', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
-    // Keep feed tests independent from FY/view toggles mutated by other tests.
-    await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Search all FY' }).locator('input').check();
-    await page.getByRole('button', { name: 'Card' }).click();
+    // Handle "No active financial year" state if it appears
+    const noFYButton = page.getByRole('button', { name: 'Search all FY' });
+    if (await noFYButton.isVisible()) {
+      await noFYButton.click();
+    } else {
+      // Normal state: check the "Search all FY" checkbox
+      const checkbox = page.locator('label.invoice-feed-view__checkbox', { hasText: 'Search all FY' }).locator('input');
+      if (await checkbox.isVisible()) {
+        await checkbox.check();
+      }
+    }
+    
+    // Wait for the feed to load
+    await expect(page.locator('.invoice-feed-view')).toBeVisible({ timeout: 10000 });
   }
 
   /**
@@ -320,7 +331,7 @@ test.describe('Invoices', () => {
     await page.fill('.invoice-feed-view__search', 'ZZZZNONEXISTENT999');
     await page.waitForTimeout(500);
 
-    await expect(page.locator('.empty-state')).toContainText('No invoices found');
+    await expect(page.locator('.empty-state')).toContainText('No invoices match your search.');
   });
 
   test('shows friendly empty state with CTA when no invoices exist', async ({ authedPage: page }) => {
@@ -332,12 +343,30 @@ test.describe('Invoices', () => {
         body: JSON.stringify({ items: [], total: 0, total_pages: 0, page: 1 }),
       })
     );
+    await page.route(/\/api\/company\//, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ name: 'Test Co', gstin: '123' }),
+      })
+    );
+    await page.route(/\/api\/products\//, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [] }),
+      })
+    );
 
     await page.goto('/invoices-view');
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1000);
 
     const emptyState = page.locator('.empty-state');
-    await expect(emptyState).toContainText('No invoices found');
+    await expect(emptyState).toContainText('No invoices registered yet');
+    await expect(emptyState).toContainText('first invoice');
+
+    const ctaButton = page.locator('button:has-text("Create First Invoice")');
+    await expect(ctaButton).toBeVisible();
   });
 
   test('supplier invoice # field is hidden for sales invoices', async ({ authedPage: page }) => {

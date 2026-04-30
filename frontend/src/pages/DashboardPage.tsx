@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
+import EmptyState from '../components/EmptyState';
 import type { CompanyProfile, InventoryRow, Invoice, PaginatedInventoryOut, Product } from '../types/api';
 import formatCurrency from '../utils/formatting';
 
@@ -129,7 +131,12 @@ export default function DashboardPage() {
                 <div className="table-row skeleton" role="status" aria-label="Loading" style={{ height: '76px', borderColor: 'transparent' }}></div>
               </>
             ) : null}
-            {!loading && state.inventory.length === 0 ? <div className="empty-state">No inventory rows yet.</div> : null}
+            {!loading && state.inventory.length === 0 ? (
+              <EmptyState 
+                message="No inventory rows yet. Add products to track their stock." 
+                action={<Link to="/products" className="button button--secondary button--small">Go to Products</Link>}
+              />
+            ) : null}
             {!loading
               ? state.inventory
                   .slice()
@@ -165,7 +172,12 @@ export default function DashboardPage() {
                 <div className="invoice-row skeleton" role="status" aria-label="Loading" style={{ height: '88px', borderColor: 'transparent' }}></div>
               </>
             ) : null}
-            {!loading && state.invoices.length === 0 ? <div className="empty-state">No invoices have been created yet.</div> : null}
+            {!loading && state.invoices.length === 0 ? (
+              <EmptyState 
+                message="No invoices yet. Create your first invoice to get started." 
+                action={<Link to="/invoices" className="button button--primary button--small">Create Invoice</Link>}
+              />
+            ) : null}
             {!loading
               ? state.invoices.slice(0, 6).map((invoice) => (
                   <div key={invoice.id} className="invoice-row">

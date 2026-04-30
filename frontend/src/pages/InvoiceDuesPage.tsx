@@ -6,6 +6,7 @@ import StatusToasts from '../components/StatusToasts';
 import InvoicePreview from '../components/InvoicePreview';
 import formatCurrency from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
+import EmptyState from '../components/EmptyState';
 
 type DueFilterMode = 'all' | 'overdue' | 'next7' | 'next15' | 'custom-days' | 'exact-date';
 
@@ -301,8 +302,11 @@ export default function InvoiceDuesPage() {
           </div>
 
           <div className="invoice-list">
-            {loading ? <div className="empty-state">Loading due invoices...</div> : null}
-            {!loading && items.length === 0 ? <div className="empty-state">No invoices match the selected due filters.</div> : null}
+            {loading ? (
+              <EmptyState message="Loading due invoices..." />
+            ) : items.length === 0 ? (
+              <EmptyState message="No invoices match your due filters. Try adjusting the due window or search." />
+            ) : null}
             {!loading
               ? items.map((invoice) => (
                   <div key={invoice.id} className="invoice-row">

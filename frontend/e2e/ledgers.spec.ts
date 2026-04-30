@@ -240,7 +240,7 @@ test.describe('Ledgers CRUD', () => {
 
     await expect(page.locator('.empty-state')).toContainText('No ledgers match your search.');
     // CTA for truly-empty state must not appear during a search
-    await expect(page.locator('button:has-text("Create your first ledger")')).not.toBeVisible();
+    await expect(page.locator('button:has-text("Create First Ledger")')).not.toBeVisible();
   });
 
   test('shows friendly empty state with CTA that navigates to create form', async ({ authedPage: page }) => {
@@ -256,10 +256,10 @@ test.describe('Ledgers CRUD', () => {
     await page.goto('/ledgers');
 
     const emptyState = page.locator('.empty-state');
-    await expect(emptyState).toContainText('No ledgers yet');
+    await expect(emptyState).toContainText('No ledgers registered yet');
     await expect(emptyState).toContainText('first ledger');
 
-    const ctaButton = page.locator('button:has-text("Create your first ledger")');
+    const ctaButton = page.locator('button:has-text("Create First Ledger")');
     await expect(ctaButton).toBeVisible();
     // CTA should navigate to the ledger create form
     await page.unroute(/\/api\/ledgers\//); // unblock navigation target
