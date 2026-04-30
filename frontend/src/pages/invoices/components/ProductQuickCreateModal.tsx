@@ -6,8 +6,11 @@ import { invoiceQueryKeys } from '../../../features/invoices/queryKeys';
 import { useInvoiceComposerStore } from '../../../store/useInvoiceComposerStore';
 import type { ProductFormState } from '../types';
 
+const UNIT_OPTIONS = ['Pieces', 'Kg', 'g', 'm', 'l', 'Ounce'];
+const CUSTOM_UNIT_VALUE = '__custom__';
+
 function createInitialProductForm(): ProductFormState {
-  return { name: '', sku: '', hsn_sac: '', price: '', gst_rate: '0', maintain_inventory: true };
+  return { name: '', sku: '', hsn_sac: '', price: '', gst_rate: '0', unit: 'Pieces', allow_decimal: false, maintain_inventory: true };
 }
 
 export default function ProductQuickCreateModal() {
@@ -38,6 +41,8 @@ export default function ProductQuickCreateModal() {
         hsn_sac: productForm.hsn_sac.trim(),
         price: Number(productForm.price),
         gst_rate: Number(productForm.gst_rate),
+        unit: productForm.unit.trim() || 'Pieces',
+        allow_decimal: productForm.allow_decimal,
         maintain_inventory: productForm.maintain_inventory,
       };
 
@@ -130,6 +135,39 @@ export default function ProductQuickCreateModal() {
               required
             />
           </div>
+          <div className="field">
+            <label htmlFor="modal-product-unit">Unit</label>
+            <select
+              id="modal-product-unit"
+              className="input"
+              value={UNIT_OPTIONS.includes(productForm.unit) ? productForm.unit : CUSTOM_UNIT_VALUE}
+              onChange={(event) => {
+                const value = event.target.value;
+                setProductForm((current) => ({
+                  ...current,
+                  unit: value === CUSTOM_UNIT_VALUE ? '' : value,
+                }));
+              }}
+            >
+              {UNIT_OPTIONS.map((unitOption) => (
+                <option key={unitOption} value={unitOption}>{unitOption}</option>
+              ))}
+              <option value={CUSTOM_UNIT_VALUE}>Other (custom)</option>
+            </select>
+          </div>
+          {UNIT_OPTIONS.includes(productForm.unit) ? null : (
+            <div className="field">
+              <label htmlFor="modal-product-custom-unit">Custom unit</label>
+              <input
+                id="modal-product-custom-unit"
+                className="input"
+                value={productForm.unit}
+                onChange={(event) => setProductForm((current) => ({ ...current, unit: event.target.value }))}
+                placeholder="e.g. cm, ml, pack"
+                required
+              />
+            </div>
+          )}
           <div className="field field--full" style={{ marginBottom: 0 }}>
             <label htmlFor="modal-product-maintain-inventory" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 0 }}>
               <input
@@ -141,6 +179,18 @@ export default function ProductQuickCreateModal() {
               Maintain inventory for this product
             </label>
             <small className="field-hint">Disable this for service charges and other non-stock items.</small>
+          </div>
+          <div className="field field--full" style={{ marginBottom: 0 }}>
+            <label htmlFor="modal-product-allow-decimal" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 0 }}>
+              <input
+                id="modal-product-allow-decimal"
+                type="checkbox"
+                checked={productForm.allow_decimal}
+                onChange={(event) => setProductForm((current) => ({ ...current, allow_decimal: event.target.checked }))}
+              />
+              Allow decimal quantity
+            </label>
+            <small className="field-hint">Enable this for fractional stock units like Kg or l.</small>
           </div>
 
           <div className="button-row">
