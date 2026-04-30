@@ -37,11 +37,11 @@ def _invoice_base(voucher_type: str = "sales") -> Invoice:
     return invoice
 
 
-def _line_item(product_id: int = 1):
+def _line_item(product_id: int = 1, quantity: float = 2):
     return InvoiceItem(
         product_id=product_id,
         hsn_sac="1234",
-        quantity=2,
+        quantity=quantity,
         unit_price=100,
         tax_amount=0,
         cgst_amount=0,
@@ -137,3 +137,24 @@ def test_purchase_pdf_shows_unit_column_and_keeps_custom_unit():
 
     assert "<th>Unit</th>" in html
     assert "<td>Kg</td>" in html
+
+
+def test_pdf_quantity_hides_trailing_zeroes_for_whole_number_product():
+    invoice = _invoice_base("sales")
+    invoice.items = [_line_item(product_id=21, quantity=1)]
+    product = SimpleNamespace(id=21, name="Whole Item", sku="W-1", hsn_sac="7214", unit="Pieces", allow_decimal=False)
+
+    html = _build_invoice_html(invoice, [product])
+
+    assert '<td class="right">1</td>' in html
+    assert '<td class="right">1.000</td>' not in html
+
+
+def test_pdf_quantity_keeps_decimal_for_decimal_enabled_product():
+    invoice = _invoice_base("sales")
+    invoice.items = [_line_item(product_id=22, quantity=1.5)]
+    product = SimpleNamespace(id=22, name="Decimal Item", sku="D-1", hsn_sac="7214", unit="Kg", allow_decimal=True)
+
+    html = _build_invoice_html(invoice, [product])
+
+    assert '<td class="right">1.5</td>' in html

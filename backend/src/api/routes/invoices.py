@@ -868,6 +868,15 @@ def _pdf_display_unit(unit: str | None) -> str:
     return normalized_unit
 
 
+def _pdf_display_quantity(quantity: float | Decimal | int | None, allow_decimal: bool | None) -> str:
+  value = Decimal(str(quantity or 0))
+  if not allow_decimal and value == value.to_integral_value():
+    return str(int(value))
+
+  as_text = format(value, "f").rstrip("0").rstrip(".")
+  return as_text or "0"
+
+
 def _build_pdf_payment_details_html(invoice_bank_accounts: list[CompanyAccount]) -> str:
     if not invoice_bank_accounts:
         return '<p class="muted-text">No bank account marked to display on invoice.</p>'
@@ -912,6 +921,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
         sku = _e(prod.sku) if prod else "N/A"
         hsn = _e(item.hsn_sac or (prod.hsn_sac if prod else None) or "N/A")
         unit = _e(_pdf_display_unit(getattr(prod, "unit", None) if prod else None))
+        quantity_display = _pdf_display_quantity(item.quantity, getattr(prod, "allow_decimal", None) if prod else None)
         tax_row_cells = _build_pdf_tax_row_cells(item, currency, interstate_supply)
 
         item_rows += f"""
@@ -920,7 +930,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
           <td>{product_cell_html}</td>
           <td>{sku}</td>
           <td>{hsn}</td>
-          <td class="right">{item.quantity}</td>
+          <td class="right">{quantity_display}</td>
           <td>{unit}</td>
           <td class="right">{_fmt_currency(_pdf_unit_price_including_tax(item), currency)}</td>
           {tax_row_cells}
@@ -1224,6 +1234,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
         sku = _e(prod.sku) if prod else "N/A"
         hsn = _e(item.hsn_sac or (prod.hsn_sac if prod else None) or "N/A")
         unit = _e(_pdf_display_unit(getattr(prod, "unit", None) if prod else None))
+        quantity_display = _pdf_display_quantity(item.quantity, getattr(prod, "allow_decimal", None) if prod else None)
         tax_row_cells = _build_pdf_tax_row_cells(item, currency, interstate_supply)
 
         item_rows += f"""
@@ -1232,7 +1243,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
           <td>{product_cell_html}</td>
           <td>{sku}</td>
           <td>{hsn}</td>
-          <td class="right">{item.quantity}</td>
+          <td class="right">{quantity_display}</td>
           <td>{unit}</td>
           <td class="right">{_fmt_currency(_pdf_unit_price_including_tax(item), currency)}</td>
           {tax_row_cells}
