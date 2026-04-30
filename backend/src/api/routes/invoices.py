@@ -759,13 +759,49 @@ def _fmt_rate(value: float) -> str:
 
 def _build_pdf_tax_header_cells(interstate_supply: bool) -> str:
     if interstate_supply:
-        return '<th class="right">IGST %</th><th class="right">IGST Amt</th><th class="right">Total Tax</th>'
+  return '<th class="right">IGST<br>%</th><th class="right">IGST<br>Amt</th><th class="right">Total<br>Tax</th>'
     return (
-        '<th class="right">SGST %</th>'
-        '<th class="right">SGST Amt</th>'
-        '<th class="right">CGST %</th>'
-        '<th class="right">CGST Amt</th>'
-        '<th class="right">Total Tax</th>'
+  '<th class="right">SGST<br>%</th>'
+  '<th class="right">SGST<br>Amt</th>'
+  '<th class="right">CGST<br>%</th>'
+  '<th class="right">CGST<br>Amt</th>'
+  '<th class="right">Total<br>Tax</th>'
+    )
+
+
+def _build_pdf_table_colgroup(interstate_supply: bool) -> str:
+    if interstate_supply:
+        return (
+            '<colgroup>'
+            '<col style="width: 4%;" />'
+            '<col style="width: 20%;" />'
+            '<col style="width: 7%;" />'
+            '<col style="width: 8%;" />'
+            '<col style="width: 6%;" />'
+            '<col style="width: 6%;" />'
+            '<col style="width: 12%;" />'
+            '<col style="width: 7%;" />'
+            '<col style="width: 10%;" />'
+            '<col style="width: 10%;" />'
+            '<col style="width: 10%;" />'
+            '</colgroup>'
+        )
+    return (
+        '<colgroup>'
+        '<col style="width: 3%;" />'
+        '<col style="width: 16%;" />'
+        '<col style="width: 6%;" />'
+        '<col style="width: 7%;" />'
+        '<col style="width: 5%;" />'
+        '<col style="width: 5%;" />'
+        '<col style="width: 10%;" />'
+        '<col style="width: 6%;" />'
+        '<col style="width: 8%;" />'
+        '<col style="width: 6%;" />'
+        '<col style="width: 8%;" />'
+        '<col style="width: 8%;" />'
+        '<col style="width: 12%;" />'
+        '</colgroup>'
     )
 
 
@@ -861,6 +897,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else (invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A")
     interstate_supply = _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
     tax_header_cells = _build_pdf_tax_header_cells(interstate_supply)
+    table_colgroup = _build_pdf_table_colgroup(interstate_supply)
 
     product_map = {p.id: p for p in products}
 
@@ -1018,28 +1055,34 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
   }}
   .invoice-sheet__table {{
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     margin-bottom: 16px;
-    font-size: 9px;
+    font-size: 8px;
   }}
   .invoice-sheet__table thead th {{
     background: #f3f4f6;
     color: #374151;
     font-weight: 600;
-    font-size: 8px;
+    font-size: 7px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    padding: 7px 8px;
+    line-height: 1.2;
+    padding: 5px 4px;
     border-bottom: 2px solid #d1d5db;
     text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }}
   .invoice-sheet__table thead th.right {{
     text-align: right;
   }}
   .invoice-sheet__table tbody td {{
-    padding: 6px 8px;
+    padding: 5px 4px;
     border-bottom: 1px solid #e5e7eb;
     vertical-align: middle;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }}
   .invoice-sheet__table tbody td.right {{
     text-align: right;
@@ -1105,6 +1148,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
 {supplier_ref_html}
   <section>
     <table class="invoice-sheet__table">
+      {table_colgroup}
       <thead>
         <tr>
           <th>#</th>
@@ -1113,7 +1157,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
           <th>HSN/SAC</th>
           <th class="right">Qty</th>
           <th>Unit</th>
-          <th class="right">Unit Price <span style="font-size: 7px; font-weight: 500; text-transform: none;">(with tax)</span></th>
+          <th class="right">Unit Price<br><span style="font-size: 6px; font-weight: 500; text-transform: none;">(with tax)</span></th>
           {tax_header_cells}
           <th class="right">Amount</th>
         </tr>
@@ -1164,6 +1208,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else (invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A")
     interstate_supply = _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
     tax_header_cells = _build_pdf_tax_header_cells(interstate_supply)
+    table_colgroup = _build_pdf_table_colgroup(interstate_supply)
 
     product_map = {p.id: p for p in products}
 
@@ -1337,28 +1382,34 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
   }}
   .invoice-sheet__table {{
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     margin-bottom: 16px;
-    font-size: 9px;
+    font-size: 8px;
   }}
   .invoice-sheet__table thead th {{
     background: #f3f4f6;
     color: #374151;
     font-weight: 600;
-    font-size: 8px;
+    font-size: 7px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    padding: 7px 8px;
+    line-height: 1.2;
+    padding: 5px 4px;
     border-bottom: 2px solid #d1d5db;
     text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }}
   .invoice-sheet__table thead th.right {{
     text-align: right;
   }}
   .invoice-sheet__table tbody td {{
-    padding: 6px 8px;
+    padding: 5px 4px;
     border-bottom: 1px solid #e5e7eb;
     vertical-align: middle;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }}
   .invoice-sheet__table tbody td.right {{
     text-align: right;
@@ -1485,6 +1536,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
 
   <section>
     <table class="invoice-sheet__table">
+      {table_colgroup}
       <thead>
         <tr>
           <th>#</th>
@@ -1493,7 +1545,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
           <th>HSN/SAC</th>
           <th class="right">Qty</th>
           <th>Unit</th>
-          <th class="right">Unit Price <span style="font-size: 7px; font-weight: 500; text-transform: none;">(with tax)</span></th>
+          <th class="right">Unit Price<br><span style="font-size: 6px; font-weight: 500; text-transform: none;">(with tax)</span></th>
           {tax_header_cells}
           <th class="right">Amount</th>
         </tr>
