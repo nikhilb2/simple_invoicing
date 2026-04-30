@@ -5,7 +5,7 @@ test('formatCurrency(1000) → $1,000.00', () => {
   expect(formatCurrency(1000)).toBe('$1,000.00');
 });
 
-test('formatCurrency(1000,) → ₹1,000.00', () => {
+test('formatCurrency(1000) → ₹1,000.00', () => {
   expect(formatCurrency(1000, 'INR')).toBe('₹1,000.00');
 });
 
@@ -17,9 +17,13 @@ test('negative value', () => {
   expect(formatCurrency(-1000)).toBe('-$1,000.00');
 });
 
-//loop through different invalid and unssupported currency code
+//loop through different invalid and unsupported currency code
 const testValues = ['ER', '', undefined];
 test.each(testValues)('invalid/unsupported currency: %s', (currency) => {
   const result = formatCurrency(1000, currency);
   expect(result).toBe('$1,000.00');
+});
+
+test('large value', () => {
+  expect(formatCurrency(100000000)).toBe('$100,000,000.00');
 });
