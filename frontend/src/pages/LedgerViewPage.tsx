@@ -14,6 +14,7 @@ import formatCurrency from '../utils/formatting';
 import { useFY } from '../context/FYContext';
 import { fetchOutstandingInvoices } from '../features/invoices/api';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
+import EmptyState from '../components/EmptyState';
 
 function defaultDateRange() {
   const today = new Date();
@@ -336,9 +337,9 @@ export default function LedgerViewPage() {
           />
         ) : null}
 
-        {input.loading ? <p className="muted-text" style={{ margin: 0 }}>Loading invoice options...</p> : null}
+        {input.loading ? <EmptyState message="Loading invoice options..." /> : null}
         {!input.loading && input.outstanding.length === 0 ? (
-          <p className="muted-text" style={{ margin: 0 }}>No outstanding invoices are available for this ledger.</p>
+          <EmptyState message="No outstanding invoices are available for this ledger." />
         ) : null}
         {!input.loading && input.outstanding.length > 0 && filteredInvoices.length === 0 ? (
           <p className="muted-text" style={{ margin: 0 }}>No invoices match your search.</p>
@@ -716,9 +717,10 @@ export default function LedgerViewPage() {
           </div>
 
           <div className="invoice-list">
-            {loadingStatement ? <div className="empty-state">Loading statement...</div> : null}
-            {!loadingStatement && statement && statement.entries.length === 0 ? (
-              <div className="empty-state">No voucher entries in selected period.</div>
+            {loadingStatement ? (
+              <EmptyState message="Loading statement..." />
+            ) : statement && statement.entries.length === 0 ? (
+              <EmptyState message="No voucher entries in the selected period." />
             ) : null}
             {!loadingStatement && statement
               ? statement.entries.map((entry, idx) => (

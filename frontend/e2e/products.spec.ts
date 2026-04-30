@@ -176,7 +176,7 @@ test.describe('Products CRUD', () => {
 
     await expect(page.locator('.empty-state')).toContainText('No products match your search.');
     // CTA for truly-empty state must not appear during a search
-    await expect(page.locator('button:has-text("Create your first product")')).not.toBeVisible();
+    await expect(page.locator('button:has-text("Add First Product")')).not.toBeVisible();
   });
 
   test('shows friendly empty state with CTA when no products exist', async ({ authedPage: page }) => {
@@ -192,10 +192,10 @@ test.describe('Products CRUD', () => {
     await page.goto('/products');
 
     const emptyState = page.locator('.empty-state');
-    await expect(emptyState).toContainText('No products yet');
+    await expect(emptyState).toContainText('No products registered yet');
     await expect(emptyState).toContainText('first product');
 
-    const ctaButton = page.locator('button:has-text("Create your first product")');
+    const ctaButton = page.locator('button:has-text("Add First Product")');
     await expect(ctaButton).toBeVisible();
     // CTA should focus the SKU input so the user can start filling the form
     await ctaButton.click();

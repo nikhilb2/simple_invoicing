@@ -5,6 +5,7 @@ import { cancelCreditNote, createCreditNote, listCreditNotes } from '../api/cred
 import api, { getApiErrorMessage } from '../api/client';
 import LedgerCombobox from '../components/LedgerCombobox';
 import StatusToasts from '../components/StatusToasts';
+import EmptyState from '../components/EmptyState';
 import { invoiceCreditStatusMeta } from '../common/invoiceCreditStatus';
 import type {
   CompanyProfile,
@@ -441,7 +442,7 @@ export default function CreditNotesPage() {
             </div>
           </div>
 
-          {loadingBootstrap ? <div className="empty-state">Loading ledgers, invoices, and products...</div> : null}
+          {loadingBootstrap ? <EmptyState message="Loading ledgers, invoices, and products..." /> : null}
 
           {!loadingBootstrap ? (
             <form className="stack" onSubmit={handleSubmit}>
@@ -496,7 +497,7 @@ export default function CreditNotesPage() {
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{filteredInvoices.length} active invoices for this ledger</span>
                   </div>
 
-                  {filteredInvoices.length === 0 ? <div className="empty-state">No active invoices found for the selected ledger.</div> : null}
+                  {filteredInvoices.length === 0 ? <EmptyState message="No active invoices found for the selected ledger." /> : null}
 
                   <div className="stack" style={{ gap: '10px' }}>
                     {filteredInvoices.map((invoice) => {
@@ -565,7 +566,7 @@ export default function CreditNotesPage() {
                     </p>
                   ) : null}
 
-                  {selectedLineItems.length === 0 ? <div className="empty-state">Pick one or more invoices to expose their line items.</div> : null}
+                  {selectedLineItems.length === 0 ? <EmptyState message="Pick one or more invoices to expose their line items." /> : null}
 
                   <div className="stack" style={{ gap: '10px' }}>
                     {selectedLineItems.map((line) => {
@@ -725,8 +726,8 @@ export default function CreditNotesPage() {
             </button>
           </div>
 
-          {loadingCreditNotes ? <div className="empty-state">Loading credit notes...</div> : null}
-          {!loadingCreditNotes && creditNotes.length === 0 ? <div className="empty-state">No credit notes match the current filters.</div> : null}
+          {loadingCreditNotes ? <EmptyState message="Loading credit notes..." /> : null}
+          {!loadingCreditNotes && creditNotes.length === 0 ? <EmptyState message="No credit notes match the current filters." /> : null}
 
           <div className="stack" style={{ gap: '12px' }}>
             {creditNotes.map((creditNote) => {

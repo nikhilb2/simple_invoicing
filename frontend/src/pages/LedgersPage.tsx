@@ -5,6 +5,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import type { Ledger, PaginatedLedgers } from '../types/api';
 import ConfirmDialog from '../components/ConfirmDialog';
+import EmptyState from '../components/EmptyState';
 
 export default function LedgersPage() {
   const navigate = useNavigate();
@@ -131,22 +132,16 @@ export default function LedgersPage() {
           </div>
 
           <div className="table-list">
-            {loading ? <div className="empty-state">Loading ledgers...</div> : null}
+            {/* Standardized empty states for loading, empty registry, and search results */}
+            {loading ? <EmptyState message="Loading ledgers..." /> : null}
             {!loading && ledgers.length === 0 && !search ? (
-              <div className="empty-state">
-                <p style={{ fontWeight: 600, marginBottom: '8px' }}>No ledgers yet</p>
-                <p style={{ marginBottom: '16px' }}>Create your first ledger to start tracking buyers and suppliers.</p>
-                <button
-                  type="button"
-                  className="button button--primary"
-                  onClick={() => navigate('/ledgers/new')}
-                >
-                  Create your first ledger
-                </button>
-              </div>
+              <EmptyState
+                message="No ledgers registered yet. Create your first ledger to start tracking buyers and suppliers."
+                action={{ label: 'Create First Ledger', onClick: () => navigate('/ledgers/new') }}
+              />
             ) : null}
             {!loading && ledgers.length === 0 && search ? (
-              <div className="empty-state">No ledgers match your search.</div>
+              <EmptyState message="No ledgers match your search." />
             ) : null}
             {!loading
               ? ledgers.map((ledger) => (

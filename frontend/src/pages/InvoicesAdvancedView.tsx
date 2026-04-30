@@ -16,6 +16,7 @@ import { useInvoiceModalStore } from '../store/useInvoiceModalStore';
 import { useInvoiceCancelStore } from '../store/useInvoiceCancelStore';
 import { fetchCompanyProfile, fetchInvoicePage, fetchProducts } from '../features/invoices/api';
 import { invoiceQueryKeys } from '../features/invoices/queryKeys';
+import EmptyState from '../components/EmptyState';
 
 type Breakdown = {
   credit: number;
@@ -185,25 +186,27 @@ export default function InvoicesAdvancedView() {
               <h1 className="page-title" style={{ margin: 0 }}>Invoice Feed</h1>
             </div>
           </div>
-          <div className="empty-state" style={{ gap: 12 }}>
-            <p>No active financial year is set for this company.</p>
-            <div className="button-row" style={{ justifyContent: 'center' }}>
-              <button
-                type="button"
-                className="button button--primary"
-                onClick={() => setAllowAllFY(true)}
-              >
-                Search all FY
-              </button>
-              <button
-                type="button"
-                className="button button--ghost"
-                onClick={() => navigate('/company')}
-              >
-                Open Company Setup
-              </button>
-            </div>
-          </div>
+          <EmptyState 
+            message="No active financial year is set for this company." 
+            action={
+              <div className="button-row" style={{ justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={() => setAllowAllFY(true)}
+                >
+                  Search all FY
+                </button>
+                <button
+                  type="button"
+                  className="button button--ghost"
+                  onClick={() => navigate('/company')}
+                >
+                  Open Company Setup
+                </button>
+              </div>
+            }
+          />
         </section>
       </div>
     );
@@ -324,9 +327,12 @@ export default function InvoicesAdvancedView() {
       {/* Content Area */}
       <section className="panel invoice-feed-view__content">
         {loading ? (
-          <div className="empty-state">Loading invoices...</div>
+          <EmptyState message="Loading invoices..." />
         ) : invoices.length === 0 ? (
-          <div className="empty-state">No invoices found</div>
+          <EmptyState 
+            message={invoiceSearch ? "No invoices match your search." : "No invoices registered yet. Create your first invoice to get started."} 
+            action={!invoiceSearch ? { label: 'Create First Invoice', onClick: () => navigate('/invoices') } : undefined}
+          />
         ) : viewType === 'card' ? (
           <div className="invoice-feed-view__card-list">
               {invoices.map((invoice) => (
