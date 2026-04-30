@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from decimal import Decimal
 
 from src.db.session import get_db
 from src.models.company import CompanyProfile
@@ -11,6 +12,10 @@ from src.schemas.product import PaginatedProductOut, ProductCreate, ProductOut
 from src.api.deps import get_active_company, get_current_user, require_roles
 
 router = APIRouter()
+
+
+def _is_whole_number(value: float) -> bool:
+    return Decimal(str(value)) == Decimal(str(value)).to_integral_value()
 
 
 @router.post("", response_model=ProductOut, include_in_schema=False)
@@ -37,6 +42,8 @@ def create_product(
         hsn_sac=payload.hsn_sac,
         price=payload.price,
         gst_rate=payload.gst_rate,
+        unit=payload.unit,
+        allow_decimal=payload.allow_decimal,
         maintain_inventory=payload.maintain_inventory,
     )
     db.add(product)
@@ -47,6 +54,9 @@ def create_product(
             status_code=400,
             detail="Initial quantity is only allowed when maintain inventory is enabled",
         )
+
+    if not payload.allow_decimal and not _is_whole_number(payload.initial_quantity):
+        raise HTTPException(status_code=400, detail="Initial quantity must be a whole number for this product")
 
     if payload.maintain_inventory:
         inventory = Inventory(
@@ -120,6 +130,20 @@ def update_product(
     product.hsn_sac = payload.hsn_sac
     product.price = payload.price
     product.gst_rate = payload.gst_rate
+    product.unit = payload.unit
+
+    if product.allow_decimal and not payload.allow_decimal:
+        inventory = db.query(Inventory).filter(
+            Inventory.product_id == product_id,
+            Inventory.company_id == active_company.id,
+        ).first()
+        if inventory and not _is_whole_number(float(inventory.quantity or 0)):
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot disable decimal quantity while inventory has fractional stock",
+            )
+
+    product.allow_decimal = payload.allow_decimal
     was_tracking_inventory = bool(product.maintain_inventory)
     product.maintain_inventory = payload.maintain_inventory
 

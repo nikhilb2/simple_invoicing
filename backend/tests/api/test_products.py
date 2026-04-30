@@ -7,9 +7,10 @@ def test_create_product(client):
         "price": 10,
         "gst_rate": 18
     })
-    print(response.json())  # 👈 add this
-
     assert response.status_code == 200
+    payload = response.json()
+    assert payload["unit"] == "Pieces"
+    assert payload["allow_decimal"] is False
  
 
 def test_duplicate_sku(client):
@@ -142,3 +143,43 @@ def test_toggle_untracked_product_on_creates_inventory_row(client, db_session):
     inventory = db_session.query(Inventory).filter(Inventory.product_id == product_id).first()
     assert inventory is not None
     assert inventory.quantity == 0
+
+
+def test_create_product_with_custom_unit_and_allow_decimal(client):
+    response = client.post(
+        "/api/products/",
+        json={
+            "sku": "UNITKG1",
+            "name": "Fine Flour",
+            "price": 45,
+            "gst_rate": 5,
+            "unit": "Kg",
+            "allow_decimal": True,
+            "maintain_inventory": True,
+            "initial_quantity": 2.75,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["unit"] == "Kg"
+    assert payload["allow_decimal"] is True
+
+
+def test_reject_fractional_initial_quantity_when_decimal_disabled(client):
+    response = client.post(
+        "/api/products/",
+        json={
+            "sku": "WHOLEONLY1",
+            "name": "Whole Unit Item",
+            "price": 30,
+            "gst_rate": 5,
+            "unit": "Pieces",
+            "allow_decimal": False,
+            "maintain_inventory": True,
+            "initial_quantity": 1.25,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Initial quantity must be a whole number for this product"

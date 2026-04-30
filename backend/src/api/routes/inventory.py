@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 from typing import Literal
+from decimal import Decimal
 
 from src.db.session import get_db
 from src.models.company import CompanyProfile
@@ -13,6 +14,10 @@ from src.schemas.inventory import InventoryAdjust, InventoryOut, PaginatedInvent
 from src.api.deps import get_active_company, get_current_user, require_roles
 
 router = APIRouter()
+
+
+def _is_whole_number(value: float) -> bool:
+    return Decimal(str(value)) == Decimal(str(value)).to_integral_value()
 
 
 @router.post("/adjust")
@@ -30,6 +35,8 @@ def adjust_inventory(
         raise HTTPException(status_code=404, detail="Product not found")
     if not product.maintain_inventory:
         raise HTTPException(status_code=400, detail="Inventory is disabled for this product")
+    if not product.allow_decimal and not _is_whole_number(payload.quantity):
+        raise HTTPException(status_code=400, detail="Quantity must be a whole number for this product")
 
     inventory = db.query(Inventory).filter(
         Inventory.product_id == payload.product_id,
@@ -39,8 +46,8 @@ def adjust_inventory(
         inventory = Inventory(company_id=active_company.id, product_id=payload.product_id, quantity=0)
         db.add(inventory)
 
-    inventory.quantity += payload.quantity
-    if inventory.quantity < 0:
+    inventory.quantity = Decimal(str(inventory.quantity or 0)) + Decimal(str(payload.quantity))
+    if Decimal(str(inventory.quantity or 0)) < 0:
         raise HTTPException(status_code=400, detail="Inventory cannot be negative")
 
     db.commit()
@@ -116,9 +123,11 @@ def list_inventory(
             product_id=product.id,
             product_name=product.name,
             sku=product.sku,
+            unit=product.unit,
+            allow_decimal=bool(product.allow_decimal),
             price=float(product.price),
             maintain_inventory=bool(product.maintain_inventory),
-            quantity=int(quantity),
+            quantity=float(quantity),
             date_added=product.created_at,
             last_sold_at=last_sold_at,
         )
