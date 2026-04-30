@@ -311,6 +311,7 @@ export default function CreateInvoiceModal({
             <div className="stack">
               {items.map((item, index) => {
                 const selectedProduct = products.find((p) => p.id === Number(item.productId));
+                const selectedUnit = selectedProduct?.unit || 'Pieces';
                 const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
                 const gstRate = selectedProduct?.gst_rate || 0;
                 let lineTotal: number;
@@ -341,7 +342,7 @@ export default function CreateInvoiceModal({
                     </div>
 
                     <div className="field">
-                      <label htmlFor={`modal-inv-qty-${item.id}`}>Qty</label>
+                      <label htmlFor={`modal-inv-qty-${item.id}`}>Qty ({selectedUnit})</label>
                       <input
                         id={`modal-inv-qty-${item.id}`}
                         className="input"

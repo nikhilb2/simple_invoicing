@@ -638,6 +638,7 @@ export default function InvoicesPage() {
               <div className="stack">
                 {items.map((item, index) => {
                   const selectedProduct = products.find((product) => product.id === Number(item.productId));
+                  const selectedUnit = selectedProduct?.unit || 'Pieces';
                   const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
                   const gstRate = selectedProduct?.gst_rate || 0;
                   let lineTotal: number;
@@ -668,7 +669,7 @@ export default function InvoicesPage() {
                       </div>
 
                       <div className="field">
-                        <label htmlFor={`invoice-quantity-${item.id}`}>Qty</label>
+                        <label htmlFor={`invoice-quantity-${item.id}`}>Qty ({selectedUnit})</label>
                         <input
                           id={`invoice-quantity-${item.id}`}
                           className="input"
