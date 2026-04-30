@@ -866,6 +866,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
             product_cell_html = f"{product_name}<br><span class=\"muted-text\">{item_description}</span>"
         sku = _e(prod.sku) if prod else "N/A"
         hsn = _e(item.hsn_sac or (prod.hsn_sac if prod else None) or "N/A")
+        unit = _e(_pdf_display_unit(getattr(prod, "unit", None) if prod else None))
         tax_row_cells = _build_pdf_tax_row_cells(item, currency, interstate_supply)
 
         item_rows += f"""
@@ -875,6 +876,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
           <td>{sku}</td>
           <td>{hsn}</td>
           <td class="right">{item.quantity}</td>
+          <td>{unit}</td>
           <td class="right">{_fmt_currency(_pdf_unit_price_including_tax(item), currency)}</td>
           {tax_row_cells}
           <td class="right">{_fmt_currency(float(item.line_total), currency)}</td>
@@ -1102,6 +1104,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
           <th>SKU</th>
           <th>HSN/SAC</th>
           <th class="right">Qty</th>
+          <th>Unit</th>
           <th class="right">Unit Price <span style="font-size: 7px; font-weight: 500; text-transform: none;">(with tax)</span></th>
           {tax_header_cells}
           <th class="right">Amount</th>
