@@ -2,6 +2,7 @@ from datetime import datetime
 from pathlib import Path
 import os
 import sys
+from types import SimpleNamespace
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 if str(BACKEND_ROOT) not in sys.path:
@@ -10,7 +11,7 @@ if str(BACKEND_ROOT) not in sys.path:
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
 
 from src.api.routes.invoices import _build_invoice_html, _build_purchase_invoice_html, _extract_pan_from_gstin
-from src.models.invoice import Invoice
+from src.models.invoice import Invoice, InvoiceItem
 
 
 def _invoice_base(voucher_type: str = "sales") -> Invoice:
@@ -34,6 +35,21 @@ def _invoice_base(voucher_type: str = "sales") -> Invoice:
     )
     invoice.items = []
     return invoice
+
+
+def _line_item(product_id: int = 1):
+    return InvoiceItem(
+        product_id=product_id,
+        hsn_sac="1234",
+        quantity=2,
+        unit_price=100,
+        tax_amount=0,
+        cgst_amount=0,
+        sgst_amount=0,
+        igst_amount=0,
+        line_total=200,
+        description=None,
+    )
 
 
 def test_extract_pan_from_gstin_returns_pan_for_valid_gstin():
@@ -99,3 +115,25 @@ def test_purchase_pdf_tax_breakup_shows_only_cgst_sgst_for_intrastate_case():
     assert "CGST:" in html
     assert "SGST:" in html
     assert "IGST:" not in html
+
+
+def test_sales_pdf_shows_unit_column_and_abbreviates_pieces():
+    invoice = _invoice_base("sales")
+    invoice.items = [_line_item(product_id=11)]
+    product = SimpleNamespace(id=11, name="Steel Rod", sku="ROD-1", hsn_sac="7214", unit="Pieces")
+
+    html = _build_invoice_html(invoice, [product])
+
+    assert "<th>Unit</th>" in html
+    assert "<td>Pcs</td>" in html
+
+
+def test_purchase_pdf_shows_unit_column_and_keeps_custom_unit():
+    invoice = _invoice_base("purchase")
+    invoice.items = [_line_item(product_id=12)]
+    product = SimpleNamespace(id=12, name="Flour", sku="FLR-1", hsn_sac="1101", unit="Kg")
+
+    html = _build_purchase_invoice_html(invoice, [product])
+
+    assert "<th>Unit</th>" in html
+    assert "<td>Kg</td>" in html
