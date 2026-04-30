@@ -759,13 +759,13 @@ def _fmt_rate(value: float) -> str:
 
 def _build_pdf_tax_header_cells(interstate_supply: bool) -> str:
     if interstate_supply:
-  return '<th class="right">IGST<br>%</th><th class="right">IGST<br>Amt</th><th class="right">Total<br>Tax</th>'
+        return '<th class="right">IGST<br>%</th><th class="right">IGST<br>Amt</th><th class="right">Total<br>Tax</th>'
     return (
-  '<th class="right">SGST<br>%</th>'
-  '<th class="right">SGST<br>Amt</th>'
-  '<th class="right">CGST<br>%</th>'
-  '<th class="right">CGST<br>Amt</th>'
-  '<th class="right">Total<br>Tax</th>'
+        '<th class="right">SGST<br>%</th>'
+        '<th class="right">SGST<br>Amt</th>'
+        '<th class="right">CGST<br>%</th>'
+        '<th class="right">CGST<br>Amt</th>'
+        '<th class="right">Total<br>Tax</th>'
     )
 
 
