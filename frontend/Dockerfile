@@ -3,8 +3,8 @@
 # Stage 1: Build on the native builder platform to avoid emulation crashes
 FROM --platform=$BUILDPLATFORM node:22-slim AS build
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json .
+RUN npm install
 COPY . .
 ARG VITE_API_BASE_URL
 
