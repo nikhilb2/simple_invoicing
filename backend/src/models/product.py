@@ -13,5 +13,7 @@ class Product(Base):
     hsn_sac = Column(String, nullable=True)
     price = Column(Numeric(10, 2), nullable=False)
     gst_rate = Column(Numeric(5, 2), nullable=False, default=0)
+    unit = Column(String, nullable=False, default="Pieces")
+    allow_decimal = Column(Boolean, nullable=False, default=False)
     maintain_inventory = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=True)

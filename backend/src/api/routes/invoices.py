@@ -79,7 +79,7 @@ def _require_ledger(db: Session, ledger_id: int, company_id: int | None) -> Ledg
 def _change_inventory_quantity(
     db: Session,
     product_id: int,
-    quantity_delta: int,
+  quantity_delta: Decimal,
     *,
     company_id: int | None,
     context: str,
@@ -93,8 +93,8 @@ def _change_inventory_quantity(
         db.add(inventory)
         db.flush()
 
-    inventory.quantity += quantity_delta
-    if inventory.quantity < 0:
+    inventory.quantity = Decimal(str(inventory.quantity or 0)) + quantity_delta
+    if Decimal(str(inventory.quantity or 0)) < 0:
         raise HTTPException(status_code=400, detail=f"Insufficient inventory while {context}")
 
 
@@ -155,8 +155,9 @@ def _reverse_existing_invoice_inventory(db: Session, invoice: Invoice) -> None:
         )
 
 
-def _inventory_effect_for_voucher_type(quantity: int, voucher_type: str) -> int:
-    return -quantity if voucher_type == "sales" else quantity
+def _inventory_effect_for_voucher_type(quantity: float, voucher_type: str) -> Decimal:
+  quantity_value = Decimal(str(quantity))
+  return -quantity_value if voucher_type == "sales" else quantity_value
 
 
 def _apply_inventory_delta_for_invoice_update(
@@ -166,14 +167,14 @@ def _apply_inventory_delta_for_invoice_update(
     *,
     company_id: int | None,
 ) -> None:
-    existing_effect_by_product: dict[int, int] = defaultdict(int)
+    existing_effect_by_product: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     for item in invoice.items:
         existing_effect_by_product[item.product_id] += _inventory_effect_for_voucher_type(
             item.quantity,
             invoice.voucher_type,
         )
 
-    next_effect_by_product: dict[int, int] = defaultdict(int)
+    next_effect_by_product: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     for item in payload.items:
         next_effect_by_product[item.product_id] += _inventory_effect_for_voucher_type(
             item.quantity,
@@ -267,7 +268,8 @@ def _apply_payload_to_invoice(
     tax_total = Decimal("0")
     created_items: list[InvoiceItem] = []
     for item in payload.items:
-        if item.quantity <= 0:
+        quantity_value = Decimal(str(item.quantity))
+        if quantity_value <= 0:
             raise HTTPException(status_code=400, detail="Item quantity must be greater than zero")
 
         product_query = db.query(Product).filter(Product.id == item.product_id)
@@ -277,12 +279,18 @@ def _apply_payload_to_invoice(
         if not product:
             raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
 
+        if not product.allow_decimal and quantity_value != quantity_value.to_integral_value():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Quantity for {product.name} must be a whole number",
+            )
+
         if apply_inventory_changes and product.maintain_inventory:
             inventory_query = db.query(Inventory).filter(Inventory.product_id == item.product_id)
             if company_id is not None:
                 inventory_query = inventory_query.filter(or_(Inventory.company_id == company_id, Inventory.company_id.is_(None)))
             inventory = inventory_query.first()
-            if payload.voucher_type == "sales" and (not inventory or inventory.quantity < item.quantity):
+            if payload.voucher_type == "sales" and (not inventory or Decimal(str(inventory.quantity or 0)) < quantity_value):
                 raise HTTPException(status_code=400, detail=f"Insufficient inventory for {product.name}")
 
             quantity_delta = _inventory_effect_for_voucher_type(item.quantity, payload.voucher_type)
@@ -301,11 +309,11 @@ def _apply_payload_to_invoice(
 
         if payload.tax_inclusive:
             # Entered price already includes tax; back-calculate taxable amount
-            line_total = _money(unit_price * Decimal(item.quantity))
+            line_total = _money(unit_price * quantity_value)
             taxable_amount = _money(line_total / (1 + gst_rate / Decimal("100")))
             tax_amount = _money(line_total - taxable_amount)
         else:
-            taxable_amount = _money(unit_price * Decimal(item.quantity))
+            taxable_amount = _money(unit_price * quantity_value)
             tax_amount = _money(taxable_amount * gst_rate / Decimal("100"))
             line_total = _money(taxable_amount + tax_amount)
 
@@ -315,7 +323,7 @@ def _apply_payload_to_invoice(
         invoice_item = InvoiceItem(
             invoice_id=invoice.id,
             product_id=product.id,
-            quantity=item.quantity,
+            quantity=float(quantity_value),
             hsn_sac=product.hsn_sac,
             unit_price=float(unit_price),
             gst_rate=float(gst_rate),
@@ -751,13 +759,49 @@ def _fmt_rate(value: float) -> str:
 
 def _build_pdf_tax_header_cells(interstate_supply: bool) -> str:
     if interstate_supply:
-        return '<th class="right">IGST %</th><th class="right">IGST Amt</th><th class="right">Total Tax</th>'
+        return '<th class="right">IGST<br>%</th><th class="right">IGST<br>Amt</th><th class="right">Total<br>Tax</th>'
     return (
-        '<th class="right">SGST %</th>'
-        '<th class="right">SGST Amt</th>'
-        '<th class="right">CGST %</th>'
-        '<th class="right">CGST Amt</th>'
-        '<th class="right">Total Tax</th>'
+        '<th class="right">SGST<br>%</th>'
+        '<th class="right">SGST<br>Amt</th>'
+        '<th class="right">CGST<br>%</th>'
+        '<th class="right">CGST<br>Amt</th>'
+        '<th class="right">Total<br>Tax</th>'
+    )
+
+
+def _build_pdf_table_colgroup(interstate_supply: bool) -> str:
+    if interstate_supply:
+        return (
+            '<colgroup>'
+            '<col style="width: 4%;" />'
+            '<col style="width: 20%;" />'
+            '<col style="width: 7%;" />'
+            '<col style="width: 8%;" />'
+            '<col style="width: 6%;" />'
+            '<col style="width: 6%;" />'
+            '<col style="width: 12%;" />'
+            '<col style="width: 7%;" />'
+            '<col style="width: 10%;" />'
+            '<col style="width: 10%;" />'
+            '<col style="width: 10%;" />'
+            '</colgroup>'
+        )
+    return (
+        '<colgroup>'
+        '<col style="width: 3%;" />'
+        '<col style="width: 16%;" />'
+        '<col style="width: 6%;" />'
+        '<col style="width: 7%;" />'
+        '<col style="width: 5%;" />'
+        '<col style="width: 5%;" />'
+        '<col style="width: 10%;" />'
+        '<col style="width: 6%;" />'
+        '<col style="width: 8%;" />'
+        '<col style="width: 6%;" />'
+        '<col style="width: 8%;" />'
+        '<col style="width: 8%;" />'
+        '<col style="width: 12%;" />'
+        '</colgroup>'
     )
 
 
@@ -815,6 +859,24 @@ def _pdf_unit_price_including_tax(item: InvoiceItem) -> float:
     return float(_money(line_total / quantity))
 
 
+def _pdf_display_unit(unit: str | None) -> str:
+    normalized_unit = (unit or "Pieces").strip()
+    if not normalized_unit:
+        normalized_unit = "Pieces"
+    if normalized_unit.lower() == "pieces":
+        return "Pcs"
+    return normalized_unit
+
+
+def _pdf_display_quantity(quantity: float | Decimal | int | None, allow_decimal: bool | None) -> str:
+  value = Decimal(str(quantity or 0))
+  if not allow_decimal and value == value.to_integral_value():
+    return str(int(value))
+
+  as_text = format(value, "f").rstrip("0").rstrip(".")
+  return as_text or "0"
+
+
 def _build_pdf_payment_details_html(invoice_bank_accounts: list[CompanyAccount]) -> str:
     if not invoice_bank_accounts:
         return '<p class="muted-text">No bank account marked to display on invoice.</p>'
@@ -844,6 +906,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else (invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A")
     interstate_supply = _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
     tax_header_cells = _build_pdf_tax_header_cells(interstate_supply)
+    table_colgroup = _build_pdf_table_colgroup(interstate_supply)
 
     product_map = {p.id: p for p in products}
 
@@ -857,6 +920,8 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
             product_cell_html = f"{product_name}<br><span class=\"muted-text\">{item_description}</span>"
         sku = _e(prod.sku) if prod else "N/A"
         hsn = _e(item.hsn_sac or (prod.hsn_sac if prod else None) or "N/A")
+        unit = _e(_pdf_display_unit(getattr(prod, "unit", None) if prod else None))
+        quantity_display = _pdf_display_quantity(item.quantity, getattr(prod, "allow_decimal", None) if prod else None)
         tax_row_cells = _build_pdf_tax_row_cells(item, currency, interstate_supply)
 
         item_rows += f"""
@@ -865,7 +930,8 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
           <td>{product_cell_html}</td>
           <td>{sku}</td>
           <td>{hsn}</td>
-          <td class="right">{item.quantity}</td>
+          <td class="right">{quantity_display}</td>
+          <td>{unit}</td>
           <td class="right">{_fmt_currency(_pdf_unit_price_including_tax(item), currency)}</td>
           {tax_row_cells}
           <td class="right">{_fmt_currency(float(item.line_total), currency)}</td>
@@ -999,28 +1065,34 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
   }}
   .invoice-sheet__table {{
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     margin-bottom: 16px;
-    font-size: 9px;
+    font-size: 8px;
   }}
   .invoice-sheet__table thead th {{
     background: #f3f4f6;
     color: #374151;
     font-weight: 600;
-    font-size: 8px;
+    font-size: 7px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    padding: 7px 8px;
+    line-height: 1.2;
+    padding: 5px 4px;
     border-bottom: 2px solid #d1d5db;
     text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }}
   .invoice-sheet__table thead th.right {{
     text-align: right;
   }}
   .invoice-sheet__table tbody td {{
-    padding: 6px 8px;
+    padding: 5px 4px;
     border-bottom: 1px solid #e5e7eb;
     vertical-align: middle;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }}
   .invoice-sheet__table tbody td.right {{
     text-align: right;
@@ -1086,6 +1158,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
 {supplier_ref_html}
   <section>
     <table class="invoice-sheet__table">
+      {table_colgroup}
       <thead>
         <tr>
           <th>#</th>
@@ -1093,7 +1166,8 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
           <th>SKU</th>
           <th>HSN/SAC</th>
           <th class="right">Qty</th>
-          <th class="right">Unit Price <span style="font-size: 7px; font-weight: 500; text-transform: none;">(with tax)</span></th>
+          <th>Unit</th>
+          <th class="right">Unit Price<br><span style="font-size: 6px; font-weight: 500; text-transform: none;">(with tax)</span></th>
           {tax_header_cells}
           <th class="right">Amount</th>
         </tr>
@@ -1144,6 +1218,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else (invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A")
     interstate_supply = _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
     tax_header_cells = _build_pdf_tax_header_cells(interstate_supply)
+    table_colgroup = _build_pdf_table_colgroup(interstate_supply)
 
     product_map = {p.id: p for p in products}
 
@@ -1158,6 +1233,8 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
             product_cell_html = f"{product_name}<br><span class=\"muted-text\">{item_description}</span>"
         sku = _e(prod.sku) if prod else "N/A"
         hsn = _e(item.hsn_sac or (prod.hsn_sac if prod else None) or "N/A")
+        unit = _e(_pdf_display_unit(getattr(prod, "unit", None) if prod else None))
+        quantity_display = _pdf_display_quantity(item.quantity, getattr(prod, "allow_decimal", None) if prod else None)
         tax_row_cells = _build_pdf_tax_row_cells(item, currency, interstate_supply)
 
         item_rows += f"""
@@ -1166,7 +1243,8 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
           <td>{product_cell_html}</td>
           <td>{sku}</td>
           <td>{hsn}</td>
-          <td class="right">{item.quantity}</td>
+          <td class="right">{quantity_display}</td>
+          <td>{unit}</td>
           <td class="right">{_fmt_currency(_pdf_unit_price_including_tax(item), currency)}</td>
           {tax_row_cells}
           <td class="right">{_fmt_currency(float(item.line_total), currency)}</td>
@@ -1315,28 +1393,34 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
   }}
   .invoice-sheet__table {{
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     margin-bottom: 16px;
-    font-size: 9px;
+    font-size: 8px;
   }}
   .invoice-sheet__table thead th {{
     background: #f3f4f6;
     color: #374151;
     font-weight: 600;
-    font-size: 8px;
+    font-size: 7px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    padding: 7px 8px;
+    line-height: 1.2;
+    padding: 5px 4px;
     border-bottom: 2px solid #d1d5db;
     text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }}
   .invoice-sheet__table thead th.right {{
     text-align: right;
   }}
   .invoice-sheet__table tbody td {{
-    padding: 6px 8px;
+    padding: 5px 4px;
     border-bottom: 1px solid #e5e7eb;
     vertical-align: middle;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }}
   .invoice-sheet__table tbody td.right {{
     text-align: right;
@@ -1463,6 +1547,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
 
   <section>
     <table class="invoice-sheet__table">
+      {table_colgroup}
       <thead>
         <tr>
           <th>#</th>
@@ -1470,7 +1555,8 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
           <th>SKU</th>
           <th>HSN/SAC</th>
           <th class="right">Qty</th>
-          <th class="right">Unit Price <span style="font-size: 7px; font-weight: 500; text-transform: none;">(with tax)</span></th>
+          <th>Unit</th>
+          <th class="right">Unit Price<br><span style="font-size: 6px; font-weight: 500; text-transform: none;">(with tax)</span></th>
           {tax_header_cells}
           <th class="right">Amount</th>
         </tr>

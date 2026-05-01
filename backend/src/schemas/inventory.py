@@ -5,16 +5,18 @@ from typing import Optional
 
 class InventoryAdjust(BaseModel):
     product_id: int
-    quantity: int
+    quantity: float
 
 
 class InventoryOut(BaseModel):
     product_id: int
     product_name: str
     sku: str
+    unit: str
+    allow_decimal: bool
     price: float
     maintain_inventory: bool
-    quantity: int
+    quantity: float
     date_added: Optional[datetime] = None
     last_sold_at: Optional[datetime] = None
 

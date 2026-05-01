@@ -7,6 +7,9 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import formatCurrency from '../utils/formatting';
 import EmptyState from '../components/EmptyState';
 
+const UNIT_OPTIONS = ['Pieces', 'Kg', 'g', 'm', 'l', 'Ounce'];
+const CUSTOM_UNIT_VALUE = '__custom__';
+
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
@@ -30,6 +33,8 @@ export default function ProductsPage() {
     hsn_sac: '',
     price: '',
     gst_rate: '0',
+    unit: 'Pieces',
+    allow_decimal: false,
     maintain_inventory: true,
     initial_quantity: '0',
   });
@@ -62,7 +67,7 @@ export default function ProductsPage() {
   }, [page, search]);
 
   function resetForm() {
-    setForm({ sku: '', name: '', description: '', hsn_sac: '', price: '', gst_rate: '0', maintain_inventory: true, initial_quantity: '0' });
+    setForm({ sku: '', name: '', description: '', hsn_sac: '', price: '', gst_rate: '0', unit: 'Pieces', allow_decimal: false, maintain_inventory: true, initial_quantity: '0' });
     setEditingProductId(null);
   }
 
@@ -77,6 +82,8 @@ export default function ProductsPage() {
       hsn_sac: product.hsn_sac ?? '',
       price: String(product.price),
       gst_rate: String(product.gst_rate),
+      unit: product.unit || 'Pieces',
+      allow_decimal: product.allow_decimal,
       maintain_inventory: product.maintain_inventory,
       initial_quantity: '0',
     });
@@ -97,6 +104,8 @@ export default function ProductsPage() {
         hsn_sac: form.hsn_sac.trim(),
         price: Number(form.price),
         gst_rate: Number(form.gst_rate),
+        unit: form.unit.trim() || 'Pieces',
+        allow_decimal: form.allow_decimal,
         maintain_inventory: form.maintain_inventory,
         ...(editingProductId ? {} : { initial_quantity: Number(form.initial_quantity) }),
       };
@@ -226,6 +235,39 @@ export default function ProductsPage() {
                   required
                 />
               </div>
+              <div className="field">
+                <label htmlFor="unit">Unit</label>
+                <select
+                  id="unit"
+                  className="input"
+                  value={UNIT_OPTIONS.includes(form.unit) ? form.unit : CUSTOM_UNIT_VALUE}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setForm((current) => ({
+                      ...current,
+                      unit: value === CUSTOM_UNIT_VALUE ? '' : value,
+                    }));
+                  }}
+                >
+                  {UNIT_OPTIONS.map((unitOption) => (
+                    <option key={unitOption} value={unitOption}>{unitOption}</option>
+                  ))}
+                  <option value={CUSTOM_UNIT_VALUE}>Other (custom)</option>
+                </select>
+              </div>
+              {UNIT_OPTIONS.includes(form.unit) ? null : (
+                <div className="field">
+                  <label htmlFor="custom-unit">Custom unit</label>
+                  <input
+                    id="custom-unit"
+                    className="input"
+                    value={form.unit}
+                    onChange={(event) => setForm((current) => ({ ...current, unit: event.target.value }))}
+                    placeholder="e.g. cm, ml, pack"
+                    required
+                  />
+                </div>
+              )}
               <div className="field field--full">
                 <label htmlFor="name">Name</label>
                 <input
@@ -261,6 +303,20 @@ export default function ProductsPage() {
                   Turn this off for service-style items such as service charges.
                 </span>
               </div>
+              <div className="field field--full" style={{ marginBottom: 0 }}>
+                <label htmlFor="allow-decimal" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 0 }}>
+                  <input
+                    id="allow-decimal"
+                    type="checkbox"
+                    checked={form.allow_decimal}
+                    onChange={(event) => setForm((current) => ({ ...current, allow_decimal: event.target.checked }))}
+                  />
+                  Allow decimal quantity
+                </label>
+                <span className="field-hint">
+                  Turn this on for units like Kg, l, m and other fractional stock.
+                </span>
+              </div>
               {!editingProductId && form.maintain_inventory ? (
                 <div className="field">
                   <label htmlFor="initial-quantity">Initial stock quantity</label>
@@ -269,7 +325,7 @@ export default function ProductsPage() {
                     className="input"
                     type="number"
                     min="0"
-                    step="1"
+                    step={form.allow_decimal ? '0.001' : '1'}
                     value={form.initial_quantity}
                     onChange={(event) => setForm((current) => ({ ...current, initial_quantity: event.target.value }))}
                     placeholder="0"
@@ -334,6 +390,8 @@ export default function ProductsPage() {
                       <span className="table-subtext">
                         {product.sku}
                         {product.maintain_inventory ? ' • Tracked' : ' • Untracked'}
+                        {` • Unit ${product.unit}`}
+                        {product.allow_decimal ? ' • Decimal qty' : ' • Whole qty'}
                         {product.hsn_sac ? ` • HSN/SAC ${product.hsn_sac}` : ''}
                         {` • GST ${product.gst_rate}%`}
                         {product.description ? ` • ${product.description}` : ''}

@@ -24,7 +24,14 @@ def _create_ledger(client, name: str, gst: str):
     return response.json()["id"]
 
 
-def _create_product(client, *, sku: str = "UPD-INV-001", maintain_inventory: bool = True):
+def _create_product(
+    client,
+    *,
+    sku: str = "UPD-INV-001",
+    maintain_inventory: bool = True,
+    allow_decimal: bool = False,
+    unit: str = "Pieces",
+):
     response = client.post(
         "/api/products/",
         json={
@@ -34,6 +41,8 @@ def _create_product(client, *, sku: str = "UPD-INV-001", maintain_inventory: boo
             "hsn_sac": "9988",
             "price": 100,
             "gst_rate": 18,
+            "unit": unit,
+            "allow_decimal": allow_decimal,
             "maintain_inventory": maintain_inventory,
         },
     )
@@ -153,3 +162,42 @@ def test_update_sales_invoice_with_untracked_product_does_not_create_inventory(c
         assert update_response.status_code == 200, update_response.text
         inventory = db_session.query(Inventory).filter(Inventory.product_id == product_id).first()
         assert inventory is None
+
+
+def test_invoice_rejects_decimal_quantity_for_whole_number_product(client):
+    with patch("src.api.routes.invoices._generate_next_number", return_value="SAL-WHOLE-001"):
+        ledger_id = _create_ledger(client, name="Sales Whole Qty", gst="27ABCDE1234F1Z5")
+        product_id = _create_product(client, sku="UPD-INV-WHOLE-QTY", allow_decimal=False, unit="Pieces")
+
+        response = client.post(
+            "/api/invoices/",
+            json={
+                "ledger_id": ledger_id,
+                "voucher_type": "sales",
+                "tax_inclusive": False,
+                "apply_round_off": False,
+                "items": [{"product_id": product_id, "quantity": 1.25, "unit_price": 100}],
+            },
+        )
+
+        assert response.status_code == 400
+        assert "must be a whole number" in response.json()["detail"]
+
+
+def test_invoice_accepts_decimal_quantity_for_decimal_enabled_product(client):
+    with patch("src.api.routes.invoices._generate_next_number", return_value="PUR-DEC-001"):
+        ledger_id = _create_ledger(client, name="Purchase Decimal Qty", gst="27ABCDE1234F1Z5")
+        product_id = _create_product(client, sku="UPD-INV-DEC-QTY", allow_decimal=True, unit="Kg")
+
+        response = client.post(
+            "/api/invoices/",
+            json={
+                "ledger_id": ledger_id,
+                "voucher_type": "purchase",
+                "tax_inclusive": False,
+                "apply_round_off": False,
+                "items": [{"product_id": product_id, "quantity": 1.25, "unit_price": 100}],
+            },
+        )
+
+        assert response.status_code == 200, response.text

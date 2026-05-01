@@ -12,6 +12,8 @@ export type ProductFormState = {
   hsn_sac: string;
   price: string;
   gst_rate: string;
+  unit: string;
+  allow_decimal: boolean;
   maintain_inventory: boolean;
 };
 

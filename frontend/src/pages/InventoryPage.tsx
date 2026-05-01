@@ -92,6 +92,11 @@ export default function InventoryPage() {
     return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   }
 
+  function formatQuantity(value: number, allowDecimal: boolean) {
+    if (!allowDecimal) return String(Math.trunc(value));
+    return value.toFixed(3).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+  }
+
   function SortHeader({ col, label }: { col: SortBy; label: string }) {
     const active = sortBy === col;
     return (
@@ -158,13 +163,13 @@ export default function InventoryPage() {
                     <div className="table-row__meta" style={{ flex: '1 1 180px' }}>
                       <strong>{row.product_name}</strong>
                       <span className="table-subtext">
-                        {row.sku} • {row.maintain_inventory ? 'Tracked' : 'Untracked'}
+                        {row.sku} • {row.maintain_inventory ? 'Tracked' : 'Untracked'} • Unit {row.unit}
                       </span>
                     </div>
 
                     {/* Qty pill */}
                     <span className={`pill ${row.quantity <= 5 ? 'pill--low' : 'pill--ok'}`} style={{ minWidth: 48, textAlign: 'center' }}>
-                      {row.quantity}
+                      {formatQuantity(row.quantity, row.allow_decimal)}
                     </span>
 
                     {/* Dates */}
@@ -182,7 +187,7 @@ export default function InventoryPage() {
                       <input
                         className="input"
                         type="number"
-                        step="1"
+                        step={row.allow_decimal ? '0.001' : '1'}
                         placeholder="e.g. +10"
                         value={adjusting[row.product_id] ?? ''}
                         onChange={(e) => setRowDelta(row.product_id, e.target.value)}
