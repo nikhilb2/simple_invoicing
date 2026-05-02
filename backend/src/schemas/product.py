@@ -15,6 +15,8 @@ class ProductCreate(BaseModel):
     unit: str = "Pieces"
     allow_decimal: bool = False
     maintain_inventory: bool = True
+    is_producable: bool = False
+    production_cost: Optional[float] = None
     initial_quantity: float = 0
 
     @field_validator("hsn_sac")
@@ -42,6 +44,8 @@ class ProductOut(BaseModel):
     unit: str
     allow_decimal: bool
     maintain_inventory: bool
+    is_producable: bool
+    production_cost: Optional[float]
     created_at: Optional[datetime] = None
 
     class Config:

@@ -9,3 +9,5 @@ from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.smtp_config import SMTPConfig
 from src.models.user_shortcut import UserShortcut
 from src.models.global_settings import GlobalSettings
+from src.models.bom import BillOfMaterial
+from src.models.production_transaction import ProductionTransaction

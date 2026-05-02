@@ -7,9 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes
-from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes
+from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes, bom as bom_routes
 from src.db.base import Base
 from src.db.session import engine
+# Import all models to register them with declarative_base
+import src.models  # noqa: F401
 
 Base.metadata.create_all(bind=engine)
 
@@ -89,6 +91,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(products.router, prefix="/api/products", tags=["products"])
 app.include_router(inventory.router, prefix="/api/inventory", tags=["inventory"])
+app.include_router(bom_routes.router, prefix="/api/bom", tags=["bom"])
 app.include_router(invoices.router, prefix="/api/invoices", tags=["invoices"])
 app.include_router(ledgers.router, prefix="/api/ledgers", tags=["ledgers"])
 app.include_router(company.router, prefix="/api/company", tags=["company"])

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2, Settings2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, PaginatedProducts, Product, ProductCreate } from '../types/api';
 import StatusToasts from '../components/StatusToasts';
 import ConfirmDialog from '../components/ConfirmDialog';
+import BOMConfigModal from '../components/BOMConfigModal';
 import formatCurrency from '../utils/formatting';
 import EmptyState from '../components/EmptyState';
 
@@ -37,7 +38,11 @@ export default function ProductsPage() {
     allow_decimal: false,
     maintain_inventory: true,
     initial_quantity: '0',
+    is_producable: false,
+    production_cost: '',
   });
+  const [bomModalProductId, setBomModalProductId] = useState<number | null>(null);
+  const [bomModalProductName, setBomModalProductName] = useState('');
 
   const activeCurrencyCode = company?.currency_code || 'USD';
 
@@ -67,7 +72,7 @@ export default function ProductsPage() {
   }, [page, search]);
 
   function resetForm() {
-    setForm({ sku: '', name: '', description: '', hsn_sac: '', price: '', gst_rate: '0', unit: 'Pieces', allow_decimal: false, maintain_inventory: true, initial_quantity: '0' });
+    setForm({ sku: '', name: '', description: '', hsn_sac: '', price: '', gst_rate: '0', unit: 'Pieces', allow_decimal: false, maintain_inventory: true, initial_quantity: '0', is_producable: false, production_cost: '' });
     setEditingProductId(null);
   }
 
@@ -86,6 +91,8 @@ export default function ProductsPage() {
       allow_decimal: product.allow_decimal,
       maintain_inventory: product.maintain_inventory,
       initial_quantity: '0',
+      is_producable: product.is_producable,
+      production_cost: product.production_cost != null ? String(product.production_cost) : '',
     });
   }
 
@@ -107,6 +114,8 @@ export default function ProductsPage() {
         unit: form.unit.trim() || 'Pieces',
         allow_decimal: form.allow_decimal,
         maintain_inventory: form.maintain_inventory,
+        is_producable: form.is_producable,
+        production_cost: form.production_cost !== '' ? Number(form.production_cost) : null,
         ...(editingProductId ? {} : { initial_quantity: Number(form.initial_quantity) }),
       };
 
@@ -317,6 +326,60 @@ export default function ProductsPage() {
                   Turn this on for units like Kg, l, m and other fractional stock.
                 </span>
               </div>
+              <div className="field field--full" style={{ marginBottom: 0 }}>
+                <label htmlFor="is-producable" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 0 }}>
+                  <input
+                    id="is-producable"
+                    type="checkbox"
+                    checked={form.is_producable}
+                    onChange={(event) => setForm((current) => ({ ...current, is_producable: event.target.checked }))}
+                  />
+                  Producable item (assembled from components)
+                </label>
+                <span className="field-hint">
+                  Enable to configure a Bill of Materials and allow production from raw components.
+                </span>
+              </div>
+              {form.is_producable ? (
+                <div className="field">
+                  <label htmlFor="production-cost">Additional production cost (optional)</label>
+                  <input
+                    id="production-cost"
+                    className="input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.production_cost}
+                    onChange={(event) => setForm((current) => ({ ...current, production_cost: event.target.value }))}
+                    placeholder="e.g. 5.00 for labour/overhead"
+                  />
+                  <span className="field-hint">Added on top of component material cost.</span>
+                </div>
+              ) : null}
+              {form.is_producable ? (
+                <div className="field field--full">
+                  {editingProductId ? (
+                    <button
+                      type="button"
+                      className="button button--secondary"
+                      onClick={() => {
+                        const product = products.find((p) => p.id === editingProductId);
+                        setBomModalProductId(editingProductId);
+                        setBomModalProductName(product?.name ?? form.name);
+                      }}
+                      title="Configure Bill of Materials"
+                      aria-label="Configure Bill of Materials"
+                    >
+                      <Settings2 size={15} style={{ marginRight: 6 }} />
+                      Configure Bill of Materials
+                    </button>
+                  ) : (
+                    <span className="field-hint" style={{ fontStyle: 'italic' }}>
+                      Save the product first, then use the ⚙ button in the list to configure its components.
+                    </span>
+                  )}
+                </div>
+              ) : null}
               {!editingProductId && form.maintain_inventory ? (
                 <div className="field">
                   <label htmlFor="initial-quantity">Initial stock quantity</label>
@@ -399,6 +462,18 @@ export default function ProductsPage() {
                     </div>
                     <span className="table-row__price">{formatCurrency(product.price, activeCurrencyCode)}</span>
                     <div className="table-row__actions">
+                      {product.is_producable ? (
+                        <button
+                          type="button"
+                          className="button button--ghost button--icon"
+                          onClick={() => { setBomModalProductId(product.id); setBomModalProductName(product.name); }}
+                          disabled={submitting}
+                          title={`Configure BOM for ${product.name}`}
+                          aria-label={`Configure BOM for ${product.name}`}
+                        >
+                          <Settings2 size={16} />
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="button button--ghost button--icon"
@@ -464,6 +539,13 @@ export default function ProductsPage() {
           danger={true}
           onConfirm={() => void confirmDeleteProduct()}
           onCancel={cancelDeleteProduct}
+        />
+      ) : null}
+      {bomModalProductId !== null ? (
+        <BOMConfigModal
+          productId={bomModalProductId}
+          productName={bomModalProductName}
+          onClose={() => { setBomModalProductId(null); setBomModalProductName(''); }}
         />
       ) : null}
     </div>
