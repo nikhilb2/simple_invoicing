@@ -9,9 +9,10 @@ from src.models.company import CompanyProfile
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
+from src.models.production_transaction import ProductionTransaction
 from src.models.user import User, UserRole
 from src.schemas.inventory import InventoryAdjust, InventoryOut, PaginatedInventoryOut
-from src.schemas.bom import ProduceRequest
+from src.schemas.bom import ProduceRequest, ProductionTransactionOut, PaginatedProductionTransactionOut
 from src.api.deps import get_active_company, get_current_user, require_roles
 from src.services import bom_service
 
@@ -166,3 +167,43 @@ def produce_item(
         raise HTTPException(status_code=400, detail=result["message"])
 
     return result
+
+
+@router.get("/production-history", response_model=PaginatedProductionTransactionOut)
+def get_production_history(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """
+    Get production transaction history for the active company.
+    """
+    query = db.query(ProductionTransaction).filter(
+        ProductionTransaction.company_id == active_company.id
+    ).order_by(ProductionTransaction.created_at.desc())
+
+    total = query.count()
+    transactions = query.offset((page - 1) * page_size).limit(page_size).all()
+
+    items = [
+        ProductionTransactionOut(
+            id=t.id,
+            company_id=t.company_id,
+            product_id=t.product_id,
+            quantity_produced=float(t.quantity_produced),
+            user_id=t.user_id,
+            notes=t.notes,
+            created_at=t.created_at,
+        )
+        for t in transactions
+    ]
+
+    return PaginatedProductionTransactionOut(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=(total + page_size - 1) // page_size if total > 0 else 1,
+    )
