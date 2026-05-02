@@ -26,6 +26,7 @@ const mainGroup: NavItem[] = [
 const managementGroup: NavItem[] = [
   { to: '/products', label: 'Products' },
   { to: '/inventory', label: 'Inventory' },
+  { to: '/produce-items', label: 'Produce Items' },
   { to: '/ledgers', label: 'Ledgers' },
   { to: '/company', label: 'Company' },
 ];

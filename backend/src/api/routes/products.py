@@ -79,6 +79,7 @@ def list_products(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=500),
     search: str = Query(""),
+    is_producable: bool | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -86,6 +87,8 @@ def list_products(
     query = db.query(Product).filter(Product.company_id == active_company.id)
     if search.strip():
         query = query.filter(Product.name.ilike(f"%{search.strip()}%"))
+    if is_producable is not None:
+        query = query.filter(Product.is_producable == is_producable)
     total = query.count()
     items = (
         query.order_by(Product.name.asc())
