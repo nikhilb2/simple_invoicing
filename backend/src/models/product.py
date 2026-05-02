@@ -16,4 +16,6 @@ class Product(Base):
     unit = Column(String, nullable=False, default="Pieces")
     allow_decimal = Column(Boolean, nullable=False, default=False)
     maintain_inventory = Column(Boolean, nullable=False, default=True)
+    is_producable = Column(Boolean, nullable=False, default=False)
+    production_cost = Column(Numeric(12, 2), nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=True)
