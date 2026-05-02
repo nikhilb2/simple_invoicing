@@ -6,7 +6,8 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from src.api.dependencies import get_db, get_current_user, require_roles
+from src.api.deps import get_db, get_current_user, require_roles, get_active_company
+from src.models.company import CompanyProfile
 from src.models.user import UserRole, User
 from src.models.product import Product
 from src.models.bom import BillOfMaterial
@@ -29,6 +30,7 @@ def get_product_bom(
     product_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
     """
     Get BOM for a producable product.
@@ -37,7 +39,7 @@ def get_product_bom(
     # Verify product exists and belongs to user's company
     product = db.query(Product).filter(
         Product.id == product_id,
-        Product.company_id == current_user.company_id,
+        Product.company_id == active_company.id,
     ).first()
 
     if not product:
@@ -49,17 +51,17 @@ def get_product_bom(
         )
 
     components = bom_service.get_bom_components(
-        db, current_user.company_id, product_id
+        db, active_company.id, product_id
     )
     return components
 
 
 @router.post("/", status_code=201, response_model=dict)
-@require_roles(UserRole.admin, UserRole.manager)
 def create_bom_entry(
     bom_create: BOMCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
     """
     Add a component to a product's BOM.
@@ -67,7 +69,7 @@ def create_bom_entry(
     # Verify product exists and is producable
     product = db.query(Product).filter(
         Product.id == bom_create.product_id,
-        Product.company_id == current_user.company_id,
+        Product.company_id == active_company.id,
     ).first()
 
     if not product:
@@ -81,7 +83,7 @@ def create_bom_entry(
     # Verify component product exists
     component = db.query(Product).filter(
         Product.id == bom_create.component_product_id,
-        Product.company_id == current_user.company_id,
+        Product.company_id == active_company.id,
     ).first()
 
     if not component:
@@ -91,7 +93,7 @@ def create_bom_entry(
     try:
         bom_service.validate_no_circular_bom(
             db,
-            current_user.company_id,
+            active_company.id,
             bom_create.product_id,
             bom_create.component_product_id,
         )
@@ -100,7 +102,7 @@ def create_bom_entry(
 
     # Check if entry already exists
     existing = db.query(BillOfMaterial).filter(
-        BillOfMaterial.company_id == current_user.company_id,
+        BillOfMaterial.company_id == active_company.id,
         BillOfMaterial.product_id == bom_create.product_id,
         BillOfMaterial.component_product_id == bom_create.component_product_id,
     ).first()
@@ -110,7 +112,7 @@ def create_bom_entry(
 
     # Create BOM entry
     bom_entry = BillOfMaterial(
-        company_id=current_user.company_id,
+        company_id=active_company.id,
         product_id=bom_create.product_id,
         component_product_id=bom_create.component_product_id,
         quantity_required=Decimal(str(bom_create.quantity_required)),
@@ -127,19 +129,19 @@ def create_bom_entry(
 
 
 @router.put("/{bom_id}", response_model=dict)
-@require_roles(UserRole.admin, UserRole.manager)
 def update_bom_entry(
     bom_id: int,
     bom_update: BOMUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
     """
     Update quantity required for a BOM component.
     """
     bom_entry = db.query(BillOfMaterial).filter(
         BillOfMaterial.id == bom_id,
-        BillOfMaterial.company_id == current_user.company_id,
+        BillOfMaterial.company_id == active_company.id,
     ).first()
 
     if not bom_entry:
@@ -153,18 +155,18 @@ def update_bom_entry(
 
 
 @router.delete("/{bom_id}", response_model=dict)
-@require_roles(UserRole.admin, UserRole.manager)
 def delete_bom_entry(
     bom_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
 ):
     """
     Remove a component from a product's BOM.
     """
     bom_entry = db.query(BillOfMaterial).filter(
         BillOfMaterial.id == bom_id,
-        BillOfMaterial.company_id == current_user.company_id,
+        BillOfMaterial.company_id == active_company.id,
     ).first()
 
     if not bom_entry:
