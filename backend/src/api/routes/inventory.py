@@ -11,7 +11,9 @@ from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
 from src.models.user import User, UserRole
 from src.schemas.inventory import InventoryAdjust, InventoryOut, PaginatedInventoryOut
+from src.schemas.bom import ProduceRequest
 from src.api.deps import get_active_company, get_current_user, require_roles
+from src.services import bom_service
 
 router = APIRouter()
 
@@ -140,3 +142,27 @@ def list_inventory(
         page_size=page_size,
         total_pages=(total + page_size - 1) // page_size if total > 0 else 1,
     )
+
+
+@router.post("/produce")
+def produce_item(
+    payload: ProduceRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """
+    Produce an item by consuming its BOM components and increasing inventory.
+    """
+    result = bom_service.execute_production(
+        db,
+        active_company.id,
+        payload.product_id,
+        Decimal(str(payload.quantity)),
+        current_user.id,
+    )
+
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["message"])
+
+    return result
