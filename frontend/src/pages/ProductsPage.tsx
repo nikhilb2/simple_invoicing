@@ -356,6 +356,30 @@ export default function ProductsPage() {
                   <span className="field-hint">Added on top of component material cost.</span>
                 </div>
               ) : null}
+              {form.is_producable ? (
+                <div className="field field--full">
+                  {editingProductId ? (
+                    <button
+                      type="button"
+                      className="button button--secondary"
+                      onClick={() => {
+                        const product = products.find((p) => p.id === editingProductId);
+                        setBomModalProductId(editingProductId);
+                        setBomModalProductName(product?.name ?? form.name);
+                      }}
+                      title="Configure Bill of Materials"
+                      aria-label="Configure Bill of Materials"
+                    >
+                      <Settings2 size={15} style={{ marginRight: 6 }} />
+                      Configure Bill of Materials
+                    </button>
+                  ) : (
+                    <span className="field-hint" style={{ fontStyle: 'italic' }}>
+                      Save the product first, then use the ⚙ button in the list to configure its components.
+                    </span>
+                  )}
+                </div>
+              ) : null}
               {!editingProductId && form.maintain_inventory ? (
                 <div className="field">
                   <label htmlFor="initial-quantity">Initial stock quantity</label>
