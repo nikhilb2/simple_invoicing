@@ -25,44 +25,37 @@ class InsufficientInventoryError(Exception):
     pass
 
 
-def _detect_circular_bom(
+def _can_reach(
     db: Session,
     company_id: int,
-    parent_product_id: int,
-    component_product_id: int,
-    visited: Set[int] | None = None,
+    start: int,
+    target: int,
+    seen: Set[int] | None = None,
 ) -> bool:
     """
-    Detect if adding component_product_id as a component of parent_product_id
-    would create a circular BOM reference.
-    
-    Returns True if circular reference detected, False otherwise.
+    Return True if `target` is reachable from `start` by following BOM edges.
+    Uses `seen` to avoid revisiting nodes (handles diamonds and cycles safely).
     """
-    if visited is None:
-        visited = set()
+    if seen is None:
+        seen = set()
 
-    if component_product_id in visited:
+    if start == target:
         return True
 
-    visited.add(component_product_id)
+    if start in seen:
+        return False
 
-    # Get all components of component_product_id
-    components = db.query(BillOfMaterial).filter(
+    seen.add(start)
+
+    bom_entries = db.query(BillOfMaterial).filter(
         and_(
             BillOfMaterial.company_id == company_id,
-            BillOfMaterial.product_id == component_product_id,
+            BillOfMaterial.product_id == start,
         )
     ).all()
 
-    for component_bom in components:
-        if component_bom.component_product_id == parent_product_id:
-            # Found parent in component's BOM - circular reference!
-            return True
-
-        # Recursively check deeper levels
-        if _detect_circular_bom(
-            db, company_id, parent_product_id, component_bom.component_product_id, visited
-        ):
+    for bom in bom_entries:
+        if _can_reach(db, company_id, bom.component_product_id, target, seen):
             return True
 
     return False
@@ -73,9 +66,11 @@ def validate_no_circular_bom(
 ) -> None:
     """
     Validate that adding component_product_id to product_id's BOM won't create cycles.
+    A cycle exists if product_id is reachable FROM component_product_id (i.e. component
+    already has product_id in its own BOM sub-tree).
     Raises CircularBOMError if validation fails.
     """
-    if _detect_circular_bom(db, company_id, product_id, component_product_id):
+    if _can_reach(db, company_id, component_product_id, product_id):
         raise CircularBOMError(
             f"Cannot add product {component_product_id} as component of {product_id}: "
             "would create a circular BOM reference."
@@ -175,14 +170,16 @@ def get_bom_requirements(
     company_id: int,
     product_id: int,
     quantity: Decimal,
-    requirements: dict[int, Decimal] | None = None,
 ) -> dict[int, Decimal]:
     """
-    Recursively expand BOM and calculate total material requirements.
+    Return direct BOM component requirements for producing `quantity` units of `product_id`.
     Returns dict: {component_product_id: total_quantity_needed}
+
+    Deliberately does NOT recurse into producable sub-components — if a component
+    is itself producable the user must produce it as a separate step first. This
+    prevents double-deduction (consuming both B and B's raw-materials in one hit).
     """
-    if requirements is None:
-        requirements = {}
+    requirements: dict[int, Decimal] = {}
 
     bom_entries = db.query(BillOfMaterial).filter(
         and_(
@@ -195,16 +192,7 @@ def get_bom_requirements(
         component_id = bom.component_product_id
         qty_per_unit = Decimal(str(bom.quantity_required))
         total_qty = qty_per_unit * quantity
-
-        if component_id not in requirements:
-            requirements[component_id] = Decimal("0")
-
-        requirements[component_id] += total_qty
-
-        # If component is also producable, recursively expand its BOM
-        component = db.query(Product).filter(Product.id == component_id).first()
-        if component and component.is_producable:
-            get_bom_requirements(db, company_id, component_id, total_qty, requirements)
+        requirements[component_id] = requirements.get(component_id, Decimal("0")) + total_qty
 
     return requirements
 
@@ -223,9 +211,8 @@ def validate_bom_availability(
 
     for component_id, required_qty in requirements.items():
         inventory = db.query(Inventory).filter(
-            and_(
-                Inventory.product_id == component_id,
-            )
+            Inventory.product_id == component_id,
+            Inventory.company_id == company_id,
         ).first()
 
         if not inventory:
@@ -296,7 +283,8 @@ def execute_production(
         # Deduct all components
         for component_id, required_qty in requirements.items():
             inventory = db.query(Inventory).filter(
-                Inventory.product_id == component_id
+                Inventory.product_id == component_id,
+                Inventory.company_id == company_id,
             ).first()
 
             component = db.query(Product).filter(Product.id == component_id).first()
@@ -315,11 +303,14 @@ def execute_production(
 
         # Increment producable item inventory
         product_inventory = db.query(Inventory).filter(
-            Inventory.product_id == product_id
+            Inventory.product_id == product_id,
+            Inventory.company_id == company_id,
         ).first()
 
         if not product_inventory:
-            product_inventory = Inventory(product_id=product_id, quantity=Decimal("0"))
+            product_inventory = Inventory(
+                company_id=company_id, product_id=product_id, quantity=Decimal("0")
+            )
             db.add(product_inventory)
 
         before_produced = float(product_inventory.quantity)
@@ -342,12 +333,14 @@ def execute_production(
         )
         db.add(transaction)
 
+        db.flush()  # populate transaction.id before commit
+        transaction_id = transaction.id
         db.commit()
 
         return {
             "success": True,
             "message": f"Successfully produced {quantity} units of {product.sku}",
-            "transaction_id": transaction.id,
+            "transaction_id": transaction_id,
             "inventory_changes": inventory_changes,
         }
 

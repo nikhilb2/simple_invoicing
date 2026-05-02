@@ -1,4 +1,4 @@
-import api, { getApiErrorMessage } from '../api/client';
+import api from '../api/client';
 import type {
   BOMComponent,
   BOMCreate,

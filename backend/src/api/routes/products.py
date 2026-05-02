@@ -45,6 +45,8 @@ def create_product(
         unit=payload.unit,
         allow_decimal=payload.allow_decimal,
         maintain_inventory=payload.maintain_inventory,
+        is_producable=payload.is_producable,
+        production_cost=payload.production_cost,
     )
     db.add(product)
     db.flush()  # get product.id before committing
@@ -131,6 +133,8 @@ def update_product(
     product.price = payload.price
     product.gst_rate = payload.gst_rate
     product.unit = payload.unit
+    product.is_producable = payload.is_producable
+    product.production_cost = payload.production_cost
 
     if product.allow_decimal and not payload.allow_decimal:
         inventory = db.query(Inventory).filter(

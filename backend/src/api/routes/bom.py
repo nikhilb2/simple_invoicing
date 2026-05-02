@@ -3,7 +3,7 @@ BOM (Bill of Materials) API endpoints.
 """
 
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_db, get_current_user, require_roles, get_active_company
@@ -11,15 +11,7 @@ from src.models.company import CompanyProfile
 from src.models.user import UserRole, User
 from src.models.product import Product
 from src.models.bom import BillOfMaterial
-from src.models.production_transaction import ProductionTransaction
-from src.schemas.bom import (
-    BOMCreate,
-    BOMUpdate,
-    BOMComponentOut,
-    ProduceRequest,
-    ProductionTransactionOut,
-    PaginatedProductionTransactionOut,
-)
+from src.schemas.bom import BOMCreate, BOMUpdate, BOMComponentOut
 from src.services import bom_service
 
 router = APIRouter()
