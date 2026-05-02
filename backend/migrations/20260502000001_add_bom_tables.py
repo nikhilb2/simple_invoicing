@@ -14,17 +14,17 @@ def up(conn) -> None:
     # Add BOM fields to products table
     conn.execute(text("""
         ALTER TABLE products
-        ADD COLUMN is_producable BOOLEAN NOT NULL DEFAULT FALSE;
+        ADD COLUMN IF NOT EXISTS is_producable BOOLEAN NOT NULL DEFAULT FALSE;
     """))
     
     conn.execute(text("""
         ALTER TABLE products
-        ADD COLUMN production_cost NUMERIC(12, 2) DEFAULT NULL;
+        ADD COLUMN IF NOT EXISTS production_cost NUMERIC(12, 2) DEFAULT NULL;
     """))
     
     # Create bill_of_materials table
     conn.execute(text("""
-        CREATE TABLE bill_of_materials (
+        CREATE TABLE IF NOT EXISTS bill_of_materials (
             id SERIAL PRIMARY KEY,
             company_id INTEGER NOT NULL,
             product_id INTEGER NOT NULL,
@@ -39,20 +39,20 @@ def up(conn) -> None:
     """))
     
     conn.execute(text("""
-        CREATE INDEX idx_bom_company ON bill_of_materials(company_id);
+            CREATE INDEX IF NOT EXISTS idx_bom_company ON bill_of_materials(company_id);
     """))
     
     conn.execute(text("""
-        CREATE INDEX idx_bom_product ON bill_of_materials(product_id);
+            CREATE INDEX IF NOT EXISTS idx_bom_product ON bill_of_materials(product_id);
     """))
     
     conn.execute(text("""
-        CREATE INDEX idx_bom_component ON bill_of_materials(component_product_id);
+            CREATE INDEX IF NOT EXISTS idx_bom_component ON bill_of_materials(component_product_id);
     """))
     
     # Create production_transactions table
     conn.execute(text("""
-        CREATE TABLE production_transactions (
+            CREATE TABLE IF NOT EXISTS production_transactions (
             id SERIAL PRIMARY KEY,
             company_id INTEGER NOT NULL,
             product_id INTEGER NOT NULL,
@@ -67,15 +67,15 @@ def up(conn) -> None:
     """))
     
     conn.execute(text("""
-        CREATE INDEX idx_production_company ON production_transactions(company_id);
+            CREATE INDEX IF NOT EXISTS idx_production_company ON production_transactions(company_id);
     """))
     
     conn.execute(text("""
-        CREATE INDEX idx_production_product ON production_transactions(product_id);
+            CREATE INDEX IF NOT EXISTS idx_production_product ON production_transactions(product_id);
     """))
     
     conn.execute(text("""
-        CREATE INDEX idx_production_created ON production_transactions(created_at);
+            CREATE INDEX IF NOT EXISTS idx_production_created ON production_transactions(created_at);
     """))
 
 

@@ -13,8 +13,6 @@ from src.db.session import engine
 # Import all models to register them with declarative_base
 import src.models  # noqa: F401
 
-Base.metadata.create_all(bind=engine)
-
 
 def run_pending_migrations() -> None:
     """Auto-apply pending migrations on startup (same as `python migrate.py up`)."""
@@ -60,6 +58,10 @@ def run_pending_migrations() -> None:
 
 
 run_pending_migrations()
+
+# Keep a safety net for any non-migrated tables while avoiding migration drift:
+# run migrations first, then create any missing tables.
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Simple Invoicing API", version="0.1.0")
 
