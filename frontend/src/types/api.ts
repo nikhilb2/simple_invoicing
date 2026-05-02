@@ -15,6 +15,8 @@ export type Product = {
   unit: string;
   allow_decimal: boolean;
   maintain_inventory: boolean;
+  is_producable: boolean;
+  production_cost: number | null;
   created_at: string | null;
 };
 
@@ -28,6 +30,8 @@ export type ProductCreate = {
   unit: string;
   allow_decimal: boolean;
   maintain_inventory: boolean;
+  is_producable: boolean;
+  production_cost?: number | null;
   initial_quantity?: number;
 };
 
@@ -641,4 +645,65 @@ export type BackupRestoreResponse = {
   detail: string;
   compatibility: string;
   applied_migrations: number;
+};
+
+// BOM (Bill of Materials) types
+export type BOMComponent = {
+  id: number;
+  product_id: number;
+  component_product_id: number;
+  quantity_required: number;
+  created_at: string | null;
+  component_sku: string;
+  component_name: string;
+  component_price: number;
+  component_unit: string;
+  component_allow_decimal: boolean;
+};
+
+export type BOMCreate = {
+  product_id: number;
+  component_product_id: number;
+  quantity_required: number;
+};
+
+export type BOMUpdate = {
+  quantity_required: number;
+};
+
+export type ProduceRequest = {
+  product_id: number;
+  quantity: number;
+};
+
+export type ProductionTransaction = {
+  id: number;
+  company_id: number;
+  product_id: number;
+  quantity_produced: number;
+  user_id: number;
+  notes: string | null;
+  created_at: string | null;
+};
+
+export type PaginatedProductionTransactions = {
+  items: ProductionTransaction[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+};
+
+export type ProduceResponse = {
+  success: boolean;
+  message: string;
+  transaction_id?: number;
+  inventory_changes?: Record<
+    number,
+    {
+      product_sku: string;
+      before: number;
+      after: number;
+    }
+  >;
 };
