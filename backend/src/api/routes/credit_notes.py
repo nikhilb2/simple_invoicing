@@ -130,6 +130,4 @@ def cancel_credit_note_endpoint(
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
-    cn = cancel_credit_note(cn_id, db, company_id=company_id)
-    db.refresh(cn)
-    return _to_out(cn)
+    return cancel_credit_note(cn_id, db, company_id=company_id)

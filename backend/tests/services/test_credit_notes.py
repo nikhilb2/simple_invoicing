@@ -10,6 +10,7 @@ Covers:
 - cancel_credit_note happy path
 """
 from decimal import Decimal
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import ANY, MagicMock, call, patch
 
@@ -64,9 +65,21 @@ def make_invoice_item(id, invoice_id, product_id=1, quantity=10, unit_price=100,
 def make_cn(id=1, status="active", ledger_id=1):
     cn = CreditNote()
     cn.id = id
+    cn.credit_note_number = f"CN-{id:03d}"
     cn.status = status
     cn.ledger_id = ledger_id
+    cn.financial_year_id = 1
+    cn.credit_note_type = "return"
+    cn.reason = "test"
+    cn.taxable_amount = 100
+    cn.cgst_amount = 9
+    cn.sgst_amount = 9
+    cn.igst_amount = 0
+    cn.total_amount = 118
+    cn.created_at = datetime.utcnow()
+    cn.cancelled_at = None
     cn.items = []
+    cn.invoice_refs = []
     return cn
 
 
@@ -407,39 +420,67 @@ class TestCancelCreditNote:
             cancel_credit_note(999, db)
         assert exc.value.status_code == 404
 
-    def test_cancel_already_cancelled_raises_400(self):
+    def test_cancel_already_cancelled_hard_deletes(self):
         cn = make_cn(status="cancelled")
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = cn
-        with pytest.raises(Exception) as exc:
-            cancel_credit_note(1, db)
-        assert exc.value.status_code == 400
+        cancel_credit_note(1, db)
+        db.delete.assert_called_once_with(cn)
 
-    def test_cancel_sets_cancelled_status(self):
+    def test_cancel_marks_response_cancelled_and_deletes(self):
         item = CreditNoteItem()
+        item.id = 1
         item.invoice_id = 5
+        item.invoice_item_id = 11
+        item.product_id = 22
+        item.quantity = 1
+        item.unit_price = 100
+        item.gst_rate = 18
+        item.taxable_amount = 100
+        item.tax_amount = 18
+        item.line_total = 118
+
         cn = make_cn(status="active")
         cn.items = [item]
 
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = cn
 
-        with patch("src.services.credit_note._recompute_credit_status") as mock_recompute:
-            cancel_credit_note(1, db)
+        with patch("src.services.credit_note._recompute_credit_status") as mock_recompute, \
+             patch("src.services.credit_note._change_inventory_quantity"):
+            out = cancel_credit_note(1, db)
 
-        assert cn.status == "cancelled"
-        assert cn.cancelled_at is not None
+        assert out.status == "cancelled"
+        assert out.cancelled_at is not None
+        db.delete.assert_called_once_with(cn)
         mock_recompute.assert_called_once_with(5, db)
 
     def test_cancel_return_credit_note_reverses_inventory(self):
         item = CreditNoteItem()
+        item.id = 1
         item.invoice_id = 5
+        item.invoice_item_id = 11
         item.product_id = 22
         item.quantity = 3
+        item.unit_price = 100
+        item.gst_rate = 18
+        item.taxable_amount = 300
+        item.tax_amount = 54
+        item.line_total = 354
 
         cn = make_cn(status="active")
         cn.credit_note_type = "return"
         cn.items = [item]
+        cn.invoice_refs = []
+        cn.credit_note_number = "CN-001"
+        cn.financial_year_id = 1
+        cn.reason = "test"
+        cn.taxable_amount = 100
+        cn.cgst_amount = 9
+        cn.sgst_amount = 9
+        cn.igst_amount = 0
+        cn.total_amount = 118
+        cn.created_at = datetime.utcnow()
 
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = cn

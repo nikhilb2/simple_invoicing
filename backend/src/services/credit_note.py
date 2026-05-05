@@ -11,7 +11,7 @@ from src.models.credit_note import CreditNote, CreditNoteInvoiceRef, CreditNoteI
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
-from src.schemas.credit_note import CreditNoteCreate
+from src.schemas.credit_note import CreditNoteCreate, CreditNoteOut
 from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.series import generate_next_number
 
@@ -320,23 +320,25 @@ def create_credit_note(
     return cn
 
 
-def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -> CreditNote:
+def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -> CreditNoteOut:
     query = db.query(CreditNote).filter(CreditNote.id == cn_id)
     if company_id is not None:
         query = query.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
     cn = query.first()
     if not cn:
         raise HTTPException(status_code=404, detail="Credit note not found")
-    if cn.status == "cancelled":
-        raise HTTPException(status_code=400, detail="Credit note is already cancelled")
 
-    # Collect invoice IDs before cancellation so we can recompute status after
+    was_active = cn.status == "active"
+
+    # Collect invoice IDs before deletion so we can recompute status after
     affected_invoice_ids = list({item.invoice_id for item in cn.items if item.invoice_id})
 
     cn.status = "cancelled"
     cn.cancelled_at = datetime.utcnow()
+    snapshot = CreditNoteOut.model_validate(cn)
+    snapshot.invoice_ids = [ref.invoice_id for ref in cn.invoice_refs]
 
-    if cn.credit_note_type == "return":
+    if was_active and cn.credit_note_type == "return":
         for item in cn.items:
             if item.product_id and item.quantity:
                 product_query = db.query(Product).filter(Product.id == item.product_id)
@@ -357,6 +359,7 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
                     **kwargs,
                 )
 
+    db.delete(cn)
     db.flush()
 
     for inv_id in affected_invoice_ids:
@@ -364,5 +367,4 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
         _recompute_credit_status(inv_id, db, **kwargs)
 
     db.commit()
-    db.refresh(cn)
-    return cn
+    return snapshot
