@@ -31,19 +31,9 @@ from src.services.pdf_templates import (
     _build_multi_copy_invoice_html,
     _copy_label,
 )
+from src.services.gst_tax_service import _money, is_interstate_supply, assign_item_tax_split, TaxCalculator
 
 router = APIRouter()
-
-
-def _is_interstate_supply(company_gst: str | None, ledger_gst: str | None) -> bool:
-    """Check if the invoice is for an interstate supply based on GST state codes."""
-    if not company_gst or not ledger_gst or len(company_gst) < 2 or len(ledger_gst) < 2:
-        return False
-    return company_gst[:2] != ledger_gst[:2]
-
-
-def _money(value: Decimal) -> Decimal:
-    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 
@@ -98,40 +88,6 @@ def _change_inventory_quantity(
         raise HTTPException(status_code=400, detail=f"Insufficient inventory while {context}")
 
 
-def _assign_item_tax_split(
-    items: list[InvoiceItem],
-    *,
-    interstate_supply: bool,
-) -> None:
-    if not items:
-        return
-
-    if interstate_supply:
-        for item in items:
-            item_tax_amount = _money(Decimal(str(item.tax_amount or 0)))
-            item_igst_amount = item_tax_amount
-            taxable_amount = _money(Decimal(str(item.taxable_amount or 0)))
-
-            item.tax_amount = float(item_igst_amount)
-            item.line_total = float(_money(taxable_amount + item_igst_amount))
-            item.cgst_amount = 0.0
-            item.sgst_amount = 0.0
-            item.igst_amount = float(item_igst_amount)
-        return
-
-    for item in items:
-        item_tax_amount = _money(Decimal(str(item.tax_amount or 0)))
-        item_half_tax_amount = _money(item_tax_amount / Decimal("2"))
-        item_cgst_amount = item_half_tax_amount
-        item_sgst_amount = item_half_tax_amount
-        item_total_tax_amount = _money(item_cgst_amount + item_sgst_amount)
-        taxable_amount = _money(Decimal(str(item.taxable_amount or 0)))
-
-        item.tax_amount = float(item_total_tax_amount)
-        item.line_total = float(_money(taxable_amount + item_total_tax_amount))
-        item.cgst_amount = float(item_cgst_amount)
-        item.sgst_amount = float(item_sgst_amount)
-        item.igst_amount = 0.0
 
 
 def _reverse_existing_invoice_inventory(db: Session, invoice: Invoice) -> None:
@@ -262,7 +218,7 @@ def _apply_payload_to_invoice(
     if not payload.items:
         raise HTTPException(status_code=400, detail="Invoice must have at least one line item")
 
-    interstate_supply = _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
+    interstate_supply = is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
 
     taxable_total = Decimal("0")
     tax_total = Decimal("0")
@@ -338,27 +294,17 @@ def _apply_payload_to_invoice(
     taxable_total = _money(taxable_total)
     invoice.taxable_amount = float(taxable_total)
 
-    _assign_item_tax_split(
+    assign_item_tax_split(
         created_items,
         interstate_supply=interstate_supply,
     )
 
-    cgst_total = _money(sum((_money(Decimal(str(item.cgst_amount or 0))) for item in created_items), Decimal("0")))
-    sgst_total = _money(sum((_money(Decimal(str(item.sgst_amount or 0))) for item in created_items), Decimal("0")))
-    igst_total = _money(sum((_money(Decimal(str(item.igst_amount or 0))) for item in created_items), Decimal("0")))
-
-    if interstate_supply:
-        invoice.cgst_amount = 0.0
-        invoice.sgst_amount = 0.0
-        invoice.igst_amount = float(igst_total)
-    else:
-        invoice.cgst_amount = float(cgst_total)
-        invoice.sgst_amount = float(sgst_total)
-        invoice.igst_amount = 0.0
-
-    tax_total = _money(cgst_total + sgst_total + igst_total)
-    invoice.total_tax_amount = float(tax_total)
-    raw_total = _money(taxable_total + tax_total)
+    TaxCalculator.assign_invoice_tax_totals(
+        invoice,
+        created_items,
+        interstate_supply=interstate_supply,
+    )
+    raw_total = _money(taxable_total + Decimal(str(invoice.total_tax_amount)))
     if invoice.apply_round_off:
         rounded_total = raw_total.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
         round_off_amount = _money(rounded_total - raw_total)
