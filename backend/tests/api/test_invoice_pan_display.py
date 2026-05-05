@@ -10,7 +10,8 @@ if str(BACKEND_ROOT) not in sys.path:
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
 
-from src.api.routes.invoices import _build_invoice_html, _build_purchase_invoice_html, _extract_pan_from_gstin
+from src.services.pdf_templates.invoice_template import _build_invoice_html
+from src.services.pdf_templates.purchase_template import _build_purchase_invoice_html, _extract_pan_from_gstin
 from src.models.invoice import Invoice, InvoiceItem
 
 
