@@ -10,16 +10,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from src.models.invoice import Invoice, InvoiceItem
 
 
-def _money(value: Decimal) -> Decimal:
-    """
-    Round a Decimal value to 2 decimal places using ROUND_HALF_UP.
-    
-    Args:
-        value: The Decimal value to round for currency calculations.
-        
-    Returns:
-        The value rounded to 2 decimal places.
-    """
+def money(value: Decimal) -> Decimal:
+    """Round a Decimal value to 2 decimal places using ROUND_HALF_UP."""
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
@@ -66,88 +58,71 @@ def assign_item_tax_split(
 
     if interstate_supply:
         for item in items:
-            item_tax_amount = _money(Decimal(str(item.tax_amount or 0)))
+            item_tax_amount = money(Decimal(str(item.tax_amount or 0)))
             item_igst_amount = item_tax_amount
-            taxable_amount = _money(Decimal(str(item.taxable_amount or 0)))
+            taxable_amount = money(Decimal(str(item.taxable_amount or 0)))
 
             item.tax_amount = float(item_igst_amount)
-            item.line_total = float(_money(taxable_amount + item_igst_amount))
+            item.line_total = float(money(taxable_amount + item_igst_amount))
             item.cgst_amount = 0.0
             item.sgst_amount = 0.0
             item.igst_amount = float(item_igst_amount)
         return
 
     for item in items:
-        item_tax_amount = _money(Decimal(str(item.tax_amount or 0)))
-        item_half_tax_amount = _money(item_tax_amount / Decimal("2"))
+        item_tax_amount = money(Decimal(str(item.tax_amount or 0)))
+        item_half_tax_amount = money(item_tax_amount / Decimal("2"))
         item_cgst_amount = item_half_tax_amount
         item_sgst_amount = item_half_tax_amount
-        item_total_tax_amount = _money(item_cgst_amount + item_sgst_amount)
-        taxable_amount = _money(Decimal(str(item.taxable_amount or 0)))
+        item_total_tax_amount = money(item_cgst_amount + item_sgst_amount)
+        taxable_amount = money(Decimal(str(item.taxable_amount or 0)))
 
         item.tax_amount = float(item_total_tax_amount)
-        item.line_total = float(_money(taxable_amount + item_total_tax_amount))
+        item.line_total = float(money(taxable_amount + item_total_tax_amount))
         item.cgst_amount = float(item_cgst_amount)
         item.sgst_amount = float(item_sgst_amount)
         item.igst_amount = 0.0
 
 
-class TaxCalculator:
+def calculate_tax_totals(items: list[InvoiceItem]) -> tuple[Decimal, Decimal, Decimal]:
     """
-    Encapsulates tax calculation operations for invoices.
-    
-    Provides methods to calculate and assign tax totals at the invoice level based on
-    aggregated item-level taxes.
+    Calculate total CGST, SGST, and IGST from invoice items.
+
+    Returns:
+        A tuple of (cgst_total, sgst_total, igst_total) as Decimals rounded to 2 places.
     """
+    cgst_total = money(sum((money(Decimal(str(item.cgst_amount or 0))) for item in items), Decimal("0")))
+    sgst_total = money(sum((money(Decimal(str(item.sgst_amount or 0))) for item in items), Decimal("0")))
+    igst_total = money(sum((money(Decimal(str(item.igst_amount or 0))) for item in items), Decimal("0")))
+    return cgst_total, sgst_total, igst_total
 
-    @staticmethod
-    def calculate_tax_totals(items: list[InvoiceItem]) -> tuple[Decimal, Decimal, Decimal]:
-        """
-        Calculate total CGST, SGST, and IGST from invoice items.
-        
-        Args:
-            items: List of InvoiceItem objects with tax amounts assigned.
-            
-        Returns:
-            A tuple of (cgst_total, sgst_total, igst_total) as Decimal values rounded to 2 places.
-        """
-        cgst_total = _money(sum((_money(Decimal(str(item.cgst_amount or 0))) for item in items), Decimal("0")))
-        sgst_total = _money(sum((_money(Decimal(str(item.sgst_amount or 0))) for item in items), Decimal("0")))
-        igst_total = _money(sum((_money(Decimal(str(item.igst_amount or 0))) for item in items), Decimal("0")))
-        return cgst_total, sgst_total, igst_total
 
-    @staticmethod
-    def assign_invoice_tax_totals(
-        invoice: Invoice,
-        items: list[InvoiceItem],
-        *,
-        interstate_supply: bool,
-    ) -> None:
-        """
-        Assign tax totals to invoice based on item taxes and supply type.
-        
-        For interstate supplies, sets cgst_amount and sgst_amount to 0, igst_amount to total.
-        For intrastate supplies, aggregates cgst and sgst totals, sets igst_amount to 0.
-        
-        Modifies the invoice in-place, updating:
-        - cgst_amount, sgst_amount, igst_amount
-        - total_tax_amount
-        
-        Args:
-            invoice: The Invoice object to assign tax totals to.
-            items: List of InvoiceItem objects with item-level taxes already calculated.
-            interstate_supply: True if this is an interstate supply, False for intrastate.
-        """
-        cgst_total, sgst_total, igst_total = TaxCalculator.calculate_tax_totals(items)
+def assign_invoice_tax_totals(
+    invoice: Invoice,
+    items: list[InvoiceItem],
+    *,
+    interstate_supply: bool,
+) -> Decimal:
+    """
+    Assign tax totals to the invoice based on aggregated item taxes and supply type.
 
-        if interstate_supply:
-            invoice.cgst_amount = 0.0
-            invoice.sgst_amount = 0.0
-            invoice.igst_amount = float(igst_total)
-        else:
-            invoice.cgst_amount = float(cgst_total)
-            invoice.sgst_amount = float(sgst_total)
-            invoice.igst_amount = 0.0
+    For interstate supplies, sets cgst_amount and sgst_amount to 0, igst_amount to total.
+    For intrastate supplies, aggregates cgst and sgst totals, sets igst_amount to 0.
 
-        tax_total = _money(cgst_total + sgst_total + igst_total)
-        invoice.total_tax_amount = float(tax_total)
+    Modifies the invoice in-place (cgst_amount, sgst_amount, igst_amount, total_tax_amount)
+    and returns the total tax as a Decimal for use in downstream calculations.
+    """
+    cgst_total, sgst_total, igst_total = calculate_tax_totals(items)
+
+    if interstate_supply:
+        invoice.cgst_amount = 0.0
+        invoice.sgst_amount = 0.0
+        invoice.igst_amount = float(igst_total)
+    else:
+        invoice.cgst_amount = float(cgst_total)
+        invoice.sgst_amount = float(sgst_total)
+        invoice.igst_amount = 0.0
+
+    tax_total = money(cgst_total + sgst_total + igst_total)
+    invoice.total_tax_amount = float(tax_total)
+    return tax_total

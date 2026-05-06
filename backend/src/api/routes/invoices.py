@@ -31,7 +31,7 @@ from src.services.pdf_templates import (
     _build_multi_copy_invoice_html,
     _copy_label,
 )
-from src.services.gst_tax_service import _money, is_interstate_supply, assign_item_tax_split, TaxCalculator
+from src.services.gst_tax_service import money as _money, is_interstate_supply, assign_item_tax_split, assign_invoice_tax_totals
 
 router = APIRouter()
 
@@ -221,7 +221,6 @@ def _apply_payload_to_invoice(
     interstate_supply = is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
 
     taxable_total = Decimal("0")
-    tax_total = Decimal("0")
     created_items: list[InvoiceItem] = []
     for item in payload.items:
         quantity_value = Decimal(str(item.quantity))
@@ -274,7 +273,6 @@ def _apply_payload_to_invoice(
             line_total = _money(taxable_amount + tax_amount)
 
         taxable_total += taxable_amount
-        tax_total += tax_amount
 
         invoice_item = InvoiceItem(
             invoice_id=invoice.id,
@@ -299,12 +297,12 @@ def _apply_payload_to_invoice(
         interstate_supply=interstate_supply,
     )
 
-    TaxCalculator.assign_invoice_tax_totals(
+    tax_total = assign_invoice_tax_totals(
         invoice,
         created_items,
         interstate_supply=interstate_supply,
     )
-    raw_total = _money(taxable_total + Decimal(str(invoice.total_tax_amount)))
+    raw_total = _money(taxable_total + tax_total)
     if invoice.apply_round_off:
         rounded_total = raw_total.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
         round_off_amount = _money(rounded_total - raw_total)
