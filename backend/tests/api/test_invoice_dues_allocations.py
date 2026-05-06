@@ -86,7 +86,7 @@ def test_dues_endpoint_excludes_fully_paid_invoices(client):
 
     invoice_numbers = iter(["INV-000001", "INV-000002"])
     with patch(
-        "src.api.routes.invoices._generate_next_number",
+        "src.services.invoice_processor.generate_next_number",
         side_effect=lambda *args, **kwargs: next(invoice_numbers),
     ), patch(
         "src.api.routes.payments.generate_next_number",
@@ -141,7 +141,7 @@ def test_unpaid_invoices_returns_oldest_first_suggestions(client):
 
     invoice_numbers = iter(["INV-000101", "INV-000102"])
     with patch(
-        "src.api.routes.invoices._generate_next_number",
+        "src.services.invoice_processor.generate_next_number",
         side_effect=lambda *args, **kwargs: next(invoice_numbers),
     ):
         ledger_id = _create_ledger(client)
@@ -182,7 +182,7 @@ def test_ledger_statement_payment_entry_includes_invoice_allocations(client):
     today = datetime.utcnow().date()
 
     with patch(
-        "src.api.routes.invoices._generate_next_number",
+        "src.services.invoice_processor.generate_next_number",
         return_value="INV-000401",
     ), patch(
         "src.api.routes.payments.generate_next_number",

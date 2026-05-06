@@ -50,7 +50,7 @@ def _add_inventory(client, product_id: int, quantity: int):
 
 
 def test_sales_invoice_reference_notes_round_trip(client):
-    with patch("src.api.routes.invoices._generate_next_number", return_value="SAL-000001"):
+    with patch("src.services.invoice_processor.generate_next_number", return_value="SAL-000001"):
         ledger_id = _create_ledger(client, name="Sales Ledger", gst="27ABCDE9999F1Z5")
         product_id = _create_product(client)
         _add_inventory(client, product_id=product_id, quantity=20)
