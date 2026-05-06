@@ -1,6 +1,5 @@
 from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Optional
+from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy import or_
@@ -14,18 +13,7 @@ from src.models.product import Product
 from src.schemas.credit_note import CreditNoteCreate, CreditNoteOut
 from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.series import generate_next_number
-
-
-def _money(value: Decimal) -> Decimal:
-    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-
-def _is_interstate(company_gst: Optional[str], ledger_gst: Optional[str]) -> bool:
-    if not company_gst or not ledger_gst:
-        return False
-    if len(company_gst) < 2 or len(ledger_gst) < 2:
-        return False
-    return company_gst[:2] != ledger_gst[:2]
+from src.services.gst_tax_service import money as _money, is_interstate_supply as _is_interstate
 
 
 def _change_inventory_quantity(
