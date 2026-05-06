@@ -14,7 +14,8 @@ if str(BACKEND_ROOT) not in sys.path:
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
 
-from src.api.routes.invoices import _apply_payload_to_invoice, _build_invoice_html
+from src.services.invoice_processor import InvoiceProcessor
+from src.services.pdf_templates import _build_invoice_html
 from src.db.base import Base
 from src.models.buyer import Buyer
 from src.models.company import CompanyProfile
@@ -107,8 +108,7 @@ def test_intrastate_odd_paise_total_tax_is_adjusted_and_split_equally(db_session
         items=[InvoiceItemCreate(product_id=product.id, quantity=1, unit_price=100.03)],
     )
 
-    _apply_payload_to_invoice(
-        db_session,
+    InvoiceProcessor(db_session).apply_payload(
         invoice,
         payload,
         created_by=user.id,
@@ -152,8 +152,7 @@ def test_pdf_unit_price_always_displays_tax_inclusive_value(db_session):
         items=[InvoiceItemCreate(product_id=product.id, quantity=2, unit_price=100.00)],
     )
 
-    _apply_payload_to_invoice(
-        db_session,
+    InvoiceProcessor(db_session).apply_payload(
         invoice,
         payload,
         created_by=user.id,
@@ -187,8 +186,7 @@ def test_intrastate_three_line_case_keeps_itemwise_cgst_sgst_equal(db_session):
         ],
     )
 
-    _apply_payload_to_invoice(
-        db_session,
+    InvoiceProcessor(db_session).apply_payload(
         invoice,
         payload,
         created_by=user.id,
@@ -233,8 +231,7 @@ def test_interstate_item_tax_is_stored_as_igst_and_rendered_in_pdf(db_session):
         items=[InvoiceItemCreate(product_id=product.id, quantity=1, unit_price=100.00)],
     )
 
-    _apply_payload_to_invoice(
-        db_session,
+    InvoiceProcessor(db_session).apply_payload(
         invoice,
         payload,
         created_by=user.id,
