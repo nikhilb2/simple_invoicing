@@ -12,7 +12,7 @@ from collections import defaultdict
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import or_
+from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
 
 from src.models.inventory import Inventory
@@ -61,10 +61,18 @@ class InventoryManager:
         """
         query = self.db.query(Inventory).filter(Inventory.product_id == product_id)
         if company_id is not None:
-            query = query.filter(
-                or_(
-                    Inventory.company_id == company_id,
-                    Inventory.company_id.is_(None),
+            query = (
+                query
+                .filter(
+                    or_(
+                        Inventory.company_id == company_id,
+                        Inventory.company_id.is_(None),
+                    )
+                )
+                # Prefer the tenant-scoped row; fall back to global (NULL) only
+                # when no company-specific row exists.
+                .order_by(
+                    case((Inventory.company_id == company_id, 0), else_=1)
                 )
             )
         inventory = query.first()
@@ -119,10 +127,17 @@ class InventoryManager:
             Inventory.product_id == product_id
         )
         if company_id is not None:
-            inventory_query = inventory_query.filter(
-                or_(
-                    Inventory.company_id == company_id,
-                    Inventory.company_id.is_(None),
+            inventory_query = (
+                inventory_query
+                .filter(
+                    or_(
+                        Inventory.company_id == company_id,
+                        Inventory.company_id.is_(None),
+                    )
+                )
+                # Prefer the tenant-scoped row over the global fallback row.
+                .order_by(
+                    case((Inventory.company_id == company_id, 0), else_=1)
                 )
             )
         inventory = inventory_query.first()

@@ -191,6 +191,43 @@ class TestUpdateQuantity:
         inv = db_session.query(Inventory).filter_by(product_id=product.id).first()
         assert Decimal(str(inv.quantity)) == Decimal("0")
 
+    def test_prefers_company_row_over_global_row(self, db_session):
+        """When only a company-specific row exists (the normal case), it must be
+        the one mutated — not a hypothetical global row.  The current schema
+        enforces unique(product_id) so only one row can exist per product;
+        the ordering guard in the service is defensive for future schema changes.
+        This test verifies the company-scoped row is found and updated."""
+        company = make_company(db_session)
+        product = make_product(db_session, company.id)
+        company_inv = Inventory(
+            product_id=product.id, company_id=company.id, quantity=10
+        )
+        db_session.add(company_inv)
+        db_session.flush()
+
+        mgr = InventoryManager(db_session)
+        mgr.update_quantity(product.id, Decimal("-3"), company_id=company.id, context="test")
+
+        inv = db_session.query(Inventory).filter_by(product_id=product.id).first()
+        assert Decimal(str(inv.quantity)) == Decimal("7")
+
+    def test_falls_back_to_global_row_when_only_global_exists(self, db_session):
+        """When only a global (NULL company_id) row exists for a product, a
+        company-scoped update should find it via the OR-is-None fallback."""
+        company = make_company(db_session)
+        product = make_product(db_session, company.id)
+        global_inv = Inventory(
+            product_id=product.id, company_id=None, quantity=20
+        )
+        db_session.add(global_inv)
+        db_session.flush()
+
+        mgr = InventoryManager(db_session)
+        mgr.update_quantity(product.id, Decimal("-5"), company_id=company.id, context="test")
+
+        inv = db_session.query(Inventory).filter_by(product_id=product.id).first()
+        assert Decimal(str(inv.quantity)) == Decimal("15")
+
 
 # ---------------------------------------------------------------------------
 # InventoryManager.check_availability
@@ -231,6 +268,42 @@ class TestCheckAvailability:
                 product.id, Decimal("1"), company_id=company.id, product_name=product.name
             )
         assert exc_info.value.status_code == 400
+
+    def test_uses_company_row_not_global_for_availability(self, db_session):
+        """Availability check reads the company-specific row.  The current schema
+        enforces unique(product_id), so this test verifies the company-scoped row
+        is selected and its quantity is the one evaluated."""
+        company = make_company(db_session)
+        product = make_product(db_session, company.id)
+        db_session.add(
+            Inventory(product_id=product.id, company_id=company.id, quantity=2)
+        )
+        db_session.flush()
+
+        mgr = InventoryManager(db_session)
+        # 2 units available; requesting 5 must raise
+        with pytest.raises(HTTPException) as exc_info:
+            mgr.check_availability(
+                product.id, Decimal("5"), company_id=company.id, product_name=product.name
+            )
+        assert exc_info.value.status_code == 400
+        assert "Insufficient inventory" in exc_info.value.detail
+
+    def test_falls_back_to_global_row_for_availability(self, db_session):
+        """When only a global row exists, a company-scoped availability check
+        should use it via the OR-is-None fallback."""
+        company = make_company(db_session)
+        product = make_product(db_session, company.id)
+        db_session.add(
+            Inventory(product_id=product.id, company_id=None, quantity=100)
+        )
+        db_session.flush()
+
+        mgr = InventoryManager(db_session)
+        # Should not raise — 100 units available globally
+        mgr.check_availability(
+            product.id, Decimal("50"), company_id=company.id, product_name=product.name
+        )
 
 
 # ---------------------------------------------------------------------------
