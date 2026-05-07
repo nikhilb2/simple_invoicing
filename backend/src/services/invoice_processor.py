@@ -3,9 +3,13 @@ InvoiceProcessor service — encapsulates invoice payload application, inventory
 delta calculation, and ledger/item validation that used to live in the route
 handler.  Separating this logic makes it independently testable and reusable
 outside of the HTTP layer.
+
+Inventory operations are now fully delegated to
+:class:`src.services.inventory_service.InventoryManager`.  The two module-level
+helpers below are kept as thin backward-compatible shims so that any existing
+call-sites (including tests) continue to work without changes.
 """
 
-from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -15,7 +19,6 @@ from sqlalchemy.orm import Session
 
 from src.models.buyer import Buyer as Ledger
 from src.models.company import CompanyProfile
-from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
 from src.schemas.invoice import InvoiceCreate
@@ -25,20 +28,23 @@ from src.services.gst_tax_service import (
     is_interstate_supply,
     money as _money,
 )
+from src.services.inventory_service import InventoryManager
 from src.services.series import generate_next_number
 
 
 # ---------------------------------------------------------------------------
-# Module-level helpers (pure / stateless)
+# Module-level helpers — backward-compatible shims (delegate to InventoryManager)
 # ---------------------------------------------------------------------------
 
 def inventory_effect_for_voucher_type(quantity: float, voucher_type: str) -> Decimal:
     """Return the signed inventory delta for *quantity* depending on voucher type.
 
     Sales reduce stock (negative), purchases increase it (positive).
+
+    .. deprecated::
+        Use :meth:`InventoryManager.effect_for_voucher_type` directly.
     """
-    quantity_value = Decimal(str(quantity))
-    return -quantity_value if voucher_type == "sales" else quantity_value
+    return InventoryManager.effect_for_voucher_type(quantity, voucher_type)
 
 
 def change_inventory_quantity(
@@ -53,24 +59,16 @@ def change_inventory_quantity(
 
     Creates the inventory row if it does not exist yet.  Raises 400 if the
     resulting quantity would drop below zero.
-    """
-    query = db.query(Inventory).filter(Inventory.product_id == product_id)
-    if company_id is not None:
-        query = query.filter(
-            or_(Inventory.company_id == company_id, Inventory.company_id.is_(None))
-        )
-    inventory = query.first()
-    if not inventory:
-        inventory = Inventory(company_id=company_id, product_id=product_id, quantity=0)
-        db.add(inventory)
-        db.flush()
 
-    inventory.quantity = Decimal(str(inventory.quantity or 0)) + quantity_delta
-    if Decimal(str(inventory.quantity or 0)) < 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Insufficient inventory while {context}",
-        )
+    .. deprecated::
+        Use :meth:`InventoryManager.update_quantity` directly.
+    """
+    InventoryManager(db).update_quantity(
+        product_id,
+        quantity_delta,
+        company_id=company_id,
+        context=context,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -78,10 +76,15 @@ def change_inventory_quantity(
 # ---------------------------------------------------------------------------
 
 class InvoiceProcessor:
-    """Encapsulates invoice payload application and inventory management."""
+    """Encapsulates invoice payload application and inventory management.
+
+    Inventory operations are fully delegated to the :class:`InventoryManager`
+    instance available as ``self.inventory``.
+    """
 
     def __init__(self, db: Session) -> None:
         self.db = db
+        self.inventory = InventoryManager(db)
 
     # ------------------------------------------------------------------
     # Ledger helpers
@@ -105,83 +108,24 @@ class InvoiceProcessor:
         return ledger
 
     # ------------------------------------------------------------------
-    # Inventory helpers
+    # Inventory helpers — delegate to InventoryManager
     # ------------------------------------------------------------------
 
     def reverse_inventory(self, invoice: Invoice) -> None:
         """Undo the inventory effect of an existing invoice's line items.
 
-        Used when cancelling an invoice.
+        Used when cancelling an invoice.  Delegates to
+        :meth:`InventoryManager.reverse_invoice_inventory`.
         """
-        for item in invoice.items:
-            product_query = self.db.query(Product).filter(
-                Product.id == item.product_id
-            )
-            if invoice.company_id is not None:
-                product_query = product_query.filter(
-                    or_(
-                        Product.company_id == invoice.company_id,
-                        Product.company_id.is_(None),
-                    )
-                )
-            product = product_query.first()
-            if not product:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Product {item.product_id} not found",
-                )
-            if not product.maintain_inventory:
-                continue
-
-            reverse_delta = (
-                Decimal(str(item.quantity))
-                if invoice.voucher_type == "sales"
-                else -Decimal(str(item.quantity))
-            )
-            change_inventory_quantity(
-                self.db,
-                item.product_id,
-                reverse_delta,
-                company_id=invoice.company_id,
-                context=f"reversing invoice {invoice.id}",
-            )
+        self.inventory.reverse_invoice_inventory(invoice)
 
     def restore_inventory(self, invoice: Invoice, *, company_id: int) -> None:
         """Re-apply the inventory effect of a previously-cancelled invoice.
 
-        Used when restoring an invoice.
+        Used when restoring an invoice.  Delegates to
+        :meth:`InventoryManager.restore_invoice_inventory`.
         """
-        for item in invoice.items:
-            product_query = self.db.query(Product).filter(
-                Product.id == item.product_id
-            )
-            product_query = product_query.filter(
-                or_(
-                    Product.company_id == company_id,
-                    Product.company_id.is_(None),
-                )
-            )
-            product = product_query.first()
-            if not product:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Product {item.product_id} not found",
-                )
-            if not product.maintain_inventory:
-                continue
-
-            restore_delta = (
-                -Decimal(str(item.quantity))
-                if invoice.voucher_type == "sales"
-                else Decimal(str(item.quantity))
-            )
-            change_inventory_quantity(
-                self.db,
-                item.product_id,
-                restore_delta,
-                company_id=company_id,
-                context=f"restoring invoice {invoice.id}",
-            )
+        self.inventory.restore_invoice_inventory(invoice, company_id=company_id)
 
     def apply_inventory_delta_for_update(
         self,
@@ -192,67 +136,9 @@ class InvoiceProcessor:
     ) -> None:
         """Compute and apply the *net* inventory delta when editing an invoice.
 
-        Compares the existing items against the incoming payload items and only
-        adjusts the difference, avoiding full reverse-then-reapply churn.
+        Delegates to :meth:`InventoryManager.apply_invoice_changes`.
         """
-        existing_effect_by_product: dict[int, Decimal] = defaultdict(
-            lambda: Decimal("0")
-        )
-        for item in invoice.items:
-            existing_effect_by_product[item.product_id] += (
-                inventory_effect_for_voucher_type(
-                    item.quantity,
-                    invoice.voucher_type,
-                )
-            )
-
-        next_effect_by_product: dict[int, Decimal] = defaultdict(
-            lambda: Decimal("0")
-        )
-        for item in payload.items:
-            next_effect_by_product[item.product_id] += (
-                inventory_effect_for_voucher_type(
-                    item.quantity,
-                    payload.voucher_type,
-                )
-            )
-
-        for product_id in set(existing_effect_by_product) | set(
-            next_effect_by_product
-        ):
-            quantity_delta = (
-                next_effect_by_product[product_id]
-                - existing_effect_by_product[product_id]
-            )
-            if quantity_delta == 0:
-                continue
-
-            product_query = self.db.query(Product).filter(
-                Product.id == product_id
-            )
-            if company_id is not None:
-                product_query = product_query.filter(
-                    or_(
-                        Product.company_id == company_id,
-                        Product.company_id.is_(None),
-                    )
-                )
-            product = product_query.first()
-            if not product:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Product {product_id} not found",
-                )
-            if not product.maintain_inventory:
-                continue
-
-            change_inventory_quantity(
-                self.db,
-                product_id,
-                quantity_delta,
-                company_id=company_id,
-                context=f"editing invoice {invoice.id}",
-            )
+        self.inventory.apply_invoice_changes(invoice, payload, company_id=company_id)
 
     # ------------------------------------------------------------------
     # Item validation
@@ -308,24 +194,12 @@ class InvoiceProcessor:
                 )
 
             if apply_inventory_changes and product.maintain_inventory:
-                inventory_query = self.db.query(Inventory).filter(
-                    Inventory.product_id == item.product_id
-                )
-                if company_id is not None:
-                    inventory_query = inventory_query.filter(
-                        or_(
-                            Inventory.company_id == company_id,
-                            Inventory.company_id.is_(None),
-                        )
-                    )
-                inventory = inventory_query.first()
-                if voucher_type == "sales" and (
-                    not inventory
-                    or Decimal(str(inventory.quantity or 0)) < quantity_value
-                ):
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Insufficient inventory for {product.name}",
+                if voucher_type == "sales":
+                    self.inventory.check_availability(
+                        item.product_id,
+                        quantity_value,
+                        company_id=company_id,
+                        product_name=product.name,
                     )
 
             validated.append((item, product, quantity_value))
@@ -475,18 +349,12 @@ class InvoiceProcessor:
 
         # Apply inventory changes for new items
         if apply_inventory_changes:
-            for item_schema, product, quantity_value in validated:
-                if product.maintain_inventory:
-                    quantity_delta = inventory_effect_for_voucher_type(
-                        item_schema.quantity, payload.voucher_type
-                    )
-                    change_inventory_quantity(
-                        self.db,
-                        item_schema.product_id,
-                        quantity_delta,
-                        company_id=company_id,
-                        context=f"applying invoice {invoice.id or 'new'}",
-                    )
+            self.inventory.apply_new_items(
+                validated,
+                payload.voucher_type,
+                company_id=company_id,
+                invoice_id=invoice.id,
+            )
 
         # Calculate per-line totals
         line_results = self.calculate_totals(validated, payload.tax_inclusive)
