@@ -10,6 +10,17 @@ from decimal import Decimal, ROUND_HALF_UP
 from src.models.invoice import Invoice, InvoiceItem
 
 
+def _to_paise(value: Decimal) -> int:
+    """Convert a Decimal rupee amount to integer paise (2dp, HALF_UP)."""
+    quantized = money(value)
+    return int((quantized * Decimal("100")).to_integral_value(rounding=ROUND_HALF_UP))
+
+
+def _from_paise(paise: int) -> Decimal:
+    """Convert integer paise to rupee Decimal with 2dp precision."""
+    return money(Decimal(paise) / Decimal("100"))
+
+
 def money(value: Decimal) -> Decimal:
     """Round a Decimal value to 2 decimal places using ROUND_HALF_UP."""
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -69,13 +80,32 @@ def assign_item_tax_split(
             item.igst_amount = float(item_igst_amount)
         return
 
+    running_cgst_paise = 0
+    running_sgst_paise = 0
     for item in items:
         item_tax_amount = money(Decimal(str(item.tax_amount or 0)))
-        item_half_tax_amount = money(item_tax_amount / Decimal("2"))
-        item_cgst_amount = item_half_tax_amount
-        item_sgst_amount = item_half_tax_amount
+        item_tax_paise = _to_paise(item_tax_amount)
+        half_tax_paise = item_tax_paise // 2
+
+        item_cgst_paise = half_tax_paise
+        item_sgst_paise = half_tax_paise
+
+        # For odd-paise tax amounts, assign the 1-paise remainder to the side
+        # with the lower running total so invoice-level split stays near-equal
+        # without inflating item tax.
+        if item_tax_paise % 2 == 1:
+            if running_cgst_paise <= running_sgst_paise:
+                item_cgst_paise += 1
+            else:
+                item_sgst_paise += 1
+
+        item_cgst_amount = _from_paise(item_cgst_paise)
+        item_sgst_amount = _from_paise(item_sgst_paise)
         item_total_tax_amount = money(item_cgst_amount + item_sgst_amount)
         taxable_amount = money(Decimal(str(item.taxable_amount or 0)))
+
+        running_cgst_paise += item_cgst_paise
+        running_sgst_paise += item_sgst_paise
 
         item.tax_amount = float(item_total_tax_amount)
         item.line_total = float(money(taxable_amount + item_total_tax_amount))
