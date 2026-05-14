@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Numeric, ForeignKey, func
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Numeric, ForeignKey, UniqueConstraint, func
 from src.db.base import Base
 
 
@@ -7,7 +7,7 @@ class Product(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("company_profiles.id"), nullable=True, index=True)
-    sku = Column(String, unique=True, index=True, nullable=False)
+    sku = Column(String, nullable=False)
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
     hsn_sac = Column(String, nullable=True)
@@ -19,3 +19,7 @@ class Product(Base):
     is_producable = Column(Boolean, nullable=False, default=False)
     production_cost = Column(Numeric(12, 2), nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint('company_id', 'sku', name='ux_products_company_id_sku'),
+    )
