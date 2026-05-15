@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes
-from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes, bom as bom_routes
+from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes, bom as bom_routes, email_logs as email_logs_routes
 from src.db.base import Base
 from src.db.session import engine
 # Import all models to register them with declarative_base
@@ -104,6 +104,7 @@ app.include_router(invoice_series_routes.router, prefix="/api/invoice-series", t
 app.include_router(financial_years_routes.router, prefix="/api/financial-years", tags=["financial-years"])
 app.include_router(credit_notes_routes.router, prefix="/api/credit-notes", tags=["credit-notes"])
 app.include_router(backups_routes.router, prefix="/api/backups", tags=["backups"])
+app.include_router(email_logs_routes.router, prefix="/api/email-logs", tags=["email-logs"])
 
 @app.get("/api/health")
 def health():

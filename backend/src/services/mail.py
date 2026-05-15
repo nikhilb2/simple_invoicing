@@ -6,6 +6,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from sqlalchemy.orm import Session
 from src.models.smtp_config import SMTPConfig
+from src.models.email_log import EmailLog
 
 logger = logging.getLogger(__name__)
 
@@ -79,10 +80,14 @@ async def send_email(
     html_body: str,
     attachments: list[tuple[bytes, str]] | None = None,
     cc: list[str] | None = None,
+    company_id: int | None = None,
+    email_type: str = "other",
+    reference_id: int | None = None,
+    sent_by_user_id: int | None = None,
 ) -> None:
     """
-    Asynchronously sends an email by running the blocking SMTP operations 
-    in a thread executor.
+    Asynchronously sends an email by running the blocking SMTP operations
+    in a thread executor. Logs the attempt to the email_logs table.
     """
     config = _get_active_smtp_config(db)
     msg = _build_message(
@@ -95,4 +100,34 @@ async def send_email(
         cc=cc
     )
 
-    await asyncio.to_thread(_send_sync, config, msg)
+    exc_to_raise: Exception | None = None
+    status = "sent"
+    error_message: str | None = None
+
+    try:
+        await asyncio.to_thread(_send_sync, config, msg)
+    except Exception as exc:
+        exc_to_raise = exc
+        status = "failed"
+        error_message = str(exc)
+
+    try:
+        log_entry = EmailLog(
+            company_id=company_id,
+            to_email=to,
+            cc=", ".join(cc) if cc else None,
+            subject=subject,
+            email_type=email_type,
+            reference_id=reference_id,
+            status=status,
+            error_message=error_message,
+            sent_by_user_id=sent_by_user_id,
+        )
+        db.add(log_entry)
+        db.commit()
+    except Exception:
+        logger.warning("Failed to write email log entry", exc_info=True)
+        db.rollback()
+
+    if exc_to_raise is not None:
+        raise exc_to_raise

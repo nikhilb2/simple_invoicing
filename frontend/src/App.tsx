@@ -27,6 +27,7 @@ import SmtpSettingsPage from './pages/SmtpSettingsPage';
 import BackupsPage from './pages/BackupsPage';
 import KeyboardShortcutsPage from './pages/KeyboardShortcutsPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
+import EmailHistoryPage from './pages/EmailHistoryPage';
 import Layout from './components/Layout';
 
 function Protected({ children }: { children: React.ReactNode }) {
@@ -114,6 +115,7 @@ function AppRoutes() {
       <Route path="/company" element={<Protected><Layout><CompanyPage /></Layout></Protected>} />
       <Route path="/smtp-settings" element={<Protected><CompanyRequired><AdminOnly><Layout><SmtpSettingsPage /></Layout></AdminOnly></CompanyRequired></Protected>} />
       <Route path="/backups" element={<Protected><CompanyRequired><AdminOnly><Layout><BackupsPage /></Layout></AdminOnly></CompanyRequired></Protected>} />
+      <Route path="/email-history" element={<Protected><CompanyRequired><AdminOnly><Layout><EmailHistoryPage /></Layout></AdminOnly></CompanyRequired></Protected>} />
       <Route path="/shortcuts" element={<Protected><CompanyRequired><Layout><KeyboardShortcutsPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/change-password" element={<Protected><CompanyRequired><Layout><ChangePasswordPage /></Layout></CompanyRequired></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />

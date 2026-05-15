@@ -66,7 +66,7 @@ async def send_invoice_email(
     invoice_id: int,
     payload: EmailSendRequest | None = Body(default=None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
@@ -149,6 +149,10 @@ async def send_invoice_email(
             html_body=html_body,
             attachments=[(pdf_bytes, filename)],
             cc=cc_list,
+            company_id=company_id,
+            email_type="invoice",
+            reference_id=invoice_id,
+            sent_by_user_id=current_user.id,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -165,7 +169,7 @@ async def send_ledger_statement_email(
     ledger_id: int,
     payload: StatementEmailSendRequest,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
@@ -238,6 +242,10 @@ async def send_ledger_statement_email(
             html_body=html_body,
             attachments=[(pdf_bytes, filename)],
             cc=cc_list,
+            company_id=company_id,
+            email_type="ledger_statement",
+            reference_id=ledger_id,
+            sent_by_user_id=current_user.id,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -254,7 +262,7 @@ async def send_payment_reminder_email(
     ledger_id: int,
     payload: EmailSendRequest | None = Body(default=None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
@@ -349,6 +357,10 @@ async def send_payment_reminder_email(
             subject=subject,
             html_body=html_body,
             cc=cc_list,
+            company_id=company_id,
+            email_type="payment_reminder",
+            reference_id=ledger_id,
+            sent_by_user_id=current_user.id,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
