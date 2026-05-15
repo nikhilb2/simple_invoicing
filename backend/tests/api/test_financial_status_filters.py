@@ -246,7 +246,7 @@ def test_statement_email_uses_same_active_only_statement_math(db_session):
                 to_date=date(2026, 1, 31),
             ),
             db=db_session,
-            _=user,
+            current_user=user,
         ))
 
     build_kwargs = build_html_mock.call_args.kwargs
@@ -339,7 +339,7 @@ def test_payment_reminder_ignores_cancelled_documents_and_cancelled_last_payment
             ledger_id=ledger.id,
             payload=None,
             db=db_session,
-            _=user,
+            current_user=user,
         ))
 
     render_kwargs = fake_template.render.call_args.kwargs
