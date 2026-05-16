@@ -117,16 +117,19 @@ def test_intrastate_odd_paise_total_tax_is_not_inflated(db_session):
     db_session.flush()
     db_session.refresh(invoice)
 
-    assert float(invoice.total_tax_amount) == pytest.approx(18.01)
-    assert float(invoice.cgst_amount + invoice.sgst_amount) == pytest.approx(18.01)
-    assert abs(float(invoice.cgst_amount) - float(invoice.sgst_amount)) <= 0.01
+    # Independent 9%+9% calculation: 100.03 × 9% = 9.0027 → 9.00 each, total = 18.00
+    assert float(invoice.total_tax_amount) == pytest.approx(18.00)
+    assert float(invoice.cgst_amount + invoice.sgst_amount) == pytest.approx(18.00)
+    assert float(invoice.cgst_amount) == pytest.approx(9.00)
+    assert float(invoice.sgst_amount) == pytest.approx(9.00)
 
     assert len(invoice.items) == 1
-    assert float(invoice.items[0].tax_amount) == pytest.approx(18.01)
-    assert float(invoice.items[0].cgst_amount + invoice.items[0].sgst_amount) == pytest.approx(18.01)
-    assert abs(float(invoice.items[0].cgst_amount) - float(invoice.items[0].sgst_amount)) <= 0.01
+    assert float(invoice.items[0].tax_amount) == pytest.approx(18.00)
+    assert float(invoice.items[0].cgst_amount) == pytest.approx(9.00)
+    assert float(invoice.items[0].sgst_amount) == pytest.approx(9.00)
+    assert float(invoice.items[0].cgst_amount + invoice.items[0].sgst_amount) == pytest.approx(18.00)
     assert float(invoice.items[0].igst_amount) == pytest.approx(0)
-    assert float(invoice.items[0].line_total) == pytest.approx(118.04)
+    assert float(invoice.items[0].line_total) == pytest.approx(118.03)
 
     html = _build_invoice_html(invoice, [product])
     assert "SGST %</th>" in html
@@ -195,22 +198,23 @@ def test_intrastate_three_line_case_keeps_tax_exact_with_balanced_split(db_sessi
     db_session.refresh(invoice)
 
     assert float(invoice.taxable_amount) == pytest.approx(3220.34)
-    assert float(invoice.total_tax_amount) == pytest.approx(579.65)
-    assert float(invoice.cgst_amount + invoice.sgst_amount) == pytest.approx(579.65)
-    assert abs(float(invoice.cgst_amount) - float(invoice.sgst_amount)) <= 0.01
+    # Independent 9%+9% per item: item[1] 2457.63×9%=221.19 each → tax=442.38 (not 442.37)
+    assert float(invoice.total_tax_amount) == pytest.approx(579.66)
+    assert float(invoice.cgst_amount + invoice.sgst_amount) == pytest.approx(579.66)
+    assert float(invoice.cgst_amount) == float(invoice.sgst_amount)
 
     assert len(invoice.items) == 3
     assert float(invoice.items[0].tax_amount) == pytest.approx(45.76)
-    assert float(invoice.items[1].tax_amount) == pytest.approx(442.37)
+    assert float(invoice.items[1].tax_amount) == pytest.approx(442.38)
     assert float(invoice.items[2].tax_amount) == pytest.approx(91.52)
     assert float(invoice.items[0].cgst_amount) == pytest.approx(22.88)
     assert float(invoice.items[0].sgst_amount) == pytest.approx(22.88)
-    assert abs(float(invoice.items[1].cgst_amount) - float(invoice.items[1].sgst_amount)) <= 0.01
-    assert float(invoice.items[1].cgst_amount + invoice.items[1].sgst_amount) == pytest.approx(442.37)
+    assert float(invoice.items[1].cgst_amount) == pytest.approx(221.19)
+    assert float(invoice.items[1].sgst_amount) == pytest.approx(221.19)
+    assert float(invoice.items[1].cgst_amount + invoice.items[1].sgst_amount) == pytest.approx(442.38)
     assert float(invoice.items[2].cgst_amount) == pytest.approx(45.76)
     assert float(invoice.items[2].sgst_amount) == pytest.approx(45.76)
-    assert all(abs(float(item.cgst_amount) - float(item.sgst_amount)) <= 0.01 for item in invoice.items)
-    assert abs(sum(float(item.cgst_amount) for item in invoice.items) - sum(float(item.sgst_amount) for item in invoice.items)) <= 0.01
+    assert all(float(item.cgst_amount) == float(item.sgst_amount) for item in invoice.items)
     assert sum(float(item.tax_amount) for item in invoice.items) == pytest.approx(float(invoice.total_tax_amount))
     assert float(invoice.total_tax_amount) == pytest.approx(float(invoice.cgst_amount) + float(invoice.sgst_amount))
     assert sum(float(item.igst_amount) for item in invoice.items) == pytest.approx(0)
