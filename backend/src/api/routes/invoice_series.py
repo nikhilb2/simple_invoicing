@@ -48,6 +48,8 @@ def update_invoice_series(
     series.year_format = payload.year_format
     series.separator = payload.separator
     series.pad_digits = payload.pad_digits
+    if payload.next_sequence is not None:
+        series.next_sequence = payload.next_sequence
 
     db.commit()
     db.refresh(series)

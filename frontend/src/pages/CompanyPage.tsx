@@ -39,7 +39,7 @@ function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number, fyLabel?: string 
 // InvoiceSeriesCard
 // ---------------------------------------------------------------------------
 
-type SeriesRowState = InvoiceSeriesUpdate;
+type SeriesRowState = Required<InvoiceSeriesUpdate>;
 
 function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLElement> }) {
   const { activeFY } = useFY();
@@ -68,6 +68,7 @@ function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLEl
             year_format: s.year_format,
             separator: s.separator,
             pad_digits: s.pad_digits,
+            next_sequence: s.next_sequence,
           };
         }
         setDrafts(initial);
@@ -126,12 +127,11 @@ function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLEl
         {seriesList.map((s) => {
           const draft = drafts[s.id];
           if (!draft) return null;
-          const preview = buildPreview(draft, s.next_sequence, activeFY?.label);
+          const preview = buildPreview(draft, draft.next_sequence, activeFY?.label);
           return (
             <div key={s.id} className="panel" style={{ padding: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
                 <strong style={{ textTransform: 'capitalize' }}>{VOUCHER_LABELS[s.voucher_type] ?? s.voucher_type}</strong>
-                <span style={{ fontSize: '0.8rem', opacity: 0.6 }}>Next: #{s.next_sequence}</span>
               </div>
 
               <div className="field-grid">
@@ -198,6 +198,19 @@ function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLEl
                     <option value="MM-YYYY">MM-YYYY (e.g. 04-2026)</option>
                     <option value="FY">FY (e.g. 2025-26)</option>
                   </select>
+                </div>
+
+                <div className="field">
+                  <label htmlFor={`series-next-seq-${s.id}`}>Next number</label>
+                  <input
+                    id={`series-next-seq-${s.id}`}
+                    className="input"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={draft.next_sequence}
+                    onChange={(e) => patchDraft(s.id, { next_sequence: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                  />
                 </div>
 
                 <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '22px' }}>

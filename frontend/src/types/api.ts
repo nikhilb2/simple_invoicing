@@ -615,6 +615,7 @@ export type InvoiceSeriesUpdate = {
   year_format: 'YYYY' | 'MM-YYYY' | 'FY';
   separator: string;
   pad_digits: 2 | 3 | 4;
+  next_sequence?: number;
 };
 
 export type BackupSummary = {

@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal, Optional
 
 
@@ -27,3 +27,4 @@ class InvoiceSeriesUpdate(BaseModel):
     year_format: Literal["YYYY", "MM-YYYY", "FY"] = "YYYY"
     separator: str = "-"
     pad_digits: Literal[2, 3, 4] = 3
+    next_sequence: Optional[int] = Field(default=None, ge=1)
