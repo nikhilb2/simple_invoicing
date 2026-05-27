@@ -61,6 +61,28 @@ export type PaginatedInventoryOut = {
   total_pages: number;
 };
 
+export type LedgerAddress = {
+  id: number;
+  ledger_id: number;
+  company_id: number;
+  label: string;
+  address: string;
+  is_default: boolean;
+  created_at: string;
+};
+
+export type LedgerAddressCreate = {
+  label: string;
+  address: string;
+  is_default?: boolean;
+};
+
+export type LedgerAddressUpdate = {
+  label?: string;
+  address?: string;
+  is_default?: boolean;
+};
+
 export type Ledger = {
   id: number;
   name: string;
@@ -271,6 +293,8 @@ export type Invoice = {
   created_at: string;
   items: InvoiceItem[];
   warnings?: string[];
+  shipping_address: string | null;
+  shipping_address_label: string | null;
 };
 
 export type OutstandingInvoice = {
@@ -371,6 +395,9 @@ export type InvoiceCreate = {
   reference_notes?: string | null;
   tax_inclusive?: boolean;
   apply_round_off?: boolean;
+  shipping_address_same_as_billing?: boolean;
+  shipping_address_id?: number | null;
+  new_shipping_address?: { label: string; address: string } | null;
   items: InvoiceItemInput[];
 };
 
