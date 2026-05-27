@@ -3,6 +3,7 @@ from src.models.product import Product
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.buyer import Buyer
+from src.models.ledger_address import LedgerAddress
 from src.models.company import CompanyProfile
 from src.models.company_account import CompanyAccount
 from src.models.payment import Payment, PaymentInvoiceAllocation

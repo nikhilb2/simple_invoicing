@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from src.models.buyer import Buyer as Ledger
 from src.models.company import CompanyProfile
 from src.models.invoice import Invoice, InvoiceItem
+from src.models.ledger_address import LedgerAddress
 from src.models.product import Product
 from src.schemas.invoice import InvoiceCreate
 from src.services.gst_tax_service import (
@@ -305,6 +306,10 @@ class InvoiceProcessor:
         invoice.voucher_type = payload.voucher_type
         invoice.supplier_invoice_number = payload.supplier_invoice_number
         invoice.reference_notes = payload.reference_notes
+
+        # Snapshot shipping address
+        self._apply_shipping_address(invoice, payload, ledger.id, company_id)
+
         if created_by is not None:
             invoice.created_by = created_by
         if financial_year_id is not None:
@@ -398,3 +403,63 @@ class InvoiceProcessor:
         else:
             invoice.round_off_amount = 0
             invoice.total_amount = float(raw_total)
+
+    # ------------------------------------------------------------------
+    # Shipping address helpers
+    # ------------------------------------------------------------------
+
+    def _apply_shipping_address(
+        self,
+        invoice: Invoice,
+        payload: InvoiceCreate,
+        ledger_id: int,
+        company_id: int | None,
+    ) -> None:
+        """Resolve and snapshot the shipping address onto the invoice.
+
+        Priority:
+        1. same_as_billing=True  → clear shipping fields (null)
+        2. shipping_address_id   → load existing LedgerAddress row and snapshot
+        3. new_shipping_address  → persist to ledger_addresses then snapshot
+        """
+        if payload.shipping_address_same_as_billing:
+            invoice.shipping_address = None
+            invoice.shipping_address_label = None
+            return
+
+        if payload.shipping_address_id is not None:
+            addr = self.db.query(LedgerAddress).filter(
+                LedgerAddress.id == payload.shipping_address_id,
+                LedgerAddress.ledger_id == ledger_id,
+            ).first()
+            if addr is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Shipping address {payload.shipping_address_id} not found for this ledger",
+                )
+            invoice.shipping_address = addr.address
+            invoice.shipping_address_label = addr.label
+            return
+
+        if payload.new_shipping_address is not None:
+            if company_id is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot save a new shipping address without an active company",
+                )
+            new_addr = LedgerAddress(
+                ledger_id=ledger_id,
+                company_id=company_id,
+                label=payload.new_shipping_address.label,
+                address=payload.new_shipping_address.address,
+                is_default=False,
+            )
+            self.db.add(new_addr)
+            self.db.flush()  # get id without committing
+            invoice.shipping_address = new_addr.address
+            invoice.shipping_address_label = new_addr.label
+            return
+
+        # No shipping address provided and same_as_billing=False — treat as same
+        invoice.shipping_address = None
+        invoice.shipping_address_label = None

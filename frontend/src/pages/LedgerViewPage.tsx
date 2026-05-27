@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, FileText, FilePlus, Mail, Pencil, ReceiptText, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
-import type { CompanyAccount, CompanyProfile, Invoice, Ledger, LedgerStatement, OutstandingInvoice, Payment, PaymentCreate, PaymentInvoiceAllocation, PaymentUpdate, Product } from '../types/api';
+import type { CompanyAccount, CompanyProfile, Invoice, Ledger, LedgerAddress, LedgerStatement, OutstandingInvoice, Payment, PaymentCreate, PaymentInvoiceAllocation, PaymentUpdate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
 import PaymentReceiptPreview from '../components/PaymentReceiptPreview';
 import StatementPreview from '../components/StatementPreview';
@@ -12,7 +12,7 @@ import SendEmailModal from '../components/SendEmailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import formatCurrency from '../utils/formatting';
 import { useFY } from '../context/FYContext';
-import { fetchOutstandingInvoices } from '../features/invoices/api';
+import { fetchOutstandingInvoices, fetchLedgerAddresses, createLedgerAddress, updateLedgerAddress, deleteLedgerAddress } from '../features/invoices/api';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import EmptyState from '../components/EmptyState';
 
@@ -137,6 +137,13 @@ export default function LedgerViewPage() {
   const [deletingPayment, setDeletingPayment] = useState(false);
   const [allocationCreateSearch, setAllocationCreateSearch] = useState('');
   const [allocationEditSearch, setAllocationEditSearch] = useState('');
+  // Address management state
+  const [addresses, setAddresses] = useState<LedgerAddress[]>([]);
+  const [addressFormLabel, setAddressFormLabel] = useState('');
+  const [addressFormText, setAddressFormText] = useState('');
+  const [editingAddressId, setEditingAddressId] = useState<number | null>(null);
+  const [showAddressForm, setShowAddressForm] = useState(false);
+  const [submittingAddress, setSubmittingAddress] = useState(false);
 
   useEffect(() => {
     if (!showPaymentForm) setAllocationCreateSearch('');
@@ -145,6 +152,68 @@ export default function LedgerViewPage() {
   useEffect(() => {
     if (!editingPayment) setAllocationEditSearch('');
   }, [editingPayment]);
+
+  // Load ledger addresses
+  useEffect(() => {
+    if (!ledgerId) return;
+    let cancelled = false;
+    fetchLedgerAddresses(ledgerId)
+      .then((addrs) => { if (!cancelled) setAddresses(addrs); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [ledgerId, refreshKey]);
+
+  async function handleAddressSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!addressFormText.trim()) return;
+    setSubmittingAddress(true);
+    try {
+      if (editingAddressId !== null) {
+        const updated = await updateLedgerAddress(ledgerId, editingAddressId, {
+          label: addressFormLabel.trim() || 'Address',
+          address: addressFormText.trim(),
+        });
+        setAddresses((prev) => prev.map((a) => (a.id === editingAddressId ? updated : a)));
+      } else {
+        const created = await createLedgerAddress(ledgerId, {
+          label: addressFormLabel.trim() || 'Address',
+          address: addressFormText.trim(),
+        });
+        setAddresses((prev) => [...prev, created]);
+      }
+      setShowAddressForm(false);
+      setEditingAddressId(null);
+      setAddressFormLabel('');
+      setAddressFormText('');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to save address'));
+    } finally {
+      setSubmittingAddress(false);
+    }
+  }
+
+  async function handleAddressDelete(addressId: number) {
+    try {
+      await deleteLedgerAddress(ledgerId, addressId);
+      setAddresses((prev) => prev.filter((a) => a.id !== addressId));
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to delete address'));
+    }
+  }
+
+  function startEditingAddress(addr: LedgerAddress) {
+    setEditingAddressId(addr.id);
+    setAddressFormLabel(addr.label);
+    setAddressFormText(addr.address);
+    setShowAddressForm(true);
+  }
+
+  function cancelAddressForm() {
+    setShowAddressForm(false);
+    setEditingAddressId(null);
+    setAddressFormLabel('');
+    setAddressFormText('');
+  }
 
   useEffect(() => {
     if (!showActionsDropdown) return;
@@ -660,6 +729,97 @@ export default function LedgerViewPage() {
               </p>
             ) : null}
           </div>
+        </article>
+
+        <article className="panel stack">
+          <div className="panel__header">
+            <div>
+              <p className="eyebrow">Saved addresses</p>
+              <h2 className="nav-panel__title">Shipping / delivery addresses</h2>
+            </div>
+            {!showAddressForm ? (
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => { cancelAddressForm(); setShowAddressForm(true); }}
+                title="Add address"
+                aria-label="Add address"
+              >
+                Add address
+              </button>
+            ) : null}
+          </div>
+
+          {showAddressForm ? (
+            <form className="stack" onSubmit={handleAddressSubmit}>
+              <div className="field-grid">
+                <div className="field">
+                  <label htmlFor="addr-label">Label</label>
+                  <input
+                    id="addr-label"
+                    className="input"
+                    type="text"
+                    value={addressFormLabel}
+                    onChange={(e) => setAddressFormLabel(e.target.value)}
+                    placeholder="e.g. Warehouse, Site A"
+                  />
+                </div>
+                <div className="field" style={{ gridColumn: '1 / -1' }}>
+                  <label htmlFor="addr-text">Address</label>
+                  <textarea
+                    id="addr-text"
+                    className="input"
+                    rows={3}
+                    value={addressFormText}
+                    onChange={(e) => setAddressFormText(e.target.value)}
+                    placeholder="Full shipping address"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="button-row">
+                <button type="submit" className="button button--primary" disabled={submittingAddress || !addressFormText.trim()}>
+                  {submittingAddress ? 'Saving…' : editingAddressId !== null ? 'Update address' : 'Save address'}
+                </button>
+                <button type="button" className="button button--secondary" onClick={cancelAddressForm}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : null}
+
+          {addresses.length === 0 && !showAddressForm ? (
+            <p className="muted-text">No saved addresses yet. Add one to use it as a shipping address when invoicing.</p>
+          ) : null}
+
+          {addresses.map((addr) => (
+            <div key={addr.id} className="summary-box" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+              <div>
+                <p style={{ fontWeight: 600, marginBottom: '2px' }}>{addr.label}</p>
+                <p className="muted-text" style={{ whiteSpace: 'pre-wrap' }}>{addr.address}</p>
+              </div>
+              <div className="button-row" style={{ flexShrink: 0 }}>
+                <button
+                  type="button"
+                  className="button button--ghost button--icon"
+                  onClick={() => startEditingAddress(addr)}
+                  title="Edit address"
+                  aria-label="Edit address"
+                >
+                  <Pencil size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="button button--danger button--icon"
+                  onClick={() => handleAddressDelete(addr.id)}
+                  title="Delete address"
+                  aria-label="Delete address"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
         </article>
 
         <article className="panel stack">

@@ -1,5 +1,5 @@
 import api from '../../api/client';
-import type { CompanyProfile, Invoice, Ledger, OutstandingInvoice, PaginatedInvoices, Product } from '../../types/api';
+import type { CompanyProfile, Invoice, Ledger, LedgerAddress, LedgerAddressCreate, LedgerAddressUpdate, OutstandingInvoice, PaginatedInvoices, Product } from '../../types/api';
 
 type InvoiceFilters = {
   page: number;
@@ -153,4 +153,27 @@ export async function fetchInvoiceComposerData(input: {
     invoiceTotalPages: invoicesRes.total_pages,
     company: companyRes,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Ledger address helpers
+// ---------------------------------------------------------------------------
+
+export async function fetchLedgerAddresses(ledgerId: number): Promise<LedgerAddress[]> {
+  const res = await api.get<LedgerAddress[]>(`/ledgers/${ledgerId}/addresses/`);
+  return res.data;
+}
+
+export async function createLedgerAddress(ledgerId: number, data: LedgerAddressCreate): Promise<LedgerAddress> {
+  const res = await api.post<LedgerAddress>(`/ledgers/${ledgerId}/addresses/`, data);
+  return res.data;
+}
+
+export async function updateLedgerAddress(ledgerId: number, addressId: number, data: LedgerAddressUpdate): Promise<LedgerAddress> {
+  const res = await api.put<LedgerAddress>(`/ledgers/${ledgerId}/addresses/${addressId}`, data);
+  return res.data;
+}
+
+export async function deleteLedgerAddress(ledgerId: number, addressId: number): Promise<void> {
+  await api.delete(`/ledgers/${ledgerId}/addresses/${addressId}`);
 }

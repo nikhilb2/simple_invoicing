@@ -2,6 +2,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
 from src.schemas.ledger import LedgerOut
+from src.schemas.ledger_address import ShippingAddressInline
 
 
 class InvoiceItemCreate(BaseModel):
@@ -20,6 +21,9 @@ class InvoiceCreate(BaseModel):
     reference_notes: str | None = None
     tax_inclusive: bool = False
     apply_round_off: bool = False
+    shipping_address_same_as_billing: bool = True
+    shipping_address_id: int | None = None
+    new_shipping_address: ShippingAddressInline | None = None
     items: List[InvoiceItemCreate]
 
 
@@ -85,6 +89,8 @@ class InvoiceOut(BaseModel):
     apply_round_off: bool = False
     round_off_amount: float = 0
     financial_year_id: Optional[int] = None
+    shipping_address: str | None = None
+    shipping_address_label: str | None = None
     warnings: List[str] = Field(default_factory=list)
     created_at: datetime
     items: list[InvoiceItemOut] = Field(default_factory=list)
