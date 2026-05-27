@@ -104,6 +104,30 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
         billto_parts.append(f"Phone: {_e(invoice.ledger_phone)}")
     billto_details = " &middot; ".join(billto_parts)
 
+    # Ship-to section — only rendered when shipping address differs from billing
+    ship_to_html = ""
+    if invoice.shipping_address:
+        ship_label_html = (
+            f"<h4>{_e(invoice.shipping_address_label)}</h4>" if invoice.shipping_address_label else ""
+        )
+        ship_to_html = f"""
+  <div class="invoice-sheet__billto">
+    <p class="eyebrow">Ship to</p>
+    {ship_label_html}
+    <p>{_e(invoice.shipping_address)}</p>
+  </div>"""
+
+    # Wrap bill-to and optional ship-to in a flex row
+    bill_and_ship_html = f"""
+  <div class="invoice-sheet__addresses">
+    <div class="invoice-sheet__billto">
+      <p class="eyebrow">Bill to</p>
+      <h4>{_e(invoice.ledger_name) or 'Unknown ledger'}</h4>
+      <p>{_e(invoice.ledger_address) or 'Address not provided'}</p>
+      <p>{billto_details}</p>
+    </div>{ship_to_html}
+  </div>"""
+
     invoice_title = "Tax Invoice" if invoice.ledger_gst else "Sales Invoice"
 
     round_off_amount = float(invoice.round_off_amount or 0)
@@ -204,6 +228,15 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     font-size: 9px;
     color: #4b5563;
     margin-bottom: 1px;
+  }}
+  .invoice-sheet__addresses {{
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+  }}
+  .invoice-sheet__addresses .invoice-sheet__billto {{
+    flex: 1;
+    margin-bottom: 0;
   }}
   .invoice-sheet__reference-notes {{
     border: 1px dashed #d1d5db;
@@ -361,12 +394,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     </div>
   </header>
 
-  <section class="invoice-sheet__billto">
-    <p class="eyebrow">Bill to</p>
-    <h4>{_e(invoice.ledger_name) or 'Unknown ledger'}</h4>
-    <p>{_e(invoice.ledger_address) or 'Address not provided'}</p>
-    <p>{billto_details}</p>
-  </section>
+  {bill_and_ship_html}
 
   {reference_notes_html}
 

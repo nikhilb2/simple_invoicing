@@ -18,10 +18,12 @@ from src.models.company import CompanyProfile
 from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.invoice import Invoice
 from src.models.invoice import InvoiceItem
+from src.models.ledger_address import LedgerAddress
 from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.user import User, UserRole
 from src.schemas.invoice import OutstandingInvoiceOut
 from src.schemas.ledger import DayBookEntry, DayBookOut, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementInvoiceAllocation, LedgerStatementOut, PaginatedLedgerOut, TaxLedgerEntry, TaxLedgerOut, TaxLedgerTotals
+from src.schemas.ledger_address import LedgerAddressCreate, LedgerAddressOut, LedgerAddressUpdate
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
 from src.services.financial_year import get_active_fy
 from src.services.invoice_payments import auto_allocate_outstanding_invoices, build_invoice_payment_summaries, get_outstanding_invoices_for_ledger
@@ -1095,3 +1097,111 @@ def download_ledger_statement_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Ledger address endpoints
+# ---------------------------------------------------------------------------
+
+def _get_ledger_or_404(db: Session, ledger_id: int, company_id: int | None) -> Ledger:
+    query = db.query(Ledger).filter(Ledger.id == ledger_id)
+    if company_id is not None:
+        query = query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+    ledger = query.first()
+    if not ledger:
+        raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
+    return ledger
+
+
+@router.get("/{ledger_id}/addresses/", response_model=list[LedgerAddressOut])
+def list_ledger_addresses(
+    ledger_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """List all saved addresses for a ledger."""
+    company_id = active_company.id
+    _get_ledger_or_404(db, ledger_id, company_id)
+    return (
+        db.query(LedgerAddress)
+        .filter(LedgerAddress.ledger_id == ledger_id, LedgerAddress.company_id == company_id)
+        .order_by(LedgerAddress.is_default.desc(), LedgerAddress.created_at.asc())
+        .all()
+    )
+
+
+@router.post("/{ledger_id}/addresses/", response_model=LedgerAddressOut, status_code=201)
+def create_ledger_address(
+    ledger_id: int,
+    payload: LedgerAddressCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Create a new saved address for a ledger."""
+    company_id = active_company.id
+    _get_ledger_or_404(db, ledger_id, company_id)
+    addr = LedgerAddress(
+        ledger_id=ledger_id,
+        company_id=company_id,
+        label=payload.label,
+        address=payload.address,
+        is_default=payload.is_default,
+    )
+    db.add(addr)
+    db.commit()
+    db.refresh(addr)
+    return addr
+
+
+@router.put("/{ledger_id}/addresses/{address_id}", response_model=LedgerAddressOut)
+def update_ledger_address(
+    ledger_id: int,
+    address_id: int,
+    payload: LedgerAddressUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Update a saved ledger address."""
+    company_id = active_company.id
+    _get_ledger_or_404(db, ledger_id, company_id)
+    addr = db.query(LedgerAddress).filter(
+        LedgerAddress.id == address_id,
+        LedgerAddress.ledger_id == ledger_id,
+        LedgerAddress.company_id == company_id,
+    ).first()
+    if not addr:
+        raise HTTPException(status_code=404, detail="Address not found")
+    if payload.label is not None:
+        addr.label = payload.label
+    if payload.address is not None:
+        addr.address = payload.address
+    if payload.is_default is not None:
+        addr.is_default = payload.is_default
+    db.commit()
+    db.refresh(addr)
+    return addr
+
+
+@router.delete("/{ledger_id}/addresses/{address_id}", status_code=204)
+def delete_ledger_address(
+    ledger_id: int,
+    address_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Delete a saved ledger address."""
+    company_id = active_company.id
+    _get_ledger_or_404(db, ledger_id, company_id)
+    addr = db.query(LedgerAddress).filter(
+        LedgerAddress.id == address_id,
+        LedgerAddress.ledger_id == ledger_id,
+        LedgerAddress.company_id == company_id,
+    ).first()
+    if not addr:
+        raise HTTPException(status_code=404, detail="Address not found")
+    db.delete(addr)
+    db.commit()

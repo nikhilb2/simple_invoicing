@@ -4,6 +4,7 @@ from datetime import datetime
 from src.db.base import Base
 
 
+
 class Buyer(Base):
     __tablename__ = "buyers"
 
@@ -23,3 +24,4 @@ class Buyer(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     invoices = relationship("Invoice", back_populates="ledger")
+    addresses = relationship("LedgerAddress", back_populates="ledger", cascade="all, delete-orphan")

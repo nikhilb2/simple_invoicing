@@ -45,6 +45,8 @@ class Invoice(Base):
     apply_round_off = Column(Boolean, nullable=False, default=False)
     round_off_amount = Column(Numeric(5, 2), nullable=False, default=0)
     financial_year_id = Column(Integer, ForeignKey("financial_years.id"), nullable=True)
+    shipping_address = Column(Text, nullable=True)
+    shipping_address_label = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     ledger = relationship("Buyer", back_populates="invoices")

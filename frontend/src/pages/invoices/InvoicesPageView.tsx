@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../../api/client';
-import type { CompanyAccount, CompanyProfile, Invoice, InvoiceCreate, Ledger, Payment, PaymentCreate, Product } from '../../types/api';
+import type { CompanyAccount, CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerAddress, Payment, PaymentCreate, Product } from '../../types/api';
 import InvoicePreview from '../../components/InvoicePreview';
 import StatusToasts from '../../components/StatusToasts';
 import ProductCombobox from '../../components/ProductCombobox';
@@ -11,7 +11,7 @@ import formatCurrency from '../../utils/formatting';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../../utils/invoiceTax';
 import { createDueDateFormState, formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../../utils/invoiceDueDate.ts';
 import { useFY } from '../../context/FYContext';
-import { fetchInvoiceById, fetchInvoiceComposerData } from '../../features/invoices/api';
+import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses } from '../../features/invoices/api';
 import { invoiceQueryKeys } from '../../features/invoices/queryKeys';
 import { useInvoiceComposerStore } from '../../store/useInvoiceComposerStore';
 import LedgerQuickCreateModal from './components/LedgerQuickCreateModal';
@@ -51,6 +51,12 @@ export default function InvoicesPage() {
   const [items, setItems] = useState<InvoiceFormItem[]>([createItem(1)]);
   const [nextItemId, setNextItemId] = useState(2);
   const [editingInvoiceId, setEditingInvoiceId] = useState<number | null>(null);
+  // Shipping address state (sales invoices only)
+  const [ledgerAddresses, setLedgerAddresses] = useState<LedgerAddress[]>([]);
+  const [shippingSameAsBilling, setShippingSameAsBilling] = useState(true);
+  const [selectedShippingAddressId, setSelectedShippingAddressId] = useState<number | null>(null);
+  const [newShippingLabel, setNewShippingLabel] = useState('');
+  const [newShippingAddress, setNewShippingAddress] = useState('');
   const showCancelled = false;
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -128,6 +134,27 @@ export default function InvoicesPage() {
       })
     );
   }, [composerQuery.data, selectedLedgerId, setSelectedLedgerId]);
+
+  // Fetch ledger addresses when ledger selection changes (for shipping address UI)
+  useEffect(() => {
+    if (!selectedLedgerId) {
+      setLedgerAddresses([]);
+      return;
+    }
+    let cancelled = false;
+    fetchLedgerAddresses(Number(selectedLedgerId))
+      .then((addrs) => { if (!cancelled) setLedgerAddresses(addrs); })
+      .catch(() => { if (!cancelled) setLedgerAddresses([]); });
+    return () => { cancelled = true; };
+  }, [selectedLedgerId]);
+
+  // Reset shipping selection when ledger changes
+  useEffect(() => {
+    setShippingSameAsBilling(true);
+    setSelectedShippingAddressId(null);
+    setNewShippingLabel('');
+    setNewShippingAddress('');
+  }, [selectedLedgerId]);
 
   // Handle ?edit=<id> query param — triggered from invoice feed or any other page
   useEffect(() => {
@@ -209,6 +236,10 @@ export default function InvoicesPage() {
     setDueDateMode('none');
     setDueDate('');
     setDueDateDays('');
+    setShippingSameAsBilling(true);
+    setSelectedShippingAddressId(null);
+    setNewShippingLabel('');
+    setNewShippingAddress('');
   }
 
   function startEditingInvoice(invoice: Invoice) {
@@ -247,6 +278,19 @@ export default function InvoicesPage() {
 
     setItems(nextItems);
     setNextItemId(nextItems.length + 1);
+    // Restore shipping address state from the invoice being edited
+    if (invoice.shipping_address) {
+      setShippingSameAsBilling(false);
+      // We only have the snapshot; pre-fill the new-address fields so the user can see what was used
+      setSelectedShippingAddressId(null);
+      setNewShippingLabel(invoice.shipping_address_label ?? '');
+      setNewShippingAddress(invoice.shipping_address);
+    } else {
+      setShippingSameAsBilling(true);
+      setSelectedShippingAddressId(null);
+      setNewShippingLabel('');
+      setNewShippingAddress('');
+    }
   }
 
   async function handleSubmitInvoice(event: React.FormEvent<HTMLFormElement>) {
@@ -293,6 +337,13 @@ export default function InvoicesPage() {
         reference_notes: voucherType === 'sales' ? (referenceNotes.trim() || null) : null,
         tax_inclusive: taxInclusive,
         apply_round_off: applyRoundOff,
+        ...(voucherType === 'sales' ? {
+          shipping_address_same_as_billing: shippingSameAsBilling,
+          shipping_address_id: (!shippingSameAsBilling && selectedShippingAddressId !== null) ? selectedShippingAddressId : null,
+          new_shipping_address: (!shippingSameAsBilling && selectedShippingAddressId === null && newShippingAddress.trim())
+            ? { label: newShippingLabel.trim() || 'Shipping', address: newShippingAddress.trim() }
+            : null,
+        } : {}),
         items: items.map((item) => ({
           product_id: Number(item.productId),
           quantity: Number(item.quantity),
@@ -527,6 +578,100 @@ export default function InvoicesPage() {
                   <p className="muted-text" style={{ marginBottom: 0 }}>
                     Optional: include PO number or any customer-provided reference.
                   </p>
+                </div>
+              ) : null}
+
+              {voucherType === 'sales' ? (
+                <div className="field" style={{ gridColumn: '1 / -1' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                    <input
+                      id="invoice-shipping-same"
+                      type="checkbox"
+                      checked={shippingSameAsBilling}
+                      onChange={(e) => {
+                        setShippingSameAsBilling(e.target.checked);
+                        if (e.target.checked) {
+                          setSelectedShippingAddressId(null);
+                          setNewShippingLabel('');
+                          setNewShippingAddress('');
+                        }
+                      }}
+                    />
+                    <label htmlFor="invoice-shipping-same" style={{ marginBottom: 0, cursor: 'pointer' }}>
+                      Shipping address same as billing address
+                    </label>
+                  </div>
+
+                  {!shippingSameAsBilling ? (
+                    <div className="stack" style={{ gap: '8px', paddingLeft: '0' }}>
+                      {ledgerAddresses.length > 0 ? (
+                        <div className="field" style={{ marginBottom: 0 }}>
+                          <label htmlFor="invoice-shipping-select">Saved addresses</label>
+                          <select
+                            id="invoice-shipping-select"
+                            className="select"
+                            value={selectedShippingAddressId ?? ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === '') {
+                                setSelectedShippingAddressId(null);
+                              } else if (val === '__new__') {
+                                setSelectedShippingAddressId(null);
+                                setNewShippingLabel('');
+                                setNewShippingAddress('');
+                              } else {
+                                const id = Number(val);
+                                setSelectedShippingAddressId(id);
+                                const found = ledgerAddresses.find((a) => a.id === id);
+                                if (found) {
+                                  setNewShippingLabel(found.label);
+                                  setNewShippingAddress(found.address);
+                                }
+                              }
+                            }}
+                          >
+                            <option value="">-- Select saved address --</option>
+                            {ledgerAddresses.map((addr) => (
+                              <option key={addr.id} value={addr.id}>
+                                {addr.label} — {addr.address.slice(0, 50)}{addr.address.length > 50 ? '…' : ''}
+                              </option>
+                            ))}
+                            <option value="__new__">+ Enter new address</option>
+                          </select>
+                        </div>
+                      ) : null}
+
+                      {(selectedShippingAddressId === null) ? (
+                        <>
+                          <div className="field" style={{ marginBottom: 0 }}>
+                            <label htmlFor="invoice-shipping-label">Address label</label>
+                            <input
+                              id="invoice-shipping-label"
+                              className="input"
+                              type="text"
+                              value={newShippingLabel}
+                              onChange={(e) => setNewShippingLabel(e.target.value)}
+                              placeholder="e.g. Warehouse, Site A"
+                            />
+                          </div>
+                          <div className="field" style={{ marginBottom: 0 }}>
+                            <label htmlFor="invoice-shipping-address">Shipping address</label>
+                            <textarea
+                              id="invoice-shipping-address"
+                              className="input"
+                              rows={3}
+                              value={newShippingAddress}
+                              onChange={(e) => setNewShippingAddress(e.target.value)}
+                              placeholder="Full shipping / delivery address"
+                            />
+                            <p className="muted-text" style={{ marginBottom: 0 }}>
+                              This address will be saved to the ledger for future use.
+                            </p>
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
