@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { getApiErrorMessage } from '../api/client';
@@ -20,6 +20,7 @@ export default function BOMConfigModal({ productId, productName, onClose }: BOMC
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Add row state
   const [addComponentId, setAddComponentId] = useState('');
@@ -43,7 +44,7 @@ export default function BOMConfigModal({ productId, productName, onClose }: BOMC
       setError('');
       const [bomData, productsRes] = await Promise.all([
         fetchBOM(productId),
-        api.get<PaginatedProducts>('/products/', { params: { page: 1, page_size: 500 } }),
+        api.get<PaginatedProducts>('/products/', { params: { page: 1, page_size: 30 } }),
       ]);
       setComponents(bomData);
       // Exclude the product itself from component options
@@ -53,6 +54,22 @@ export default function BOMConfigModal({ productId, productName, onClose }: BOMC
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleComboboxQueryChange(query: string) {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await api.get<PaginatedProducts>('/products/', {
+            params: { page: 1, page_size: 30, search: query.trim() },
+          });
+          setAllProducts(res.data.items.filter((p) => p.id !== productId));
+        } catch {
+          // silently ignore search errors
+        }
+      })();
+    }, 250);
   }
 
   async function handleAdd(e: React.FormEvent) {
@@ -154,6 +171,7 @@ export default function BOMConfigModal({ productId, productName, onClose }: BOMC
                     products={allProducts}
                     value={addComponentId}
                     onChange={(id) => setAddComponentId(id)}
+                    onQueryChange={handleComboboxQueryChange}
                     required
                   />
                 </div>
