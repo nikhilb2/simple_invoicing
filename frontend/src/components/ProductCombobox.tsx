@@ -6,10 +6,11 @@ type ProductComboboxProps = {
   products: Product[];
   value: string; // product id as string
   onChange: (productId: string, product: Product) => void;
+  onQueryChange?: (query: string) => void;
   required?: boolean;
 };
 
-export default function ProductCombobox({ id, products, value, onChange, required }: ProductComboboxProps) {
+export default function ProductCombobox({ id, products, value, onChange, onQueryChange, required }: ProductComboboxProps) {
   const selectedProduct = products.find((p) => String(p.id) === value);
   const [query, setQuery] = useState(selectedProduct ? `${selectedProduct.name} (${selectedProduct.sku})` : '');
   const [open, setOpen] = useState(false);
@@ -38,6 +39,7 @@ export default function ProductCombobox({ id, products, value, onChange, require
     setSearching(true);
     setOpen(true);
     setActiveIndex(-1);
+    onQueryChange?.(e.target.value);
   }
 
   function handleSelect(product: Product) {
@@ -118,9 +120,8 @@ export default function ProductCombobox({ id, products, value, onChange, require
         onChange={handleInputChange}
         onFocus={() => { setOpen(true); setSearching(false); inputRef.current?.select(); }}
         onKeyDown={handleKeyDown}
-        placeholder={products.length === 0 ? 'No products available' : 'Search by name or SKU…'}
+        placeholder="Search by name or SKU…"
         required={required}
-        disabled={products.length === 0}
       />
       {open && suggestions.length > 0 && (
         <ul
