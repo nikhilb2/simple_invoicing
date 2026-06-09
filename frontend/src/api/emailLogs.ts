@@ -1,5 +1,21 @@
 import api from './client';
 
+export interface DueRemindersResponse {
+  message: string;
+  sent: { ledger_id: number; ledger_name: string; email: string }[];
+  skipped: { ledger_id: number; ledger_name: string; reason: string }[];
+  failed: { ledger_id: number; ledger_name: string; email: string }[];
+}
+
+export async function sendDueReminders(message?: string): Promise<DueRemindersResponse> {
+  const payload: { message?: string } = {};
+  if (message && message.trim()) {
+    payload.message = message.trim();
+  }
+  const res = await api.post<DueRemindersResponse>('/email/due-reminders', payload);
+  return res.data;
+}
+
 export interface EmailLog {
   id: number;
   company_id: number | null;
