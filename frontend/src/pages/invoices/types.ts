@@ -1,9 +1,13 @@
+export type DiscountType = 'percentage' | 'net';
+
 export type InvoiceFormItem = {
   id: number;
   productId: string;
   quantity: string;
   unit_price: string;
   description: string;
+  discount_type: DiscountType | '';
+  discount_value: string;
 };
 
 export type ProductFormState = {
@@ -29,5 +33,7 @@ export function createItem(id: number, productId = '', unitPrice = ''): InvoiceF
     quantity: '1',
     unit_price: unitPrice,
     description: '',
+    discount_type: '',
+    discount_value: '',
   };
 }
