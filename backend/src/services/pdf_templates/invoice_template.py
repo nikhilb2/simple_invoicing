@@ -15,7 +15,7 @@ from .builders import (
     _fmt_currency,
     _pdf_display_quantity,
     _pdf_display_unit,
-    _pdf_unit_price_including_tax,
+    _pdf_unit_price,
 )
 from .purchase_template import _build_purchase_invoice_html, _is_interstate_supply, _extract_pan_from_gstin
 
@@ -46,6 +46,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     table_colgroup = _build_pdf_table_colgroup(interstate_supply)
 
     product_map = {p.id: p for p in products}
+    tax_inclusive = bool(invoice.tax_inclusive)
 
     # Build line item rows
     item_rows = ""
@@ -70,12 +71,13 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
           <td>{hsn}</td>
           <td class="right">{quantity_display}</td>
           <td>{unit}</td>
-          <td class="right">{_fmt_currency(_pdf_unit_price_including_tax(item), currency)}</td>
+          <td class="right">{_fmt_currency(_pdf_unit_price(item, tax_inclusive=tax_inclusive), currency)}</td>
           {tax_row_cells}
           <td class="right">{_fmt_currency(float(item.line_total), currency)}</td>
         </tr>"""
 
-    # Company details
+    # Dynamic unit price column header based on tax_inclusive preference
+    unit_price_header_label = "(with tax)" if tax_inclusive else "(without tax)"
     company_detail_parts = []
     if invoice.company_gst:
         company_detail_parts.append(f"GST: {_e(invoice.company_gst)}")
@@ -409,7 +411,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
           <th>HSN/SAC</th>
           <th class="right">Qty</th>
           <th>Unit</th>
-          <th class="right">Unit Price<br><span style="font-size: 6px; font-weight: 500; text-transform: none;">(with tax)</span></th>
+          <th class="right">Unit Price<br><span style="font-size: 6px; font-weight: 500; text-transform: none;">{unit_price_header_label}</span></th>
           {tax_header_cells}
           <th class="right">Amount</th>
         </tr>
