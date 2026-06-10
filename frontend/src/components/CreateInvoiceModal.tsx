@@ -172,8 +172,8 @@ export default function CreateInvoiceModal({
           quantity: Number(item.quantity),
           unit_price: item.unit_price ? Number(item.unit_price) : undefined,
           description: item.description || undefined,
-          discount_type: item.discount_type || undefined,
-          discount_value: item.discount_value ? Number(item.discount_value) : undefined,
+          discount_type: (item.discount_type || null) as 'percentage' | 'net' | null,
+          discount_value: item.discount_value ? Number(item.discount_value) : null,
         })),
       };
       const res = await api.post<Invoice>('/invoices/', payload);
