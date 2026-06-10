@@ -5,14 +5,15 @@ from src.models.invoice import Invoice
 from src.models.product import Product
 
 from .builders import (
+    _amount_in_words_indian,
     _build_pdf_payment_details_html,
     _build_pdf_table_colgroup,
     _build_pdf_tax_breakup_rows,
     _build_pdf_tax_header_cells,
     _build_pdf_tax_row_cells,
-    _amount_in_words_indian,
     _e,
     _fmt_currency,
+    _fmt_rate,
     _pdf_display_quantity,
     _pdf_display_unit,
     _pdf_unit_price,
