@@ -159,3 +159,128 @@ def test_pdf_quantity_keeps_decimal_for_decimal_enabled_product():
     html = _build_invoice_html(invoice, [product])
 
     assert '<td class="right">1.5</td>' in html
+
+
+def test_sales_pdf_shows_unit_price_without_tax_when_tax_inclusive_false():
+    """When tax_inclusive=False, the unit price column should show stored unit_price and label says (without tax)."""
+    invoice = _invoice_base("sales")
+    invoice.tax_inclusive = False
+    item = InvoiceItem(
+        product_id=1,
+        hsn_sac="1234",
+        quantity=2.0,
+        unit_price=100.0,
+        tax_amount=36.0,
+        cgst_amount=18.0,
+        sgst_amount=18.0,
+        igst_amount=0.0,
+        line_total=236.0,
+        description=None,
+    )
+    invoice.items = [item]
+    product = SimpleNamespace(id=1, name="Widget", sku="W-1", hsn_sac="1234", unit="Pieces", allow_decimal=False)
+
+    html = _build_invoice_html(invoice, [product])
+
+    assert "(without tax)" in html
+    assert "₹100.00" in html  # unit price = stored unit_price (not with tax)
+
+
+def test_sales_pdf_shows_unit_price_with_tax_when_tax_inclusive_true():
+    """When tax_inclusive=True, the unit price column should show line_total/quantity and label says (with tax)."""
+    invoice = _invoice_base("sales")
+    invoice.tax_inclusive = True
+    item = InvoiceItem(
+        product_id=1,
+        hsn_sac="1234",
+        quantity=2.0,
+        unit_price=100.0,
+        tax_amount=36.0,
+        cgst_amount=18.0,
+        sgst_amount=18.0,
+        igst_amount=0.0,
+        line_total=236.0,
+        description=None,
+    )
+    invoice.items = [item]
+    product = SimpleNamespace(id=1, name="Widget", sku="W-1", hsn_sac="1234", unit="Pieces", allow_decimal=False)
+
+    html = _build_invoice_html(invoice, [product])
+
+    assert "(with tax)" in html
+    assert "₹118.00" in html  # unit price = line_total / quantity = 236/2 = 118
+
+
+def test_purchase_pdf_shows_unit_price_without_tax_when_tax_inclusive_false():
+    """When tax_inclusive=False on a purchase invoice, unit price shows stored unit_price."""
+    invoice = _invoice_base("purchase")
+    invoice.tax_inclusive = False
+    item = InvoiceItem(
+        product_id=1,
+        hsn_sac="1234",
+        quantity=1.0,
+        unit_price=500.0,
+        tax_amount=90.0,
+        cgst_amount=45.0,
+        sgst_amount=45.0,
+        igst_amount=0.0,
+        line_total=590.0,
+        description=None,
+    )
+    invoice.items = [item]
+    product = SimpleNamespace(id=1, name="Widget", sku="W-1", hsn_sac="1234", unit="Pieces", allow_decimal=False)
+
+    html = _build_purchase_invoice_html(invoice, [product])
+
+    assert "(without tax)" in html
+    assert "₹500.00" in html  # stored unit_price, not inclusive
+
+
+def test_purchase_pdf_shows_unit_price_with_tax_when_tax_inclusive_true():
+    """When tax_inclusive=True on a purchase invoice, unit price shows line_total/quantity."""
+    invoice = _invoice_base("purchase")
+    invoice.tax_inclusive = True
+    item = InvoiceItem(
+        product_id=1,
+        hsn_sac="1234",
+        quantity=1.0,
+        unit_price=500.0,
+        tax_amount=90.0,
+        cgst_amount=45.0,
+        sgst_amount=45.0,
+        igst_amount=0.0,
+        line_total=590.0,
+        description=None,
+    )
+    invoice.items = [item]
+    product = SimpleNamespace(id=1, name="Widget", sku="W-1", hsn_sac="1234", unit="Pieces", allow_decimal=False)
+
+    html = _build_purchase_invoice_html(invoice, [product])
+
+    assert "(with tax)" in html
+    assert "₹590.00" in html  # line_total / quantity = 590/1 = 590
+
+
+def test_sales_pdf_defaults_to_without_tax_when_tax_inclusive_not_set():
+    """When tax_inclusive is not explicitly set (defaults to False/None), show without tax."""
+    invoice = _invoice_base("sales")
+    # tax_inclusive defaults to False on the model
+    item = InvoiceItem(
+        product_id=1,
+        hsn_sac="1234",
+        quantity=1.0,
+        unit_price=100.0,
+        tax_amount=18.0,
+        cgst_amount=9.0,
+        sgst_amount=9.0,
+        igst_amount=0.0,
+        line_total=118.0,
+        description=None,
+    )
+    invoice.items = [item]
+    product = SimpleNamespace(id=1, name="Widget", sku="W-1", hsn_sac="1234", unit="Pieces", allow_decimal=False)
+
+    html = _build_invoice_html(invoice, [product])
+
+    assert "(without tax)" in html
+    assert "₹100.00" in html

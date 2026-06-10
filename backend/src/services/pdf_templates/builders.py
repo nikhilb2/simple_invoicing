@@ -102,6 +102,18 @@ def _pdf_unit_price_including_tax(item: InvoiceItem) -> float:
     return float(_money(line_total / quantity))
 
 
+def _pdf_unit_price(item: InvoiceItem, *, tax_inclusive: bool) -> float:
+    """Return the unit price for PDF display, respecting the tax-inclusive preference.
+
+    When *tax_inclusive* is True the unit price includes tax (line_total / quantity).
+    When *tax_inclusive* is False the unit price is displayed without tax
+    (the stored unit_price).
+    """
+    if tax_inclusive:
+        return _pdf_unit_price_including_tax(item)
+    return float(item.unit_price or 0)
+
+
 def _pdf_display_unit(unit: str | None) -> str:
     """Format unit display for PDF, abbreviating common units."""
     normalized_unit = (unit or "Pieces").strip()
