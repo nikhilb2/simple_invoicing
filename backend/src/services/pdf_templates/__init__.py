@@ -12,6 +12,7 @@ from .builders import (
     _fmt_rate,
     _pdf_display_quantity,
     _pdf_display_unit,
+    _pdf_unit_price,
     _pdf_unit_price_including_tax,
 )
 from .invoice_template import (
@@ -40,5 +41,6 @@ __all__ = [
     "_fmt_rate",
     "_pdf_display_quantity",
     "_pdf_display_unit",
+    "_pdf_unit_price",
     "_pdf_unit_price_including_tax",
 ]

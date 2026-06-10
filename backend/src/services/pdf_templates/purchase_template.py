@@ -15,7 +15,7 @@ from .builders import (
     _fmt_currency,
     _pdf_display_quantity,
     _pdf_display_unit,
-    _pdf_unit_price_including_tax,
+    _pdf_unit_price,
 )
 
 
@@ -45,6 +45,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     table_colgroup = _build_pdf_table_colgroup(interstate_supply)
 
     product_map = {p.id: p for p in products}
+    tax_inclusive = bool(invoice.tax_inclusive)
 
     item_rows = ""
     for idx, item in enumerate(invoice.items or [], start=1):
@@ -68,10 +69,13 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
           <td>{hsn}</td>
           <td class="right">{quantity_display}</td>
           <td>{unit}</td>
-          <td class="right">{_fmt_currency(_pdf_unit_price_including_tax(item), currency)}</td>
+          <td class="right">{_fmt_currency(_pdf_unit_price(item, tax_inclusive=tax_inclusive), currency)}</td>
           {tax_row_cells}
           <td class="right">{_fmt_currency(float(item.line_total), currency)}</td>
         </tr>"""
+
+    # Dynamic unit price column header based on tax_inclusive preference
+    unit_price_header_label = "(with tax)" if tax_inclusive else "(without tax)"
 
     # Supplier details are stored as ledger_* (buyer_* in DB) on purchase invoices
     supplier_detail_parts = []
@@ -303,7 +307,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
           <th>HSN/SAC</th>
           <th class="right">Qty</th>
           <th>Unit</th>
-          <th class="right">Unit Price<br><span style="font-size: 6px; font-weight: 500; text-transform: none;">(with tax)</span></th>
+          <th class="right">Unit Price<br><span style="font-size: 6px; font-weight: 500; text-transform: none;">{unit_price_header_label}</span></th>
           {tax_header_cells}
           <th class="right">Amount</th>
         </tr>
