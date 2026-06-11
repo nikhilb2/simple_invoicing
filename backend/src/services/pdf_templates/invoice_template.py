@@ -88,6 +88,21 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
 
     # Dynamic unit price column header based on tax_inclusive preference
     unit_price_header_label = "(with tax)" if tax_inclusive else "(without tax)"
+    # Build company header area with optional logo
+    company_header_html = ""
+    if invoice.company_logo_data and invoice.company_logo_mime_type:
+        company_header_html += f"""
+    <div class="invoice-sheet__logo">
+      <img src="data:{_e(invoice.company_logo_mime_type)};base64,{invoice.company_logo_data}" alt="Company logo" class="invoice-sheet__logo-img" />
+    </div>"""
+    if invoice.company_additional_info:
+        lines = invoice.company_additional_info.split("\n")
+        info_html = "<br>".join(_e(line) for line in lines)
+        company_header_html += f"""
+    <div class="invoice-sheet__company-info">
+      {info_html}
+    </div>"""
+
     company_detail_parts = []
     if invoice.company_gst:
         company_detail_parts.append(f"GST: {_e(invoice.company_gst)}")
@@ -164,6 +179,20 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
   <section class=\"invoice-sheet__reference-notes\">
     <p class=\"eyebrow\">Reference notes</p>
     <p class=\"invoice-sheet__reference-notes-value\">{_e(invoice.reference_notes)}</p>
+  </section>"""
+
+    # Terms & Conditions section (Sales & Tax Invoices only)
+    terms_html = ""
+    if invoice.company_terms_text:
+        terms_lines = invoice.company_terms_text.split("\n")
+        terms_items = "\n".join(f"<li>{_e(line)}</li>" for line in terms_lines if line.strip())
+        if terms_items:
+            terms_html = f"""
+  <section class="invoice-sheet__terms">
+    <p class="eyebrow">Terms &amp; Conditions</p>
+    <ol class="invoice-sheet__terms-list">
+{terms_items}
+    </ol>
   </section>"""
 
     html = f"""<!DOCTYPE html>
@@ -393,6 +422,35 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     color: #374151;
     margin-top: 2px;
   }}
+  .invoice-sheet__logo {{
+    margin-bottom: 8px;
+  }}
+  .invoice-sheet__logo-img {{
+    max-width: 180px;
+    max-height: 80px;
+    object-fit: contain;
+  }}
+  .invoice-sheet__company-info {{
+    font-size: 9px;
+    color: #4b5563;
+    margin-bottom: 6px;
+    line-height: 1.4;
+  }}
+  .invoice-sheet__terms {{
+    border-top: 1px solid #e5e7eb;
+    margin-top: 16px;
+    padding-top: 10px;
+  }}
+  .invoice-sheet__terms-list {{
+    margin: 4px 0 0 18px;
+    padding: 0;
+    font-size: 9px;
+    color: #4b5563;
+    line-height: 1.6;
+  }}
+  .invoice-sheet__terms-list li {{
+    margin-bottom: 2px;
+  }}
 </style>
 </head>
 <body>
@@ -402,6 +460,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
   <header class="invoice-sheet__header">
     <div>
       <p class="eyebrow">Billed by</p>
+      {company_header_html}
       <h3>{_e(invoice.company_name) or 'Company not set'}</h3>
       <p>{_e(invoice.company_address) or 'Address not provided'}</p>
       <p>{company_details}</p>
@@ -460,6 +519,8 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     <p class="eyebrow">Payment details</p>
     {payment_details_html}
   </section>
+
+  {terms_html}
 </div>
 </body>
 </html>"""

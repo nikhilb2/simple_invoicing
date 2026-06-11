@@ -372,6 +372,13 @@ class InvoiceProcessor:
         invoice.company_account_name = company.account_name if company else None
         invoice.company_account_number = company.account_number if company else None
         invoice.company_ifsc_code = company.ifsc_code if company else None
+        # Company branding fields
+        invoice.company_logo_data = company.logo_data if company else None
+        invoice.company_logo_mime_type = company.logo_mime_type if company else None
+        invoice.company_additional_info = company.additional_company_info if company else None
+        # Snapshot terms & conditions as formatted text
+        terms = (company.terms or []) if company else []
+        invoice.company_terms_text = "\n".join(f"{t.serial_number}. {t.content}" for t in terms) if terms else None
         invoice.voucher_type = payload.voucher_type
         invoice.supplier_invoice_number = payload.supplier_invoice_number
         invoice.reference_notes = payload.reference_notes
