@@ -51,6 +51,12 @@ class Invoice(Base):
     shipping_address_label = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # Company branding fields snapped for per-invoice PDF rendering
+    company_logo_data = Column(Text, nullable=True)
+    company_logo_mime_type = Column(String(50), nullable=True)
+    company_additional_info = Column(Text, nullable=True)
+    company_terms_text = Column(Text, nullable=True)
+
     ledger = relationship("Buyer", back_populates="invoices")
     items = relationship("InvoiceItem", back_populates="invoice", cascade="all, delete-orphan")
     payment_allocations = relationship("PaymentInvoiceAllocation", back_populates="invoice", cascade="all, delete-orphan")

@@ -72,6 +72,10 @@ class InvoiceOut(BaseModel):
     company_account_name: str | None = None
     company_account_number: str | None = None
     company_ifsc_code: str | None = None
+    company_logo_data: str | None = None
+    company_logo_mime_type: str | None = None
+    company_additional_info: str | None = None
+    company_terms_text: str | None = None
     voucher_type: str
     supplier_invoice_number: str | None = None
     reference_notes: str | None = None

@@ -89,6 +89,16 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     supplier_details = " &middot; ".join(supplier_detail_parts)
 
     # Your company (receiving / bill-to party)
+    # Build company header area with optional logo
+    company_header_html = ""
+    if invoice.company_logo_data and invoice.company_logo_mime_type:
+        company_header_html += f"""
+      <img src="data:{_e(invoice.company_logo_mime_type)};base64,{invoice.company_logo_data}" alt="Company logo" class="invoice-sheet__purchase-logo-img" />"""
+    if invoice.company_additional_info:
+        lines = invoice.company_additional_info.split("\n")
+        info_html = "<br>".join(_e(line) for line in lines)
+        company_header_html += f"""<br>{info_html}"""
+
     company_detail_parts = []
     if invoice.company_gst:
         company_detail_parts.append(f"GST: {_e(invoice.company_gst)}")
@@ -271,6 +281,12 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     color: #374151;
     margin-top: 2px;
   }}
+  .invoice-sheet__purchase-logo-img {{
+    max-width: 160px;
+    max-height: 70px;
+    object-fit: contain;
+    margin-bottom: 4px;
+  }}
 </style>
 </head>
 <body>
@@ -285,6 +301,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     <div class="invoice-sheet__header-right">
       <p class="eyebrow">Bill To</p>
       <h3>{_e(invoice.company_name) or 'Your company'}</h3>
+      {company_header_html}
       <p>{_e(invoice.company_address) or 'Address not provided'}</p>
       <p>{company_details}</p>
     </div>
