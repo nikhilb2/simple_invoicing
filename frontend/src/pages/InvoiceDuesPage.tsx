@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchCompanyProfile, fetchDueInvoicePage, fetchInvoiceById, fetchLedgers, type DueInvoiceFilters } from '../features/invoices/api';
+import { fetchCompanyProfile, fetchDueInvoicePage, fetchInvoiceById, fetchLedgers, sendDuesReminder, type DueInvoiceFilters } from '../features/invoices/api';
 import type { CompanyProfile, Invoice, Ledger } from '../types/api';
+import { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import InvoicePreview from '../components/InvoicePreview';
 import formatCurrency from '../utils/formatting';
@@ -64,6 +65,8 @@ export default function InvoiceDuesPage() {
   const [exactDate, setExactDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
 
   const currencyCode = company?.currency_code || 'INR';
@@ -129,6 +132,24 @@ export default function InvoiceDuesPage() {
     };
   }, [dueWindow.dueDateFrom, dueWindow.dueDateTo, ledgerId, page, pageSize, search]);
 
+  async function handleSendDuesReminder() {
+    try {
+      setSendingEmail(true);
+      setError('');
+      setSuccess('');
+      const response = await sendDuesReminder({
+        due_date_from: dueWindow.dueDateFrom,
+        due_date_to: dueWindow.dueDateTo,
+        ledger_id: ledgerId,
+      });
+      setSuccess(`Reminder sent to ${response.sent} ledger(s)`);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to send dues reminder'));
+    } finally {
+      setSendingEmail(false);
+    }
+  }
+
   async function handlePreviewInvoice(invoiceId: number) {
     try {
       setError('');
@@ -150,9 +171,17 @@ export default function InvoiceDuesPage() {
           <p className="section-copy">Track overdue and upcoming invoice dues, narrow by ledger, and preview invoices before following up.</p>
         </div>
         <div className="status-chip">{total} invoices</div>
+        <button
+          type="button"
+          className="button button--primary"
+          disabled={sendingEmail}
+          onClick={() => void handleSendDuesReminder()}
+        >
+          {sendingEmail ? 'Sending...' : 'Send Dues Reminder'}
+        </button>
       </section>
 
-      <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
+      <StatusToasts error={error} success={success} onClearError={() => setError('')} onClearSuccess={() => setSuccess('')} />
 
       <section className="content-grid">
         <article className="panel stack">

@@ -19,6 +19,28 @@ export type DueInvoiceFilters = {
   dueDateTo?: string;
 };
 
+export interface DuesReminderRequest {
+  due_date_from?: string;
+  due_date_to?: string;
+  ledger_id?: number;
+  subject?: string;
+  message?: string;
+}
+
+export interface DuesReminderResult {
+  ledger_id: number;
+  ledger_name: string;
+  email: string | null;
+  status: string;
+  error: string | null;
+}
+
+export interface DuesReminderResponse {
+  sent: number;
+  failed: number;
+  results: DuesReminderResult[];
+}
+
 function buildInvoiceParams(filters: InvoiceFilters) {
   const params: Record<string, string | number | boolean> = {
     page: filters.page,
@@ -176,4 +198,13 @@ export async function updateLedgerAddress(ledgerId: number, addressId: number, d
 
 export async function deleteLedgerAddress(ledgerId: number, addressId: number): Promise<void> {
   await api.delete(`/ledgers/${ledgerId}/addresses/${addressId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Bulk dues reminder
+// ---------------------------------------------------------------------------
+
+export async function sendDuesReminder(request: DuesReminderRequest): Promise<DuesReminderResponse> {
+  const res = await api.post<DuesReminderResponse>('/email/bulk-dues-reminder', request);
+  return res.data;
 }

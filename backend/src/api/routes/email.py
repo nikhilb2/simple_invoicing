@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import weasyprint
@@ -20,6 +20,7 @@ from src.models.payment import Payment
 from src.models.product import Product
 from src.models.user import User, UserRole
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
+from src.services.invoice_payments import build_invoice_payment_summaries
 from src.services.mail import send_email
 
 router = APIRouter()
@@ -254,6 +255,105 @@ async def send_ledger_statement_email(
 
 
 # ---------------------------------------------------------------------------
+# Shared helper: build & send one payment-reminder email for a ledger
+# ---------------------------------------------------------------------------
+
+async def _send_payment_reminder_for_ledger(
+    db: Session,
+    ledger,
+    company_id: int | None,
+    active_company: CompanyProfile,
+    current_user: User,
+    *,
+    subject: str | None = None,
+    message: str | None = None,
+    to_email_override: str | None = None,
+):
+    to_email = to_email_override or ledger.email
+    if not to_email:
+        return {"ledger_id": ledger.id, "ledger_name": ledger.name, "email": None, "status": "skipped", "error": "No email address"}
+
+    company = active_company if company_id is not None else db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    currency_code = company.currency_code if company and company.currency_code else "INR"
+
+    credit_note_summary = get_credit_note_ledger_summary(db, ledger_id=ledger.id, company_id=company_id)
+
+    total_sales_query = (
+        db.query(func.coalesce(func.sum(Invoice.total_amount), 0))
+        .filter(Invoice.ledger_id == ledger.id, Invoice.voucher_type == "sales", Invoice.status == "active")
+    )
+    if company_id is not None:
+        total_sales_query = total_sales_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+    total_sales = float(total_sales_query.scalar())
+
+    total_receipts_query = (
+        db.query(func.coalesce(func.sum(Payment.amount), 0))
+        .filter(Payment.ledger_id == ledger.id, Payment.voucher_type == "receipt", Payment.status == "active")
+    )
+    if company_id is not None:
+        total_receipts_query = total_receipts_query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+    total_receipts = float(total_receipts_query.scalar())
+    outstanding_balance = total_sales - credit_note_summary.sales_credit_total - total_receipts
+
+    last_payment_query = db.query(Payment).filter(Payment.ledger_id == ledger.id, Payment.status == "active")
+    if company_id is not None:
+        last_payment_query = last_payment_query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+    last_payment = last_payment_query.order_by(Payment.date.desc()).first()
+    last_payment_date = last_payment.date.strftime("%d %b %Y") if last_payment else None
+
+    sales_invoices_query = (
+        db.query(Invoice)
+        .filter(Invoice.ledger_id == ledger.id, Invoice.voucher_type == "sales", Invoice.status == "active")
+    )
+    if company_id is not None:
+        sales_invoices_query = sales_invoices_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+    sales_invoices = sales_invoices_query.order_by(Invoice.invoice_date.asc(), Invoice.id.asc()).all()
+    unpaid_invoices = []
+    for inv in sales_invoices:
+        net_amount = float(inv.total_amount) - credit_note_summary.sales_credit_by_invoice.get(inv.id, 0.0)
+        if net_amount <= 0:
+            continue
+        unpaid_invoices.append({
+            "invoice_number": inv.invoice_number or f"#{inv.id}",
+            "invoice_date": inv.invoice_date.strftime("%d %b %Y") if inv.invoice_date else "N/A",
+            "due_date": inv.due_date.strftime("%d %b %Y") if inv.due_date else None,
+            "amount": _fmt(net_amount),
+        })
+
+    template = _jinja_env.get_template("payment_reminder.html")
+    html_body = template.render(
+        company_name=company.name if company else "",
+        company_email=company.email if company else None,
+        company_phone=company.phone_number if company else None,
+        company_address=company.address if company else None,
+        buyer_name=ledger.name,
+        outstanding_balance=_fmt(outstanding_balance),
+        currency=_symbol(currency_code),
+        last_payment_date=last_payment_date,
+        message=message,
+        unpaid_invoices=unpaid_invoices,
+    )
+
+    email_subject = subject or f"Payment Reminder \u2014 {ledger.name}"
+
+    try:
+        await send_email(
+            db=db,
+            to=to_email,
+            subject=email_subject,
+            html_body=html_body,
+            cc=None,
+            company_id=company_id,
+            email_type="payment_reminder",
+            reference_id=ledger.id,
+            sent_by_user_id=current_user.id,
+        )
+        return {"ledger_id": ledger.id, "ledger_name": ledger.name, "email": to_email, "status": "sent", "error": None}
+    except RuntimeError as exc:
+        return {"ledger_id": ledger.id, "ledger_name": ledger.name, "email": to_email, "status": "failed", "error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
 # POST /payment-reminder/{ledger_id}
 # ---------------------------------------------------------------------------
 
@@ -266,9 +366,6 @@ async def send_payment_reminder_email(
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
-    if payload is None:
-        payload = EmailSendRequest()
-
     ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
     if company_id is not None:
         ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
@@ -276,93 +373,120 @@ async def send_payment_reminder_email(
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
 
-    to_email = payload.to or ledger.email
-    if not to_email:
+    if payload is None:
+        payload = EmailSendRequest()
+
+    result = await _send_payment_reminder_for_ledger(
+        db=db,
+        ledger=ledger,
+        company_id=company_id,
+        active_company=active_company,
+        current_user=current_user,
+        subject=payload.subject,
+        message=payload.message,
+        to_email_override=payload.to,
+    )
+
+    if result["status"] == "skipped":
         raise HTTPException(
             status_code=400,
-            detail="No recipient email address. Provide 'to' in the request body or add an email to the ledger.",
+            detail=result["error"],
         )
-
-    company = active_company if company_id is not None else db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
-    currency_code = company.currency_code if company and company.currency_code else "INR"
-
-    credit_note_summary = get_credit_note_ledger_summary(db, ledger_id=ledger_id, company_id=company_id)
-
-    # Outstanding balance = active sales invoices − active sales credit notes − active receipts for this ledger
-    total_sales_query = (
-        db.query(func.coalesce(func.sum(Invoice.total_amount), 0))
-        .filter(Invoice.ledger_id == ledger_id, Invoice.voucher_type == "sales", Invoice.status == "active")
-    )
-    if company_id is not None:
-        total_sales_query = total_sales_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
-    total_sales = float(total_sales_query.scalar())
-
-    total_receipts_query = (
-        db.query(func.coalesce(func.sum(Payment.amount), 0))
-        .filter(Payment.ledger_id == ledger_id, Payment.voucher_type == "receipt", Payment.status == "active")
-    )
-    if company_id is not None:
-        total_receipts_query = total_receipts_query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
-    total_receipts = float(total_receipts_query.scalar())
-    outstanding_balance = total_sales - credit_note_summary.sales_credit_total - total_receipts
-
-    last_payment_query = db.query(Payment).filter(Payment.ledger_id == ledger_id, Payment.status == "active")
-    if company_id is not None:
-        last_payment_query = last_payment_query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
-    last_payment = last_payment_query.order_by(Payment.date.desc()).first()
-    last_payment_date = last_payment.date.strftime("%d %b %Y") if last_payment else None
-
-    sales_invoices_query = (
-        db.query(Invoice)
-        .filter(Invoice.ledger_id == ledger_id, Invoice.voucher_type == "sales", Invoice.status == "active")
-    )
-    if company_id is not None:
-        sales_invoices_query = sales_invoices_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
-    sales_invoices = sales_invoices_query.order_by(Invoice.invoice_date.asc(), Invoice.id.asc()).all()
-    unpaid_invoices = []
-    for inv in sales_invoices:
-        net_amount = float(inv.total_amount) - credit_note_summary.sales_credit_by_invoice.get(inv.id, 0.0)
-        if net_amount <= 0:
-            continue
-        unpaid_invoices.append(
-            {
-                "invoice_number": inv.invoice_number or f"#{inv.id}",
-                "invoice_date": inv.invoice_date.strftime("%d %b %Y") if inv.invoice_date else "N/A",
-                "due_date": inv.due_date.strftime("%d %b %Y") if inv.due_date else None,
-                "amount": _fmt(net_amount),
-            }
-        )
-
-    template = _jinja_env.get_template("payment_reminder.html")
-    html_body = template.render(
-        company_name=company.name if company else "",
-        company_email=company.email if company else None,
-        company_phone=company.phone_number if company else None,
-        company_address=company.address if company else None,
-        buyer_name=ledger.name,
-        outstanding_balance=_fmt(outstanding_balance),
-        currency=_symbol(currency_code),
-        last_payment_date=last_payment_date,
-        message=payload.message,
-        unpaid_invoices=unpaid_invoices,
-    )
-
-    subject = payload.subject or f"Payment Reminder \u2014 {ledger.name}"
-    cc_list = [payload.cc] if payload.cc else None
-
-    try:
-        await send_email(
-            db=db,
-            to=to_email,
-            subject=subject,
-            html_body=html_body,
-            cc=cc_list,
-            company_id=company_id,
-            email_type="payment_reminder",
-            reference_id=ledger_id,
-            sent_by_user_id=current_user.id,
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    if result["status"] == "failed":
+        raise HTTPException(status_code=400, detail=result["error"])
 
     return {"message": "Payment reminder sent successfully"}
+
+
+# ---------------------------------------------------------------------------
+# POST /bulk-dues-reminder
+# ---------------------------------------------------------------------------
+
+class BulkDuesReminderRequest(BaseModel):
+    due_date_from: date | None = None
+    due_date_to: date | None = None
+    ledger_id: int | None = None
+    subject: str | None = None
+    message: str | None = None
+
+
+@router.post("/bulk-dues-reminder")
+async def send_bulk_dues_reminder(
+    payload: BulkDuesReminderRequest | None = Body(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    company_id = getattr(active_company, "id", None)
+    if payload is None:
+        payload = BulkDuesReminderRequest()
+
+    # Query outstanding sales invoices with due dates
+    base = (
+        db.query(Invoice)
+        .filter(
+            Invoice.voucher_type == "sales",
+            Invoice.status == "active",
+            Invoice.due_date.isnot(None),
+        )
+    )
+    if company_id is not None:
+        base = base.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+
+    if payload.ledger_id is not None:
+        base = base.filter(Invoice.ledger_id == payload.ledger_id)
+    if payload.due_date_from is not None:
+        base = base.filter(Invoice.due_date >= datetime.combine(payload.due_date_from, datetime.min.time()))
+    if payload.due_date_to is not None:
+        base = base.filter(Invoice.due_date <= datetime.combine(payload.due_date_to, datetime.max.time()))
+
+    invoices: list[Invoice] = base.order_by(Invoice.ledger_id, Invoice.id).all()
+
+    if not invoices:
+        return {"sent": 0, "failed": 0, "results": []}
+
+    # Filter to invoices with remaining_amount > 0 using payment summaries
+    summaries = build_invoice_payment_summaries(db, invoices)
+    outstanding_invoices = [
+        inv for inv in invoices
+        if summaries[inv.id].remaining_amount > 0
+    ]
+
+    if not outstanding_invoices:
+        return {"sent": 0, "failed": 0, "results": []}
+
+    # Group by ledger_id
+    ledger_ids = sorted({inv.ledger_id for inv in outstanding_invoices if inv.ledger_id is not None})
+
+    # Fetch ledgers
+    ledgers_query = db.query(Ledger).filter(Ledger.id.in_(ledger_ids))
+    if company_id is not None:
+        ledgers_query = ledgers_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+    ledgers = {l.id: l for l in ledgers_query.all()}
+
+    results = []
+    sent_count = 0
+    failed_count = 0
+
+    for ledger_id_val in ledger_ids:
+        ledger_obj = ledgers.get(ledger_id_val)
+        if ledger_obj is None:
+            results.append({"ledger_id": ledger_id_val, "ledger_name": "Unknown", "email": None, "status": "skipped", "error": "Ledger not found"})
+            continue
+
+        result = await _send_payment_reminder_for_ledger(
+            db=db,
+            ledger=ledger_obj,
+            company_id=company_id,
+            active_company=active_company,
+            current_user=current_user,
+            subject=payload.subject,
+            message=payload.message,
+        )
+        results.append(result)
+        if result["status"] == "sent":
+            sent_count += 1
+        elif result["status"] == "failed":
+            failed_count += 1
+
+    return {"sent": sent_count, "failed": failed_count, "results": results}
