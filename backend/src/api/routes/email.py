@@ -115,7 +115,7 @@ async def send_invoice_email(
         invoice_bank_accounts = invoice_bank_accounts.filter(or_(CompanyAccount.company_id == company_id, CompanyAccount.company_id.is_(None)))
     invoice_bank_accounts = invoice_bank_accounts.all()
 
-    pdf_buf = _build_invoice_pdf(invoice, products, invoice_bank_accounts, show_sku=active_company.show_sku_on_pdf)
+    pdf_buf = _build_invoice_pdf(invoice, products, invoice_bank_accounts, active_company=active_company)
     pdf_bytes = pdf_buf.read()
 
     inv_number = invoice.invoice_number or f"#{invoice.id}"

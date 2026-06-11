@@ -1,4 +1,3 @@
-import base64
 from io import BytesIO
 from datetime import date, datetime
 
@@ -369,30 +368,17 @@ def update_invoice(
 
 
 
-def _load_company_logo_base64(company: CompanyProfile) -> str | None:
-    """Read the company logo file from disk and return as a base64-encoded string."""
-    if not company or not company.logo_path:
-        return None
-    try:
-        with open(company.logo_path, "rb") as f:
-            return base64.b64encode(f.read()).decode("utf-8")
-    except (FileNotFoundError, IsADirectoryError, OSError):
-        return None
-
-
 def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], active_company: CompanyProfile | None = None) -> BytesIO:
-    company_logo_base64 = _load_company_logo_base64(active_company) if active_company else None
     show_sku = active_company.show_sku_on_pdf if active_company else True
-    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), company_logo_base64=company_logo_base64, show_sku=show_sku)
+    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku)
     pdf_bytes = weasyprint.HTML(string=html).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
 
 
 def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, active_company: CompanyProfile | None = None) -> BytesIO:
-    company_logo_base64 = _load_company_logo_base64(active_company) if active_company else None
     show_sku = active_company.show_sku_on_pdf if active_company else True
-    html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies, company_logo_base64=company_logo_base64, show_sku=show_sku)
+    html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies, show_sku=show_sku)
     pdf_bytes = weasyprint.HTML(string=html).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
