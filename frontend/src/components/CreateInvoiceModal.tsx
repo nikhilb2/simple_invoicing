@@ -9,16 +9,18 @@ import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../utils/invoiceT
 import ProductCombobox from './ProductCombobox';
 import LedgerCombobox from './LedgerCombobox';
 
-type InvoiceFormItem = {
+type ModalInvoiceFormItem = {
   id: number;
   productId: string;
   quantity: string;
   unit_price: string;
   description: string;
+  discount_type: string;
+  discount_value: string;
 };
 
-function createItem(id: number, productId = '', unitPrice = ''): InvoiceFormItem {
-  return { id, productId, quantity: '1', unit_price: unitPrice, description: '' };
+function createItem(id: number, productId = '', unitPrice = ''): ModalInvoiceFormItem {
+  return { id, productId, quantity: '1', unit_price: unitPrice, description: '', discount_type: '', discount_value: '' };
 }
 
 type CreateInvoiceModalProps = {
@@ -50,7 +52,7 @@ export default function CreateInvoiceModal({
   const [dueDate, setDueDate] = useState('');
   const [dueDateDays, setDueDateDays] = useState('');
   const [referenceNotes, setReferenceNotes] = useState('');
-  const [items, setItems] = useState<InvoiceFormItem[]>([createItem(1)]);
+  const [items, setItems] = useState<ModalInvoiceFormItem[]>([createItem(1)]);
   const [nextItemId, setNextItemId] = useState(2);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -97,12 +99,34 @@ export default function CreateInvoiceModal({
     const gstRate = product?.gst_rate || 0;
     if (!product || Number.isNaN(quantity)) return sum;
 
+    let taxableAmount: number;
+    let lineTotal: number;
     if (taxInclusive) {
-      return sum + unitPrice * quantity;
+      lineTotal = unitPrice * quantity;
+      taxableAmount = lineTotal / (1 + gstRate / 100);
+    } else {
+      taxableAmount = unitPrice * quantity;
+      lineTotal = taxableAmount + taxableAmount * gstRate / 100;
     }
 
-    const taxableAmount = unitPrice * quantity;
-    return sum + taxableAmount + taxableAmount * gstRate / 100;
+    // Apply item-level discount
+    if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
+      const discVal = Number(item.discount_value);
+      let discAmount = 0;
+      if (item.discount_type === 'percentage') {
+        discAmount = taxableAmount * discVal / 100;
+      } else {
+        discAmount = Math.min(discVal, taxableAmount);
+      }
+      const discountedTaxable = taxableAmount - discAmount;
+      if (taxInclusive) {
+        lineTotal = discountedTaxable * (1 + gstRate / 100);
+      } else {
+        lineTotal = discountedTaxable + discountedTaxable * gstRate / 100;
+      }
+    }
+
+    return sum + lineTotal;
   }, 0);
 
   function addItem() {
@@ -115,7 +139,7 @@ export default function CreateInvoiceModal({
     setItems((c) => (c.length === 1 ? c : c.filter((i) => i.id !== id)));
   }
 
-  function updateItem(id: number, key: 'productId' | 'quantity' | 'unit_price' | 'description', value: string) {
+  function updateItem(id: number, key: 'productId' | 'quantity' | 'unit_price' | 'description' | 'discount_type' | 'discount_value', value: string) {
     setItems((c) => c.map((i) => (i.id === id ? { ...i, [key]: value } : i)));
   }
 
@@ -148,6 +172,8 @@ export default function CreateInvoiceModal({
           quantity: Number(item.quantity),
           unit_price: item.unit_price ? Number(item.unit_price) : undefined,
           description: item.description || undefined,
+          discount_type: (item.discount_type || null) as 'percentage' | 'net' | null,
+          discount_value: item.discount_value ? Number(item.discount_value) : null,
         })),
       };
       const res = await api.post<Invoice>('/invoices/', payload);
@@ -318,12 +344,42 @@ export default function CreateInvoiceModal({
                 let lineTotal: number;
                 let taxAmount: number;
                 if (taxInclusive) {
-                  lineTotal = unitPrice * Number(item.quantity || 0);
-                  taxAmount = lineTotal - lineTotal / (1 + gstRate / 100);
+                  let baseLineTotal = unitPrice * Number(item.quantity || 0);
+                  let baseTaxableAmount = baseLineTotal / (1 + gstRate / 100);
+                  // Apply item-level discount
+                  if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
+                    const discVal = Number(item.discount_value);
+                    let discAmount = 0;
+                    if (item.discount_type === 'percentage') {
+                      discAmount = baseTaxableAmount * discVal / 100;
+                    } else {
+                      discAmount = Math.min(discVal, baseTaxableAmount);
+                    }
+                    const discountedTaxable = baseTaxableAmount - discAmount;
+                    lineTotal = discountedTaxable * (1 + gstRate / 100);
+                    taxAmount = lineTotal - discountedTaxable;
+                  } else {
+                    lineTotal = baseLineTotal;
+                    taxAmount = lineTotal - baseTaxableAmount;
+                  }
                 } else {
-                  const taxableAmount = unitPrice * Number(item.quantity || 0);
-                  taxAmount = taxableAmount * gstRate / 100;
-                  lineTotal = taxableAmount + taxAmount;
+                  const baseTaxableAmount = unitPrice * Number(item.quantity || 0);
+                  // Apply item-level discount
+                  if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
+                    const discVal = Number(item.discount_value);
+                    let discAmount = 0;
+                    if (item.discount_type === 'percentage') {
+                      discAmount = baseTaxableAmount * discVal / 100;
+                    } else {
+                      discAmount = Math.min(discVal, baseTaxableAmount);
+                    }
+                    const discountedTaxable = baseTaxableAmount - discAmount;
+                    taxAmount = discountedTaxable * gstRate / 100;
+                    lineTotal = discountedTaxable + taxAmount;
+                  } else {
+                    taxAmount = baseTaxableAmount * gstRate / 100;
+                    lineTotal = baseTaxableAmount + taxAmount;
+                  }
                 }
 
                 return (

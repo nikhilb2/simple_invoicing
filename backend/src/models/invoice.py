@@ -44,6 +44,8 @@ class Invoice(Base):
     tax_inclusive = Column(Boolean, nullable=False, default=False)
     apply_round_off = Column(Boolean, nullable=False, default=False)
     round_off_amount = Column(Numeric(5, 2), nullable=False, default=0)
+    discount_type = Column(String(20), nullable=True)
+    discount_value = Column(Numeric(10, 2), nullable=True)
     financial_year_id = Column(Integer, ForeignKey("financial_years.id"), nullable=True)
     shipping_address = Column(Text, nullable=True)
     shipping_address_label = Column(String(255), nullable=True)
@@ -71,5 +73,7 @@ class InvoiceItem(Base):
     igst_amount = Column(Numeric(10, 2), nullable=False, default=0)
     line_total = Column(Numeric(10, 2), nullable=False)
     description = Column(Text, nullable=True)
+    discount_type = Column(String(20), nullable=True)
+    discount_value = Column(Numeric(10, 2), nullable=True)
 
     invoice = relationship("Invoice", back_populates="items")
