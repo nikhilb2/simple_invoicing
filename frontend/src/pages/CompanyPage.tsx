@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
-import { createTerm, deleteTerm, fetchCompany, getLogoUrl, removeLogo, updateCompany, updateTerm, uploadLogo } from '../api/company';
+import { createTerm, deleteTerm, removeLogo, updateTerm, uploadLogo } from '../api/company';
 import StatusToasts from '../components/StatusToasts';
 import { useAuth } from '../context/AuthContext';
 import { useFY } from '../context/FYContext';
-import type { CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, CompanyTermOut } from '../types/api';
+import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, CompanyTermOut } from '../types/api';
 import { isCompanyConfigured } from '../utils/companySetup';
 
 // ---------------------------------------------------------------------------
@@ -654,20 +654,8 @@ export default function CompanyPage() {
     try {
       setLoading(true);
       setError('');
-      const response = await api.get('/company/');
-      const data = response.data as {
-        id: number;
-        name: string;
-        address: string;
-        gst: string;
-        phone_number: string;
-        currency_code: string | null;
-        email: string | null;
-        website: string | null;
-        logo_data: string | null;
-        logo_mime_type: string | null;
-        additional_company_info: string | null;
-      };
+      const response = await api.get<CompanyProfile>('/company/');
+      const data = response.data;
       if (initialSetupRequired === null) {
         setInitialSetupRequired(!isCompanyConfigured(data));
       }

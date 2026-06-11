@@ -1,5 +1,5 @@
 import api from '../api/client';
-import type { CompanyProfileOut, CompanyTermOut } from '../types/api';
+import type { CompanyProfile, CompanyTermOut } from '../types/api';
 
 export interface CompanyProfileWithTerms extends CompanyProfileOut {
   terms: CompanyTermOut[];
