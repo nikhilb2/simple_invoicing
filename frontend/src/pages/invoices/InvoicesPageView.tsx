@@ -38,6 +38,8 @@ export default function InvoicesPage() {
   const [voucherType, setVoucherType] = useState<'sales' | 'purchase' | 'payment'>('sales');
   const [taxInclusive, setTaxInclusive] = useState(false);
   const [applyRoundOff, setApplyRoundOff] = useState(false);
+  const [invoiceDiscountType, setInvoiceDiscountType] = useState<'percentage' | 'net'>('percentage');
+  const [invoiceDiscountValue, setInvoiceDiscountValue] = useState('');
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
   const [referenceNotes, setReferenceNotes] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
@@ -183,17 +185,51 @@ export default function InvoicesPage() {
       return sum;
     }
 
+    let lineTotal: number;
+    let taxableAmount: number;
     if (taxInclusive) {
-      return sum + unitPrice * quantity;
+      lineTotal = unitPrice * quantity;
+      taxableAmount = lineTotal / (1 + gstRate / 100);
+    } else {
+      taxableAmount = unitPrice * quantity;
+      lineTotal = taxableAmount + taxableAmount * gstRate / 100;
     }
-    const taxableAmount = unitPrice * quantity;
-    const taxAmount = taxableAmount * gstRate / 100;
-    return sum + taxableAmount + taxAmount;
+
+    // Apply item-level discount
+    if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
+      const discVal = Number(item.discount_value);
+      let discAmount = 0;
+      if (item.discount_type === 'percentage') {
+        discAmount = taxableAmount * discVal / 100;
+      } else {
+        discAmount = Math.min(discVal, taxableAmount);
+      }
+      const discountedTaxable = taxableAmount - discAmount;
+      if (taxInclusive) {
+        lineTotal = discountedTaxable * (1 + gstRate / 100);
+      } else {
+        lineTotal = discountedTaxable + discountedTaxable * gstRate / 100;
+      }
+    }
+
+    return sum + lineTotal;
   }, 0);
 
-  const roundedTotalAmount = Math.round(totalAmount);
-  const roundOffPreviewAmount = applyRoundOff ? roundedTotalAmount - totalAmount : 0;
-  const projectedTotalAmount = applyRoundOff ? roundedTotalAmount : totalAmount;
+  // Apply invoice-level discount
+  let invoiceDiscountAmount = 0;
+  if (invoiceDiscountType && invoiceDiscountValue && Number(invoiceDiscountValue) > 0) {
+    const discVal = Number(invoiceDiscountValue);
+    if (invoiceDiscountType === 'percentage') {
+      invoiceDiscountAmount = totalAmount * discVal / 100;
+    } else {
+      invoiceDiscountAmount = Math.min(discVal, totalAmount);
+    }
+  }
+  const afterDiscountTotal = totalAmount - invoiceDiscountAmount;
+
+  const roundedTotalAmount = Math.round(afterDiscountTotal);
+  const roundOffPreviewAmount = applyRoundOff ? roundedTotalAmount - afterDiscountTotal : 0;
+  const projectedTotalAmount = applyRoundOff ? roundedTotalAmount : afterDiscountTotal;
 
   const activeCurrencyCode = company?.currency_code || 'USD';
   const selectedLedger = ledgers.find((entry) => entry.id === Number(selectedLedgerId));
@@ -215,7 +251,7 @@ export default function InvoicesPage() {
     setItems((current) => (current.length === 1 ? current : current.filter((item) => item.id !== id)));
   }
 
-  function updateItem(id: number, key: 'productId' | 'quantity' | 'unit_price' | 'description', value: string) {
+  function updateItem(id: number, key: 'productId' | 'quantity' | 'unit_price' | 'description' | 'discount_type' | 'discount_value', value: string) {
     setItems((current) => current.map((item) => (item.id === id ? { ...item, [key]: value } : item)));
   }
 
@@ -225,6 +261,8 @@ export default function InvoicesPage() {
     setReferenceNotes('');
     setTaxInclusive(false);
     setApplyRoundOff(false);
+    setInvoiceDiscountType('percentage');
+    setInvoiceDiscountValue('');
     setPaymentMode('cash');
     setPaymentReference('');
     setSelectedPaymentAccountId('');
@@ -261,6 +299,8 @@ export default function InvoicesPage() {
     setReferenceNotes(invoice.voucher_type === 'sales' ? (invoice.reference_notes ?? '') : '');
     setTaxInclusive(invoice.tax_inclusive ?? false);
     setApplyRoundOff(invoice.apply_round_off ?? false);
+    setInvoiceDiscountType((invoice.discount_type as 'percentage' | 'net') || 'percentage');
+    setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
     setSelectedLedgerId(String(invoice.ledger_id));
     setInvoiceDate(invoice.invoice_date ? invoice.invoice_date.slice(0, 10) : new Date().toISOString().slice(0, 10));
     const dueDateState = createDueDateFormState(invoice.due_date);
@@ -274,6 +314,8 @@ export default function InvoicesPage() {
       quantity: String(line.quantity),
       unit_price: String(line.unit_price),
       description: line.description ?? '',
+      discount_type: (line.discount_type || '') as '' | 'percentage' | 'net',
+      discount_value: line.discount_value != null ? String(line.discount_value) : '',
     }));
 
     setItems(nextItems);
@@ -337,6 +379,8 @@ export default function InvoicesPage() {
         reference_notes: voucherType === 'sales' ? (referenceNotes.trim() || null) : null,
         tax_inclusive: taxInclusive,
         apply_round_off: applyRoundOff,
+        discount_type: invoiceDiscountType || null,
+        discount_value: invoiceDiscountValue ? Number(invoiceDiscountValue) : null,
         ...(voucherType === 'sales' ? {
           shipping_address_same_as_billing: shippingSameAsBilling,
           shipping_address_id: (!shippingSameAsBilling && selectedShippingAddressId !== null) ? selectedShippingAddressId : null,
@@ -349,6 +393,8 @@ export default function InvoicesPage() {
           quantity: Number(item.quantity),
           unit_price: item.unit_price ? Number(item.unit_price) : undefined,
           description: item.description || undefined,
+          discount_type: item.discount_type || null,
+          discount_value: item.discount_value ? Number(item.discount_value) : null,
         })),
       };
 
@@ -716,6 +762,49 @@ export default function InvoicesPage() {
                     Round off: {formatCurrency(roundOffPreviewAmount, activeCurrencyCode)} · Adjusted total: {formatCurrency(projectedTotalAmount, activeCurrencyCode)}
                   </p>
                 ) : null}
+
+                {/* Invoice-level discount */}
+                <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 0, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      id="invoice-discount-percentage"
+                      type="radio"
+                      name="inv-disc-type"
+                      value="percentage"
+                      checked={invoiceDiscountType === 'percentage'}
+                      onChange={() => setInvoiceDiscountType('percentage')}
+                    />
+                    <label htmlFor="invoice-discount-percentage" style={{ marginBottom: 0, cursor: 'pointer', fontSize: '13px' }}>%</label>
+                    <input
+                      id="invoice-discount-net"
+                      type="radio"
+                      name="inv-disc-type"
+                      value="net"
+                      checked={invoiceDiscountType === 'net'}
+                      onChange={() => setInvoiceDiscountType('net')}
+                    />
+                    <label htmlFor="invoice-discount-net" style={{ marginBottom: 0, cursor: 'pointer', fontSize: '13px' }}>Flat</label>
+                  </div>
+                  <label htmlFor="invoice-discount-value" style={{ marginBottom: 0, cursor: 'pointer', fontSize: '13px' }}>
+                    Invoice discount:
+                  </label>
+                  <input
+                    id="invoice-discount-value"
+                    className="input"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={invoiceDiscountValue}
+                    onChange={(e) => setInvoiceDiscountValue(e.target.value)}
+                    placeholder={invoiceDiscountType === 'percentage' ? 'e.g. 5%' : 'e.g. 100.00'}
+                    style={{ width: '120px' }}
+                  />
+                </div>
+                {invoiceDiscountValue && Number(invoiceDiscountValue) > 0 ? (
+                  <p className="muted-text" style={{ marginTop: 0 }}>
+                    Discount: {formatCurrency(invoiceDiscountAmount, activeCurrencyCode)} · After discount: {formatCurrency(afterDiscountTotal, activeCurrencyCode)}
+                  </p>
+                ) : null}
               </div>
             ) : null}
 
@@ -856,6 +945,40 @@ export default function InvoicesPage() {
                       <button type="button" className="button button--danger" onClick={() => removeItem(item.id)} title={`Remove line item ${index + 1}`} aria-label={`Remove line item ${index + 1}`}>
                         Remove
                       </button>
+                      {/* Item-level discount */}
+                      <div className="field" style={{ minWidth: '140px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                          <input
+                            id={`item-disc-pct-${item.id}`}
+                            type="radio"
+                            name={`item-disc-type-${item.id}`}
+                            value="percentage"
+                            checked={item.discount_type === 'percentage'}
+                            onChange={() => updateItem(item.id, 'discount_type', 'percentage')}
+                          />
+                          <label htmlFor={`item-disc-pct-${item.id}`} style={{ marginBottom: 0, cursor: 'pointer', fontSize: '11px' }}>%</label>
+                          <input
+                            id={`item-disc-net-${item.id}`}
+                            type="radio"
+                            name={`item-disc-type-${item.id}`}
+                            value="net"
+                            checked={item.discount_type === 'net'}
+                            onChange={() => updateItem(item.id, 'discount_type', 'net')}
+                          />
+                          <label htmlFor={`item-disc-net-${item.id}`} style={{ marginBottom: 0, cursor: 'pointer', fontSize: '11px' }}>Flat</label>
+                        </div>
+                        <input
+                          id={`item-disc-value-${item.id}`}
+                          className="input"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={item.discount_value}
+                          onChange={(event) => updateItem(item.id, 'discount_value', event.target.value)}
+                          placeholder="Disc"
+                          style={{ width: '100%', padding: '4px 6px', fontSize: '12px' }}
+                        />
+                      </div>
                       <div className="field" style={{ gridColumn: '1 / -1' }}>
                         <label htmlFor={`invoice-description-${item.id}`}>Description (optional)</label>
                         <textarea

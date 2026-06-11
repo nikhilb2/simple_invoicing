@@ -10,6 +10,8 @@ class InvoiceItemCreate(BaseModel):
     quantity: float
     unit_price: float | None = None
     description: str | None = None
+    discount_type: Literal["percentage", "net"] | None = None
+    discount_value: float | None = None
 
 
 class InvoiceCreate(BaseModel):
@@ -21,6 +23,8 @@ class InvoiceCreate(BaseModel):
     reference_notes: str | None = None
     tax_inclusive: bool = False
     apply_round_off: bool = False
+    discount_type: Literal["percentage", "net"] | None = None
+    discount_value: float | None = None
     shipping_address_same_as_billing: bool = True
     shipping_address_id: int | None = None
     new_shipping_address: ShippingAddressInline | None = None
@@ -41,6 +45,8 @@ class InvoiceItemOut(BaseModel):
     igst_amount: float
     line_total: float
     description: str | None = None
+    discount_type: str | None = None
+    discount_value: float | None = None
 
     class Config:
         from_attributes = True
@@ -88,6 +94,8 @@ class InvoiceOut(BaseModel):
     tax_inclusive: bool = False
     apply_round_off: bool = False
     round_off_amount: float = 0
+    discount_type: str | None = None
+    discount_value: float | None = None
     financial_year_id: Optional[int] = None
     shipping_address: str | None = None
     shipping_address_label: str | None = None

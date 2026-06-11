@@ -210,12 +210,29 @@ class InvoiceProcessor:
     # Totals calculation
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _compute_item_discount(
+        discount_type: str | None,
+        discount_value: Decimal | None,
+        taxable_amount: Decimal,
+    ) -> Decimal:
+        """Compute the discount amount for a single line item.
+
+        Returns the discount as a positive Decimal (0 if no discount).
+        """
+        if not discount_type or discount_value is None or discount_value <= 0:
+            return Decimal("0")
+        if discount_type == "percentage":
+            return _money(taxable_amount * discount_value / Decimal("100"))
+        # net discount
+        return min(_money(discount_value), taxable_amount)
+
     def calculate_totals(
         self,
         validated_items: list[tuple],
         tax_inclusive: bool,
     ) -> list[dict]:
-        """Compute per-line tax and total amounts.
+        """Compute per-line tax and total amounts including item-level discounts.
 
         Accepts the output of :meth:`validate_items` and returns a list of
         dicts with the calculated fields for each line item.
@@ -242,18 +259,70 @@ class InvoiceProcessor:
                 )
                 line_total = _money(taxable_amount + tax_amount)
 
-            results.append(
-                {
-                    "item_schema": item_schema,
-                    "product": product,
-                    "quantity_value": quantity_value,
-                    "unit_price": unit_price,
-                    "gst_rate": gst_rate,
-                    "taxable_amount": taxable_amount,
-                    "tax_amount": tax_amount,
-                    "line_total": line_total,
-                }
+            # Apply item-level discount
+            item_discount_type = getattr(item_schema, "discount_type", None)
+            item_discount_value = (
+                Decimal(str(item_schema.discount_value))
+                if getattr(item_schema, "discount_value", None) is not None
+                else None
             )
+            discount_amount = self._compute_item_discount(
+                item_discount_type, item_discount_value, taxable_amount
+            )
+
+            if discount_amount > 0:
+                discounted_taxable = _money(taxable_amount - discount_amount)
+                if tax_inclusive:
+                    # Recalculate line_total with discount
+                    discounted_line_total = _money(
+                        discounted_taxable * (1 + gst_rate / Decimal("100"))
+                    )
+                    discounted_tax = _money(discounted_line_total - discounted_taxable)
+                    results.append(
+                        {
+                            "item_schema": item_schema,
+                            "product": product,
+                            "quantity_value": quantity_value,
+                            "unit_price": unit_price,
+                            "gst_rate": gst_rate,
+                            "taxable_amount": discounted_taxable,
+                            "tax_amount": discounted_tax,
+                            "line_total": discounted_line_total,
+                            "discount_amount": discount_amount,
+                        }
+                    )
+                else:
+                    discounted_tax = _money(
+                        discounted_taxable * gst_rate / Decimal("100")
+                    )
+                    discounted_line_total = _money(discounted_taxable + discounted_tax)
+                    results.append(
+                        {
+                            "item_schema": item_schema,
+                            "product": product,
+                            "quantity_value": quantity_value,
+                            "unit_price": unit_price,
+                            "gst_rate": gst_rate,
+                            "taxable_amount": discounted_taxable,
+                            "tax_amount": discounted_tax,
+                            "line_total": discounted_line_total,
+                            "discount_amount": discount_amount,
+                        }
+                    )
+            else:
+                results.append(
+                    {
+                        "item_schema": item_schema,
+                        "product": product,
+                        "quantity_value": quantity_value,
+                        "unit_price": unit_price,
+                        "gst_rate": gst_rate,
+                        "taxable_amount": taxable_amount,
+                        "tax_amount": tax_amount,
+                        "line_total": line_total,
+                        "discount_amount": Decimal("0"),
+                    }
+                )
         return results
 
     # ------------------------------------------------------------------
@@ -369,6 +438,12 @@ class InvoiceProcessor:
         created_items: list[InvoiceItem] = []
         for result in line_results:
             taxable_total += result["taxable_amount"]
+            item_dtype = getattr(result["item_schema"], "discount_type", None)
+            item_dval = (
+                float(result["item_schema"].discount_value)
+                if getattr(result["item_schema"], "discount_value", None) is not None
+                else None
+            )
             invoice_item = InvoiceItem(
                 invoice_id=invoice.id,
                 product_id=result["product"].id,
@@ -380,6 +455,8 @@ class InvoiceProcessor:
                 tax_amount=float(result["tax_amount"]),
                 line_total=float(result["line_total"]),
                 description=result["item_schema"].description,
+                discount_type=item_dtype,
+                discount_value=item_dval,
             )
             created_items.append(invoice_item)
             self.db.add(invoice_item)
@@ -393,6 +470,21 @@ class InvoiceProcessor:
             invoice, created_items, interstate_supply=interstate_supply
         )
         raw_total = _money(taxable_total + tax_total)
+
+        # Apply invoice-level discount
+        invoice.discount_type = payload.discount_type
+        invoice.discount_value = payload.discount_value
+        invoice_discount_amount = Decimal("0")
+        if payload.discount_type and payload.discount_value is not None and payload.discount_value > 0:
+            if payload.discount_type == "percentage":
+                invoice_discount_amount = _money(
+                    raw_total * Decimal(str(payload.discount_value)) / Decimal("100")
+                )
+            else:
+                invoice_discount_amount = _money(Decimal(str(payload.discount_value)))
+            invoice_discount_amount = min(invoice_discount_amount, raw_total)
+            raw_total = _money(raw_total - invoice_discount_amount)
+
         if invoice.apply_round_off:
             rounded_total = raw_total.quantize(
                 Decimal("1"), rounding=ROUND_HALF_UP

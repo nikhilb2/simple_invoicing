@@ -273,6 +273,8 @@ export type Invoice = {
   tax_inclusive: boolean;
   apply_round_off: boolean;
   round_off_amount: number;
+  discount_type?: string | null;
+  discount_value?: number | null;
   supplier_invoice_number?: string | null;
   reference_notes?: string | null;
   ledger: Ledger | null;
@@ -320,8 +322,13 @@ export type InvoiceItem = {
   gst_rate: number;
   taxable_amount: number;
   tax_amount: number;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  igst_amount?: number;
   line_total: number;
   description?: string | null;
+  discount_type?: string | null;
+  discount_value?: number | null;
 };
 
 export type InvoiceItemInput = {
@@ -329,6 +336,8 @@ export type InvoiceItemInput = {
   quantity: number;
   unit_price?: number;
   description?: string;
+  discount_type?: 'percentage' | 'net' | null;
+  discount_value?: number | null;
 };
 
 export type CreditNoteItem = {
@@ -395,6 +404,8 @@ export type InvoiceCreate = {
   reference_notes?: string | null;
   tax_inclusive?: boolean;
   apply_round_off?: boolean;
+  discount_type?: 'percentage' | 'net' | null;
+  discount_value?: number | null;
   shipping_address_same_as_billing?: boolean;
   shipping_address_id?: number | null;
   new_shipping_address?: { label: string; address: string } | null;
