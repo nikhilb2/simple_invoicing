@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
+import { createTerm, deleteTerm, removeLogo, updateTerm, uploadLogo } from '../api/company';
 import StatusToasts from '../components/StatusToasts';
 import { useAuth } from '../context/AuthContext';
 import { useFY } from '../context/FYContext';
-import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, TermCondition } from '../types/api';
+import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, CompanyTermOut } from '../types/api';
 import { isCompanyConfigured } from '../utils/companySetup';
 
 // ---------------------------------------------------------------------------
@@ -35,310 +36,366 @@ function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number, fyLabel?: string 
   return `${s.prefix}${sep}${yearPart}${sep}${seq}${s.suffix}`;
 }
 
-// ---------------------------------------------------------------------------
-// TermsConditionsCard
-// ---------------------------------------------------------------------------
-
-function TermsConditionsCard({
-  terms,
-  onChange,
-}: {
-  terms: TermCondition[];
-  onChange: (terms: TermCondition[]) => void;
-}) {
-  const [newTermText, setNewTermText] = useState('');
-
-  function handleAdd() {
-    const text = newTermText.trim();
-    if (!text) return;
-    const maxId = terms.length > 0 ? Math.max(...terms.map((t) => t.id)) : 0;
-    onChange([...terms, { id: maxId + 1, text }]);
-    setNewTermText('');
-  }
-
-  function handleEdit(id: number, text: string) {
-    onChange(terms.map((t) => (t.id === id ? { ...t, text } : t)));
-  }
-
-  function handleDelete(id: number) {
-    onChange(terms.filter((t) => t.id !== id));
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleAdd();
-    }
-  }
-
-  return (
-    <article className="panel stack">
-      <div className="panel__header">
-        <div>
-          <p className="eyebrow">Branding</p>
-          <h2 className="nav-panel__title">Terms &amp; Conditions</h2>
-        </div>
-      </div>
-      <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '8px' }}>
-        These terms will appear on Sales and Tax Invoice PDFs, ordered by serial number.
-      </p>
-
-      <div className="stack" style={{ gap: '8px' }}>
-        {terms.map((term, index) => (
-          <div
-            key={term.id}
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '8px',
-              padding: '8px 12px',
-              background: '#f9fafb',
-              border: '1px solid #e5e7eb',
-              borderRadius: '6px',
-            }}
-          >
-            <span
-              style={{
-                minWidth: '24px',
-                height: '24px',
-                borderRadius: '50%',
-                background: '#e5e7eb',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                color: '#374151',
-                marginTop: '6px',
-                flexShrink: 0,
-              }}
-            >
-              {index + 1}
-            </span>
-            <input
-              className="input"
-              value={term.text}
-              onChange={(e) => handleEdit(term.id, e.target.value)}
-              placeholder="Enter a term..."
-              style={{ flex: 1 }}
-            />
-            <button
-              type="button"
-              className="button button--danger-outline"
-              style={{ padding: '4px 10px', fontSize: '0.8rem', marginTop: '2px', flexShrink: 0 }}
-              onClick={() => handleDelete(term.id)}
-              title="Remove term"
-              aria-label="Remove term"
-            >
-              ✕
-            </button>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-        <input
-          className="input"
-          value={newTermText}
-          onChange={(e) => setNewTermText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Add a new term..."
-          style={{ flex: 1 }}
-        />
-        <button
-          type="button"
-          className="button button--secondary"
-          onClick={handleAdd}
-          disabled={!newTermText.trim()}
-          style={{ flexShrink: 0 }}
-        >
-          + Add
-        </button>
-      </div>
-    </article>
-  );
-}
+const MAX_LOGO_SIZE_BYTES = 100 * 1024; // 100 KB
 
 // ---------------------------------------------------------------------------
 // LogoUploadCard
 // ---------------------------------------------------------------------------
 
 function LogoUploadCard({
-  currentLogoPath,
-  onLogoChange,
+  logoUrl,
+  onLogoChanged,
 }: {
-  currentLogoPath: string | null;
-  onLogoChange: (path: string | null) => void;
+  logoUrl: string | null;
+  onLogoChanged: () => void;
 }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState('');
+  const [removing, setRemoving] = useState(false);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (currentLogoPath) {
-      setPreviewUrl(`/api/company/logo?t=${Date.now()}`);
-    } else {
-      setPreviewUrl(null);
-    }
-  }, [currentLogoPath]);
-
-  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const validTypes = ['image/png', 'image/jpeg', 'image/jpg'];
-    if (!validTypes.includes(file.type)) {
-      setUploadError('Only PNG, JPG, and JPEG files are supported.');
+    if (file.size > MAX_LOGO_SIZE_BYTES) {
+      setError('File size must be under 512 KB.');
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setUploadError('File size must be under 5 MB.');
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+    if (!allowedTypes.includes(file.type)) {
+      setError('Only PNG, JPG, and JPEG formats are supported.');
       return;
     }
 
-    setUploadError('');
+    setError('');
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await api.post<CompanyProfile>('/company/logo', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      onLogoChange(res.data.logo_path ?? null);
-      setPreviewUrl(`/api/company/logo?t=${Date.now()}`);
+      const base64 = await fileToBase64(file);
+      const data = base64.split(',')[1]; // strip data URI prefix
+      await uploadLogo({ data, mime_type: file.type });
+      onLogoChanged();
     } catch (err) {
-      setUploadError(getApiErrorMessage(err, 'Failed to upload logo'));
+      setError(getApiErrorMessage(err, 'Failed to upload logo'));
     } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      e.target.value = '';
     }
   }
 
   async function handleRemove() {
-    setUploading(true);
+    setRemoving(true);
+    setError('');
     try {
-      const res = await api.delete<CompanyProfile>('/company/logo');
-      onLogoChange(res.data.logo_path ?? null);
-      setPreviewUrl(null);
+      await removeLogo();
+      onLogoChanged();
     } catch (err) {
-      setUploadError(getApiErrorMessage(err, 'Failed to remove logo'));
+      setError(getApiErrorMessage(err, 'Failed to remove logo'));
     } finally {
-      setUploading(false);
+      setRemoving(false);
     }
   }
 
   return (
-    <article className="panel stack">
+    <div className="panel">
       <div className="panel__header">
         <div>
           <p className="eyebrow">Branding</p>
-          <h2 className="nav-panel__title">Company Logo</h2>
+          <h3 className="nav-panel__title">Company Logo</h3>
         </div>
       </div>
+      <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '12px' }}>
+        Upload your company logo (PNG, JPG, JPEG, max 100 KB). It will appear on all generated PDFs.
+      </p>
 
-      {uploadError && (
-        <p style={{ color: 'var(--color-danger, red)', fontSize: '0.875rem' }}>{uploadError}</p>
-      )}
+      {error && <p style={{ color: 'var(--color-danger, red)', fontSize: '0.875rem', marginBottom: '8px' }}>{error}</p>}
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
-        <div
-          style={{
-            width: '150px',
-            height: '150px',
-            border: '2px dashed #d1d5db',
-            borderRadius: '8px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            overflow: 'hidden',
-            background: '#f9fafb',
-            flexShrink: 0,
-          }}
-        >
-          {previewUrl ? (
-            <img
-              src={previewUrl}
-              alt="Company logo"
-              style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-            />
-          ) : (
-            <span style={{ fontSize: '0.8rem', color: '#9ca3af', textAlign: 'center', padding: '8px' }}>
-              No logo uploaded
-            </span>
-          )}
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+        {logoUrl ? (
+          <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '8px', background: '#f9fafb' }}>
+            <img src={logoUrl} alt="Company logo" style={{ maxWidth: '180px', maxHeight: '80px', objectFit: 'contain' }} />
+          </div>
+        ) : (
+          <div style={{ border: '2px dashed #d1d5db', borderRadius: '8px', padding: '24px 32px', textAlign: 'center', color: '#9ca3af', fontSize: '0.875rem' }}>
+            No logo uploaded
+          </div>
+        )}
 
-        <div className="stack" style={{ gap: '8px' }}>
+        <label className="button button--secondary" style={{ cursor: 'pointer' }}>
+          {uploading ? 'Uploading…' : 'Choose file'}
           <input
-            ref={fileInputRef}
             type="file"
-            accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+            accept="image/png,image/jpeg,image/jpg"
             style={{ display: 'none' }}
-            onChange={handleFileSelect}
-          />
-          <button
-            type="button"
-            className="button button--secondary"
+            onChange={handleFileSelected}
             disabled={uploading}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {currentLogoPath ? 'Replace logo' : 'Upload logo'}
+          />
+        </label>
+
+        {logoUrl && (
+          <button className="button button--danger" disabled={removing} onClick={handleRemove}>
+            {removing ? 'Removing…' : 'Remove logo'}
           </button>
-          {currentLogoPath ? (
-            <button
-              type="button"
-              className="button button--danger-outline"
-              disabled={uploading}
-              onClick={handleRemove}
-            >
-              Remove logo
-            </button>
-          ) : null}
-          <small style={{ fontSize: '0.75rem', opacity: 0.6 }}>
-            Supported: PNG, JPG, JPEG &middot; Max 5 MB
-          </small>
-        </div>
+        )}
       </div>
-    </article>
+    </div>
   );
 }
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
 // ---------------------------------------------------------------------------
-// AdditionalCompanyInfoCard
+// AdditionalInfoSection
 // ---------------------------------------------------------------------------
 
-function AdditionalCompanyInfoCard({
+function AdditionalInfoSection({
   value,
-  onChange,
+  onSave,
+  saving,
 }: {
   value: string;
-  onChange: (value: string) => void;
+  onSave: (value: string) => Promise<void>;
+  saving: boolean;
 }) {
+  const [draft, setDraft] = useState(value);
+  const [localError, setLocalError] = useState('');
+  const [localSuccess, setLocalSuccess] = useState('');
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  async function handleSave() {
+    setLocalError('');
+    setLocalSuccess('');
+    try {
+      await onSave(draft);
+      setLocalSuccess('Additional info saved');
+      setTimeout(() => setLocalSuccess(''), 2500);
+    } catch (err) {
+      setLocalError(getApiErrorMessage(err, 'Failed to save'));
+    }
+  }
+
   return (
-    <article className="panel stack">
+    <div className="panel">
       <div className="panel__header">
         <div>
           <p className="eyebrow">Branding</p>
-          <h2 className="nav-panel__title">Additional Company Information</h2>
+          <h3 className="nav-panel__title">Additional Company Information</h3>
         </div>
       </div>
-      <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '8px' }}>
-        This text appears below the logo on all generated PDFs. Use it for taglines, registration details, compliance statements, or contact info.
+      <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '12px' }}>
+        Text displayed below the logo on all generated PDFs. Use this for taglines, registration details, compliance statements, etc.
       </p>
+
+      {localError && <p style={{ color: 'var(--color-danger, red)', fontSize: '0.875rem', marginBottom: '8px' }}>{localError}</p>}
+      {localSuccess && <p style={{ color: 'var(--color-success, green)', fontSize: '0.875rem', marginBottom: '8px' }}>{localSuccess}</p>}
+
       <textarea
         className="textarea"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={`ABC Enterprises Pvt. Ltd.
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder={`Example:
+ABC Enterprises Pvt. Ltd.
 Authorized Distributor of Industrial Products
 GSTIN: 07ABCDE1234F1Z5
 Customer Care: +91 XXXXX XXXXX`}
         rows={5}
-        style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
+        style={{ width: '100%', minHeight: '120px', resize: 'vertical' }}
       />
-    </article>
+
+      <div className="button-row" style={{ marginTop: '12px' }}>
+        <button className="button button--primary" disabled={saving} onClick={handleSave}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TermsAndConditionsCard
+// ---------------------------------------------------------------------------
+
+function TermsAndConditionsCard({ companyId }: { companyId: number }) {
+  const [terms, setTerms] = useState<CompanyTermOut[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newTermContent, setNewTermContent] = useState('');
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    loadTerms();
+  }, [companyId]);
+
+  async function loadTerms() {
+    setLoading(true);
+    try {
+      const res = await api.get<CompanyTermOut[]>('/company/terms');
+      setTerms(res.data);
+    } catch {
+      // non-admin
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleAddTerm() {
+    const content = newTermContent.trim();
+    if (!content) return;
+    setSaving(true);
+    setError('');
+    try {
+      await createTerm({ content });
+      setNewTermContent('');
+      await loadTerms();
+      setSuccess('Term added');
+      setTimeout(() => setSuccess(''), 2500);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to add term'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleUpdateTerm(termId: number) {
+    const content = editContent.trim();
+    if (!content) return;
+    setSaving(true);
+    setError('');
+    try {
+      await updateTerm(termId, { content });
+      setEditingId(null);
+      setEditContent('');
+      await loadTerms();
+      setSuccess('Term updated');
+      setTimeout(() => setSuccess(''), 2500);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to update term'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteTerm(termId: number) {
+    if (!confirm('Delete this term?')) return;
+    setSaving(true);
+    setError('');
+    try {
+      const updatedList = await deleteTerm(termId);
+      setTerms(updatedList);
+      setSuccess('Term deleted');
+      setTimeout(() => setSuccess(''), 2500);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to delete term'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function startEdit(term: CompanyTermOut) {
+    setEditingId(term.id);
+    setEditContent(term.content);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditContent('');
+  }
+
+  if (loading) return <div className="empty-state">Loading terms…</div>;
+
+  return (
+    <div className="panel">
+      <div className="panel__header">
+        <div>
+          <p className="eyebrow">Terms &amp; Conditions</p>
+          <h3 className="nav-panel__title">Invoice Terms</h3>
+        </div>
+      </div>
+      <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '12px' }}>
+        Manage terms that will appear on Sales and Tax Invoices. Terms are automatically serial numbered and appear in order.
+      </p>
+
+      {error && <p style={{ color: 'var(--color-danger, red)', fontSize: '0.875rem', marginBottom: '8px' }}>{error}</p>}
+      {success && <p style={{ color: 'var(--color-success, green)', fontSize: '0.875rem', marginBottom: '8px' }}>{success}</p>}
+
+      {/* Add new term */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+        <input
+          className="input"
+          value={newTermContent}
+          onChange={(e) => setNewTermContent(e.target.value)}
+          placeholder="Add a new term..."
+          style={{ flex: 1 }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleAddTerm(); } }}
+        />
+        <button
+          className="button button--primary"
+          disabled={saving || !newTermContent.trim()}
+          onClick={handleAddTerm}
+        >
+          Add
+        </button>
+      </div>
+
+      {/* Existing terms list */}
+      {terms.length === 0 ? (
+        <p style={{ fontSize: '0.875rem', color: '#9ca3af' }}>No terms added yet.</p>
+      ) : (
+        <div className="stack" style={{ gap: '8px' }}>
+          {terms.map((term) => (
+            <div key={term.id} style={{ border: '1px solid #e5e7eb', borderRadius: '6px', padding: '10px 12px' }}>
+              {editingId === term.id ? (
+                <div>
+                  <textarea
+                    className="textarea"
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    rows={2}
+                    style={{ width: '100%', marginBottom: '8px', resize: 'vertical' }}
+                  />
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className="button button--primary" style={{ padding: '4px 12px', fontSize: '0.85rem' }} disabled={saving} onClick={() => void handleUpdateTerm(term.id)}>
+                      Save
+                    </button>
+                    <button className="button button--ghost" style={{ padding: '4px 12px', fontSize: '0.85rem' }} onClick={cancelEdit}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontWeight: 600, fontSize: '0.875rem', marginRight: '8px' }}>{term.serial_number}.</span>
+                    <span style={{ fontSize: '0.875rem' }}>{term.content}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                    <button className="button button--secondary" style={{ padding: '2px 10px', fontSize: '0.8rem' }} onClick={() => startEdit(term)}>
+                      Edit
+                    </button>
+                    <button className="button button--danger" style={{ padding: '2px 10px', fontSize: '0.8rem' }} disabled={saving} onClick={() => void handleDeleteTerm(term.id)}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -572,12 +629,13 @@ export default function CompanyPage() {
     currency_code: 'USD',
     email: '',
     website: '',
-    terms_and_conditions: [],
-    additional_company_info: '',
   });
-  const [logoPath, setLogoPath] = useState<string | null>(null);
+  const [companyId, setCompanyId] = useState<number>(0);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [additionalInfo, setAdditionalInfo] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [additionalSaving, setAdditionalSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [initialSetupRequired, setInitialSetupRequired] = useState<boolean | null>(null);
@@ -597,21 +655,26 @@ export default function CompanyPage() {
       setLoading(true);
       setError('');
       const response = await api.get<CompanyProfile>('/company/');
+      const data = response.data;
       if (initialSetupRequired === null) {
-        setInitialSetupRequired(!isCompanyConfigured(response.data));
+        setInitialSetupRequired(!isCompanyConfigured(data));
       }
+      setCompanyId(data.id);
       setForm({
-        name: response.data.name || '',
-        address: response.data.address || '',
-        gst: response.data.gst || '',
-        phone_number: response.data.phone_number || '',
-        currency_code: response.data.currency_code || 'USD',
-        email: response.data.email || '',
-        website: response.data.website || '',
-        terms_and_conditions: response.data.terms_and_conditions || [],
-        additional_company_info: response.data.additional_company_info || '',
+        name: data.name || '',
+        address: data.address || '',
+        gst: data.gst || '',
+        phone_number: data.phone_number || '',
+        currency_code: data.currency_code || 'USD',
+        email: data.email || '',
+        website: data.website || '',
       });
-      setLogoPath(response.data.logo_path ?? null);
+      setAdditionalInfo(data.additional_company_info || '');
+      if (data.logo_data && data.logo_mime_type) {
+        setLogoUrl(`data:${data.logo_mime_type};base64,${data.logo_data}`);
+      } else {
+        setLogoUrl(null);
+      }
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to load company profile'));
     } finally {
@@ -639,11 +702,9 @@ export default function CompanyPage() {
         currency_code: form.currency_code.trim().toUpperCase(),
         email: form.email.trim(),
         website: form.website.trim(),
-        terms_and_conditions: form.terms_and_conditions || [],
-        additional_company_info: form.additional_company_info?.trim() || null,
       };
 
-      await api.put<CompanyProfile>('/company/', payload);
+      await api.put<CompanyProfileUpdate>('/company/', payload);
       setSuccess('Company profile saved. New invoices will now show this as billing company.');
       if (initialSetupRequired && payload.name) {
         setShowFirstSetupPrompt(true);
@@ -653,6 +714,20 @@ export default function CompanyPage() {
       setError(getApiErrorMessage(err, 'Unable to save company profile'));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleAdditionalInfoSave(value: string) {
+    setAdditionalSaving(true);
+    try {
+      const payload: CompanyProfileUpdate = {
+        ...form,
+        additional_company_info: value,
+      };
+      await api.put('/company/', payload);
+      setAdditionalInfo(value);
+    } finally {
+      setAdditionalSaving(false);
     }
   }
 
@@ -685,15 +760,13 @@ export default function CompanyPage() {
     }
   }
 
-  const isSavingAny = submitting;
-
   return (
     <div className="page-grid">
       <section className="page-hero">
         <div>
           <p className="eyebrow">Company</p>
           <h1 className="page-title">Billing identity</h1>
-          <p className="section-copy">Set the company details that appear as the billing party on all new invoices.</p>
+          <p className="section-copy">Set the company details, branding, and legal terms that appear on invoices and other documents.</p>
         </div>
       </section>
 
@@ -766,7 +839,21 @@ export default function CompanyPage() {
         </div>
       ) : null}
 
-      <form className="content-grid" onSubmit={handleSubmit}>
+      {/* -------- Branding Section (Logo + Additional Info) -------- */}
+      {!loading && (
+        <section className="content-grid">
+          <article className="panel stack" style={{ gap: '24px' }}>
+            <LogoUploadCard logoUrl={logoUrl} onLogoChanged={loadCompanyProfile} />
+            <AdditionalInfoSection
+              value={additionalInfo}
+              onSave={handleAdditionalInfoSave}
+              saving={additionalSaving}
+            />
+          </article>
+        </section>
+      )}
+
+      <section className="content-grid">
         <article
           className="panel stack"
           ref={companySetupSectionRef}
@@ -782,7 +869,7 @@ export default function CompanyPage() {
           {loading ? <div className="empty-state">Loading company profile...</div> : null}
 
           {!loading ? (
-            <>
+            <form className="stack" onSubmit={handleSubmit}>
               <div className="field-grid">
                 <div className="field">
                   <label htmlFor="company-name">Company name</label>
@@ -887,33 +974,21 @@ export default function CompanyPage() {
                   </div>
                 </div>
               </div>
-            </>
+
+              <div className="button-row">
+                <button className="button button--primary" disabled={submitting} title="Save company details" aria-label="Save company details">
+                  {submitting ? 'Saving company...' : 'Save company details'}
+                </button>
+              </div>
+            </form>
           ) : null}
         </article>
 
-        <LogoUploadCard
-          currentLogoPath={logoPath}
-          onLogoChange={setLogoPath}
-        />
+        {/* Terms & Conditions */}
+        {!loading && companyId > 0 && (
+          <TermsAndConditionsCard companyId={companyId} />
+        )}
 
-        <AdditionalCompanyInfoCard
-          value={form.additional_company_info || ''}
-          onChange={(v) => setForm((current) => ({ ...current, additional_company_info: v }))}
-        />
-
-        <TermsConditionsCard
-          terms={form.terms_and_conditions || []}
-          onChange={(terms) => setForm((current) => ({ ...current, terms_and_conditions: terms }))}
-        />
-
-        <div className="button-row" style={{ marginTop: '16px' }}>
-          <button className="button button--primary" disabled={isSavingAny || loading} title="Save all company details" aria-label="Save all company details">
-            {isSavingAny ? 'Saving all...' : 'Save all company details'}
-          </button>
-        </div>
-      </form>
-
-      <section className="content-grid">
         <InvoiceSeriesCard sectionRef={seriesSectionRef} />
       </section>
     </div>

@@ -3,9 +3,22 @@ from pydantic import BaseModel, field_validator
 from src.core.validation import normalize_gstin
 
 
-class TermCondition(BaseModel):
+class CompanyTermOut(BaseModel):
     id: int
-    text: str
+    company_id: int
+    serial_number: int
+    content: str
+
+    class Config:
+        from_attributes = True
+
+
+class CompanyTermCreate(BaseModel):
+    content: str
+
+
+class CompanyTermUpdate(BaseModel):
+    content: str
 
 
 class CompanyProfileBase(BaseModel):
@@ -21,8 +34,6 @@ class CompanyProfileBase(BaseModel):
     account_name: str | None = None
     account_number: str | None = None
     ifsc_code: str | None = None
-    terms_and_conditions: list[TermCondition] = []
-    logo_path: str | None = None
     additional_company_info: str | None = None
 
 
@@ -35,9 +46,17 @@ class CompanyProfileUpdate(CompanyProfileBase):
 
 class CompanyProfileOut(CompanyProfileBase):
     id: int
+    logo_data: str | None = None
+    logo_mime_type: str | None = None
+    terms: list[CompanyTermOut] = []
 
     class Config:
         from_attributes = True
+
+
+class CompanyProfileOutWithLogo(CompanyProfileOut):
+    """Extended output that includes logo as base64 data URI for frontend display."""
+    logo_url: str | None = None
 
 
 class CompanyListItem(BaseModel):

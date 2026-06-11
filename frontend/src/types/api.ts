@@ -154,6 +154,13 @@ export type PaginatedInvoices = {
 export type CreditNoteType = 'return' | 'discount' | 'adjustment';
 export type CreditNoteStatus = 'active' | 'cancelled';
 
+export type CompanyTermOut = {
+  id: number;
+  company_id: number;
+  serial_number: number;
+  content: string;
+};
+
 export type CompanyProfile = {
   id: number;
   name: string;
@@ -168,9 +175,10 @@ export type CompanyProfile = {
   account_name: string | null;
   account_number: string | null;
   ifsc_code: string | null;
-  terms_and_conditions: TermCondition[];
-  logo_path: string | null;
+  logo_data: string | null;
+  logo_mime_type: string | null;
   additional_company_info: string | null;
+  terms: CompanyTermOut[];
 };
 
 export type CompanyListItem = {
@@ -204,14 +212,7 @@ export type CompanyProfileUpdate = {
   account_name?: string;
   account_number?: string;
   ifsc_code?: string;
-  terms_and_conditions?: TermCondition[];
-  logo_path?: string | null;
   additional_company_info?: string | null;
-};
-
-export type TermCondition = {
-  id: number;
-  text: string;
 };
 
 export type CompanyAccountType = 'bank' | 'cash';
@@ -279,6 +280,10 @@ export type Invoice = {
   company_account_name: string | null;
   company_account_number: string | null;
   company_ifsc_code: string | null;
+  company_logo_data: string | null;
+  company_logo_mime_type: string | null;
+  company_additional_info: string | null;
+  company_terms_text: string | null;
   voucher_type: 'sales' | 'purchase';
   status: 'active' | 'cancelled';
   tax_inclusive: boolean;

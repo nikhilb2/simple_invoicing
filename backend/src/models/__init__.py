@@ -13,3 +13,4 @@ from src.models.global_settings import GlobalSettings
 from src.models.bom import BillOfMaterial
 from src.models.production_transaction import ProductionTransaction
 from src.models.email_log import EmailLog
+from src.models.company_term import CompanyTerm
