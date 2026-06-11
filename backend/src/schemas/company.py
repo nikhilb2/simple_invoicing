@@ -3,6 +3,11 @@ from pydantic import BaseModel, field_validator
 from src.core.validation import normalize_gstin
 
 
+class TermCondition(BaseModel):
+    id: int
+    text: str
+
+
 class CompanyProfileBase(BaseModel):
     name: str
     address: str
@@ -16,6 +21,9 @@ class CompanyProfileBase(BaseModel):
     account_name: str | None = None
     account_number: str | None = None
     ifsc_code: str | None = None
+    terms_and_conditions: list[TermCondition] = []
+    logo_path: str | None = None
+    additional_company_info: str | None = None
 
 
 class CompanyProfileUpdate(CompanyProfileBase):

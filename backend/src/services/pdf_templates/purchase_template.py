@@ -34,7 +34,7 @@ def _is_interstate_supply(company_gst: str | None, ledger_gst: str | None) -> bo
     return company_gst[:2] != ledger_gst[:2]
 
 
-def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> str:
+def _build_purchase_invoice_html(invoice: Invoice, products: list[Product], company_logo_base64: str | None = None) -> str:
     """Generate HTML for a purchase invoice (supplier at top-left, your company top-right,
     no bank details in footer, optional supplier ref row)."""
     currency = invoice.company_currency_code or "USD"
@@ -104,6 +104,33 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
   <section class="invoice-sheet__supplierref">
     <span class="eyebrow">Supplier Ref:</span>
     <span class="invoice-sheet__supplierref-value">{_e(invoice.supplier_invoice_number)}</span>
+  </section>"""
+
+    # Company logo — show at top if provided
+    logo_html = ""
+    if company_logo_base64:
+        logo_html = f'<img src="data:image/png;base64,{company_logo_base64}" style="max-width:200px;display:block;margin-bottom:12px;" alt="Company logo" />'
+
+    # Additional company info
+    additional_info_html = ""
+    if invoice.company_additional_info:
+        additional_info_html = f"""
+  <div class="invoice-sheet__additional-info">
+    <p class="eyebrow">Additional Info</p>
+    <p>{_e(invoice.company_additional_info)}</p>
+  </div>"""
+
+    # Terms & Conditions
+    terms_html = ""
+    if invoice.company_terms:
+        term_items = "".join(
+            f"<li>{_e(t.get('text', str(t)) if isinstance(t, dict) else str(t))}</li>"
+            for t in invoice.company_terms
+        )
+        terms_html = f"""
+  <section class="invoice-sheet__terms">
+    <p class="eyebrow">Terms &amp; Conditions</p>
+    <ol>{term_items}</ol>
   </section>"""
 
     round_off_amount = float(invoice.round_off_amount or 0)
@@ -271,10 +298,36 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     color: #374151;
     margin-top: 2px;
   }}
+  .invoice-sheet__additional-info {{
+    border: 1px dashed #d1d5db;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    background: #fffbeb;
+  }}
+  .invoice-sheet__additional-info p {{
+    font-size: 9px;
+    color: #374151;
+  }}
+  .invoice-sheet__terms {{
+    margin-top: 14px;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 10px;
+  }}
+  .invoice-sheet__terms ol {{
+    margin-left: 16px;
+    margin-top: 4px;
+  }}
+  .invoice-sheet__terms li {{
+    font-size: 9px;
+    color: #4b5563;
+    margin-bottom: 2px;
+  }}
 </style>
 </head>
 <body>
 <div class="invoice-sheet">
+  {logo_html}
   <header class="invoice-sheet__header">
     <div>
       <p class="eyebrow">Supplier</p>
@@ -295,6 +348,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     <h2>Invoice {_e(inv_number)}</h2>
     <p>Date: {inv_date} &nbsp;&middot;&nbsp; Currency: {_e(currency)}</p>
   </div>
+{additional_info_html}
 {supplier_ref_html}
   <section>
     <table class="invoice-sheet__table">
@@ -331,6 +385,8 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
       <p class="muted-text">Received by {_e(invoice.company_name) or 'Your company'}</p>
     </div>
   </section>
+
+  {terms_html}
 </div>
 </body>
 </html>"""

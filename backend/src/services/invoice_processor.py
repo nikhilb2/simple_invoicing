@@ -372,6 +372,8 @@ class InvoiceProcessor:
         invoice.company_account_name = company.account_name if company else None
         invoice.company_account_number = company.account_number if company else None
         invoice.company_ifsc_code = company.ifsc_code if company else None
+        invoice.company_terms = company.terms_and_conditions if company else None
+        invoice.company_additional_info = company.additional_company_info if company else None
         invoice.voucher_type = payload.voucher_type
         invoice.supplier_invoice_number = payload.supplier_invoice_number
         invoice.reference_notes = payload.reference_notes

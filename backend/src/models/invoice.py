@@ -1,4 +1,5 @@
 from sqlalchemy import Boolean, Column, Integer, ForeignKey, DateTime, Numeric, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.db.base import Base
@@ -27,6 +28,8 @@ class Invoice(Base):
     company_account_name = Column(String, nullable=True)
     company_account_number = Column(String, nullable=True)
     company_ifsc_code = Column(String, nullable=True)
+    company_terms = Column(JSONB, nullable=True)
+    company_additional_info = Column(Text, nullable=True)
     voucher_type = Column(String, nullable=False, default="sales")
     supplier_invoice_number = Column(String, nullable=True)
     reference_notes = Column(String, nullable=True)

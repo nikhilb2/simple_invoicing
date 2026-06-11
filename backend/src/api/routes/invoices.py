@@ -1,3 +1,4 @@
+import base64
 from io import BytesIO
 from datetime import date, datetime
 
@@ -343,15 +344,28 @@ def update_invoice(
 
 
 
-def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount]) -> BytesIO:
-    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1))
+def _load_company_logo_base64(company: CompanyProfile) -> str | None:
+    """Read the company logo file from disk and return as a base64-encoded string."""
+    if not company.logo_path:
+        return None
+    try:
+        with open(company.logo_path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    except (FileNotFoundError, IsADirectoryError, OSError):
+        return None
+
+
+def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], active_company: CompanyProfile | None = None) -> BytesIO:
+    company_logo_base64 = _load_company_logo_base64(active_company) if active_company else None
+    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), company_logo_base64=company_logo_base64)
     pdf_bytes = weasyprint.HTML(string=html).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
 
 
-def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int) -> BytesIO:
-    html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies)
+def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, active_company: CompanyProfile | None = None) -> BytesIO:
+    company_logo_base64 = _load_company_logo_base64(active_company) if active_company else None
+    html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies, company_logo_base64=company_logo_base64)
     pdf_bytes = weasyprint.HTML(string=html).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
@@ -395,7 +409,7 @@ def download_invoice_pdf(
       .all()
     )
 
-    pdf_buffer = _build_multi_copy_invoice_pdf(invoice, products, invoice_bank_accounts, copies)
+    pdf_buffer = _build_multi_copy_invoice_pdf(invoice, products, invoice_bank_accounts, copies, active_company=active_company)
     filename = f"invoice_{invoice.invoice_number or invoice.id}.pdf"
 
     return StreamingResponse(

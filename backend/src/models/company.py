@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 
 from src.db.base import Base
 
@@ -19,3 +20,6 @@ class CompanyProfile(Base):
     account_name = Column(String, nullable=True)
     account_number = Column(String, nullable=True)
     ifsc_code = Column(String, nullable=True)
+    terms_and_conditions = Column(JSONB, default=list, nullable=True)
+    logo_path = Column(String(512), nullable=True)
+    additional_company_info = Column(Text, nullable=True)
