@@ -1,4 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+import json
+import os
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -16,6 +21,15 @@ from src.schemas.company import (
 )
 
 router = APIRouter()
+
+LOGO_UPLOAD_DIR = Path("uploads/logos")
+ALLOWED_LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg"}
+MAX_LOGO_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
+def _get_logo_dir() -> Path:
+    LOGO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    return LOGO_UPLOAD_DIR
 
 
 def _get_max_companies(db: Session) -> int:
@@ -47,6 +61,8 @@ def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> Compa
         account_name=payload.account_name.strip() if payload.account_name else None,
         account_number=payload.account_number.strip() if payload.account_number else None,
         ifsc_code=payload.ifsc_code.strip().upper() if payload.ifsc_code else None,
+        terms_and_conditions=[t.model_dump() for t in (payload.terms_and_conditions or [])],
+        additional_company_info=payload.additional_company_info,
     )
     db.add(profile)
     db.commit()
@@ -68,6 +84,8 @@ def _create_blank_company_profile(db: Session) -> CompanyProfile:
         account_name="",
         account_number="",
         ifsc_code="",
+        terms_and_conditions=[],
+        additional_company_info=None,
     )
     db.add(profile)
     db.commit()
@@ -79,6 +97,23 @@ def _set_active_company(db: Session, user: User, company_id: int) -> None:
     user.active_company_id = company_id
     db.commit()
     db.refresh(user)
+
+
+def _apply_branding_fields(profile: CompanyProfile, payload: CompanyProfileUpdate) -> None:
+    profile.name = payload.name.strip()
+    profile.address = payload.address.strip()
+    profile.gst = payload.gst.strip().upper()
+    profile.phone_number = payload.phone_number.strip()
+    profile.currency_code = payload.currency_code.strip().upper() if payload.currency_code else "USD"
+    profile.email = payload.email.strip() if payload.email else None
+    profile.website = payload.website.strip() if payload.website else None
+    profile.bank_name = payload.bank_name.strip() if payload.bank_name else None
+    profile.branch_name = payload.branch_name.strip() if payload.branch_name else None
+    profile.account_name = payload.account_name.strip() if payload.account_name else None
+    profile.account_number = payload.account_number.strip() if payload.account_number else None
+    profile.ifsc_code = payload.ifsc_code.strip().upper() if payload.ifsc_code else None
+    profile.terms_and_conditions = [t.model_dump() for t in (payload.terms_and_conditions or [])]
+    profile.additional_company_info = payload.additional_company_info
 
 
 @router.get("/companies", response_model=list[CompanyListItem])
@@ -172,18 +207,93 @@ def upsert_company_profile(
             raise
         profile = _create_blank_company_profile(db)
         _set_active_company(db, current_user, profile.id)
-    profile.name = payload.name.strip()
-    profile.address = payload.address.strip()
-    profile.gst = payload.gst.strip().upper()
-    profile.phone_number = payload.phone_number.strip()
-    profile.currency_code = payload.currency_code.strip().upper() if payload.currency_code else "USD"
-    profile.email = payload.email.strip() if payload.email else None
-    profile.website = payload.website.strip() if payload.website else None
-    profile.bank_name = payload.bank_name.strip() if payload.bank_name else None
-    profile.branch_name = payload.branch_name.strip() if payload.branch_name else None
-    profile.account_name = payload.account_name.strip() if payload.account_name else None
-    profile.account_number = payload.account_number.strip() if payload.account_number else None
-    profile.ifsc_code = payload.ifsc_code.strip().upper() if payload.ifsc_code else None
+    _apply_branding_fields(profile, payload)
     db.commit()
     db.refresh(profile)
+    return profile
+
+
+# ---------------------------------------------------------------------------
+# Logo endpoints
+# ---------------------------------------------------------------------------
+
+@router.post("/logo", response_model=CompanyProfileOut)
+async def upload_logo(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+):
+    """Upload or replace company logo."""
+    profile = get_active_company(db=db, current_user=current_user, requested_company_id=None)
+
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in ALLOWED_LOGO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_LOGO_EXTENSIONS)}",
+        )
+
+    contents = await file.read()
+    if len(contents) > MAX_LOGO_SIZE_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size: {MAX_LOGO_SIZE_BYTES // 1024 // 1024} MB",
+        )
+
+    # Remove old logo if exists
+    if profile.logo_path:
+        old_path = Path(profile.logo_path)
+        if old_path.exists():
+            old_path.unlink()
+
+    logo_dir = _get_logo_dir()
+    logo_filename = f"company_{profile.id}{ext}"
+    logo_path = logo_dir / logo_filename
+
+    with open(logo_path, "wb") as f:
+        f.write(contents)
+
+    profile.logo_path = str(logo_path.resolve())
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+@router.get("/logo")
+def get_logo(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Serve the company logo file."""
+    profile = get_active_company(db=db, current_user=current_user, requested_company_id=None)
+
+    if not profile.logo_path:
+        raise HTTPException(status_code=404, detail="No logo uploaded")
+
+    logo_path = Path(profile.logo_path)
+    if not logo_path.exists():
+        raise HTTPException(status_code=404, detail="Logo file not found on disk")
+
+    return FileResponse(
+        path=str(logo_path),
+        media_type=f"image/{logo_path.suffix.lower().lstrip('.')}",
+    )
+
+
+@router.delete("/logo", response_model=CompanyProfileOut)
+def delete_logo(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+):
+    """Remove the company logo."""
+    profile = get_active_company(db=db, current_user=current_user, requested_company_id=None)
+
+    if profile.logo_path:
+        logo_path = Path(profile.logo_path)
+        if logo_path.exists():
+            logo_path.unlink()
+        profile.logo_path = None
+        db.commit()
+        db.refresh(profile)
+
     return profile

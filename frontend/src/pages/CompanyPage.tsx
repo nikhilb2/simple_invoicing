@@ -4,7 +4,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import { useAuth } from '../context/AuthContext';
 import { useFY } from '../context/FYContext';
-import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate } from '../types/api';
+import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, TermCondition } from '../types/api';
 import { isCompanyConfigured } from '../utils/companySetup';
 
 // ---------------------------------------------------------------------------
@@ -33,6 +33,313 @@ function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number, fyLabel?: string 
     yearPart = `${now.getFullYear()}`;
   }
   return `${s.prefix}${sep}${yearPart}${sep}${seq}${s.suffix}`;
+}
+
+// ---------------------------------------------------------------------------
+// TermsConditionsCard
+// ---------------------------------------------------------------------------
+
+function TermsConditionsCard({
+  terms,
+  onChange,
+}: {
+  terms: TermCondition[];
+  onChange: (terms: TermCondition[]) => void;
+}) {
+  const [newTermText, setNewTermText] = useState('');
+
+  function handleAdd() {
+    const text = newTermText.trim();
+    if (!text) return;
+    const maxId = terms.length > 0 ? Math.max(...terms.map((t) => t.id)) : 0;
+    onChange([...terms, { id: maxId + 1, text }]);
+    setNewTermText('');
+  }
+
+  function handleEdit(id: number, text: string) {
+    onChange(terms.map((t) => (t.id === id ? { ...t, text } : t)));
+  }
+
+  function handleDelete(id: number) {
+    onChange(terms.filter((t) => t.id !== id));
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAdd();
+    }
+  }
+
+  return (
+    <article className="panel stack">
+      <div className="panel__header">
+        <div>
+          <p className="eyebrow">Branding</p>
+          <h2 className="nav-panel__title">Terms &amp; Conditions</h2>
+        </div>
+      </div>
+      <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '8px' }}>
+        These terms will appear on Sales and Tax Invoice PDFs, ordered by serial number.
+      </p>
+
+      <div className="stack" style={{ gap: '8px' }}>
+        {terms.map((term, index) => (
+          <div
+            key={term.id}
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '8px',
+              padding: '8px 12px',
+              background: '#f9fafb',
+              border: '1px solid #e5e7eb',
+              borderRadius: '6px',
+            }}
+          >
+            <span
+              style={{
+                minWidth: '24px',
+                height: '24px',
+                borderRadius: '50%',
+                background: '#e5e7eb',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                color: '#374151',
+                marginTop: '6px',
+                flexShrink: 0,
+              }}
+            >
+              {index + 1}
+            </span>
+            <input
+              className="input"
+              value={term.text}
+              onChange={(e) => handleEdit(term.id, e.target.value)}
+              placeholder="Enter a term..."
+              style={{ flex: 1 }}
+            />
+            <button
+              type="button"
+              className="button button--danger-outline"
+              style={{ padding: '4px 10px', fontSize: '0.8rem', marginTop: '2px', flexShrink: 0 }}
+              onClick={() => handleDelete(term.id)}
+              title="Remove term"
+              aria-label="Remove term"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+        <input
+          className="input"
+          value={newTermText}
+          onChange={(e) => setNewTermText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Add a new term..."
+          style={{ flex: 1 }}
+        />
+        <button
+          type="button"
+          className="button button--secondary"
+          onClick={handleAdd}
+          disabled={!newTermText.trim()}
+          style={{ flexShrink: 0 }}
+        >
+          + Add
+        </button>
+      </div>
+    </article>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// LogoUploadCard
+// ---------------------------------------------------------------------------
+
+function LogoUploadCard({
+  currentLogoPath,
+  onLogoChange,
+}: {
+  currentLogoPath: string | null;
+  onLogoChange: (path: string | null) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+
+  useEffect(() => {
+    if (currentLogoPath) {
+      setPreviewUrl(`/api/company/logo?t=${Date.now()}`);
+    } else {
+      setPreviewUrl(null);
+    }
+  }, [currentLogoPath]);
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+    if (!validTypes.includes(file.type)) {
+      setUploadError('Only PNG, JPG, and JPEG files are supported.');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError('File size must be under 5 MB.');
+      return;
+    }
+
+    setUploadError('');
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await api.post<CompanyProfile>('/company/logo', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      onLogoChange(res.data.logo_path ?? null);
+      setPreviewUrl(`/api/company/logo?t=${Date.now()}`);
+    } catch (err) {
+      setUploadError(getApiErrorMessage(err, 'Failed to upload logo'));
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  async function handleRemove() {
+    setUploading(true);
+    try {
+      const res = await api.delete<CompanyProfile>('/company/logo');
+      onLogoChange(res.data.logo_path ?? null);
+      setPreviewUrl(null);
+    } catch (err) {
+      setUploadError(getApiErrorMessage(err, 'Failed to remove logo'));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <article className="panel stack">
+      <div className="panel__header">
+        <div>
+          <p className="eyebrow">Branding</p>
+          <h2 className="nav-panel__title">Company Logo</h2>
+        </div>
+      </div>
+
+      {uploadError && (
+        <p style={{ color: 'var(--color-danger, red)', fontSize: '0.875rem' }}>{uploadError}</p>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+        <div
+          style={{
+            width: '150px',
+            height: '150px',
+            border: '2px dashed #d1d5db',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            background: '#f9fafb',
+            flexShrink: 0,
+          }}
+        >
+          {previewUrl ? (
+            <img
+              src={previewUrl}
+              alt="Company logo"
+              style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+            />
+          ) : (
+            <span style={{ fontSize: '0.8rem', color: '#9ca3af', textAlign: 'center', padding: '8px' }}>
+              No logo uploaded
+            </span>
+          )}
+        </div>
+
+        <div className="stack" style={{ gap: '8px' }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+            style={{ display: 'none' }}
+            onChange={handleFileSelect}
+          />
+          <button
+            type="button"
+            className="button button--secondary"
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {currentLogoPath ? 'Replace logo' : 'Upload logo'}
+          </button>
+          {currentLogoPath ? (
+            <button
+              type="button"
+              className="button button--danger-outline"
+              disabled={uploading}
+              onClick={handleRemove}
+            >
+              Remove logo
+            </button>
+          ) : null}
+          <small style={{ fontSize: '0.75rem', opacity: 0.6 }}>
+            Supported: PNG, JPG, JPEG &middot; Max 5 MB
+          </small>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AdditionalCompanyInfoCard
+// ---------------------------------------------------------------------------
+
+function AdditionalCompanyInfoCard({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <article className="panel stack">
+      <div className="panel__header">
+        <div>
+          <p className="eyebrow">Branding</p>
+          <h2 className="nav-panel__title">Additional Company Information</h2>
+        </div>
+      </div>
+      <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '8px' }}>
+        This text appears below the logo on all generated PDFs. Use it for taglines, registration details, compliance statements, or contact info.
+      </p>
+      <textarea
+        className="textarea"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={`ABC Enterprises Pvt. Ltd.
+Authorized Distributor of Industrial Products
+GSTIN: 07ABCDE1234F1Z5
+Customer Care: +91 XXXXX XXXXX`}
+        rows={5}
+        style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
+      />
+    </article>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -265,7 +572,10 @@ export default function CompanyPage() {
     currency_code: 'USD',
     email: '',
     website: '',
+    terms_and_conditions: [],
+    additional_company_info: '',
   });
+  const [logoPath, setLogoPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -298,7 +608,10 @@ export default function CompanyPage() {
         currency_code: response.data.currency_code || 'USD',
         email: response.data.email || '',
         website: response.data.website || '',
+        terms_and_conditions: response.data.terms_and_conditions || [],
+        additional_company_info: response.data.additional_company_info || '',
       });
+      setLogoPath(response.data.logo_path ?? null);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to load company profile'));
     } finally {
@@ -326,6 +639,8 @@ export default function CompanyPage() {
         currency_code: form.currency_code.trim().toUpperCase(),
         email: form.email.trim(),
         website: form.website.trim(),
+        terms_and_conditions: form.terms_and_conditions || [],
+        additional_company_info: form.additional_company_info?.trim() || null,
       };
 
       await api.put<CompanyProfile>('/company/', payload);
@@ -369,6 +684,8 @@ export default function CompanyPage() {
       navigate('/company', { replace: true });
     }
   }
+
+  const isSavingAny = submitting;
 
   return (
     <div className="page-grid">
@@ -449,7 +766,7 @@ export default function CompanyPage() {
         </div>
       ) : null}
 
-      <section className="content-grid">
+      <form className="content-grid" onSubmit={handleSubmit}>
         <article
           className="panel stack"
           ref={companySetupSectionRef}
@@ -465,7 +782,7 @@ export default function CompanyPage() {
           {loading ? <div className="empty-state">Loading company profile...</div> : null}
 
           {!loading ? (
-            <form className="stack" onSubmit={handleSubmit}>
+            <>
               <div className="field-grid">
                 <div className="field">
                   <label htmlFor="company-name">Company name</label>
@@ -570,16 +887,33 @@ export default function CompanyPage() {
                   </div>
                 </div>
               </div>
-
-              <div className="button-row">
-                <button className="button button--primary" disabled={submitting} title="Save company details" aria-label="Save company details">
-                  {submitting ? 'Saving company...' : 'Save company details'}
-                </button>
-              </div>
-            </form>
+            </>
           ) : null}
         </article>
 
+        <LogoUploadCard
+          currentLogoPath={logoPath}
+          onLogoChange={setLogoPath}
+        />
+
+        <AdditionalCompanyInfoCard
+          value={form.additional_company_info || ''}
+          onChange={(v) => setForm((current) => ({ ...current, additional_company_info: v }))}
+        />
+
+        <TermsConditionsCard
+          terms={form.terms_and_conditions || []}
+          onChange={(terms) => setForm((current) => ({ ...current, terms_and_conditions: terms }))}
+        />
+
+        <div className="button-row" style={{ marginTop: '16px' }}>
+          <button className="button button--primary" disabled={isSavingAny || loading} title="Save all company details" aria-label="Save all company details">
+            {isSavingAny ? 'Saving all...' : 'Save all company details'}
+          </button>
+        </div>
+      </form>
+
+      <section className="content-grid">
         <InvoiceSeriesCard sectionRef={seriesSectionRef} />
       </section>
     </div>

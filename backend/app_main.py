@@ -17,9 +17,17 @@ Base.metadata.create_all(bind=engine)
 
 
 def run_pending_migrations() -> None:
-    """Auto-apply pending migrations on startup (same as `python migrate.py up`)."""
+    """Auto-apply pending migrations on startup (same as `python migrate.py up`).
+
+    Silently skipped when the database engine is not Postgres (e.g. SQLite during tests)
+    because the migration SQL uses Postgres-specific syntax (SERIAL, TIMESTAMPTZ, JSONB).
+    """
     migrations_dir = Path(__file__).parent / "migrations"
     if not migrations_dir.exists():
+        return
+
+    if engine.dialect.name != "postgresql":
+        print("  ▸ Skipping migrations (not a Postgres database)")
         return
 
     with engine.begin() as conn:

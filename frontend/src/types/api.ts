@@ -168,6 +168,9 @@ export type CompanyProfile = {
   account_name: string | null;
   account_number: string | null;
   ifsc_code: string | null;
+  terms_and_conditions: TermCondition[];
+  logo_path: string | null;
+  additional_company_info: string | null;
 };
 
 export type CompanyListItem = {
@@ -201,6 +204,14 @@ export type CompanyProfileUpdate = {
   account_name?: string;
   account_number?: string;
   ifsc_code?: string;
+  terms_and_conditions?: TermCondition[];
+  logo_path?: string | null;
+  additional_company_info?: string | null;
+};
+
+export type TermCondition = {
+  id: number;
+  text: string;
 };
 
 export type CompanyAccountType = 'bank' | 'cash';

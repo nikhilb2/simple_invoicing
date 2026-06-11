@@ -72,6 +72,8 @@ class InvoiceOut(BaseModel):
     company_account_name: str | None = None
     company_account_number: str | None = None
     company_ifsc_code: str | None = None
+    company_terms: list = []
+    company_additional_info: str | None = None
     voucher_type: str
     supplier_invoice_number: str | None = None
     reference_notes: str | None = None
