@@ -179,6 +179,7 @@ export type CompanyProfile = {
   logo_mime_type: string | null;
   additional_company_info: string | null;
   terms: CompanyTermOut[];
+  show_sku_on_pdf: boolean;
 };
 
 export type CompanyListItem = {
@@ -213,6 +214,7 @@ export type CompanyProfileUpdate = {
   account_number?: string;
   ifsc_code?: string;
   additional_company_info?: string | null;
+  show_sku_on_pdf?: boolean;
 };
 
 export type CompanyAccountType = 'bank' | 'cash';
@@ -332,6 +334,7 @@ export type OutstandingInvoice = {
 export type InvoiceItem = {
   id: number;
   product_id: number;
+  product_name: string | null;
   hsn_sac: string | null;
   quantity: number;
   unit_price: number;

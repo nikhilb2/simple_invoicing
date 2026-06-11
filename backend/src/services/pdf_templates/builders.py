@@ -147,14 +147,29 @@ def _build_pdf_tax_header_cells(interstate_supply: bool) -> str:
     )
 
 
-def _build_pdf_table_colgroup(interstate_supply: bool) -> str:
-    """Build table column group for invoice PDF based on tax type."""
+def _build_pdf_table_colgroup(interstate_supply: bool, show_sku: bool = True) -> str:
+    """Build table column group for invoice PDF based on tax type and SKU visibility."""
     if interstate_supply:
+        if show_sku:
+            return (
+                '<colgroup>'
+                '<col style="width: 4%;" />'
+                '<col style="width: 20%;" />'
+                '<col style="width: 7%;" />'
+                '<col style="width: 8%;" />'
+                '<col style="width: 6%;" />'
+                '<col style="width: 6%;" />'
+                '<col style="width: 12%;" />'
+                '<col style="width: 7%;" />'
+                '<col style="width: 10%;" />'
+                '<col style="width: 10%;" />'
+                '<col style="width: 10%;" />'
+                '</colgroup>'
+            )
         return (
             '<colgroup>'
             '<col style="width: 4%;" />'
-            '<col style="width: 20%;" />'
-            '<col style="width: 7%;" />'
+            '<col style="width: 27%;" />'
             '<col style="width: 8%;" />'
             '<col style="width: 6%;" />'
             '<col style="width: 6%;" />'
@@ -165,11 +180,28 @@ def _build_pdf_table_colgroup(interstate_supply: bool) -> str:
             '<col style="width: 10%;" />'
             '</colgroup>'
         )
+    if show_sku:
+        return (
+            '<colgroup>'
+            '<col style="width: 3%;" />'
+            '<col style="width: 16%;" />'
+            '<col style="width: 6%;" />'
+            '<col style="width: 7%;" />'
+            '<col style="width: 5%;" />'
+            '<col style="width: 5%;" />'
+            '<col style="width: 10%;" />'
+            '<col style="width: 6%;" />'
+            '<col style="width: 8%;" />'
+            '<col style="width: 6%;" />'
+            '<col style="width: 8%;" />'
+            '<col style="width: 8%;" />'
+            '<col style="width: 12%;" />'
+            '</colgroup>'
+        )
     return (
         '<colgroup>'
         '<col style="width: 3%;" />'
-        '<col style="width: 16%;" />'
-        '<col style="width: 6%;" />'
+        '<col style="width: 22%;" />'
         '<col style="width: 7%;" />'
         '<col style="width: 5%;" />'
         '<col style="width: 5%;" />'

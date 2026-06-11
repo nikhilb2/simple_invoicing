@@ -629,6 +629,7 @@ export default function CompanyPage() {
     currency_code: 'USD',
     email: '',
     website: '',
+    show_sku_on_pdf: false,
   });
   const [companyId, setCompanyId] = useState<number>(0);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -668,6 +669,7 @@ export default function CompanyPage() {
         currency_code: data.currency_code || 'USD',
         email: data.email || '',
         website: data.website || '',
+        show_sku_on_pdf: data.show_sku_on_pdf || false,
       });
       setAdditionalInfo(data.additional_company_info || '');
       if (data.logo_data && data.logo_mime_type) {
@@ -702,6 +704,7 @@ export default function CompanyPage() {
         currency_code: form.currency_code.trim().toUpperCase(),
         email: form.email.trim(),
         website: form.website.trim(),
+        show_sku_on_pdf: form.show_sku_on_pdf,
       };
 
       await api.put<CompanyProfileUpdate>('/company/', payload);
@@ -955,6 +958,23 @@ export default function CompanyPage() {
                     placeholder="221B Baker Street, London"
                     required
                   />
+                </div>
+
+                <div className="field field--full">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                    <input
+                      id="company-show-sku-pdf"
+                      type="checkbox"
+                      checked={form.show_sku_on_pdf}
+                      onChange={(e) => setForm((current) => ({ ...current, show_sku_on_pdf: e.target.checked }))}
+                    />
+                    <label htmlFor="company-show-sku-pdf" style={{ marginBottom: 0, cursor: 'pointer', fontWeight: 500 }}>
+                      Show SKU column on invoice PDFs
+                    </label>
+                  </div>
+                  <small className="field-hint" style={{ marginLeft: '24px' }}>
+                    When disabled, SKU is hidden and the item description gets more horizontal space.
+                  </small>
                 </div>
 
                 <div className="field field--full">

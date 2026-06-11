@@ -30,6 +30,26 @@ from src.services.invoice_processor import InvoiceProcessor
 router = APIRouter()
 
 
+def _enrich_items_with_product_names(invoices: list[Invoice], db: Session, active_company_id: int) -> None:
+    """Attach product_name attribute to each InvoiceItem across all given invoices."""
+    all_product_ids = set()
+    for inv in invoices:
+        for item in (inv.items or []):
+            all_product_ids.add(item.product_id)
+    if not all_product_ids:
+        return
+    products = (
+        db.query(Product)
+        .filter(Product.id.in_(all_product_ids), Product.company_id == active_company_id)
+        .all()
+    )
+    product_map = {p.id: p for p in products}
+    for inv in invoices:
+        for item in (inv.items or []):
+            prod = product_map.get(item.product_id)
+            setattr(item, "product_name", prod.name if prod else None)
+
+
 def _to_invoice_out(
     invoice: Invoice,
     *,
@@ -91,6 +111,7 @@ def create_invoice(
                 warnings.append("invoice_date_outside_fy")
 
         summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
+        _enrich_items_with_product_names([invoice], db, active_company.id)
         result = _to_invoice_out(invoice, payment_summary=summary)
         result.warnings = warnings
         return result
@@ -153,6 +174,7 @@ def list_invoices(
       )
 
       payment_summaries = build_invoice_payment_summaries(db, invoices)
+      _enrich_items_with_product_names(invoices, db, active_company.id)
       items = [_to_invoice_out(invoice, payment_summary=payment_summaries.get(invoice.id)) for invoice in invoices]
 
       visible_page_total = sum((Decimal(str(item.total_amount or 0)) for item in items), Decimal("0"))
@@ -226,6 +248,7 @@ def list_due_invoices(
         page_start = (page - 1) * page_size
         page_end = page_start + page_size
         paged_invoices = outstanding_invoices[page_start:page_end]
+        _enrich_items_with_product_names(paged_invoices, db, active_company.id)
         items = [_to_invoice_out(invoice, payment_summary=payment_summaries.get(invoice.id)) for invoice in paged_invoices]
 
         total_listed = sum((Decimal(str(invoice.total_amount or 0)) for invoice in outstanding_invoices), Decimal("0"))
@@ -270,6 +293,7 @@ def get_invoice(
     )
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
+    _enrich_items_with_product_names([invoice], db, active_company.id)
     summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
     return _to_invoice_out(invoice, payment_summary=summary)
 
@@ -328,6 +352,7 @@ def update_invoice(
                 warnings.append("invoice_date_outside_fy")
 
         summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
+        _enrich_items_with_product_names([invoice], db, active_company.id)
         result = _to_invoice_out(invoice, payment_summary=summary)
         result.warnings = warnings
         return result
@@ -346,7 +371,7 @@ def update_invoice(
 
 def _load_company_logo_base64(company: CompanyProfile) -> str | None:
     """Read the company logo file from disk and return as a base64-encoded string."""
-    if not company.logo_path:
+    if not company or not company.logo_path:
         return None
     try:
         with open(company.logo_path, "rb") as f:
@@ -357,7 +382,8 @@ def _load_company_logo_base64(company: CompanyProfile) -> str | None:
 
 def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], active_company: CompanyProfile | None = None) -> BytesIO:
     company_logo_base64 = _load_company_logo_base64(active_company) if active_company else None
-    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), company_logo_base64=company_logo_base64)
+    show_sku = active_company.show_sku_on_pdf if active_company else True
+    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), company_logo_base64=company_logo_base64, show_sku=show_sku)
     pdf_bytes = weasyprint.HTML(string=html).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
@@ -365,7 +391,8 @@ def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_a
 
 def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, active_company: CompanyProfile | None = None) -> BytesIO:
     company_logo_base64 = _load_company_logo_base64(active_company) if active_company else None
-    html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies, company_logo_base64=company_logo_base64)
+    show_sku = active_company.show_sku_on_pdf if active_company else True
+    html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies, company_logo_base64=company_logo_base64, show_sku=show_sku)
     pdf_bytes = weasyprint.HTML(string=html).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
