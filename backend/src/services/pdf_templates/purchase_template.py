@@ -34,7 +34,7 @@ def _is_interstate_supply(company_gst: str | None, ledger_gst: str | None) -> bo
     return company_gst[:2] != ledger_gst[:2]
 
 
-def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> str:
+def _build_purchase_invoice_html(invoice: Invoice, products: list[Product], show_sku: bool = True) -> str:
     """Generate HTML for a purchase invoice (supplier at top-left, your company top-right,
     no bank details in footer, optional supplier ref row)."""
     currency = invoice.company_currency_code or "USD"
@@ -42,7 +42,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else (invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A")
     interstate_supply = _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
     tax_header_cells = _build_pdf_tax_header_cells(interstate_supply)
-    table_colgroup = _build_pdf_table_colgroup(interstate_supply)
+    table_colgroup = _build_pdf_table_colgroup(interstate_supply, show_sku=show_sku)
 
     product_map = {p.id: p for p in products}
     tax_inclusive = bool(invoice.tax_inclusive)
@@ -61,11 +61,24 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
         quantity_display = _pdf_display_quantity(item.quantity, getattr(prod, "allow_decimal", None) if prod else None)
         tax_row_cells = _build_pdf_tax_row_cells(item, currency, interstate_supply)
 
-        item_rows += f"""
+        if show_sku:
+            item_rows += f"""
         <tr>
           <td>{idx}</td>
           <td>{product_cell_html}</td>
           <td>{sku}</td>
+          <td>{hsn}</td>
+          <td class="right">{quantity_display}</td>
+          <td>{unit}</td>
+          <td class="right">{_fmt_currency(_pdf_unit_price(item, tax_inclusive=tax_inclusive), currency)}</td>
+          {tax_row_cells}
+          <td class="right">{_fmt_currency(float(item.line_total), currency)}</td>
+        </tr>"""
+        else:
+            item_rows += f"""
+        <tr>
+          <td>{idx}</td>
+          <td>{product_cell_html}</td>
           <td>{hsn}</td>
           <td class="right">{quantity_display}</td>
           <td>{unit}</td>
@@ -320,7 +333,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
         <tr>
           <th>#</th>
           <th>Item</th>
-          <th>SKU</th>
+          {"<th>SKU</th>" if show_sku else ""}
           <th>HSN/SAC</th>
           <th class="right">Qty</th>
           <th>Unit</th>

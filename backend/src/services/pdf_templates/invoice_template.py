@@ -36,7 +36,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
         invoice_bank_accounts = []
     
     if invoice.voucher_type == "purchase":
-        return _build_purchase_invoice_html(invoice, products)
+        return _build_purchase_invoice_html(invoice, products, show_sku=show_sku)
 
     currency = invoice.company_currency_code or "USD"
     voucher_label = "Sales" if invoice.voucher_type == "sales" else "Purchase"
@@ -545,7 +545,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
 def _build_multi_copy_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, show_sku: bool = True) -> str:
     """Generate HTML for multiple copies of an invoice in a single document."""
     if invoice.voucher_type == "purchase":
-        return _build_purchase_invoice_html(invoice, products)
+        return _build_purchase_invoice_html(invoice, products, show_sku=show_sku)
     if copies == 1:
         return _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku)
 
