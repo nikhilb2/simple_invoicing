@@ -1,12 +1,7 @@
 import api from '../api/client';
 import type { CompanyProfile, CompanyTermOut } from '../types/api';
 
-export interface CompanyProfileWithTerms extends CompanyProfileOut {
-  terms: CompanyTermOut[];
-  additional_company_info: string | null;
-  logo_data: string | null;
-  logo_mime_type: string | null;
-}
+export type CompanyProfileWithTerms = CompanyProfile;
 
 export interface LogoUploadPayload {
   data: string;
