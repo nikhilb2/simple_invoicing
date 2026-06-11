@@ -36,7 +36,7 @@ function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number, fyLabel?: string 
   return `${s.prefix}${sep}${yearPart}${sep}${seq}${s.suffix}`;
 }
 
-const MAX_LOGO_SIZE_BYTES = 512 * 1024; // 512 KB
+const MAX_LOGO_SIZE_BYTES = 100 * 1024; // 100 KB
 
 // ---------------------------------------------------------------------------
 // LogoUploadCard
@@ -105,7 +105,7 @@ function LogoUploadCard({
         </div>
       </div>
       <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '12px' }}>
-        Upload your company logo (PNG, JPG, JPEG, max 512 KB). It will appear on all generated PDFs.
+        Upload your company logo (PNG, JPG, JPEG, max 100 KB). It will appear on all generated PDFs.
       </p>
 
       {error && <p style={{ color: 'var(--color-danger, red)', fontSize: '0.875rem', marginBottom: '8px' }}>{error}</p>}

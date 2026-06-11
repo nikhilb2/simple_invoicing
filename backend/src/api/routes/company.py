@@ -251,9 +251,58 @@ def upsert_company_profile(
 # Logo upload / remove
 # ---------------------------------------------------------------------------
 
+try:
+    from PIL import Image, UnidentifiedImageError
+    _HAS_PIL = True
+except ImportError:
+    _HAS_PIL = False
+
+import base64
+import io
+
+
 class LogoUpload(BaseModel):
     data: str  # base64-encoded image data (without data URI prefix)
     mime_type: str  # e.g. "image/png", "image/jpeg"
+
+
+_MAX_LOGO_WIDTH = 400
+_MAX_LOGO_HEIGHT = 150
+_LOGO_QUALITY = 85
+
+
+def _optimize_logo_image(data: str, mime_type: str) -> tuple[str, str]:
+    """Resize and compress a base64-encoded logo image.
+
+    Returns (optimized_base64_data, output_mime_type).
+    Always outputs JPEG for best compression.
+    """
+    if not _HAS_PIL:
+        return data, mime_type
+
+    try:
+        raw_bytes = base64.b64decode(data)
+        img = Image.open(io.BytesIO(raw_bytes))
+
+        # Convert RGBA/P to RGB for JPEG output
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+
+        # Resize down if larger than max dimensions
+        original_width, original_height = img.size
+        if original_width > _MAX_LOGO_WIDTH or original_height > _MAX_LOGO_HEIGHT:
+            ratio = min(_MAX_LOGO_WIDTH / original_width, _MAX_LOGO_HEIGHT / original_height)
+            new_width = int(original_width * ratio)
+            new_height = int(original_height * ratio)
+            img = img.resize((new_width, new_height), Image.LANCZOS)
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=_LOGO_QUALITY, optimize=True)
+        optimized = base64.b64encode(buf.getvalue()).decode()
+        return optimized, "image/jpeg"
+    except (UnidentifiedImageError, Exception):
+        # If anything goes wrong, fall through to store as-is
+        return data, mime_type
 
 
 @router.put("/logo", response_model=CompanyProfileOut)
@@ -263,8 +312,24 @@ def upload_logo(
     current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
 ):
     profile = get_active_company(db=db, current_user=current_user, requested_company_id=None)
-    profile.logo_data = payload.data
-    profile.logo_mime_type = payload.mime_type
+
+    # Decode to check file size before optimization
+    try:
+        raw_bytes = base64.b64decode(payload.data)
+        file_size_kb = len(raw_bytes) / 1024
+        if file_size_kb > 100:
+            raise HTTPException(
+                status_code=400,
+                detail="Logo size cannot exceed 100 KB.",
+            )
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 data.")
+
+    # Optimize (resize + compress)
+    optimized_data, optimized_mime = _optimize_logo_image(payload.data, payload.mime_type)
+
+    profile.logo_data = optimized_data
+    profile.logo_mime_type = optimized_mime
     db.commit()
     db.refresh(profile)
     return _company_to_out(profile)

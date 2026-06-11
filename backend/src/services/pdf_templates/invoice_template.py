@@ -182,17 +182,19 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
   </section>"""
 
     # Terms & Conditions section (Sales & Tax Invoices only)
+    # Note: terms_text already has serial numbers ("1. No Return"), so we use
+    # plain div rendering instead of <ol> to avoid dual numbering.
     terms_html = ""
     if invoice.company_terms_text:
         terms_lines = invoice.company_terms_text.split("\n")
-        terms_items = "\n".join(f"<li>{_e(line)}</li>" for line in terms_lines if line.strip())
+        terms_items = "\n".join(f"<div class=\"invoice-sheet__terms-item\">{_e(line)}</div>" for line in terms_lines if line.strip())
         if terms_items:
             terms_html = f"""
   <section class="invoice-sheet__terms">
     <p class="eyebrow">Terms &amp; Conditions</p>
-    <ol class="invoice-sheet__terms-list">
+    <div class="invoice-sheet__terms-list">
 {terms_items}
-    </ol>
+    </div>
   </section>"""
 
     html = f"""<!DOCTYPE html>
@@ -442,13 +444,13 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     padding-top: 10px;
   }}
   .invoice-sheet__terms-list {{
-    margin: 4px 0 0 18px;
+    margin: 4px 0 0 0;
     padding: 0;
     font-size: 9px;
     color: #4b5563;
     line-height: 1.6;
   }}
-  .invoice-sheet__terms-list li {{
+  .invoice-sheet__terms-item {{
     margin-bottom: 2px;
   }}
 </style>
