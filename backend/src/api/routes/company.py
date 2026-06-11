@@ -316,14 +316,15 @@ def upload_logo(
     # Decode to check file size before optimization
     try:
         raw_bytes = base64.b64decode(payload.data)
-        file_size_kb = len(raw_bytes) / 1024
-        if file_size_kb > 100:
-            raise HTTPException(
-                status_code=400,
-                detail="Logo size cannot exceed 100 KB.",
-            )
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid base64 data.")
+
+    file_size_kb = len(raw_bytes) / 1024
+    if file_size_kb > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="Logo size cannot exceed 100 KB.",
+        )
 
     # Optimize (resize + compress)
     optimized_data, optimized_mime = _optimize_logo_image(payload.data, payload.mime_type)
