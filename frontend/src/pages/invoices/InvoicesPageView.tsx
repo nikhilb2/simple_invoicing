@@ -17,6 +17,7 @@ import { useInvoiceComposerStore } from '../../store/useInvoiceComposerStore';
 import LedgerQuickCreateModal from './components/LedgerQuickCreateModal';
 import ProductQuickCreateModal from './components/ProductQuickCreateModal';
 import StockUpdateModal from './components/StockUpdateModal';
+import ReceiptModal from '../../components/ReceiptModal';
 import { createItem, type InvoiceFormItem } from './types';
 
 export default function InvoicesPage() {
@@ -35,7 +36,8 @@ export default function InvoicesPage() {
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [companyAccounts, setCompanyAccounts] = useState<CompanyAccount[]>([]);
-  const [voucherType, setVoucherType] = useState<'sales' | 'purchase' | 'payment'>('sales');
+  const [voucherType, setVoucherType] = useState<'sales' | 'purchase' | 'payment' | 'receipt'>('sales');
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [taxInclusive, setTaxInclusive] = useState(false);
   const [applyRoundOff, setApplyRoundOff] = useState(false);
   const [invoiceDiscountType, setInvoiceDiscountType] = useState<'percentage' | 'net'>('percentage');
@@ -338,6 +340,15 @@ export default function InvoicesPage() {
   async function handleSubmitInvoice(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (voucherType === 'receipt') {
+      if (!selectedLedgerId) {
+        setError('Please select a ledger to record a receipt against.');
+        return;
+      }
+      setShowReceiptModal(true);
+      return;
+    }
+
     if (voucherType === 'payment') {
       try {
         setSubmitting(true);
@@ -500,11 +511,12 @@ export default function InvoicesPage() {
                   id="invoice-voucher-type"
                   className="select"
                   value={voucherType}
-                  onChange={(event) => setVoucherType(event.target.value as 'sales' | 'purchase' | 'payment')}
+                  onChange={(event) => setVoucherType(event.target.value as 'sales' | 'purchase' | 'payment' | 'receipt')}
                 >
                   <option value="sales">Sales</option>
                   <option value="purchase">Purchase</option>
                   <option value="payment">Payment</option>
+                  <option value="receipt">Receipt</option>
                 </select>
               </div>
 
@@ -538,7 +550,7 @@ export default function InvoicesPage() {
                 ) : null}
               </div>
 
-              {voucherType !== 'payment' ? (
+              {voucherType !== 'payment' && voucherType !== 'receipt' ? (
                 <>
                   <div className="field">
                     <label htmlFor="invoice-due-mode">Due date</label>
@@ -725,12 +737,12 @@ export default function InvoicesPage() {
                 <button type="button" className="button button--secondary" onClick={openLedgerCreateModal} title="Add ledger" aria-label="Add ledger">
                   Add ledger
                 </button>
-                {voucherType !== 'payment' ? (
+                {voucherType !== 'payment' && voucherType !== 'receipt' ? (
                   <button type="button" className="button button--secondary" onClick={openProductCreateModal} title="Add product" aria-label="Add product">
                     Add product
                   </button>
                 ) : null}
-                {voucherType !== 'payment' ? (
+                {voucherType !== 'payment' && voucherType !== 'receipt' ? (
                   <button type="button" className="button button--secondary" onClick={openStockUpdateModal} title="Update stock" aria-label="Update stock">
                     Update stock
                   </button>
@@ -738,7 +750,7 @@ export default function InvoicesPage() {
               </div>
             </div>
 
-            {voucherType !== 'payment' ? (
+            {voucherType !== 'payment' && voucherType !== 'receipt' ? (
               <div className="stack" style={{ gap: '8px' }}>
                 <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 0 }}>
                   <input
@@ -868,7 +880,7 @@ export default function InvoicesPage() {
               </div>
             ) : null}
 
-            {voucherType !== 'payment' ? (
+            {voucherType !== 'payment' && voucherType !== 'receipt' ? (
               <div className="stack">
                 {items.map((item, index) => {
                   const selectedProduct = products.find((product) => product.id === Number(item.productId));
@@ -997,7 +1009,7 @@ export default function InvoicesPage() {
             ) : null}
 
             <div className="button-row">
-              {voucherType !== 'payment' ? (
+              {voucherType !== 'payment' && voucherType !== 'receipt' ? (
                 <button type="button" className="button button--ghost" onClick={addItem} disabled={products.length === 0} title="Add line item" aria-label="Add line item">
                   Add line item
                 </button>
@@ -1010,6 +1022,10 @@ export default function InvoicesPage() {
               {voucherType === 'payment' ? (
                 <button className="button button--primary" disabled={submitting || !selectedLedgerId || !paymentAmount} title="Create payment voucher" aria-label="Create payment voucher">
                   {submitting ? 'Creating payment...' : 'Create payment voucher'}
+                </button>
+              ) : voucherType === 'receipt' ? (
+                <button className="button button--primary" disabled={!selectedLedgerId} title="Record receipt" aria-label="Record receipt">
+                  Record receipt
                 </button>
               ) : (
                 <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId} title={editingInvoiceId ? 'Update invoice' : 'Create invoice'} aria-label={editingInvoiceId ? 'Update invoice' : 'Create invoice'}>
@@ -1035,6 +1051,22 @@ export default function InvoicesPage() {
       <ProductQuickCreateModal />
 
       <StockUpdateModal />
+
+      {showReceiptModal && selectedLedgerId ? (
+        <ReceiptModal
+          ledgerId={Number(selectedLedgerId)}
+          ledgerName={selectedLedger?.name || `Ledger #${selectedLedgerId}`}
+          currencyCode={activeCurrencyCode}
+          onClose={() => setShowReceiptModal(false)}
+          onSuccess={(message) => {
+            setSuccess(message);
+            setShowReceiptModal(false);
+            resetInvoiceForm();
+            refreshInvoicesAfterMutation();
+          }}
+          onError={(message) => setError(message)}
+        />
+      ) : null}
     </div>
   );
 }
