@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from pydantic import BaseModel
+
 from src.api.deps import get_active_company, get_current_user, require_roles
 from src.db.session import get_db
 from src.models.company import CompanyProfile
