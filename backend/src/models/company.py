@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy import Boolean, Column, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from src.db.base import Base
@@ -20,10 +20,8 @@ class CompanyProfile(Base):
     account_name = Column(String, nullable=True)
     account_number = Column(String, nullable=True)
     ifsc_code = Column(String, nullable=True)
-
-    # New fields for company settings enhancements
     logo_data = Column(Text, nullable=True)
     logo_mime_type = Column(String(50), nullable=True)
     additional_company_info = Column(Text, nullable=True)
-
+    show_sku_on_pdf = Column(Boolean, nullable=False, default=False)
     terms = relationship("CompanyTerm", back_populates="company", order_by="CompanyTerm.serial_number", cascade="all, delete-orphan")

@@ -34,6 +34,7 @@ class InvoiceCreate(BaseModel):
 class InvoiceItemOut(BaseModel):
     id: int
     product_id: int
+    product_name: str | None = None
     hsn_sac: str | None = None
     quantity: float
     unit_price: float

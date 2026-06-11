@@ -54,6 +54,7 @@ def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> Compa
         account_name=payload.account_name.strip() if payload.account_name else None,
         account_number=payload.account_number.strip() if payload.account_number else None,
         ifsc_code=payload.ifsc_code.strip().upper() if payload.ifsc_code else None,
+        show_sku_on_pdf=payload.show_sku_on_pdf,
     )
     db.add(profile)
     db.commit()
@@ -242,6 +243,7 @@ def upsert_company_profile(
     profile.account_number = payload.account_number.strip() if payload.account_number else None
     profile.ifsc_code = payload.ifsc_code.strip().upper() if payload.ifsc_code else None
     profile.additional_company_info = payload.additional_company_info
+    profile.show_sku_on_pdf = payload.show_sku_on_pdf
     db.commit()
     db.refresh(profile)
     return _company_to_out(profile)

@@ -74,7 +74,7 @@ interface InvoicesCompactCardProps {
               <div className="invoice-compact-card__items-list">
               {invoice.items.map((item, idx) => (
                   <div key={idx} className="invoice-compact-card__item">
-                  Product #{item.product_id} x{item.quantity}
+                  {item.product_name || `Product #${item.product_id}`} x{item.quantity}
                 </div>
               ))}
             </div>
