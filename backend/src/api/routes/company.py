@@ -1,35 +1,28 @@
-import json
-import os
-from pathlib import Path
-
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+
+from pydantic import BaseModel
 
 from src.api.deps import get_active_company, get_current_user, require_roles
 from src.db.session import get_db
 from src.models.company import CompanyProfile
+from src.models.company_term import CompanyTerm
 from src.models.global_settings import GlobalSettings
 from src.models.user import User, UserRole
 from src.schemas.company import (
     CompanyCreationCapOut,
     CompanyListItem,
     CompanyProfileOut,
+    CompanyProfileOutWithLogo,
     CompanyProfileUpdate,
     CompanySelectOut,
+    CompanyTermCreate,
+    CompanyTermOut,
+    CompanyTermUpdate,
 )
 
 router = APIRouter()
-
-LOGO_UPLOAD_DIR = Path("uploads/logos")
-ALLOWED_LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg"}
-MAX_LOGO_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
-
-
-def _get_logo_dir() -> Path:
-    LOGO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    return LOGO_UPLOAD_DIR
 
 
 def _get_max_companies(db: Session) -> int:
@@ -61,8 +54,6 @@ def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> Compa
         account_name=payload.account_name.strip() if payload.account_name else None,
         account_number=payload.account_number.strip() if payload.account_number else None,
         ifsc_code=payload.ifsc_code.strip().upper() if payload.ifsc_code else None,
-        terms_and_conditions=[t.model_dump() for t in (payload.terms_and_conditions or [])],
-        additional_company_info=payload.additional_company_info,
     )
     db.add(profile)
     db.commit()
@@ -84,8 +75,6 @@ def _create_blank_company_profile(db: Session) -> CompanyProfile:
         account_name="",
         account_number="",
         ifsc_code="",
-        terms_and_conditions=[],
-        additional_company_info=None,
     )
     db.add(profile)
     db.commit()
@@ -99,22 +88,54 @@ def _set_active_company(db: Session, user: User, company_id: int) -> None:
     db.refresh(user)
 
 
-def _apply_branding_fields(profile: CompanyProfile, payload: CompanyProfileUpdate) -> None:
-    profile.name = payload.name.strip()
-    profile.address = payload.address.strip()
-    profile.gst = payload.gst.strip().upper()
-    profile.phone_number = payload.phone_number.strip()
-    profile.currency_code = payload.currency_code.strip().upper() if payload.currency_code else "USD"
-    profile.email = payload.email.strip() if payload.email else None
-    profile.website = payload.website.strip() if payload.website else None
-    profile.bank_name = payload.bank_name.strip() if payload.bank_name else None
-    profile.branch_name = payload.branch_name.strip() if payload.branch_name else None
-    profile.account_name = payload.account_name.strip() if payload.account_name else None
-    profile.account_number = payload.account_number.strip() if payload.account_number else None
-    profile.ifsc_code = payload.ifsc_code.strip().upper() if payload.ifsc_code else None
-    profile.terms_and_conditions = [t.model_dump() for t in (payload.terms_and_conditions or [])]
-    profile.additional_company_info = payload.additional_company_info
+def _serial_company_terms(company_id: int, db: Session) -> None:
+    """Re-sequence serial numbers for a company's terms after any mutation."""
+    terms = (
+        db.query(CompanyTerm)
+        .filter(CompanyTerm.company_id == company_id)
+        .order_by(CompanyTerm.serial_number, CompanyTerm.id)
+        .all()
+    )
+    for idx, term in enumerate(terms, start=1):
+        if term.serial_number != idx:
+            term.serial_number = idx
+    db.commit()
 
+
+def _company_to_out(company: CompanyProfile) -> CompanyProfileOut:
+    """Convert company to output schema with terms eagerly loaded."""
+    return CompanyProfileOut(
+        id=company.id,
+        name=company.name,
+        address=company.address,
+        gst=company.gst or "",
+        phone_number=company.phone_number or "",
+        currency_code=company.currency_code,
+        email=company.email,
+        website=company.website,
+        bank_name=company.bank_name,
+        branch_name=company.branch_name,
+        account_name=company.account_name,
+        account_number=company.account_number,
+        ifsc_code=company.ifsc_code,
+        logo_data=company.logo_data,
+        logo_mime_type=company.logo_mime_type,
+        additional_company_info=company.additional_company_info,
+        terms=[
+            CompanyTermOut(
+                id=t.id,
+                company_id=t.company_id,
+                serial_number=t.serial_number,
+                content=t.content,
+            )
+            for t in company.terms
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Company listing & selection
+# ---------------------------------------------------------------------------
 
 @router.get("/companies", response_model=list[CompanyListItem])
 def list_companies(
@@ -153,7 +174,7 @@ def create_company_profile(
     profile = _create_company_profile(db, payload)
     if current_user.active_company_id is None:
         _set_active_company(db, current_user, profile.id)
-    return profile
+    return _company_to_out(profile)
 
 
 @router.get("/companies/capability", response_model=CompanyCreationCapOut)
@@ -184,13 +205,14 @@ def get_company_profile(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        return get_active_company(db=db, current_user=current_user, requested_company_id=None)
+        company = get_active_company(db=db, current_user=current_user, requested_company_id=None)
+        return _company_to_out(company)
     except HTTPException as exc:
         if exc.status_code != 404:
             raise
         profile = _create_blank_company_profile(db)
         _set_active_company(db, current_user, profile.id)
-        return profile
+        return _company_to_out(profile)
 
 
 @router.put("", response_model=CompanyProfileOut, include_in_schema=False)
@@ -207,93 +229,218 @@ def upsert_company_profile(
             raise
         profile = _create_blank_company_profile(db)
         _set_active_company(db, current_user, profile.id)
-    _apply_branding_fields(profile, payload)
+    profile.name = payload.name.strip()
+    profile.address = payload.address.strip()
+    profile.gst = payload.gst.strip().upper()
+    profile.phone_number = payload.phone_number.strip()
+    profile.currency_code = payload.currency_code.strip().upper() if payload.currency_code else "USD"
+    profile.email = payload.email.strip() if payload.email else None
+    profile.website = payload.website.strip() if payload.website else None
+    profile.bank_name = payload.bank_name.strip() if payload.bank_name else None
+    profile.branch_name = payload.branch_name.strip() if payload.branch_name else None
+    profile.account_name = payload.account_name.strip() if payload.account_name else None
+    profile.account_number = payload.account_number.strip() if payload.account_number else None
+    profile.ifsc_code = payload.ifsc_code.strip().upper() if payload.ifsc_code else None
+    profile.additional_company_info = payload.additional_company_info
     db.commit()
     db.refresh(profile)
-    return profile
+    return _company_to_out(profile)
 
 
 # ---------------------------------------------------------------------------
-# Logo endpoints
+# Logo upload / remove
 # ---------------------------------------------------------------------------
 
-@router.post("/logo", response_model=CompanyProfileOut)
-async def upload_logo(
-    file: UploadFile = File(...),
+try:
+    from PIL import Image, UnidentifiedImageError
+    _HAS_PIL = True
+except ImportError:
+    _HAS_PIL = False
+
+import base64
+import io
+
+
+class LogoUpload(BaseModel):
+    data: str  # base64-encoded image data (without data URI prefix)
+    mime_type: str  # e.g. "image/png", "image/jpeg"
+
+
+_MAX_LOGO_WIDTH = 400
+_MAX_LOGO_HEIGHT = 150
+_LOGO_QUALITY = 85
+
+
+def _optimize_logo_image(data: str, mime_type: str) -> tuple[str, str]:
+    """Resize and compress a base64-encoded logo image.
+
+    Returns (optimized_base64_data, output_mime_type).
+    Always outputs JPEG for best compression.
+    """
+    if not _HAS_PIL:
+        return data, mime_type
+
+    try:
+        raw_bytes = base64.b64decode(data)
+        img = Image.open(io.BytesIO(raw_bytes))
+
+        # Convert RGBA/P to RGB for JPEG output
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+
+        # Resize down if larger than max dimensions
+        original_width, original_height = img.size
+        if original_width > _MAX_LOGO_WIDTH or original_height > _MAX_LOGO_HEIGHT:
+            ratio = min(_MAX_LOGO_WIDTH / original_width, _MAX_LOGO_HEIGHT / original_height)
+            new_width = int(original_width * ratio)
+            new_height = int(original_height * ratio)
+            img = img.resize((new_width, new_height), Image.LANCZOS)
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=_LOGO_QUALITY, optimize=True)
+        optimized = base64.b64encode(buf.getvalue()).decode()
+        return optimized, "image/jpeg"
+    except (UnidentifiedImageError, Exception):
+        # If anything goes wrong, fall through to store as-is
+        return data, mime_type
+
+
+@router.put("/logo", response_model=CompanyProfileOut)
+def upload_logo(
+    payload: LogoUpload,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
 ):
-    """Upload or replace company logo."""
     profile = get_active_company(db=db, current_user=current_user, requested_company_id=None)
 
-    ext = Path(file.filename or "").suffix.lower()
-    if ext not in ALLOWED_LOGO_EXTENSIONS:
+    # Decode to check file size before optimization
+    try:
+        raw_bytes = base64.b64decode(payload.data)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 data.")
+
+    file_size_kb = len(raw_bytes) / 1024
+    if file_size_kb > 100:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_LOGO_EXTENSIONS)}",
+            detail="Logo size cannot exceed 100 KB.",
         )
 
-    contents = await file.read()
-    if len(contents) > MAX_LOGO_SIZE_BYTES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {MAX_LOGO_SIZE_BYTES // 1024 // 1024} MB",
-        )
+    # Optimize (resize + compress)
+    optimized_data, optimized_mime = _optimize_logo_image(payload.data, payload.mime_type)
 
-    # Remove old logo if exists
-    if profile.logo_path:
-        old_path = Path(profile.logo_path)
-        if old_path.exists():
-            old_path.unlink()
-
-    logo_dir = _get_logo_dir()
-    logo_filename = f"company_{profile.id}{ext}"
-    logo_path = logo_dir / logo_filename
-
-    with open(logo_path, "wb") as f:
-        f.write(contents)
-
-    profile.logo_path = str(logo_path.resolve())
+    profile.logo_data = optimized_data
+    profile.logo_mime_type = optimized_mime
     db.commit()
     db.refresh(profile)
-    return profile
-
-
-@router.get("/logo")
-def get_logo(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Serve the company logo file."""
-    profile = get_active_company(db=db, current_user=current_user, requested_company_id=None)
-
-    if not profile.logo_path:
-        raise HTTPException(status_code=404, detail="No logo uploaded")
-
-    logo_path = Path(profile.logo_path)
-    if not logo_path.exists():
-        raise HTTPException(status_code=404, detail="Logo file not found on disk")
-
-    return FileResponse(
-        path=str(logo_path),
-        media_type=f"image/{logo_path.suffix.lower().lstrip('.')}",
-    )
+    return _company_to_out(profile)
 
 
 @router.delete("/logo", response_model=CompanyProfileOut)
-def delete_logo(
+def remove_logo(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
 ):
-    """Remove the company logo."""
     profile = get_active_company(db=db, current_user=current_user, requested_company_id=None)
+    profile.logo_data = None
+    profile.logo_mime_type = None
+    db.commit()
+    db.refresh(profile)
+    return _company_to_out(profile)
 
-    if profile.logo_path:
-        logo_path = Path(profile.logo_path)
-        if logo_path.exists():
-            logo_path.unlink()
-        profile.logo_path = None
-        db.commit()
-        db.refresh(profile)
 
-    return profile
+# ---------------------------------------------------------------------------
+# Terms & Conditions CRUD
+# ---------------------------------------------------------------------------
+
+@router.get("/terms", response_model=list[CompanyTermOut])
+def list_terms(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    company = get_active_company(db=db, current_user=current_user, requested_company_id=None)
+    terms = (
+        db.query(CompanyTerm)
+        .filter(CompanyTerm.company_id == company.id)
+        .order_by(CompanyTerm.serial_number)
+        .all()
+    )
+    return [
+        CompanyTermOut(id=t.id, company_id=t.company_id, serial_number=t.serial_number, content=t.content)
+        for t in terms
+    ]
+
+
+@router.post("/terms", response_model=CompanyTermOut)
+def create_term(
+    payload: CompanyTermCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+):
+    company = get_active_company(db=db, current_user=current_user, requested_company_id=None)
+    max_serial = (
+        db.query(func.coalesce(func.max(CompanyTerm.serial_number), 0))
+        .filter(CompanyTerm.company_id == company.id)
+        .scalar()
+    )
+    term = CompanyTerm(
+        company_id=company.id,
+        serial_number=max_serial + 1,
+        content=payload.content.strip(),
+    )
+    db.add(term)
+    db.commit()
+    db.refresh(term)
+    return CompanyTermOut(id=term.id, company_id=term.company_id, serial_number=term.serial_number, content=term.content)
+
+
+@router.put("/terms/{term_id}", response_model=CompanyTermOut)
+def update_term(
+    term_id: int,
+    payload: CompanyTermUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+):
+    company = get_active_company(db=db, current_user=current_user, requested_company_id=None)
+    term = (
+        db.query(CompanyTerm)
+        .filter(CompanyTerm.id == term_id, CompanyTerm.company_id == company.id)
+        .first()
+    )
+    if not term:
+        raise HTTPException(status_code=404, detail="Term not found")
+    term.content = payload.content.strip()
+    db.commit()
+    db.refresh(term)
+    return CompanyTermOut(id=term.id, company_id=term.company_id, serial_number=term.serial_number, content=term.content)
+
+
+@router.delete("/terms/{term_id}", response_model=list[CompanyTermOut])
+def delete_term(
+    term_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+):
+    company = get_active_company(db=db, current_user=current_user, requested_company_id=None)
+    term = (
+        db.query(CompanyTerm)
+        .filter(CompanyTerm.id == term_id, CompanyTerm.company_id == company.id)
+        .first()
+    )
+    if not term:
+        raise HTTPException(status_code=404, detail="Term not found")
+    db.delete(term)
+    db.commit()
+    # Re-sequence serial numbers
+    _serial_company_terms(company.id, db)
+    # Return updated list
+    terms = (
+        db.query(CompanyTerm)
+        .filter(CompanyTerm.company_id == company.id)
+        .order_by(CompanyTerm.serial_number)
+        .all()
+    )
+    return [
+        CompanyTermOut(id=t.id, company_id=t.company_id, serial_number=t.serial_number, content=t.content)
+        for t in terms
+    ]
