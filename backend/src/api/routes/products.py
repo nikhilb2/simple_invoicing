@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from decimal import Decimal
 
@@ -86,7 +87,8 @@ def list_products(
 ):
     query = db.query(Product).filter(Product.company_id == active_company.id)
     if search.strip():
-        query = query.filter(Product.name.ilike(f"%{search.strip()}%"))
+        term = f"%{search.strip()}%"
+        query = query.filter(or_(Product.name.ilike(term), Product.sku.ilike(term)))
     if is_producable is not None:
         query = query.filter(Product.is_producable == is_producable)
     total = query.count()
