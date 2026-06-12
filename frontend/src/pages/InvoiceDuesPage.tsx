@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchCompanyProfile, fetchDueInvoicePage, fetchInvoiceById, fetchLedgers, type DueInvoiceFilters } from '../features/invoices/api';
 import type { CompanyProfile, Invoice, Ledger } from '../types/api';
+import { sendDueReminders, type DueRemindersResponse } from '../api/emailLogs';
+import { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import InvoicePreview from '../components/InvoicePreview';
+import ConfirmDialog from '../components/ConfirmDialog';
 import formatCurrency from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import EmptyState from '../components/EmptyState';
@@ -65,6 +68,10 @@ export default function InvoiceDuesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
+  const [sendingReminders, setSendingReminders] = useState(false);
+  const [showRemindersConfirm, setShowRemindersConfirm] = useState(false);
+  const [remindersResult, setRemindersResult] = useState<string>('');
+  const [remindersSuccess, setRemindersSuccess] = useState('');
 
   const currencyCode = company?.currency_code || 'INR';
   const dueWindow = useMemo(() => buildDueWindow(mode, customDays, exactDate), [mode, customDays, exactDate]);
@@ -140,6 +147,35 @@ export default function InvoiceDuesPage() {
   }
 
   const outstandingTotal = items.reduce((sum, invoice) => sum + invoice.outstanding_amount, 0);
+
+  const handleSendReminders = useCallback(async () => {
+    setShowRemindersConfirm(false);
+    setSendingReminders(true);
+    setRemindersResult('');
+    setRemindersSuccess('');
+    setError('');
+    try {
+      const result: DueRemindersResponse = await sendDueReminders();
+      const parts: string[] = [];
+      if (result.sent.length > 0) {
+        parts.push(`Sent to ${result.sent.length} ledgers`);
+      }
+      if (result.skipped.length > 0) {
+        const names = result.skipped.map((s) => s.ledger_name).join(', ');
+        parts.push(`Skipped ${result.skipped.length} (no email): ${names}`);
+      }
+      if (result.failed.length > 0) {
+        const names = result.failed.map((f) => f.ledger_name).join(', ');
+        parts.push(`Failed ${result.failed.length}: ${names}`);
+      }
+      setRemindersSuccess(parts.join('. ') || 'No reminders needed.');
+      setRemindersResult(result.message);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to send reminders'));
+    } finally {
+      setSendingReminders(false);
+    }
+  }, []);
 
   return (
     <div className="page-grid">
@@ -285,6 +321,24 @@ export default function InvoiceDuesPage() {
             </button>
           </div>
 
+          <div style={{ borderTop: '1px solid var(--border-color, #e0e0e0)', paddingTop: '12px', marginTop: '4px' }}>
+            <button
+              type="button"
+              className="button button--primary"
+              disabled={sendingReminders}
+              onClick={() => setShowRemindersConfirm(true)}
+            >
+              {sendingReminders ? 'Sending…' : 'Send reminders to all'}
+            </button>
+          </div>
+
+          {remindersSuccess ? (
+            <div className="summary-box" style={{ marginTop: '8px' }}>
+              <p className="eyebrow" style={{ color: 'var(--success-color, #155724)' }}>{remindersResult}</p>
+              <p className="muted-text">{remindersSuccess}</p>
+            </div>
+          ) : null}
+
           <div className="summary-box">
             <p className="eyebrow">Visible outstanding</p>
             <p className="summary-box__value">{formatCurrency(outstandingTotal, currencyCode)}</p>
@@ -373,6 +427,17 @@ export default function InvoiceDuesPage() {
           invoice={previewInvoice}
           onClose={() => setPreviewInvoice(null)}
           onError={(message) => setError(message)}
+        />
+      ) : null}
+
+      {showRemindersConfirm ? (
+        <ConfirmDialog
+          title="Send due reminders"
+          message="This will email a payment reminder to every ledger with outstanding dues. Are you sure?"
+          confirmText="Send to all"
+          cancelText="Cancel"
+          onConfirm={handleSendReminders}
+          onCancel={() => setShowRemindersConfirm(false)}
         />
       ) : null}
     </div>

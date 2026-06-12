@@ -20,6 +20,7 @@ from src.models.payment import Payment
 from src.models.product import Product
 from src.models.user import User, UserRole
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
+from src.services.invoice_payments import build_invoice_payment_summaries
 from src.services.mail import send_email
 
 router = APIRouter()
@@ -55,6 +56,10 @@ class EmailSendRequest(BaseModel):
 class StatementEmailSendRequest(EmailSendRequest):
     from_date: date
     to_date: date
+
+
+class DueRemindersRequest(BaseModel):
+    message: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -366,3 +371,126 @@ async def send_payment_reminder_email(
         raise HTTPException(status_code=400, detail=str(exc))
 
     return {"message": "Payment reminder sent successfully"}
+
+
+# ---------------------------------------------------------------------------
+# POST /due-reminders
+# ---------------------------------------------------------------------------
+
+@router.post("/due-reminders")
+async def send_due_reminders(
+    payload: DueRemindersRequest | None = Body(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Send payment-reminder emails to all ledgers that have outstanding dues."""
+    company_id = getattr(active_company, "id", None)
+    if payload is None:
+        payload = DueRemindersRequest()
+
+    company = active_company if company_id is not None else db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    currency_code = company.currency_code if company and company.currency_code else "INR"
+
+    # Find all active sales invoices
+    invoice_query = (
+        db.query(Invoice)
+        .options(joinedload(Invoice.ledger))
+        .filter(
+            Invoice.company_id == active_company.id,
+            Invoice.voucher_type == "sales",
+            Invoice.status == "active",
+        )
+    )
+    all_invoices = invoice_query.order_by(Invoice.ledger_id.asc(), Invoice.invoice_date.asc(), Invoice.id.asc()).all()
+
+    # Group invoices by ledger_id
+    invoices_by_ledger: dict[int, list[Invoice]] = {}
+    for inv in all_invoices:
+        if inv.ledger_id is not None:
+            invoices_by_ledger.setdefault(inv.ledger_id, []).append(inv)
+
+    # Compute payment summaries for all invoices at once
+    payment_summaries = build_invoice_payment_summaries(db, all_invoices)
+
+    # Identify ledgers with outstanding dues and build per-ledger unpaid lists
+    sent: list[dict] = []
+    skipped: list[dict] = []
+    failed: list[dict] = []
+    template = _jinja_env.get_template("payment_reminder.html")
+
+    for ledger_id, ledger_invoices in invoices_by_ledger.items():
+        # Filter to invoices with remaining > 0
+        outstanding_list: list[dict] = []
+        outstanding_balance = 0.0
+
+        for inv in ledger_invoices:
+            summary = payment_summaries.get(inv.id)
+            if summary is None or summary.remaining_amount <= 0:
+                continue
+            outstanding_balance += summary.remaining_amount
+            outstanding_list.append(
+                {
+                    "invoice_number": inv.invoice_number or f"#{inv.id}",
+                    "invoice_date": inv.invoice_date.strftime("%d %b %Y") if inv.invoice_date else "N/A",
+                    "due_date": inv.due_date.strftime("%d %b %Y") if inv.due_date else None,
+                    "amount": _fmt(summary.remaining_amount),
+                }
+            )
+
+        if not outstanding_list:
+            continue
+
+        ledger = ledger_invoices[0].ledger
+        to_email = ledger.email if ledger else None
+        ledger_name = ledger.name if ledger else (ledger_invoices[0].ledger_name or f"Ledger #{ledger_id}")
+
+        if not to_email:
+            skipped.append({"ledger_id": ledger_id, "ledger_name": ledger_name, "reason": "No email address"})
+            continue
+
+        last_payment_query = (
+            db.query(Payment)
+            .filter(Payment.ledger_id == ledger_id, Payment.voucher_type == "receipt", Payment.status == "active")
+        )
+        if company_id is not None:
+            last_payment_query = last_payment_query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+        last_payment = last_payment_query.order_by(Payment.date.desc()).first()
+        last_payment_date = last_payment.date.strftime("%d %b %Y") if last_payment else None
+
+        html_body = template.render(
+            company_name=company.name if company else "",
+            company_email=company.email if company else None,
+            company_phone=company.phone_number if company else None,
+            company_address=company.address if company else None,
+            buyer_name=ledger_name,
+            outstanding_balance=_fmt(outstanding_balance),
+            currency=_symbol(currency_code),
+            last_payment_date=last_payment_date,
+            message=payload.message,
+            unpaid_invoices=outstanding_list,
+        )
+
+        subject = f"Payment Reminder \u2014 {ledger_name}"
+
+        try:
+            await send_email(
+                db=db,
+                to=to_email,
+                subject=subject,
+                html_body=html_body,
+                company_id=company_id,
+                email_type="due_reminders_batch",
+                reference_id=ledger_id,
+                sent_by_user_id=current_user.id,
+            )
+            sent.append({"ledger_id": ledger_id, "ledger_name": ledger_name, "email": to_email})
+        except RuntimeError:
+            failed.append({"ledger_id": ledger_id, "ledger_name": ledger_name, "email": to_email})
+
+    return {
+        "message": f"Due reminders sent to {len(sent)} ledgers",
+        "sent": sent,
+        "skipped": skipped,
+        "failed": failed,
+    }
