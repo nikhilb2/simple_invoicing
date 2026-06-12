@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import api from '../api/client';
 import type { Product } from '../types/api';
 
 type ProductComboboxProps = {
@@ -16,9 +17,11 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [searching, setSearching] = useState(false);
+  const [serverResults, setServerResults] = useState<Product[] | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sync label when external value changes (e.g. default product on load)
   useEffect(() => {
@@ -26,20 +29,43 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
     if (p) setQuery(`${p.name} (${p.sku})`);
   }, [value, products]);
 
+  // Cleanup debounce timer on unmount
+  useEffect(() => () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); }, []);
+
+  // When typing: use server results (already filtered). When not typing: show full prop list.
   const suggestions = open
-    ? products.filter((p) =>
-        searching && query.trim() !== ''
-          ? `${p.name} ${p.sku}`.toLowerCase().includes(query.toLowerCase())
-          : true
-      )
+    ? serverResults !== null
+      ? serverResults
+      : searching && query.trim() !== ''
+        ? products.filter((p) => `${p.name} ${p.sku}`.toLowerCase().includes(query.toLowerCase()))
+        : products
     : [];
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setQuery(e.target.value);
+    const val = e.target.value;
+    setQuery(val);
     setSearching(true);
     setOpen(true);
     setActiveIndex(-1);
-    onQueryChange?.(e.target.value);
+    onQueryChange?.(val);
+
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (val.trim() === '') {
+      setServerResults(null);
+      return;
+    }
+    searchTimerRef.current = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await api.get<{ items: Product[] }>('/products/', {
+            params: { page: 1, page_size: 30, search: val.trim() },
+          });
+          setServerResults(res.data.items);
+        } catch {
+          // silently ignore search errors
+        }
+      })();
+    }, 250);
   }
 
   function handleSelect(product: Product) {
@@ -47,6 +73,7 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
     setOpen(false);
     setActiveIndex(-1);
     setSearching(false);
+    setServerResults(null);
     onChange(String(product.id), product);
   }
 
@@ -74,6 +101,7 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
       setOpen(false);
       setActiveIndex(-1);
       setSearching(false);
+      setServerResults(null);
       const p = products.find((prod) => String(prod.id) === value);
       if (p) setQuery(`${p.name} (${p.sku})`);
     }
@@ -93,6 +121,7 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
         setSearching(false);
+        setServerResults(null);
         const p = products.find((prod) => String(prod.id) === value);
         if (p) setQuery(`${p.name} (${p.sku})`);
       }
