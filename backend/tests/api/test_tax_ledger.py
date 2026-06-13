@@ -869,10 +869,12 @@ def test_gstr1_cdnr_ctin_from_invoice_id(db_session):
 
     import json as _json
     data = _json.loads(response.body)
-    # Should have CDNR entries with correct ctin
+    # CDNR is grouped by customer GSTIN, with notes under "nt".
     assert len(data["cdnr"]) == 1
     assert data["cdnr"][0]["ctin"] == "29ABCDE1234F1Z5"
-    assert data["cdnr"][0]["nt_num"] == "CDNR-CN-001"
+    assert len(data["cdnr"][0]["nt"]) == 1
+    assert data["cdnr"][0]["nt"][0]["nt_num"] == "CDNR-CN-001"
+    assert data["cdnr"][0]["nt"][0]["pos"] == "29"
 
 
 def test_gstr1_csv_export_blocked_when_company_has_no_gstin(db_session):
@@ -904,3 +906,124 @@ def test_gstr1_csv_export_blocked_when_company_has_no_gstin(db_session):
         )
     assert exc_info.value.status_code == 400
     assert "Company GSTIN" in exc_info.value.detail
+
+
+def _export_json_data(db_session, user, company, from_date, to_date):
+    import json as _json
+
+    response = gstr1_export_json(
+        from_date=from_date,
+        to_date=to_date,
+        db=db_session,
+        _=user,
+        active_company=company,
+    )
+    return _json.loads(response.body)
+
+
+def test_gstr1_b2cs_uses_gstn_schema_fields(db_session):
+    """B2CS entries must use sply_ty/pos/typ/rt, not the legacy ty/crt/srt fields."""
+    user, ledger = _seed_basics(db_session)
+    ledger.gst = None  # B2C — no customer GSTIN
+    db_session.flush()
+
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="B2CS-001",
+        when=datetime(2026, 4, 10),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    db_session.commit()
+    company = _make_company(gst="29TESTT1234X1Z5")
+
+    data = _export_json_data(db_session, user, company, date(2026, 4, 1), date(2026, 4, 30))
+
+    assert len(data["b2cs"]) == 1
+    entry = data["b2cs"][0]
+    assert entry["sply_ty"] == "INTRA"
+    assert entry["pos"] == "29"
+    assert entry["typ"] == "OE"
+    assert entry["rt"] == 18
+    assert entry["txval"] == 5000.0
+    assert entry["camt"] == 450.0
+    assert entry["samt"] == 450.0
+    # Legacy / invalid field names must be gone.
+    assert "ty" not in entry
+    assert "crt" not in entry
+    assert "srt" not in entry
+    assert "irt" not in entry
+    assert "hsn_sc" not in entry
+
+
+def test_gstr1_doc_issue_uses_nature_code_and_ranges(db_session):
+    """doc_issue must use nature-of-document codes with docs ranges, not doc_typ labels."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="DOC-001",
+        when=datetime(2026, 4, 5),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="DOC-002",
+        when=datetime(2026, 4, 9),
+        gst_rate=18,
+        taxable_amount=3000,
+        cgst_amount=270,
+        sgst_amount=270,
+        igst_amount=0,
+    )
+    db_session.commit()
+    company = _make_company(gst="29TESTT1234X1Z5")
+
+    data = _export_json_data(db_session, user, company, date(2026, 4, 1), date(2026, 4, 30))
+
+    doc_det = data["doc_issue"]["doc_det"]
+    inv_doc = next(d for d in doc_det if d["doc_num"] == 1)
+    assert "doc_typ" not in inv_doc
+    rng = inv_doc["docs"][0]
+    assert rng["from"] == "DOC-001"
+    assert rng["to"] == "DOC-002"
+    assert rng["totnum"] == 2
+    assert rng["net_issue"] == 2
+
+
+def test_gstr1_hsn_section_splits_b2b_with_rate(db_session):
+    """HSN summary must expose hsn_b2b rows with hsn_sc first and a rate."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="HSN-001",
+        when=datetime(2026, 4, 10),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    db_session.commit()
+    company = _make_company(gst="29TESTT1234X1Z5")
+
+    data = _export_json_data(db_session, user, company, date(2026, 4, 1), date(2026, 4, 30))
+
+    assert "hsn_b2b" in data["hsn"]
+    row = data["hsn"]["hsn_b2b"][0]
+    assert list(row.keys())[0] == "hsn_sc"
+    assert row["hsn_sc"] == "84713010"
+    assert row["rt"] == 18
+    assert row["txval"] == 5000.0

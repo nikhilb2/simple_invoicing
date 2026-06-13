@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import api, { getApiErrorMessage } from '../api/client';
+import api, { getApiErrorMessage, getBlobErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import { useFY } from '../context/FYContext';
 import type {
@@ -140,7 +140,7 @@ export default function TaxLedgerPage() {
       link.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      setError(getApiErrorMessage(err, `Unable to download tax ledger ${format.toUpperCase()}`));
+      setError(await getBlobErrorMessage(err, `Unable to download tax ledger ${format.toUpperCase()}`));
     } finally {
       setDownloading(null);
     }
@@ -162,16 +162,18 @@ export default function TaxLedgerPage() {
         { params: { from_date: gstr1Period.fromDate, to_date: gstr1Period.toDate } },
       );
       setGstr1Validation(response.data);
+      // Always move to the results step so validation errors (or the all-clear)
+      // are rendered. Previously we only advanced on success, so an invalid
+      // result left the user on the period screen with nothing shown.
+      setGstr1Step('validate');
 
       if (response.data.status === 'valid') {
-        setGstr1Step('summary');
-        // Load summary automatically
-        const summaryResponse = await api.get<Gstr1Summary>(
-          '/ledgers/tax-ledger/gstr1/summary',
-          { params: { from_date: gstr1Period.fromDate, to_date: gstr1Period.toDate } },
+        setSuccess('Validation passed. You can now view the filing summary.');
+      } else {
+        setError(
+          `Validation found ${response.data.invalid_invoices} invoice(s) with errors. ` +
+          'Resolve the issues below before generating GSTR-1.',
         );
-        setGstr1Summary(summaryResponse.data);
-        setSuccess('Validation passed. Filing summary ready.');
       }
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to validate GSTR-1 data'));
@@ -212,7 +214,7 @@ export default function TaxLedgerPage() {
       link.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      setError(getApiErrorMessage(err, `Unable to download GSTR-1 ${format.toUpperCase()}`));
+      setError(await getBlobErrorMessage(err, `Unable to download GSTR-1 ${format.toUpperCase()}`));
     } finally {
       setGstr1Downloading(null);
     }

@@ -103,6 +103,26 @@ export function getApiErrorMessage(error: unknown, fallback = 'Something went wr
   return fallback;
 }
 
+/**
+ * Like getApiErrorMessage, but for requests made with responseType: 'blob'.
+ * On error the server's JSON body arrives as a Blob, so the `detail` field is
+ * not directly readable — we decode and parse it before falling back.
+ */
+export async function getBlobErrorMessage(error: unknown, fallback = 'Something went wrong') {
+  if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+    try {
+      const text = await error.response.data.text();
+      const parsed = JSON.parse(text);
+      if (typeof parsed?.detail === 'string') {
+        return parsed.detail;
+      }
+    } catch {
+      // Body was not JSON — fall through to the generic handler.
+    }
+  }
+  return getApiErrorMessage(error, fallback);
+}
+
 export function cleanParams(params: Record<string, unknown>) {
   return Object.fromEntries(
     Object.entries(params).filter(([, value]) => {

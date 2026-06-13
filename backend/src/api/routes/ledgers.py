@@ -1880,77 +1880,61 @@ def gstr1_export_json(
         )
 
     company_pos = _derive_place_of_supply(company_gstin)
+    # Filing period is MMYYYY per the GSTN schema.
     fp = f"{from_date.month:02d}{from_date.year}"
 
-    # B2B: Group by customer GSTIN, POS per customer (ctin[:2])
+    def _nested_items(records) -> list[dict]:
+        """Build the nested itm_det item list used by B2B/B2CL/CDNR sections."""
+        itms: list[dict] = []
+        for item in records:
+            itms.append({
+                "num": len(itms) + 1,
+                "itm_det": {
+                    "rt": float(item.gst_rate or 0),
+                    "txval": round(float(item.taxable_amount or 0), 2),
+                    "iamt": round(float(item.igst_amount or 0), 2),
+                    "camt": round(float(item.cgst_amount or 0), 2),
+                    "samt": round(float(item.sgst_amount or 0), 2),
+                    "csamt": 0.0,
+                },
+            })
+        return itms
+
+    # B2B (Table 4): grouped by customer GSTIN, POS = customer state code.
     b2b_by_ctin: dict[str, list[dict]] = {}
     for inv in invoices:
         if inv.voucher_type != "sales" or not inv.ledger_gst or not inv.ledger_gst.strip():
             continue
         ctin = inv.ledger_gst.strip().upper()
-        # POS is customer's state code for B2B
         inv_pos = ctin[:2] if len(ctin) >= 2 and ctin[:2].isdigit() else company_pos
-        itms = []
-        for item in inv.items:
-            rate = float(item.gst_rate or 0)
-            itms.append({
-                "num": len(itms) + 1,
-                "itm_det": {
-                    "rt": rate,
-                    "txval": float(item.taxable_amount or 0),
-                    "camt": float(item.cgst_amount or 0),
-                    "samt": float(item.sgst_amount or 0),
-                    "iamt": float(item.igst_amount or 0),
-                    "csamt": 0.0,
-                },
-            })
-        entry = {
+        b2b_by_ctin.setdefault(ctin, []).append({
             "inum": inv.invoice_number or f"INV-{inv.id}",
             "idt": inv.invoice_date.strftime("%d-%m-%Y") if inv.invoice_date else "",
-            "val": float(inv.total_amount or 0),
+            "val": round(float(inv.total_amount or 0), 2),
             "pos": inv_pos,
             "rchrg": "N",
             "inv_typ": "R",
-            "itms": itms,
-        }
-        b2b_by_ctin.setdefault(ctin, []).append(entry)
-
+            "itms": _nested_items(inv.items),
+        })
     b2b_section = [{"ctin": ctin, "inv": invs} for ctin, invs in b2b_by_ctin.items()]
 
-    # B2CL: Aggregate invoices without GSTIN with value > 2.5L
-    b2cl_invs: list[dict] = []
-    b2cl_pos_dict: dict[str, str] = {}  # pos by invoice
+    # B2CL (Table 5): unregistered inter-state invoices > 2.5L, grouped by POS.
+    b2cl_by_pos: dict[str, list[dict]] = {}
     for inv in invoices:
         if inv.voucher_type != "sales" or (inv.ledger_gst and inv.ledger_gst.strip()):
             continue
         if float(inv.taxable_amount or 0) <= 250000:
             continue
-        # B2CL: POS = state of supply (use company state code as fallback)
-        inv_pos = company_pos
-        itms = []
-        for item in inv.items:
-            itms.append({
-                "num": len(itms) + 1,
-                "itm_det": {
-                    "rt": float(item.gst_rate or 0),
-                    "txval": float(item.taxable_amount or 0),
-                    "camt": float(item.cgst_amount or 0),
-                    "samt": float(item.sgst_amount or 0),
-                    "iamt": float(item.igst_amount or 0),
-                    "csamt": 0.0,
-                },
-            })
-        b2cl_invs.append({
+        b2cl_by_pos.setdefault(company_pos, []).append({
             "inum": inv.invoice_number or f"INV-{inv.id}",
             "idt": inv.invoice_date.strftime("%d-%m-%Y") if inv.invoice_date else "",
-            "val": float(inv.total_amount or 0),
-            "pos": inv_pos,
-            "inv_typ": "R",
-            "itms": itms,
+            "val": round(float(inv.total_amount or 0), 2),
+            "itms": _nested_items(inv.items),
         })
+    b2cl_section = [{"pos": pos, "inv": invs} for pos, invs in b2cl_by_pos.items()]
 
-    # B2CS - aggregate by state and tax rate
-    b2cs_by_key: dict[str, dict] = {}
+    # B2CS (Table 7): aggregated by (POS, rate, supply type), flat item shape.
+    b2cs_by_key: dict[tuple[str, float, str], dict] = {}
     for inv in invoices:
         if inv.voucher_type != "sales" or (inv.ledger_gst and inv.ledger_gst.strip()):
             continue
@@ -1958,32 +1942,29 @@ def gstr1_export_json(
             continue
         for item in inv.items:
             rate = float(item.gst_rate or 0)
-            if rate == 0:
-                continue
-            key = f"{company_pos}|{rate}"
-            if key not in b2cs_by_key:
-                b2cs_by_key[key] = {"txval": 0.0, "camt": 0.0, "samt": 0.0, "iamt": 0.0}
-            b2cs_by_key[key]["txval"] += float(item.taxable_amount or 0)
-            b2cs_by_key[key]["camt"] += float(item.cgst_amount or 0)
-            b2cs_by_key[key]["samt"] += float(item.sgst_amount or 0)
-            b2cs_by_key[key]["iamt"] += float(item.igst_amount or 0)
-
-    b2cs_items: list[dict] = []
-    for key, data in b2cs_by_key.items():
-        sply_ty, rate_str = key.split("|")
-        b2cs_items.append({
-            "ty": "INTER" if data["iamt"] > 0 else "INTRA",
-            "hsn_sc": "",
-            "txval": data["txval"],
-            "irt": float(rate_str) if data["iamt"] > 0 else 0,
-            "crt": float(rate_str) / 2 if data["iamt"] == 0 else 0,
-            "srt": float(rate_str) / 2 if data["iamt"] == 0 else 0,
-            "iamt": data["iamt"],
-            "camt": data["camt"],
-            "samt": data["samt"],
+            iamt = float(item.igst_amount or 0)
+            sply_ty = "INTER" if iamt > 0 else "INTRA"
+            key = (company_pos, rate, sply_ty)
+            agg = b2cs_by_key.setdefault(key, {"txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0})
+            agg["txval"] += float(item.taxable_amount or 0)
+            agg["iamt"] += iamt
+            agg["camt"] += float(item.cgst_amount or 0)
+            agg["samt"] += float(item.sgst_amount or 0)
+    b2cs_section: list[dict] = []
+    for (pos, rate, sply_ty), data in b2cs_by_key.items():
+        b2cs_section.append({
+            "sply_ty": sply_ty,
+            "pos": pos,
+            "typ": "OE",  # OE = supplies other than through an e-commerce operator
+            "rt": rate,
+            "txval": round(data["txval"], 2),
+            "iamt": round(data["iamt"], 2),
+            "camt": round(data["camt"], 2),
+            "samt": round(data["samt"], 2),
+            "csamt": 0.0,
         })
 
-    # CDNR (Credit/Debit Notes)
+    # Credit/Debit notes — registered (CDNR, Table 9B) vs unregistered (CDNUR).
     credit_note_q = (
         db.query(CreditNote)
         .options(joinedload(CreditNote.items))
@@ -1995,7 +1976,7 @@ def gstr1_export_json(
         credit_note_q = credit_note_q.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
     credit_notes = credit_note_q.all()
 
-    # Pre-load all referenced invoices for CDNR ctin lookup
+    # Pre-load referenced invoices so we can recover the customer GSTIN per note.
     invoice_ids: set[int] = set()
     for cn in credit_notes:
         for item in (cn.items or []):
@@ -2006,101 +1987,141 @@ def gstr1_export_json(
         inv_records = db.query(Invoice).filter(Invoice.id.in_(invoice_ids)).all()
         invoices_by_id = {inv.id: inv for inv in inv_records}
 
-    cdnr_section: list[dict] = []
+    cdnr_by_ctin: dict[str, list[dict]] = {}
+    cdnur_section: list[dict] = []
     for cn in credit_notes:
         cn_cgst = float(cn.cgst_amount or 0)
         cn_sgst = float(cn.sgst_amount or 0)
         cn_igst = float(cn.igst_amount or 0)
-        item_count = len(cn.items) if cn.items else 1
-        ntype = cn.credit_note_type.upper() if cn.credit_note_type else "R"
-        itms = []
-        for item in cn.items:
-            item_cgst = cn_cgst / item_count
-            item_sgst = cn_sgst / item_count
-            item_igst = cn_igst / item_count
+        items = cn.items or []
+        item_count = len(items) or 1
+        # "return" credit notes reduce the supplier's liability → Credit note ("C").
+        ntty = "C" if (cn.credit_note_type or "").lower() in ("return", "r", "credit", "c") else "D"
+        itms: list[dict] = []
+        for item in items:
             itms.append({
                 "num": len(itms) + 1,
                 "itm_det": {
                     "rt": float(item.gst_rate or 0),
-                    "txval": float(item.taxable_amount or 0),
-                    "camt": item_cgst,
-                    "samt": item_sgst,
-                    "iamt": item_igst,
+                    "txval": round(float(item.taxable_amount or 0), 2),
+                    "iamt": round(cn_igst / item_count, 2),
+                    "camt": round(cn_cgst / item_count, 2),
+                    "samt": round(cn_sgst / item_count, 2),
                     "csamt": 0.0,
                 },
             })
-        # Get customer GSTIN from original invoice via CreditNoteItem.invoice_id
+        # Recover customer GSTIN from the original invoice via CreditNoteItem.invoice_id.
         ctin = ""
-        if cn.items:
-            first_item = cn.items[0]
-            if first_item.invoice_id:
-                original_inv = invoices_by_id.get(first_item.invoice_id)
-                if original_inv and original_inv.ledger_gst:
-                    ctin = original_inv.ledger_gst.strip().upper()
-        # CDNR POS uses company POS (same as original invoice's state of supply)
-        cnr_pos = company_pos
-        cdnr_section.append({
-            "ctin": ctin,
-            "ntty": "C" if ntype in ("RETURN", "R") else "D",
-            "nt_num": cn.credit_note_number or f"CN-{cn.id}",
-            "nt_dt": cn.created_at.strftime("%d-%m-%Y") if cn.created_at else "",
-            "inum": "",
-            "idt": "",
-            "val": float(cn.total_amount or 0),
-            "pos": cnr_pos,
-            "rchrg": "N",
-            "itms": itms,
-        })
+        if items and items[0].invoice_id:
+            original_inv = invoices_by_id.get(items[0].invoice_id)
+            if original_inv and original_inv.ledger_gst:
+                ctin = original_inv.ledger_gst.strip().upper()
+        nt_num = cn.credit_note_number or f"CN-{cn.id}"
+        nt_dt = cn.created_at.strftime("%d-%m-%Y") if cn.created_at else ""
+        val = round(float(cn.total_amount or 0), 2)
+        if ctin and GSTIN_REGEX.fullmatch(ctin):
+            cdnr_by_ctin.setdefault(ctin, []).append({
+                "nt_num": nt_num,
+                "nt_dt": nt_dt,
+                "ntty": ntty,
+                "pos": ctin[:2],
+                "rchrg": "N",
+                "inv_typ": "R",
+                "val": val,
+                "itms": itms,
+            })
+        else:
+            cdnur_section.append({
+                "typ": "B2CL" if val > 250000 else "B2CS",
+                "nt_num": nt_num,
+                "nt_dt": nt_dt,
+                "ntty": ntty,
+                "pos": company_pos,
+                "val": val,
+                "itms": itms,
+            })
+    cdnr_section = [{"ctin": ctin, "nt": nts} for ctin, nts in cdnr_by_ctin.items()]
 
-    # HSN summary
-    hsn_map: dict[str, dict] = {}
+    # HSN summary (Table 12): split into B2B / B2C, aggregated by (HSN, rate).
+    hsn_b2b_map: dict[tuple[str, float], dict] = {}
+    hsn_b2c_map: dict[tuple[str, float], dict] = {}
     for inv in invoices:
         if inv.voucher_type != "sales":
             continue
+        target = hsn_b2b_map if (inv.ledger_gst and inv.ledger_gst.strip()) else hsn_b2c_map
         for item in inv.items:
-            hsn = item.hsn_sac or "----"
-            if hsn not in hsn_map:
-                hsn_map[hsn] = {"taxable": 0.0, "cgst": 0.0, "sgst": 0.0, "igst": 0.0, "qty": 0.0}
-            hsn_map[hsn]["taxable"] += float(item.taxable_amount or 0)
-            hsn_map[hsn]["cgst"] += float(item.cgst_amount or 0)
-            hsn_map[hsn]["sgst"] += float(item.sgst_amount or 0)
-            hsn_map[hsn]["igst"] += float(item.igst_amount or 0)
-            hsn_map[hsn]["qty"] += float(item.quantity or 0)
+            hsn = (item.hsn_sac or "").strip()
+            rate = float(item.gst_rate or 0)
+            agg = target.setdefault((hsn, rate), {"qty": 0.0, "txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0})
+            agg["qty"] += float(item.quantity or 0)
+            agg["txval"] += float(item.taxable_amount or 0)
+            agg["iamt"] += float(item.igst_amount or 0)
+            agg["camt"] += float(item.cgst_amount or 0)
+            agg["samt"] += float(item.sgst_amount or 0)
 
-    hsn_data: dict[str, list[dict]] = {"data": []}
-    for hsn, data in sorted(hsn_map.items()):
-        hsn_data["data"].append({
-            "hsn_sc": hsn,
-            "desc": "",
-            "uqc": "NOS",
-            "qty": data["qty"],
-            "txval": data["taxable"],
-            "camt": data["cgst"],
-            "samt": data["sgst"],
-            "iamt": data["igst"],
-            "csamt": 0.0,
-        })
+    def _hsn_rows(hsn_map: dict[tuple[str, float], dict]) -> list[dict]:
+        rows: list[dict] = []
+        for (hsn, rate), data in sorted(hsn_map.items()):
+            is_service = hsn.startswith("99")
+            rows.append({
+                # hsn_sc must be the first property per the GSTN schema.
+                "hsn_sc": hsn,
+                "num": len(rows) + 1,
+                "uqc": "NA" if is_service else "NOS",
+                "rt": rate,
+                "qty": 0.0 if is_service else round(data["qty"], 2),
+                "txval": round(data["txval"], 2),
+                "iamt": round(data["iamt"], 2),
+                "camt": round(data["camt"], 2),
+                "samt": round(data["samt"], 2),
+                "csamt": 0.0,
+            })
+        return rows
 
-    total_sales = sum(1 for inv in invoices if inv.voucher_type == "sales")
-    total_cn = sum(1 for cn in credit_notes if cn.credit_note_type == "return")
-    total_dn = sum(1 for cn in credit_notes if cn.credit_note_type != "return")
+    hsn_section: dict[str, list[dict]] = {"hsn_b2b": _hsn_rows(hsn_b2b_map)}
+    hsn_b2c_rows = _hsn_rows(hsn_b2c_map)
+    if hsn_b2c_rows:
+        hsn_section["hsn_b2c"] = hsn_b2c_rows
 
-    result = {
-        "gstin": company_gstin,
-        "fp": fp,
-        "b2b": b2b_section,
-        "b2cl": b2cl_invs,
-        "b2cs": b2cs_items,
-        "cdnr": cdnr_section,
-        "hsn": hsn_data,
-        "doc_issue": {
-            "doc_det": [
-                {"doc_num": total_sales, "doc_typ": "INV"},
-                {"doc_num": total_cn, "doc_typ": "CRN"},
-                {"doc_num": total_dn, "doc_typ": "DBN"},
-            ]
-        },
-    }
+    # Documents issued (Table 13): nature-of-document code + issued range.
+    def _doc_range(numbers: list[str]) -> dict | None:
+        nums = sorted(n for n in numbers if n)
+        if not nums:
+            return None
+        return {
+            "num": 1,
+            "from": nums[0],
+            "to": nums[-1],
+            "totnum": len(nums),
+            "cancel": 0,
+            "net_issue": len(nums),
+        }
+
+    doc_det: list[dict] = []
+    inv_range = _doc_range([inv.invoice_number or f"INV-{inv.id}" for inv in invoices if inv.voucher_type == "sales"])
+    if inv_range:  # 1 = Invoices for outward supply
+        doc_det.append({"doc_num": 1, "docs": [inv_range]})
+    dn_range = _doc_range([cn.credit_note_number or f"DN-{cn.id}" for cn in credit_notes if cn.credit_note_type != "return"])
+    if dn_range:  # 4 = Debit Note
+        doc_det.append({"doc_num": 4, "docs": [dn_range]})
+    cn_range = _doc_range([cn.credit_note_number or f"CN-{cn.id}" for cn in credit_notes if cn.credit_note_type == "return"])
+    if cn_range:  # 5 = Credit Note
+        doc_det.append({"doc_num": 5, "docs": [cn_range]})
+
+    # Assemble — include optional sections only when populated; hsn/doc_issue are mandatory.
+    result: dict = {"gstin": company_gstin, "fp": fp}
+    if b2b_section:
+        result["b2b"] = b2b_section
+    if b2cl_section:
+        result["b2cl"] = b2cl_section
+    if b2cs_section:
+        result["b2cs"] = b2cs_section
+    if cdnr_section:
+        result["cdnr"] = cdnr_section
+    if cdnur_section:
+        result["cdnur"] = cdnur_section
+    result["hsn"] = hsn_section
+    result["doc_issue"] = {"doc_det": doc_det}
 
     import json as _json
     json_bytes = _json.dumps(result, indent=2, default=str).encode("utf-8")
