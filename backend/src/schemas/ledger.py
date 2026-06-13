@@ -125,6 +125,7 @@ class TaxLedgerEntry(BaseModel):
     source_voucher_type: str  # "sales" or "purchase"
     reference_number: str
     ledger_name: str
+    ledger_gst: str | None = None
     particulars: str
     gst_rate: float
     taxable_amount: float
@@ -162,3 +163,115 @@ class TaxLedgerOut(BaseModel):
     totals: TaxLedgerTotals
     fy_label: str | None = None
     financial_year_id: int | None = None
+
+
+# ── GSTR-1 Schemas ────────────────────────────────────────────────────────
+
+
+class Gstr1ValidationError(BaseModel):
+    invoice_number: str
+    field: str
+    message: str
+    severity: str = "error"  # "error" | "warning"
+
+
+class Gstr1ValidationResult(BaseModel):
+    status: str  # "valid" | "invalid"
+    errors: list[Gstr1ValidationError] = []
+    total_invoices: int = 0
+    valid_invoices: int = 0
+    invalid_invoices: int = 0
+
+
+class Gstr1CategorySummary(BaseModel):
+    invoice_count: int = 0
+    taxable_value: float = 0.0
+    cgst: float = 0.0
+    sgst: float = 0.0
+    igst: float = 0.0
+    total_tax: float = 0.0
+
+
+class Gstr1HsnSummaryItem(BaseModel):
+    hsn_code: str
+    description: str | None = None
+    uqc: str = "NOS"
+    quantity: float = 0.0
+    taxable_value: float = 0.0
+    cgst: float = 0.0
+    sgst: float = 0.0
+    igst: float = 0.0
+    total_tax: float = 0.0
+
+
+class Gstr1DocSummary(BaseModel):
+    total_invoices: int = 0
+    total_credit_notes: int = 0
+    total_debit_notes: int = 0
+    cancelled_invoices: int = 0
+
+
+class Gstr1Summary(BaseModel):
+    from_date: date
+    to_date: date
+    gstin: str | None = None
+    b2b: Gstr1CategorySummary = Gstr1CategorySummary()
+    b2cl: Gstr1CategorySummary = Gstr1CategorySummary()
+    b2cs: Gstr1CategorySummary = Gstr1CategorySummary()
+    credit_notes: Gstr1CategorySummary = Gstr1CategorySummary()
+    debit_notes: Gstr1CategorySummary = Gstr1CategorySummary()
+    nil_rated: Gstr1CategorySummary = Gstr1CategorySummary()
+    exempt: Gstr1CategorySummary = Gstr1CategorySummary()
+    non_gst: Gstr1CategorySummary = Gstr1CategorySummary()
+    hsn_summary: list[Gstr1HsnSummaryItem] = []
+    doc_summary: Gstr1DocSummary = Gstr1DocSummary()
+
+
+# ── GSTR-1 JSON Export (GSTN-compatible) ──────────────────────────────────
+
+
+class Gstr1B2BInvoice(BaseModel):
+    inum: str  # Invoice Number
+    idt: str   # Invoice Date (YYYY-MM-DD)
+    val: float  # Invoice Value
+    pos: str    # Place of Supply (state code, 2 digits)
+    rchrg: str = "N"  # Reverse Charge
+    inv_typ: str = "R"  # Invoice Type
+    itms: list[dict] = []  # Items with tax breakdown
+
+
+class Gstr1B2B(BaseModel):
+    ctin: str  # Customer GSTIN
+    inv: list[Gstr1B2BInvoice] = []
+
+
+class Gstr1B2CLInvoice(BaseModel):
+    inum: str
+    idt: str
+    val: float
+    pos: str
+    inv_typ: str = "R"
+    itms: list[dict] = []
+
+
+class Gstr1B2CSItem(BaseModel):
+    ty: str   # Supply Type (inter/intra)
+    hsn_sc: str
+    txval: float
+    irt: float  # IGST Rate
+    crt: float  # CGST Rate
+    srt: float  # SGST Rate
+    iamt: float
+    camt: float
+    samt: float
+
+
+class Gstr1JsonExport(BaseModel):
+    gstin: str
+    fp: str  # Filing Period (MMYYYY)
+    b2b: list[dict] = []
+    b2cl: list[dict] = []
+    b2cs: list[dict] = []
+    cdnr: list[dict] = []
+    hsn: dict = {}
+    doc_issue: dict = {}

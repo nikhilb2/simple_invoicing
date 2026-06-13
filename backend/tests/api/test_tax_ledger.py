@@ -5,9 +5,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.api.routes.ledgers import get_tax_ledger
+from src.api.routes.ledgers import get_tax_ledger, gstr1_validate, gstr1_summary, gstr1_export_json
 from src.db.base import Base
 from src.models.buyer import Buyer
+from src.models.company import CompanyProfile
 from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.user import User, UserRole
@@ -157,6 +158,19 @@ def _add_credit_note_item(
     db_session.flush()
     return credit_note
 
+
+def _make_company(name="Test Co", gst="29TEST1234X1Z1"):
+    return CompanyProfile(
+        name=name,
+        address="Somewhere",
+        gst=gst,
+        phone_number="999",
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Existing Tax Ledger Tests
+# ═══════════════════════════════════════════════════════════════════════════
 
 def test_tax_ledger_includes_invoice_tax_and_credit_note_reversals(db_session):
     user, ledger = _seed_basics(db_session)
@@ -333,3 +347,368 @@ def test_tax_ledger_supports_voucher_type_and_gst_rate_filters(db_session):
     entry_by_key = {(entry.entry_type, entry.entry_id): entry for entry in response.entries}
     assert entry_by_key[("invoice", sales_invoice.id)].debit_total_tax == pytest.approx(18.0)
     assert entry_by_key[("credit_note", sales_credit_note.id)].credit_total_tax == pytest.approx(3.6)
+
+
+def test_tax_ledger_includes_ledger_gst(db_session):
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session,
+        ledger,
+        user,
+        voucher_type="sales",
+        invoice_number="S-GST-001",
+        when=datetime(2026, 3, 10, 9, 0, 0),
+        gst_rate=18,
+        taxable_amount=100,
+        cgst_amount=9,
+        sgst_amount=9,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    response = get_tax_ledger(
+        from_date=date(2026, 3, 1),
+        to_date=date(2026, 3, 31),
+        voucher_type=None,
+        gst_rate=None,
+        db=db_session,
+        _=user,
+    )
+
+    assert len(response.entries) == 1
+    assert response.entries[0].ledger_gst == "29ABCDE1234F1Z5"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  GSTR-1 Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_gstr1_validate_passes_for_valid_sales_invoices(db_session):
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session,
+        ledger,
+        user,
+        voucher_type="sales",
+        invoice_number="GS-001",
+        when=datetime(2026, 4, 10, 9, 0, 0),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    db_session.flush()
+    inv = db_session.query(Invoice).filter(Invoice.invoice_number == "GS-001").first()
+    inv.items[0].hsn_sac = "84713010"
+    db_session.commit()
+
+    result = gstr1_validate(
+        from_date=date(2026, 4, 1),
+        to_date=date(2026, 4, 30),
+        db=db_session,
+        _=user,
+        active_company=None,
+    )
+
+    assert result.status == "valid"
+    assert result.total_invoices == 1
+    assert result.valid_invoices == 1
+    assert result.invalid_invoices == 0
+    assert len(result.errors) == 0
+
+
+def test_gstr1_validate_detects_missing_gstin(db_session):
+    user, ledger = _seed_basics(db_session)
+    ledger.gst = None
+    db_session.flush()
+
+    _add_invoice_with_item(
+        db_session,
+        ledger,
+        user,
+        voucher_type="sales",
+        invoice_number="GS-NOGST",
+        when=datetime(2026, 5, 10, 9, 0, 0),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+    )
+    db_session.flush()
+    inv = db_session.query(Invoice).filter(Invoice.invoice_number == "GS-NOGST").first()
+    inv.ledger_gst = None
+    db_session.commit()
+
+    result = gstr1_validate(
+        from_date=date(2026, 5, 1),
+        to_date=date(2026, 5, 31),
+        db=db_session,
+        _=user,
+        active_company=None,
+    )
+
+    assert result.status == "invalid"
+    assert any("Missing GSTIN" in e.message for e in result.errors)
+
+
+def test_gstr1_validate_detects_invalid_gstin(db_session):
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session,
+        ledger,
+        user,
+        voucher_type="sales",
+        invoice_number="GS-BAD",
+        when=datetime(2026, 6, 10, 9, 0, 0),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+    )
+    db_session.flush()
+    inv = db_session.query(Invoice).filter(Invoice.invoice_number == "GS-BAD").first()
+    inv.ledger_gst = "INVALID"
+    db_session.commit()
+
+    result = gstr1_validate(
+        from_date=date(2026, 6, 1),
+        to_date=date(2026, 6, 30),
+        db=db_session,
+        _=user,
+        active_company=None,
+    )
+
+    assert result.status == "invalid"
+    assert any("Invalid GSTIN" in e.message for e in result.errors)
+
+
+def test_gstr1_validate_no_duplicate_false_flag_for_unique_numbers(db_session):
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session,
+        ledger,
+        user,
+        voucher_type="sales",
+        invoice_number="GS-DUP-1",
+        when=datetime(2026, 7, 10, 9, 0, 0),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+    )
+    _add_invoice_with_item(
+        db_session,
+        ledger,
+        user,
+        voucher_type="sales",
+        invoice_number="GS-DUP-2",
+        when=datetime(2026, 7, 11, 9, 0, 0),
+        gst_rate=18,
+        taxable_amount=2000,
+        cgst_amount=180,
+        sgst_amount=180,
+        igst_amount=0,
+    )
+    db_session.flush()
+    inv1 = db_session.query(Invoice).filter(Invoice.invoice_number == "GS-DUP-1").first()
+    inv1.items[0].hsn_sac = "84713010"
+    inv2 = db_session.query(Invoice).filter(Invoice.invoice_number == "GS-DUP-2").first()
+    inv2.items[0].hsn_sac = "84713010"
+    db_session.commit()
+
+    result = gstr1_validate(
+        from_date=date(2026, 7, 1),
+        to_date=date(2026, 7, 31),
+        db=db_session,
+        _=user,
+        active_company=None,
+    )
+
+    assert result.status == "valid"
+    # With unique numbers, no duplicate errors
+    assert not any("Duplicate" in e.message for e in result.errors)
+
+
+def test_gstr1_validate_detects_missing_hsn(db_session):
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session,
+        ledger,
+        user,
+        voucher_type="sales",
+        invoice_number="GS-NOHSN",
+        when=datetime(2026, 8, 10, 9, 0, 0),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    result = gstr1_validate(
+        from_date=date(2026, 8, 1),
+        to_date=date(2026, 8, 31),
+        db=db_session,
+        _=user,
+        active_company=None,
+    )
+
+    assert result.status == "invalid"
+    assert any("Missing HSN" in e.message for e in result.errors)
+
+
+def test_gstr1_summary_classifies_b2b(db_session):
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session,
+        ledger,
+        user,
+        voucher_type="sales",
+        invoice_number="B2B-001",
+        when=datetime(2026, 9, 10, 9, 0, 0),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    company = _make_company()
+
+    result = gstr1_summary(
+        from_date=date(2026, 9, 1),
+        to_date=date(2026, 9, 30),
+        db=db_session,
+        _=user,
+        active_company=company,
+    )
+
+    assert result.b2b.invoice_count == 1
+    assert result.b2b.taxable_value == pytest.approx(5000.0)
+    assert result.b2cl.invoice_count == 0
+    assert result.doc_summary.total_invoices == 1
+
+
+def test_gstr1_summary_classifies_b2cl(db_session):
+    user, ledger = _seed_basics(db_session)
+    ledger.gst = None
+    db_session.flush()
+
+    _add_invoice_with_item(
+        db_session,
+        ledger,
+        user,
+        voucher_type="sales",
+        invoice_number="B2CL-001",
+        when=datetime(2026, 10, 10),
+        gst_rate=18,
+        taxable_amount=300000,
+        cgst_amount=27000,
+        sgst_amount=27000,
+        igst_amount=0,
+    )
+    db_session.flush()
+    inv = db_session.query(Invoice).filter(Invoice.invoice_number == "B2CL-001").first()
+    inv.ledger_gst = None
+    db_session.commit()
+
+    company = _make_company()
+
+    result = gstr1_summary(
+        from_date=date(2026, 10, 1),
+        to_date=date(2026, 10, 31),
+        db=db_session,
+        _=user,
+        active_company=company,
+    )
+
+    assert result.b2cl.invoice_count == 1
+    assert result.b2cl.taxable_value == pytest.approx(300000.0)
+
+
+def test_gstr1_export_json_structure(db_session):
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session,
+        ledger,
+        user,
+        voucher_type="sales",
+        invoice_number="JSON-001",
+        when=datetime(2026, 11, 10),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    company = _make_company()
+
+    response = gstr1_export_json(
+        from_date=date(2026, 11, 1),
+        to_date=date(2026, 11, 30),
+        db=db_session,
+        _=user,
+        active_company=company,
+    )
+
+    import json as _json
+    buf = response.body_iterator
+    content = b""
+    for chunk in buf:
+        content += chunk
+
+    data = _json.loads(content)
+    assert data["gstin"] == "29TEST1234X1Z1"
+    assert len(data["b2b"]) == 1
+    assert data["b2b"][0]["ctin"] == "29ABCDE1234F1Z5"
+    assert len(data["b2b"][0]["inv"]) == 1
+    assert data["b2b"][0]["inv"][0]["inum"] == "JSON-001"
+    assert "doc_issue" in data
+
+
+def test_gstr1_validate_warns_missing_place_of_supply(db_session):
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session,
+        ledger,
+        user,
+        voucher_type="sales",
+        invoice_number="GS-NOPOS",
+        when=datetime(2026, 12, 10),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+    )
+    db_session.flush()
+    inv = db_session.query(Invoice).filter(Invoice.invoice_number == "GS-NOPOS").first()
+    inv.company_gst = None
+    inv.items[0].hsn_sac = "84713010"
+    db_session.commit()
+
+    result = gstr1_validate(
+        from_date=date(2026, 12, 1),
+        to_date=date(2026, 12, 31),
+        db=db_session,
+        _=user,
+        active_company=None,
+    )
+
+    assert any("Place of Supply" in e.message for e in result.errors)
