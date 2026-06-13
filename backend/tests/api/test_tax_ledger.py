@@ -98,6 +98,7 @@ def _add_invoice_with_item(
     item = InvoiceItem(
         invoice_id=invoice.id,
         product_id=1,
+        hsn_sac="84713010",
         quantity=1,
         unit_price=taxable_amount,
         gst_rate=gst_rate,
@@ -161,7 +162,7 @@ def _add_credit_note_item(
     return credit_note
 
 
-def _make_company(name="Test Co", gst="29TEST1234X1Z1"):
+def _make_company(name="Test Co", gst="29TESTT1234X1Z5"):
     return CompanyProfile(
         name=name,
         address="Somewhere",
@@ -557,6 +558,12 @@ def test_gstr1_validate_detects_missing_hsn(db_session):
     )
     db_session.commit()
 
+    # Clear HSN to simulate missing HSN
+    inv = db_session.query(Invoice).filter(Invoice.invoice_number == "GS-NOHSN").first()
+    if inv and inv.items:
+        inv.items[0].hsn_sac = None
+    db_session.commit()
+
     result = gstr1_validate(
         from_date=date(2026, 8, 1),
         to_date=date(2026, 8, 31),
@@ -672,7 +679,7 @@ def test_gstr1_export_json_structure(db_session):
     content = response.body
 
     data = _json.loads(content)
-    assert data["gstin"] == "29TEST1234X1Z1"
+    assert data["gstin"] == "29TESTT1234X1Z5"
     assert len(data["b2b"]) == 1
     assert data["b2b"][0]["ctin"] == "29ABCDE1234F1Z5"
     assert len(data["b2b"][0]["inv"]) == 1
@@ -767,7 +774,7 @@ def test_gstr1_json_export_blocked_when_pos_is_00(db_session):
     db_session.commit()
 
     # Company with a GSTIN that has "00" as state code
-    company = _make_company(gst="00ABCDE1234F1Z5")
+    company = _make_company(gst="00AAAAA1234F1Z5")
 
     with pytest.raises(HTTPException) as exc_info:
         gstr1_export_json(
@@ -802,7 +809,7 @@ def test_gstr1_b2b_pos_uses_customer_state_code(db_session):
     db_session.commit()
 
     # Company GSTIN starts with "29" (Karnataka)
-    company = _make_company(gst="29TEST1234X1Z1")
+    company = _make_company(gst="29TESTT1234X1Z5")
 
     response = gstr1_export_json(
         from_date=date(2027, 3, 1),
@@ -850,7 +857,7 @@ def test_gstr1_cdnr_ctin_from_invoice_id(db_session):
     )
     db_session.commit()
 
-    company = _make_company(gst="29TEST1234X1Z1")
+    company = _make_company(gst="29TESTT1234X1Z5")
 
     response = gstr1_export_json(
         from_date=date(2027, 4, 1),
