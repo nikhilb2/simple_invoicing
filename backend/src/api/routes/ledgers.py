@@ -2024,8 +2024,9 @@ def gstr1_export_json(
     json_bytes = _json.dumps(result, indent=2, default=str).encode("utf-8")
     filename = f"gstr1_{from_date}_{to_date}.json"
 
-    return StreamingResponse(
-        BytesIO(json_bytes),
+    from fastapi.responses import Response
+    return Response(
+        content=json_bytes,
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

@@ -667,10 +667,7 @@ def test_gstr1_export_json_structure(db_session):
     )
 
     import json as _json
-    buf = response.body_iterator
-    content = b""
-    for chunk in buf:
-        content += chunk
+    content = response.body
 
     data = _json.loads(content)
     assert data["gstin"] == "29TEST1234X1Z1"
