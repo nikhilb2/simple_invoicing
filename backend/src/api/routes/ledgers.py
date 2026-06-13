@@ -1527,7 +1527,12 @@ def _build_tax_ledger_pdf_html(
 
 
 def _derive_place_of_supply(company_gst: str | None) -> str:
-    """Derive place of supply state code from company GSTIN (first 2 digits)."""
+    """Derive place of supply state code from a GSTIN (first 2 digits).
+
+    For GSTR-1:
+    - B2B: POS should be the customer's state code (ctin[:2])
+    - B2CL/B2CS: POS is state of supply (use company state code as fallback)
+    """
     if company_gst and len(company_gst) >= 2 and company_gst[:2].isdigit():
         return company_gst[:2]
     return "00"
@@ -1551,6 +1556,57 @@ def _validate_hsn(hsn: str | None) -> str | None:
     if not HSN_SAC_REGEX.fullmatch(hsn):
         return f"Invalid HSN: {hsn}"
     return None
+
+
+def _validate_gstr1_export(db: Session, company_gstin: str | None, invoices: list[Invoice]) -> list[str]:
+    """Validate GSTR-1 data before JSON/CSV export.
+
+    Returns a list of error messages. If empty, validation passed.
+    """
+    errors: list[str] = []
+
+    # 1. Company GSTIN must be set and valid
+    if not company_gstin or not company_gstin.strip():
+        errors.append("Company GSTIN is required to generate GSTR-1 export. Please set your company GSTIN in Settings.")
+    elif not GSTIN_REGEX.fullmatch(company_gstin.strip().upper()):
+        errors.append(f"Company GSTIN '{company_gstin}' is invalid. Please set a valid 15-character GSTIN in Settings.")
+
+    # 2. Company POS must not be "00"
+    company_pos = _derive_place_of_supply(company_gstin)
+    if company_pos == "00":
+        errors.append("Cannot determine Place of Supply from company GSTIN. Please set a valid company GSTIN in Settings.")
+
+    # 3. Check each invoice
+    seen_numbers: set[str] = set()
+    for inv in invoices:
+        if inv.voucher_type != "sales":
+            continue
+
+        inv_num = inv.invoice_number or f"INV-{inv.id}"
+        ctin = (inv.ledger_gst or "").strip().upper()
+
+        # B2B: customer GSTIN must be valid and POS must be valid
+        if ctin:
+            if not GSTIN_REGEX.fullmatch(ctin):
+                errors.append(f"Invoice {inv_num}: Customer GSTIN '{ctin}' is not a valid 15-character GSTIN.")
+            else:
+                pos = ctin[:2]
+                if pos == "00" or not pos.isdigit():
+                    errors.append(f"Invoice {inv_num}: Cannot derive valid Place of Supply from customer GSTIN '{ctin}'.")
+
+        # Check for HSN codes
+        missing_hsn = [item for item in inv.items if not item.hsn_sac or not item.hsn_sac.strip()]
+        if missing_hsn:
+            item_ids = ", ".join(str(item.id) for item in missing_hsn)
+            errors.append(f"Invoice {inv_num}: Missing HSN/SAC code for item(s) #{item_ids}.")
+
+        # Check for duplicate invoice numbers
+        if inv_num in seen_numbers:
+            errors.append(f"Invoice {inv_num}: Duplicate invoice number detected.")
+        else:
+            seen_numbers.add(inv_num)
+
+    return errors
 
 
 def _gstr1_invoice_query(db: Session, from_date: date, to_date: date, company_id: int | None):
@@ -1813,22 +1869,30 @@ def gstr1_export_json(
         raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
 
     invoices = _gstr1_invoice_query(db, from_date, to_date, company_id)
-    company_gstin = active_company.gst if active_company else ""
-    pos = _derive_place_of_supply(active_company.gst if active_company else None)
+    company_gstin = (active_company.gst or "").strip().upper() if active_company else ""
+
+    # Validate before export
+    validation_errors = _validate_gstr1_export(db, company_gstin, invoices)
+    if validation_errors:
+        raise HTTPException(
+            status_code=400,
+            detail="GSTR-1 validation failed: " + "; ".join(validation_errors),
+        )
+
+    company_pos = _derive_place_of_supply(company_gstin)
     fp = f"{from_date.month:02d}{from_date.year}"
 
-    # B2B: Group by customer GSTIN
+    # B2B: Group by customer GSTIN, POS per customer (ctin[:2])
     b2b_by_ctin: dict[str, list[dict]] = {}
     for inv in invoices:
         if inv.voucher_type != "sales" or not inv.ledger_gst or not inv.ledger_gst.strip():
             continue
         ctin = inv.ledger_gst.strip().upper()
+        # POS is customer's state code for B2B
+        inv_pos = ctin[:2] if len(ctin) >= 2 and ctin[:2].isdigit() else company_pos
         itms = []
         for item in inv.items:
             rate = float(item.gst_rate or 0)
-            cgst_rate = rate / 2 if float(item.igst_amount or 0) == 0 else 0
-            sgst_rate = rate / 2 if float(item.igst_amount or 0) == 0 else 0
-            igst_rate = rate if float(item.igst_amount or 0) > 0 else 0
             itms.append({
                 "num": len(itms) + 1,
                 "itm_det": {
@@ -1844,7 +1908,7 @@ def gstr1_export_json(
             "inum": inv.invoice_number or f"INV-{inv.id}",
             "idt": inv.invoice_date.strftime("%d-%m-%Y") if inv.invoice_date else "",
             "val": float(inv.total_amount or 0),
-            "pos": pos,
+            "pos": inv_pos,
             "rchrg": "N",
             "inv_typ": "R",
             "itms": itms,
@@ -1853,13 +1917,16 @@ def gstr1_export_json(
 
     b2b_section = [{"ctin": ctin, "inv": invs} for ctin, invs in b2b_by_ctin.items()]
 
-    # B2CL
+    # B2CL: Aggregate invoices without GSTIN with value > 2.5L
     b2cl_invs: list[dict] = []
+    b2cl_pos_dict: dict[str, str] = {}  # pos by invoice
     for inv in invoices:
         if inv.voucher_type != "sales" or (inv.ledger_gst and inv.ledger_gst.strip()):
             continue
         if float(inv.taxable_amount or 0) <= 250000:
             continue
+        # B2CL: POS = state of supply (use company state code as fallback)
+        inv_pos = company_pos
         itms = []
         for item in inv.items:
             itms.append({
@@ -1877,7 +1944,7 @@ def gstr1_export_json(
             "inum": inv.invoice_number or f"INV-{inv.id}",
             "idt": inv.invoice_date.strftime("%d-%m-%Y") if inv.invoice_date else "",
             "val": float(inv.total_amount or 0),
-            "pos": pos,
+            "pos": inv_pos,
             "inv_typ": "R",
             "itms": itms,
         })
@@ -1893,7 +1960,7 @@ def gstr1_export_json(
             rate = float(item.gst_rate or 0)
             if rate == 0:
                 continue
-            key = f"{pos}|{rate}"
+            key = f"{company_pos}|{rate}"
             if key not in b2cs_by_key:
                 b2cs_by_key[key] = {"txval": 0.0, "camt": 0.0, "samt": 0.0, "iamt": 0.0}
             b2cs_by_key[key]["txval"] += float(item.taxable_amount or 0)
@@ -1928,6 +1995,17 @@ def gstr1_export_json(
         credit_note_q = credit_note_q.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
     credit_notes = credit_note_q.all()
 
+    # Pre-load all referenced invoices for CDNR ctin lookup
+    invoice_ids: set[int] = set()
+    for cn in credit_notes:
+        for item in (cn.items or []):
+            if item.invoice_id:
+                invoice_ids.add(item.invoice_id)
+    invoices_by_id: dict[int, Invoice] = {}
+    if invoice_ids:
+        inv_records = db.query(Invoice).filter(Invoice.id.in_(invoice_ids)).all()
+        invoices_by_id = {inv.id: inv for inv in inv_records}
+
     cdnr_section: list[dict] = []
     for cn in credit_notes:
         cn_cgst = float(cn.cgst_amount or 0)
@@ -1951,12 +2029,16 @@ def gstr1_export_json(
                     "csamt": 0.0,
                 },
             })
-        # Get customer GSTIN from original invoice via item
+        # Get customer GSTIN from original invoice via CreditNoteItem.invoice_id
         ctin = ""
-        if cn.items and hasattr(cn.items[0], 'invoice_item') and cn.items[0].invoice_item:
-            inv_item = cn.items[0].invoice_item
-            if hasattr(inv_item, 'invoice') and inv_item.invoice:
-                ctin = (inv_item.invoice.ledger_gst or "").strip().upper()
+        if cn.items:
+            first_item = cn.items[0]
+            if first_item.invoice_id:
+                original_inv = invoices_by_id.get(first_item.invoice_id)
+                if original_inv and original_inv.ledger_gst:
+                    ctin = original_inv.ledger_gst.strip().upper()
+        # CDNR POS uses company POS (same as original invoice's state of supply)
+        cnr_pos = company_pos
         cdnr_section.append({
             "ctin": ctin,
             "ntty": "C" if ntype in ("RETURN", "R") else "D",
@@ -1965,7 +2047,7 @@ def gstr1_export_json(
             "inum": "",
             "idt": "",
             "val": float(cn.total_amount or 0),
-            "pos": pos,
+            "pos": cnr_pos,
             "rchrg": "N",
             "itms": itms,
         })
@@ -2046,7 +2128,16 @@ def gstr1_export_csv(
         raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
 
     invoices = _gstr1_invoice_query(db, from_date, to_date, company_id)
-    pos = _derive_place_of_supply(active_company.gst if active_company else None)
+    company_gstin = (active_company.gst or "").strip().upper() if active_company else ""
+
+    # Validate company GSTIN
+    if not company_gstin:
+        raise HTTPException(
+            status_code=400,
+            detail="Company GSTIN is required to generate GSTR-1 CSV. Please set your company GSTIN in Settings.",
+        )
+
+    company_pos = _derive_place_of_supply(company_gstin)
 
     csv_buffer = StringIO(newline="")
     writer = csv.writer(csv_buffer)
@@ -2062,10 +2153,14 @@ def gstr1_export_csv(
         gstin = inv.ledger_gst.strip().upper() if inv.ledger_gst else ""
         if gstin:
             section = "B2B"
+            # B2B: POS = customer's state code
+            pos = gstin[:2] if len(gstin) >= 2 and gstin[:2].isdigit() else company_pos
         elif float(inv.taxable_amount or 0) > 250000:
             section = "B2CL"
+            pos = company_pos
         else:
             section = "B2CS"
+            pos = company_pos
 
         hsns = ", ".join(item.hsn_sac or "" for item in inv.items if item.hsn_sac)
         writer.writerow([

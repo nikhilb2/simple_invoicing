@@ -5,7 +5,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.api.routes.ledgers import get_tax_ledger, gstr1_validate, gstr1_summary, gstr1_export_json
+from fastapi import HTTPException
+
+from src.api.routes.ledgers import get_tax_ledger, gstr1_export_csv, gstr1_export_json, gstr1_summary, gstr1_validate
 from src.db.base import Base
 from src.models.buyer import Buyer
 from src.models.company import CompanyProfile
@@ -709,3 +711,189 @@ def test_gstr1_validate_warns_missing_place_of_supply(db_session):
     )
 
     assert any("Place of Supply" in e.message for e in result.errors)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Issue #376: GSTR-1 Fix Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_gstr1_json_export_blocked_when_company_has_no_gstin(db_session):
+    """JSON export should raise HTTP 400 when company GSTIN is empty."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="NOGST-001",
+        when=datetime(2027, 1, 10),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    # Company with no GSTIN
+    company = _make_company(gst="")
+
+    with pytest.raises(HTTPException) as exc_info:
+        gstr1_export_json(
+            from_date=date(2027, 1, 1),
+            to_date=date(2027, 1, 31),
+            db=db_session,
+            _=user,
+            active_company=company,
+        )
+    assert exc_info.value.status_code == 400
+    assert "Company GSTIN" in exc_info.value.detail
+
+
+def test_gstr1_json_export_blocked_when_pos_is_00(db_session):
+    """JSON export should raise HTTP 400 when company GSTIN is invalid (pos='00')."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="POS00-001",
+        when=datetime(2027, 2, 10),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    # Company with a GSTIN that has "00" as state code
+    company = _make_company(gst="00ABCDE1234F1Z5")
+
+    with pytest.raises(HTTPException) as exc_info:
+        gstr1_export_json(
+            from_date=date(2027, 2, 1),
+            to_date=date(2027, 2, 28),
+            db=db_session,
+            _=user,
+            active_company=company,
+        )
+    assert exc_info.value.status_code == 400
+    assert "Place of Supply" in exc_info.value.detail
+
+
+def test_gstr1_b2b_pos_uses_customer_state_code(db_session):
+    """B2B JSON export should set POS to customer's state code (ctin[:2])."""
+    user, ledger = _seed_basics(db_session)
+    # Customer GSTIN starts with "27" (Maharashtra)
+    ledger.gst = "27ABCDE1234F1Z5"
+    db_session.flush()
+
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="B2BPOS-001",
+        when=datetime(2027, 3, 10),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    # Company GSTIN starts with "29" (Karnataka)
+    company = _make_company(gst="29TEST1234X1Z1")
+
+    response = gstr1_export_json(
+        from_date=date(2027, 3, 1),
+        to_date=date(2027, 3, 31),
+        db=db_session,
+        _=user,
+        active_company=company,
+    )
+
+    import json as _json
+    data = _json.loads(response.body)
+    assert len(data["b2b"]) == 1
+    # POS should be "27" (customer's state), NOT "29" (company's state)
+    assert data["b2b"][0]["ctin"] == "27ABCDE1234F1Z5"
+    assert data["b2b"][0]["inv"][0]["pos"] == "27"
+
+
+def test_gstr1_cdnr_ctin_from_invoice_id(db_session):
+    """CDNR section ctin should be correctly looked up from the original invoice."""
+    user, ledger = _seed_basics(db_session)
+
+    sales_invoice = _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="CDNR-INV-001",
+        when=datetime(2027, 4, 10),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    # Create credit note referencing the invoice
+    _add_credit_note_item(
+        db_session, user, ledger, sales_invoice,
+        number="CDNR-CN-001",
+        when=datetime(2027, 4, 15),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    company = _make_company(gst="29TEST1234X1Z1")
+
+    response = gstr1_export_json(
+        from_date=date(2027, 4, 1),
+        to_date=date(2027, 4, 30),
+        db=db_session,
+        _=user,
+        active_company=company,
+    )
+
+    import json as _json
+    data = _json.loads(response.body)
+    # Should have CDNR entries with correct ctin
+    assert len(data["cdnr"]) == 1
+    assert data["cdnr"][0]["ctin"] == "29ABCDE1234F1Z5"
+    assert data["cdnr"][0]["nt_num"] == "CDNR-CN-001"
+
+
+def test_gstr1_csv_export_blocked_when_company_has_no_gstin(db_session):
+    """CSV export should raise HTTP 400 when company GSTIN is empty."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="CSVNOGST-001",
+        when=datetime(2027, 5, 10),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    company = _make_company(gst="")
+
+    with pytest.raises(HTTPException) as exc_info:
+        gstr1_export_csv(
+            from_date=date(2027, 5, 1),
+            to_date=date(2027, 5, 31),
+            db=db_session,
+            _=user,
+            active_company=company,
+        )
+    assert exc_info.value.status_code == 400
+    assert "Company GSTIN" in exc_info.value.detail
