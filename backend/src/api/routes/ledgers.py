@@ -22,12 +22,14 @@ from src.models.ledger_address import LedgerAddress
 from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.user import User, UserRole
 from src.schemas.invoice import OutstandingInvoiceOut
-from src.schemas.ledger import DayBookEntry, DayBookOut, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementInvoiceAllocation, LedgerStatementOut, PaginatedLedgerOut, TaxLedgerEntry, TaxLedgerOut, TaxLedgerTotals
+from src.schemas.ledger import DayBookEntry, DayBookOut, Gstr1B2BInvoice, Gstr1CategorySummary, Gstr1DocSummary, Gstr1HsnSummaryItem, Gstr1JsonExport, Gstr1Summary, Gstr1ValidationError, Gstr1ValidationResult, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementInvoiceAllocation, LedgerStatementOut, PaginatedLedgerOut, TaxLedgerEntry, TaxLedgerOut, TaxLedgerTotals
 from src.schemas.ledger_address import LedgerAddressCreate, LedgerAddressOut, LedgerAddressUpdate
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
 from src.services.financial_year import get_active_fy
 from src.services.invoice_payments import auto_allocate_outstanding_invoices, build_invoice_payment_summaries, get_outstanding_invoices_for_ledger
 from src.services.pdf_templates import _build_day_book_html, _build_statement_html
+from src.services.pdf_templates.builders import _e
+from src.core.validation import GSTIN_REGEX, HSN_SAC_REGEX
 
 router = APIRouter()
 
@@ -682,6 +684,7 @@ def get_tax_ledger(
             Invoice.voucher_type.label("source_voucher_type"),
             Invoice.invoice_number.label("reference_number"),
             Invoice.ledger_name.label("ledger_name"),
+            Invoice.ledger_gst.label("ledger_gst"),
             InvoiceItem.gst_rate.label("gst_rate"),
             func.coalesce(func.sum(InvoiceItem.taxable_amount), 0).label("taxable_amount"),
             func.coalesce(func.sum(InvoiceItem.cgst_amount), 0).label("cgst_amount"),
@@ -709,6 +712,7 @@ def get_tax_ledger(
             Invoice.voucher_type,
             Invoice.invoice_number,
             Invoice.ledger_name,
+            Invoice.ledger_gst,
             InvoiceItem.gst_rate,
         )
         .order_by(Invoice.invoice_date.asc(), Invoice.id.asc(), InvoiceItem.gst_rate.asc())
@@ -722,6 +726,7 @@ def get_tax_ledger(
             Invoice.voucher_type.label("source_voucher_type"),
             CreditNote.credit_note_number.label("reference_number"),
             Invoice.ledger_name.label("ledger_name"),
+            Invoice.ledger_gst.label("ledger_gst"),
             CreditNoteItem.gst_rate.label("gst_rate"),
             func.coalesce(func.sum(CreditNoteItem.taxable_amount), 0).label("taxable_amount"),
         func.coalesce(
@@ -775,6 +780,7 @@ def get_tax_ledger(
             Invoice.voucher_type,
             CreditNote.credit_note_number,
             Invoice.ledger_name,
+            Invoice.ledger_gst,
             CreditNoteItem.gst_rate,
         )
         .order_by(CreditNote.created_at.asc(), CreditNote.id.asc(), CreditNoteItem.gst_rate.asc())
@@ -797,6 +803,7 @@ def get_tax_ledger(
             source_voucher_type=row.source_voucher_type,
             reference_number=row.reference_number or f"INV-{row.entry_id}",
             ledger_name=row.ledger_name or "Unknown ledger",
+            ledger_gst=row.ledger_gst,
             particulars=f"{row.source_voucher_type.title()} Invoice",
             gst_rate=float(row.gst_rate or 0),
             taxable_amount=float(row.taxable_amount or 0),
@@ -825,6 +832,7 @@ def get_tax_ledger(
             source_voucher_type=row.source_voucher_type,
             reference_number=row.reference_number or f"CN-{row.entry_id}",
             ledger_name=row.ledger_name or "Unknown ledger",
+            ledger_gst=row.ledger_gst,
             particulars=f"Credit Note against {row.source_voucher_type.title()} Invoice",
             gst_rate=float(row.gst_rate or 0),
             taxable_amount=float(row.taxable_amount or 0),
@@ -1205,3 +1213,1079 @@ def delete_ledger_address(
         raise HTTPException(status_code=404, detail="Address not found")
     db.delete(addr)
     db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Tax Ledger CSV & PDF Exports
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/tax-ledger/csv")
+def download_tax_ledger_csv(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    voucher_type: str | None = Query(None, pattern="^(sales|purchase)$"),
+    gst_rate: float | None = Query(None, ge=0),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    company_id = getattr(active_company, "id", None)
+    if from_date > to_date:
+        raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
+
+    result = _build_full_tax_ledger(db, from_date, to_date, voucher_type, gst_rate, company_id)
+
+    csv_buffer = StringIO(newline="")
+    writer = csv.writer(csv_buffer)
+    writer.writerow([
+        "Date", "Voucher Number", "Voucher Type", "Party Name", "GSTIN",
+        "Taxable Value", "CGST", "SGST", "IGST", "CESS", "Total Amount",
+    ])
+
+    for entry in result.entries:
+        total_amount = entry.taxable_amount + entry.debit_cgst + entry.debit_sgst + entry.debit_igst + \
+            entry.credit_cgst + entry.credit_sgst + entry.credit_igst
+        writer.writerow([
+            entry.date.date().isoformat(),
+            entry.reference_number,
+            entry.voucher_type,
+            entry.ledger_name,
+            entry.ledger_gst or "",
+            f"{entry.taxable_amount:.2f}",
+            f"{entry.debit_cgst + entry.credit_cgst:.2f}",
+            f"{entry.debit_sgst + entry.credit_sgst:.2f}",
+            f"{entry.debit_igst + entry.credit_igst:.2f}",
+            "0.00",
+            f"{total_amount:.2f}",
+        ])
+
+    csv_bytes = csv_buffer.getvalue().encode("utf-8-sig")
+    filename = f"tax_ledger_{from_date}_{to_date}.csv"
+
+    return StreamingResponse(
+        BytesIO(csv_bytes),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/tax-ledger/pdf")
+def download_tax_ledger_pdf(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    voucher_type: str | None = Query(None, pattern="^(sales|purchase)$"),
+    gst_rate: float | None = Query(None, ge=0),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    company_id = getattr(active_company, "id", None)
+    if from_date > to_date:
+        raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
+
+    company = active_company if company_id is not None else db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    currency = company.currency_code if company and company.currency_code else "INR"
+    result = _build_full_tax_ledger(db, from_date, to_date, voucher_type, gst_rate, company_id)
+    totals = _build_tax_ledger_totals(result.entries)
+
+    html = _build_tax_ledger_pdf_html(
+        company=company,
+        from_date=from_date,
+        to_date=to_date,
+        entries=result.entries,
+        totals=totals,
+        currency=currency,
+    )
+
+    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+    buf = BytesIO(pdf_bytes)
+    filename = f"tax_ledger_{from_date}_{to_date}.pdf"
+
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _build_full_tax_ledger(
+    db: Session,
+    from_date: date,
+    to_date: date,
+    voucher_type: str | None,
+    gst_rate: float | None,
+    company_id: int | None,
+) -> TaxLedgerOut:
+    """Shared builder for tax ledger data used by CSV/PDF endpoints."""
+    period_start = datetime.combine(from_date, time.min)
+    period_end = datetime.combine(to_date, time.max)
+
+    invoice_query = (
+        db.query(
+            Invoice.id.label("entry_id"),
+            Invoice.invoice_date.label("entry_date"),
+            Invoice.voucher_type.label("source_voucher_type"),
+            Invoice.invoice_number.label("reference_number"),
+            Invoice.ledger_name.label("ledger_name"),
+            Invoice.ledger_gst.label("ledger_gst"),
+            InvoiceItem.gst_rate.label("gst_rate"),
+            func.coalesce(func.sum(InvoiceItem.taxable_amount), 0).label("taxable_amount"),
+            func.coalesce(func.sum(InvoiceItem.cgst_amount), 0).label("cgst_amount"),
+            func.coalesce(func.sum(InvoiceItem.sgst_amount), 0).label("sgst_amount"),
+            func.coalesce(func.sum(InvoiceItem.igst_amount), 0).label("igst_amount"),
+        )
+        .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
+        .filter(Invoice.status == "active")
+        .filter(Invoice.invoice_date >= period_start)
+        .filter(Invoice.invoice_date <= period_end)
+    )
+    if company_id is not None:
+        invoice_query = invoice_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+    if voucher_type is not None:
+        invoice_query = invoice_query.filter(Invoice.voucher_type == voucher_type)
+    if gst_rate is not None:
+        invoice_query = invoice_query.filter(InvoiceItem.gst_rate == gst_rate)
+
+    invoice_rows = (
+        invoice_query
+        .group_by(Invoice.id, Invoice.invoice_date, Invoice.voucher_type,
+                  Invoice.invoice_number, Invoice.ledger_name, Invoice.ledger_gst,
+                  InvoiceItem.gst_rate)
+        .order_by(Invoice.invoice_date.asc(), Invoice.id.asc(), InvoiceItem.gst_rate.asc())
+        .all()
+    )
+
+    entries: list[TaxLedgerEntry] = []
+    for row in invoice_rows:
+        cgst_amount = float(row.cgst_amount or 0)
+        sgst_amount = float(row.sgst_amount or 0)
+        igst_amount = float(row.igst_amount or 0)
+        total_tax = cgst_amount + sgst_amount + igst_amount
+        is_sales = row.source_voucher_type == "sales"
+        entries.append(TaxLedgerEntry(
+            entry_id=row.entry_id,
+            entry_type="invoice",
+            date=row.entry_date,
+            voucher_type=row.source_voucher_type.title(),
+            source_voucher_type=row.source_voucher_type,
+            reference_number=row.reference_number or f"INV-{row.entry_id}",
+            ledger_name=row.ledger_name or "Unknown ledger",
+            ledger_gst=row.ledger_gst,
+            particulars=f"{row.source_voucher_type.title()} Invoice",
+            gst_rate=float(row.gst_rate or 0),
+            taxable_amount=float(row.taxable_amount or 0),
+            debit_cgst=cgst_amount if is_sales else 0.0,
+            debit_sgst=sgst_amount if is_sales else 0.0,
+            debit_igst=igst_amount if is_sales else 0.0,
+            debit_total_tax=total_tax if is_sales else 0.0,
+            credit_cgst=0.0 if is_sales else cgst_amount,
+            credit_sgst=0.0 if is_sales else sgst_amount,
+            credit_igst=0.0 if is_sales else igst_amount,
+            credit_total_tax=0.0 if is_sales else total_tax,
+        ))
+
+    # Credit notes
+    cn_query = (
+        db.query(
+            CreditNote.id.label("entry_id"),
+            CreditNote.created_at.label("entry_date"),
+            Invoice.voucher_type.label("source_voucher_type"),
+            CreditNote.credit_note_number.label("reference_number"),
+            Invoice.ledger_name.label("ledger_name"),
+            Invoice.ledger_gst.label("ledger_gst"),
+            CreditNoteItem.gst_rate.label("gst_rate"),
+            func.coalesce(func.sum(CreditNoteItem.taxable_amount), 0).label("taxable_amount"),
+            func.coalesce(func.sum(case((func.coalesce(InvoiceItem.igst_amount, 0) > 0, 0), else_=CreditNoteItem.tax_amount / 2)), 0).label("cgst_amount"),
+            func.coalesce(func.sum(case((func.coalesce(InvoiceItem.igst_amount, 0) > 0, 0), else_=CreditNoteItem.tax_amount / 2)), 0).label("sgst_amount"),
+            func.coalesce(func.sum(case((func.coalesce(InvoiceItem.igst_amount, 0) > 0, CreditNoteItem.tax_amount), else_=0)), 0).label("igst_amount"),
+        )
+        .join(CreditNoteItem, CreditNoteItem.credit_note_id == CreditNote.id)
+        .join(Invoice, Invoice.id == CreditNoteItem.invoice_id)
+        .outerjoin(InvoiceItem, InvoiceItem.id == CreditNoteItem.invoice_item_id)
+        .filter(CreditNote.status == "active")
+        .filter(CreditNote.created_at >= period_start)
+        .filter(CreditNote.created_at <= period_end)
+    )
+    if company_id is not None:
+        cn_query = cn_query.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
+    if voucher_type is not None:
+        cn_query = cn_query.filter(Invoice.voucher_type == voucher_type)
+    if gst_rate is not None:
+        cn_query = cn_query.filter(CreditNoteItem.gst_rate == gst_rate)
+
+    cn_rows = (
+        cn_query
+        .group_by(CreditNote.id, CreditNote.created_at, Invoice.voucher_type,
+                  CreditNote.credit_note_number, Invoice.ledger_name,
+                  Invoice.ledger_gst, CreditNoteItem.gst_rate)
+        .order_by(CreditNote.created_at.asc(), CreditNote.id.asc(), CreditNoteItem.gst_rate.asc())
+        .all()
+    )
+
+    for row in cn_rows:
+        cgst_amount = float(row.cgst_amount or 0)
+        sgst_amount = float(row.sgst_amount or 0)
+        igst_amount = float(row.igst_amount or 0)
+        total_tax = cgst_amount + sgst_amount + igst_amount
+        source_is_sales = row.source_voucher_type == "sales"
+        entries.append(TaxLedgerEntry(
+            entry_id=row.entry_id,
+            entry_type="credit_note",
+            date=row.entry_date,
+            voucher_type="Credit Note",
+            source_voucher_type=row.source_voucher_type,
+            reference_number=row.reference_number or f"CN-{row.entry_id}",
+            ledger_name=row.ledger_name or "Unknown ledger",
+            ledger_gst=row.ledger_gst,
+            particulars=f"Credit Note against {row.source_voucher_type.title()} Invoice",
+            gst_rate=float(row.gst_rate or 0),
+            taxable_amount=float(row.taxable_amount or 0),
+            debit_cgst=0.0 if source_is_sales else cgst_amount,
+            debit_sgst=0.0 if source_is_sales else sgst_amount,
+            debit_igst=0.0 if source_is_sales else igst_amount,
+            debit_total_tax=0.0 if source_is_sales else total_tax,
+            credit_cgst=cgst_amount if source_is_sales else 0.0,
+            credit_sgst=sgst_amount if source_is_sales else 0.0,
+            credit_igst=igst_amount if source_is_sales else 0.0,
+            credit_total_tax=total_tax if source_is_sales else 0.0,
+        ))
+
+    entries.sort(key=lambda entry: (_make_aware(entry.date), entry.entry_id, entry.gst_rate))
+    return TaxLedgerOut(
+        from_date=from_date, to_date=to_date,
+        voucher_type=voucher_type, gst_rate=gst_rate,
+        entries=entries, totals=_build_tax_ledger_totals(entries),
+    )
+
+
+def _build_tax_ledger_pdf_html(
+    *,
+    company,
+    from_date: date,
+    to_date: date,
+    entries: list[TaxLedgerEntry],
+    totals: TaxLedgerTotals,
+    currency: str,
+) -> str:
+    rows_html = ""
+    for entry in entries:
+        cgst = entry.debit_cgst + entry.credit_cgst
+        sgst = entry.debit_sgst + entry.credit_sgst
+        igst = entry.debit_igst + entry.credit_igst
+        rows_html += f"""
+        <tr>
+            <td>{entry.date.date().isoformat()}</td>
+            <td>{_e(entry.reference_number)}</td>
+            <td>{_e(entry.ledger_name)}</td>
+            <td>{_e(entry.ledger_gst or '')}</td>
+            <td>{entry.gst_rate:.0f}%</td>
+            <td style="text-align:right">₹{entry.taxable_amount:,.2f}</td>
+            <td style="text-align:right">₹{cgst:,.2f}</td>
+            <td style="text-align:right">₹{sgst:,.2f}</td>
+            <td style="text-align:right">₹{igst:,.2f}</td>
+        </tr>"""
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+    body {{ font-family: Arial, sans-serif; font-size: 11px; margin: 24px; }}
+    h1 {{ font-size: 18px; margin-bottom: 4px; }}
+    .meta {{ color: #555; margin-bottom: 16px; }}
+    table {{ border-collapse: collapse; width: 100%; }}
+    th, td {{ border: 1px solid #ccc; padding: 5px 8px; font-size: 10px; }}
+    th {{ background: #f5f5f5; text-align: left; }}
+    .totals {{ margin-top: 16px; }}
+    .totals table {{ width: 60%; }}
+</style></head><body>
+<h1>Tax Ledger</h1>
+<p class="meta">
+    {_e(company.name if company else '')} &mdash;
+    {from_date} to {to_date} &mdash; Currency: {currency}
+</p>
+<table>
+    <thead><tr>
+        <th>Date</th><th>Voucher No.</th><th>Party</th><th>GSTIN</th>
+        <th>Rate</th><th>Taxable</th><th>CGST</th><th>SGST</th><th>IGST</th>
+    </tr></thead>
+    <tbody>{rows_html}</tbody>
+</table>
+<div class="totals">
+    <table>
+        <tr><th>Net CGST</th><td>₹{totals.net_cgst:,.2f}</td></tr>
+        <tr><th>Net SGST</th><td>₹{totals.net_sgst:,.2f}</td></tr>
+        <tr><th>Net IGST</th><td>₹{totals.net_igst:,.2f}</td></tr>
+        <tr><th>Net Total Tax</th><td>₹{totals.net_total_tax:,.2f}</td></tr>
+    </table>
+</div>
+</body></html>"""
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  GSTR-1 Filing Endpoints
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _derive_place_of_supply(company_gst: str | None) -> str:
+    """Derive place of supply state code from a GSTIN (first 2 digits).
+
+    For GSTR-1:
+    - B2B: POS should be the customer's state code (ctin[:2])
+    - B2CL/B2CS: POS is state of supply (use company state code as fallback)
+    """
+    if company_gst and len(company_gst) >= 2 and company_gst[:2].isdigit():
+        return company_gst[:2]
+    return "00"
+
+
+def _validate_gstin(gstin: str | None) -> str | None:
+    """Validate GSTIN format. Returns error message or None."""
+    if not gstin or not gstin.strip():
+        return "Missing GSTIN"
+    gstin = gstin.strip().upper()
+    if not GSTIN_REGEX.fullmatch(gstin):
+        return f"Invalid GSTIN format: {gstin}"
+    return None
+
+
+def _validate_hsn(hsn: str | None) -> str | None:
+    """Validate HSN/SAC code. Returns error message or None."""
+    if not hsn or not hsn.strip():
+        return "Missing HSN"
+    hsn = hsn.strip()
+    if not HSN_SAC_REGEX.fullmatch(hsn):
+        return f"Invalid HSN: {hsn}"
+    return None
+
+
+def _validate_gstr1_export(db: Session, company_gstin: str | None, invoices: list[Invoice]) -> list[str]:
+    """Validate GSTR-1 data before JSON/CSV export.
+
+    Returns a list of error messages. If empty, validation passed.
+    """
+    errors: list[str] = []
+
+    # 1. Company GSTIN must be set and valid
+    if not company_gstin or not company_gstin.strip():
+        errors.append("Company GSTIN is required to generate GSTR-1 export. Please set your company GSTIN in Settings.")
+    elif not GSTIN_REGEX.fullmatch(company_gstin.strip().upper()):
+        errors.append(f"Company GSTIN '{company_gstin}' is invalid. Please set a valid 15-character GSTIN in Settings.")
+
+    # 2. Company POS must not be "00"
+    company_pos = _derive_place_of_supply(company_gstin)
+    if company_pos == "00":
+        errors.append("Cannot determine Place of Supply from company GSTIN. Please set a valid company GSTIN in Settings.")
+
+    # 3. Check each invoice
+    seen_numbers: set[str] = set()
+    for inv in invoices:
+        if inv.voucher_type != "sales":
+            continue
+
+        inv_num = inv.invoice_number or f"INV-{inv.id}"
+        ctin = (inv.ledger_gst or "").strip().upper()
+
+        # B2B: customer GSTIN must be valid and POS must be valid
+        if ctin:
+            if not GSTIN_REGEX.fullmatch(ctin):
+                errors.append(f"Invoice {inv_num}: Customer GSTIN '{ctin}' is not a valid 15-character GSTIN.")
+            else:
+                pos = ctin[:2]
+                if pos == "00" or not pos.isdigit():
+                    errors.append(f"Invoice {inv_num}: Cannot derive valid Place of Supply from customer GSTIN '{ctin}'.")
+
+        # Check for HSN codes
+        missing_hsn = [item for item in inv.items if not item.hsn_sac or not item.hsn_sac.strip()]
+        if missing_hsn:
+            item_ids = ", ".join(str(item.id) for item in missing_hsn)
+            errors.append(f"Invoice {inv_num}: Missing HSN/SAC code for item(s) #{item_ids}.")
+
+        # Check for duplicate invoice numbers
+        if inv_num in seen_numbers:
+            errors.append(f"Invoice {inv_num}: Duplicate invoice number detected.")
+        else:
+            seen_numbers.add(inv_num)
+
+    return errors
+
+
+def _gstr1_invoice_query(db: Session, from_date: date, to_date: date, company_id: int | None):
+    """Return active invoices in the date range with items eagerly loaded."""
+    period_start = datetime.combine(from_date, time.min)
+    period_end = datetime.combine(to_date, time.max)
+    query = (
+        db.query(Invoice)
+        .options(joinedload(Invoice.items))
+        .filter(Invoice.status == "active")
+        .filter(Invoice.invoice_date >= period_start)
+        .filter(Invoice.invoice_date <= period_end)
+    )
+    if company_id is not None:
+        query = query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+    return query.order_by(Invoice.invoice_date.asc()).all()
+
+
+@router.get("/tax-ledger/gstr1/validate", response_model=Gstr1ValidationResult)
+def gstr1_validate(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Validate GSTR-1 data for the given period."""
+    company_id = getattr(active_company, "id", None)
+    if from_date > to_date:
+        raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
+
+    invoices = _gstr1_invoice_query(db, from_date, to_date, company_id)
+    errors: list[Gstr1ValidationError] = []
+    seen_numbers: dict[str, list[int]] = {}
+
+    for inv in invoices:
+        inv_num = inv.invoice_number or f"INV-{inv.id}"
+
+        # Track for duplicates
+        seen_numbers.setdefault(inv_num, []).append(inv.id)
+
+        # GSTIN validation
+        gstin_err = _validate_gstin(inv.ledger_gst)
+        if gstin_err:
+            errors.append(Gstr1ValidationError(
+                invoice_number=inv_num, field="GSTIN", message=gstin_err, severity="error",
+            ))
+
+        # Taxable value check
+        if inv.taxable_amount is None or float(inv.taxable_amount) <= 0:
+            errors.append(Gstr1ValidationError(
+                invoice_number=inv_num, field="Taxable Value",
+                message="Missing or zero taxable value", severity="error",
+            ))
+
+        # HSN checks
+        for item in inv.items:
+            hsn_err = _validate_hsn(item.hsn_sac)
+            if hsn_err:
+                errors.append(Gstr1ValidationError(
+                    invoice_number=inv_num,
+                    field=f"HSN (item #{item.id})",
+                    message=hsn_err,
+                    severity="error",
+                ))
+
+        # Tax calculation checks: CGST+SGST or IGST
+        total_item_tax = sum(
+            (float(item.cgst_amount or 0) + float(item.sgst_amount or 0) + float(item.igst_amount or 0))
+            for item in inv.items
+        )
+        expected_tax = float(inv.total_tax_amount or 0)
+        if total_item_tax > 0 and abs(total_item_tax - expected_tax) > 0.01:
+            errors.append(Gstr1ValidationError(
+                invoice_number=inv_num, field="Tax Calculation",
+                message=f"Item tax sum ({total_item_tax:.2f}) ≠ invoice tax total ({expected_tax:.2f})",
+                severity="error",
+            ))
+
+        # Place of supply (derived from company GST)
+        pos = _derive_place_of_supply(inv.company_gst)
+        if pos == "00":
+            errors.append(Gstr1ValidationError(
+                invoice_number=inv_num, field="Place of Supply",
+                message="Cannot determine Place of Supply from company GSTIN",
+                severity="warning",
+            ))
+
+    # Duplicate invoice numbers
+    for num, ids in seen_numbers.items():
+        if len(ids) > 1:
+            errors.append(Gstr1ValidationError(
+                invoice_number=num, field="Invoice Number",
+                message=f"Duplicate invoice number: {num}", severity="error",
+            ))
+
+    invalid_set = {e.invoice_number for e in errors if e.severity == "error"}
+    return Gstr1ValidationResult(
+        status="valid" if len(invalid_set) == 0 else "invalid",
+        errors=errors,
+        total_invoices=len(invoices),
+        valid_invoices=len(invoices) - len(invalid_set),
+        invalid_invoices=len(invalid_set),
+    )
+
+
+@router.get("/tax-ledger/gstr1/summary", response_model=Gstr1Summary)
+def gstr1_summary(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """GSTR-1 filing summary."""
+    company_id = getattr(active_company, "id", None)
+    if from_date > to_date:
+        raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
+
+    invoices = _gstr1_invoice_query(db, from_date, to_date, company_id)
+    company_gstin = active_company.gst if active_company else None
+
+    b2b = Gstr1CategorySummary()
+    b2cl = Gstr1CategorySummary()
+    b2cs = Gstr1CategorySummary()
+    nil_rated = Gstr1CategorySummary()
+    exempt = Gstr1CategorySummary()
+
+    credit_note_q = (
+        db.query(CreditNote)
+        .options(joinedload(CreditNote.items))
+        .filter(CreditNote.status == "active")
+        .filter(CreditNote.created_at >= datetime.combine(from_date, time.min))
+        .filter(CreditNote.created_at <= datetime.combine(to_date, time.max))
+    )
+    if company_id is not None:
+        credit_note_q = credit_note_q.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
+    credit_notes = credit_note_q.all()
+
+    cn_summary = Gstr1CategorySummary()
+    dn_summary = Gstr1CategorySummary()
+
+    for inv in invoices:
+        taxable = float(inv.taxable_amount or 0)
+        cgst = float(inv.cgst_amount or 0)
+        sgst = float(inv.sgst_amount or 0)
+        igst = float(inv.igst_amount or 0)
+        gstin = inv.ledger_gst
+
+        if inv.voucher_type != "sales":
+            continue
+
+        if gstin and gstin.strip():
+            b2b.invoice_count += 1
+            b2b.taxable_value += taxable
+            b2b.cgst += cgst
+            b2b.sgst += sgst
+            b2b.igst += igst
+            b2b.total_tax += cgst + sgst + igst
+        elif taxable > 250000:
+            b2cl.invoice_count += 1
+            b2cl.taxable_value += taxable
+            b2cl.cgst += cgst
+            b2cl.sgst += sgst
+            b2cl.igst += igst
+            b2cl.total_tax += cgst + sgst + igst
+        elif taxable > 0:
+            if cgst + sgst + igst == 0:
+                nil_rated.invoice_count += 1
+                nil_rated.taxable_value += taxable
+            else:
+                b2cs.invoice_count += 1
+                b2cs.taxable_value += taxable
+                b2cs.cgst += cgst
+                b2cs.sgst += sgst
+                b2cs.igst += igst
+                b2cs.total_tax += cgst + sgst + igst
+
+    for cn in credit_notes:
+        cn_taxable = float(cn.taxable_amount or 0)
+        cn_cgst = float(cn.cgst_amount or 0)
+        cn_sgst = float(cn.sgst_amount or 0)
+        cn_igst = float(cn.igst_amount or 0)
+        if cn.credit_note_type == "return":
+            cn_summary.invoice_count += 1
+            cn_summary.taxable_value += cn_taxable
+            cn_summary.cgst += cn_cgst
+            cn_summary.sgst += cn_sgst
+            cn_summary.igst += cn_igst
+            cn_summary.total_tax += cn_cgst + cn_sgst + cn_igst
+        else:
+            dn_summary.invoice_count += 1
+            dn_summary.taxable_value += cn_taxable
+            dn_summary.cgst += cn_cgst
+            dn_summary.sgst += cn_sgst
+            dn_summary.igst += cn_igst
+            dn_summary.total_tax += cn_cgst + cn_sgst + cn_igst
+
+    # HSN summary
+    hsn_map: dict[str, dict] = {}
+    for inv in invoices:
+        if inv.voucher_type != "sales":
+            continue
+        for item in inv.items:
+            hsn = item.hsn_sac or "----"
+            if hsn not in hsn_map:
+                hsn_map[hsn] = {"taxable": 0.0, "cgst": 0.0, "sgst": 0.0, "igst": 0.0, "qty": 0.0}
+            hsn_map[hsn]["taxable"] += float(item.taxable_amount or 0)
+            hsn_map[hsn]["cgst"] += float(item.cgst_amount or 0)
+            hsn_map[hsn]["sgst"] += float(item.sgst_amount or 0)
+            hsn_map[hsn]["igst"] += float(item.igst_amount or 0)
+            hsn_map[hsn]["qty"] += float(item.quantity or 0)
+
+    hsn_items: list[Gstr1HsnSummaryItem] = []
+    for hsn, data in sorted(hsn_map.items()):
+        hsn_items.append(Gstr1HsnSummaryItem(
+            hsn_code=hsn,
+            quantity=data["qty"],
+            taxable_value=data["taxable"],
+            cgst=data["cgst"],
+            sgst=data["sgst"],
+            igst=data["igst"],
+            total_tax=data["cgst"] + data["sgst"] + data["igst"],
+        ))
+
+    total_sales = sum(1 for inv in invoices if inv.voucher_type == "sales")
+    doc_summary = Gstr1DocSummary(
+        total_invoices=total_sales,
+        total_credit_notes=sum(1 for cn in credit_notes if cn.credit_note_type == "return"),
+        total_debit_notes=sum(1 for cn in credit_notes if cn.credit_note_type != "return"),
+    )
+
+    return Gstr1Summary(
+        from_date=from_date,
+        to_date=to_date,
+        gstin=company_gstin,
+        b2b=b2b,
+        b2cl=b2cl,
+        b2cs=b2cs,
+        credit_notes=cn_summary,
+        debit_notes=dn_summary,
+        nil_rated=nil_rated,
+        exempt=exempt,
+        hsn_summary=hsn_items,
+        doc_summary=doc_summary,
+    )
+
+
+@router.get("/tax-ledger/gstr1/export-json")
+def gstr1_export_json(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Export GSTR-1 data in GSTN-compatible JSON format."""
+    company_id = getattr(active_company, "id", None)
+    if from_date > to_date:
+        raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
+
+    invoices = _gstr1_invoice_query(db, from_date, to_date, company_id)
+    company_gstin = (active_company.gst or "").strip().upper() if active_company else ""
+
+    # Validate before export
+    validation_errors = _validate_gstr1_export(db, company_gstin, invoices)
+    if validation_errors:
+        raise HTTPException(
+            status_code=400,
+            detail="GSTR-1 validation failed: " + "; ".join(validation_errors),
+        )
+
+    company_pos = _derive_place_of_supply(company_gstin)
+    # Filing period is MMYYYY per the GSTN schema.
+    fp = f"{from_date.month:02d}{from_date.year}"
+
+    def _nested_items(records) -> list[dict]:
+        """Build the nested itm_det item list used by B2B/B2CL/CDNR sections."""
+        itms: list[dict] = []
+        for item in records:
+            itms.append({
+                "num": len(itms) + 1,
+                "itm_det": {
+                    "rt": float(item.gst_rate or 0),
+                    "txval": round(float(item.taxable_amount or 0), 2),
+                    "iamt": round(float(item.igst_amount or 0), 2),
+                    "camt": round(float(item.cgst_amount or 0), 2),
+                    "samt": round(float(item.sgst_amount or 0), 2),
+                    "csamt": 0.0,
+                },
+            })
+        return itms
+
+    # B2B (Table 4): grouped by customer GSTIN, POS = customer state code.
+    b2b_by_ctin: dict[str, list[dict]] = {}
+    for inv in invoices:
+        if inv.voucher_type != "sales" or not inv.ledger_gst or not inv.ledger_gst.strip():
+            continue
+        ctin = inv.ledger_gst.strip().upper()
+        inv_pos = ctin[:2] if len(ctin) >= 2 and ctin[:2].isdigit() else company_pos
+        b2b_by_ctin.setdefault(ctin, []).append({
+            "inum": inv.invoice_number or f"INV-{inv.id}",
+            "idt": inv.invoice_date.strftime("%d-%m-%Y") if inv.invoice_date else "",
+            "val": round(float(inv.total_amount or 0), 2),
+            "pos": inv_pos,
+            "rchrg": "N",
+            "inv_typ": "R",
+            "itms": _nested_items(inv.items),
+        })
+    b2b_section = [{"ctin": ctin, "inv": invs} for ctin, invs in b2b_by_ctin.items()]
+
+    # B2CL (Table 5): unregistered inter-state invoices > 2.5L, grouped by POS.
+    b2cl_by_pos: dict[str, list[dict]] = {}
+    for inv in invoices:
+        if inv.voucher_type != "sales" or (inv.ledger_gst and inv.ledger_gst.strip()):
+            continue
+        if float(inv.taxable_amount or 0) <= 250000:
+            continue
+        b2cl_by_pos.setdefault(company_pos, []).append({
+            "inum": inv.invoice_number or f"INV-{inv.id}",
+            "idt": inv.invoice_date.strftime("%d-%m-%Y") if inv.invoice_date else "",
+            "val": round(float(inv.total_amount or 0), 2),
+            "itms": _nested_items(inv.items),
+        })
+    b2cl_section = [{"pos": pos, "inv": invs} for pos, invs in b2cl_by_pos.items()]
+
+    # B2CS (Table 7): aggregated by (POS, rate, supply type), flat item shape.
+    b2cs_by_key: dict[tuple[str, float, str], dict] = {}
+    for inv in invoices:
+        if inv.voucher_type != "sales" or (inv.ledger_gst and inv.ledger_gst.strip()):
+            continue
+        if float(inv.taxable_amount or 0) > 250000:
+            continue
+        for item in inv.items:
+            rate = float(item.gst_rate or 0)
+            iamt = float(item.igst_amount or 0)
+            sply_ty = "INTER" if iamt > 0 else "INTRA"
+            key = (company_pos, rate, sply_ty)
+            agg = b2cs_by_key.setdefault(key, {"txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0})
+            agg["txval"] += float(item.taxable_amount or 0)
+            agg["iamt"] += iamt
+            agg["camt"] += float(item.cgst_amount or 0)
+            agg["samt"] += float(item.sgst_amount or 0)
+    b2cs_section: list[dict] = []
+    for (pos, rate, sply_ty), data in b2cs_by_key.items():
+        b2cs_section.append({
+            "sply_ty": sply_ty,
+            "pos": pos,
+            "typ": "OE",  # OE = supplies other than through an e-commerce operator
+            "rt": rate,
+            "txval": round(data["txval"], 2),
+            "iamt": round(data["iamt"], 2),
+            "camt": round(data["camt"], 2),
+            "samt": round(data["samt"], 2),
+            "csamt": 0.0,
+        })
+
+    # Credit/Debit notes — registered (CDNR, Table 9B) vs unregistered (CDNUR).
+    credit_note_q = (
+        db.query(CreditNote)
+        .options(joinedload(CreditNote.items))
+        .filter(CreditNote.status == "active")
+        .filter(CreditNote.created_at >= datetime.combine(from_date, time.min))
+        .filter(CreditNote.created_at <= datetime.combine(to_date, time.max))
+    )
+    if company_id is not None:
+        credit_note_q = credit_note_q.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
+    credit_notes = credit_note_q.all()
+
+    # Pre-load referenced invoices so we can recover the customer GSTIN per note.
+    invoice_ids: set[int] = set()
+    for cn in credit_notes:
+        for item in (cn.items or []):
+            if item.invoice_id:
+                invoice_ids.add(item.invoice_id)
+    invoices_by_id: dict[int, Invoice] = {}
+    if invoice_ids:
+        inv_records = db.query(Invoice).filter(Invoice.id.in_(invoice_ids)).all()
+        invoices_by_id = {inv.id: inv for inv in inv_records}
+
+    cdnr_by_ctin: dict[str, list[dict]] = {}
+    cdnur_section: list[dict] = []
+    for cn in credit_notes:
+        cn_cgst = float(cn.cgst_amount or 0)
+        cn_sgst = float(cn.sgst_amount or 0)
+        cn_igst = float(cn.igst_amount or 0)
+        items = cn.items or []
+        item_count = len(items) or 1
+        # "return" credit notes reduce the supplier's liability → Credit note ("C").
+        ntty = "C" if (cn.credit_note_type or "").lower() in ("return", "r", "credit", "c") else "D"
+        itms: list[dict] = []
+        for item in items:
+            itms.append({
+                "num": len(itms) + 1,
+                "itm_det": {
+                    "rt": float(item.gst_rate or 0),
+                    "txval": round(float(item.taxable_amount or 0), 2),
+                    "iamt": round(cn_igst / item_count, 2),
+                    "camt": round(cn_cgst / item_count, 2),
+                    "samt": round(cn_sgst / item_count, 2),
+                    "csamt": 0.0,
+                },
+            })
+        # Recover customer GSTIN from the original invoice via CreditNoteItem.invoice_id.
+        ctin = ""
+        if items and items[0].invoice_id:
+            original_inv = invoices_by_id.get(items[0].invoice_id)
+            if original_inv and original_inv.ledger_gst:
+                ctin = original_inv.ledger_gst.strip().upper()
+        nt_num = cn.credit_note_number or f"CN-{cn.id}"
+        nt_dt = cn.created_at.strftime("%d-%m-%Y") if cn.created_at else ""
+        val = round(float(cn.total_amount or 0), 2)
+        if ctin and GSTIN_REGEX.fullmatch(ctin):
+            cdnr_by_ctin.setdefault(ctin, []).append({
+                "nt_num": nt_num,
+                "nt_dt": nt_dt,
+                "ntty": ntty,
+                "pos": ctin[:2],
+                "rchrg": "N",
+                "inv_typ": "R",
+                "val": val,
+                "itms": itms,
+            })
+        else:
+            cdnur_section.append({
+                "typ": "B2CL" if val > 250000 else "B2CS",
+                "nt_num": nt_num,
+                "nt_dt": nt_dt,
+                "ntty": ntty,
+                "pos": company_pos,
+                "val": val,
+                "itms": itms,
+            })
+    cdnr_section = [{"ctin": ctin, "nt": nts} for ctin, nts in cdnr_by_ctin.items()]
+
+    # HSN summary (Table 12): split into B2B / B2C, aggregated by (HSN, rate).
+    hsn_b2b_map: dict[tuple[str, float], dict] = {}
+    hsn_b2c_map: dict[tuple[str, float], dict] = {}
+    for inv in invoices:
+        if inv.voucher_type != "sales":
+            continue
+        target = hsn_b2b_map if (inv.ledger_gst and inv.ledger_gst.strip()) else hsn_b2c_map
+        for item in inv.items:
+            hsn = (item.hsn_sac or "").strip()
+            rate = float(item.gst_rate or 0)
+            agg = target.setdefault((hsn, rate), {"qty": 0.0, "txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0})
+            agg["qty"] += float(item.quantity or 0)
+            agg["txval"] += float(item.taxable_amount or 0)
+            agg["iamt"] += float(item.igst_amount or 0)
+            agg["camt"] += float(item.cgst_amount or 0)
+            agg["samt"] += float(item.sgst_amount or 0)
+
+    def _hsn_rows(hsn_map: dict[tuple[str, float], dict]) -> list[dict]:
+        rows: list[dict] = []
+        for (hsn, rate), data in sorted(hsn_map.items()):
+            is_service = hsn.startswith("99")
+            rows.append({
+                # hsn_sc must be the first property per the GSTN schema.
+                "hsn_sc": hsn,
+                "num": len(rows) + 1,
+                "uqc": "NA" if is_service else "NOS",
+                "rt": rate,
+                "qty": 0.0 if is_service else round(data["qty"], 2),
+                "txval": round(data["txval"], 2),
+                "iamt": round(data["iamt"], 2),
+                "camt": round(data["camt"], 2),
+                "samt": round(data["samt"], 2),
+                "csamt": 0.0,
+            })
+        return rows
+
+    hsn_section: dict[str, list[dict]] = {"hsn_b2b": _hsn_rows(hsn_b2b_map)}
+    hsn_b2c_rows = _hsn_rows(hsn_b2c_map)
+    if hsn_b2c_rows:
+        hsn_section["hsn_b2c"] = hsn_b2c_rows
+
+    # Documents issued (Table 13): nature-of-document code + issued range.
+    def _doc_range(numbers: list[str]) -> dict | None:
+        nums = sorted(n for n in numbers if n)
+        if not nums:
+            return None
+        return {
+            "num": 1,
+            "from": nums[0],
+            "to": nums[-1],
+            "totnum": len(nums),
+            "cancel": 0,
+            "net_issue": len(nums),
+        }
+
+    doc_det: list[dict] = []
+    inv_range = _doc_range([inv.invoice_number or f"INV-{inv.id}" for inv in invoices if inv.voucher_type == "sales"])
+    if inv_range:  # 1 = Invoices for outward supply
+        doc_det.append({"doc_num": 1, "docs": [inv_range]})
+    dn_range = _doc_range([cn.credit_note_number or f"DN-{cn.id}" for cn in credit_notes if cn.credit_note_type != "return"])
+    if dn_range:  # 4 = Debit Note
+        doc_det.append({"doc_num": 4, "docs": [dn_range]})
+    cn_range = _doc_range([cn.credit_note_number or f"CN-{cn.id}" for cn in credit_notes if cn.credit_note_type == "return"])
+    if cn_range:  # 5 = Credit Note
+        doc_det.append({"doc_num": 5, "docs": [cn_range]})
+
+    # Assemble — include optional sections only when populated; hsn/doc_issue are mandatory.
+    result: dict = {"gstin": company_gstin, "fp": fp}
+    if b2b_section:
+        result["b2b"] = b2b_section
+    if b2cl_section:
+        result["b2cl"] = b2cl_section
+    if b2cs_section:
+        result["b2cs"] = b2cs_section
+    if cdnr_section:
+        result["cdnr"] = cdnr_section
+    if cdnur_section:
+        result["cdnur"] = cdnur_section
+    result["hsn"] = hsn_section
+    result["doc_issue"] = {"doc_det": doc_det}
+
+    import json as _json
+    json_bytes = _json.dumps(result, indent=2, default=str).encode("utf-8")
+    filename = f"gstr1_{from_date}_{to_date}.json"
+
+    from fastapi.responses import Response
+    return Response(
+        content=json_bytes,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/tax-ledger/gstr1/export-csv")
+def gstr1_export_csv(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Export GSTR-1 data as CSV for review and reconciliation."""
+    company_id = getattr(active_company, "id", None)
+    if from_date > to_date:
+        raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
+
+    invoices = _gstr1_invoice_query(db, from_date, to_date, company_id)
+    company_gstin = (active_company.gst or "").strip().upper() if active_company else ""
+
+    # Validate company GSTIN
+    if not company_gstin:
+        raise HTTPException(
+            status_code=400,
+            detail="Company GSTIN is required to generate GSTR-1 CSV. Please set your company GSTIN in Settings.",
+        )
+
+    company_pos = _derive_place_of_supply(company_gstin)
+
+    csv_buffer = StringIO(newline="")
+    writer = csv.writer(csv_buffer)
+    writer.writerow([
+        "Section", "Date", "Invoice Number", "Party Name", "GSTIN (Customer)",
+        "HSN/SAC", "Taxable Value", "CGST", "SGST", "IGST",
+        "Total Invoice Value", "Place of Supply",
+    ])
+
+    for inv in invoices:
+        if inv.voucher_type != "sales":
+            continue
+        gstin = inv.ledger_gst.strip().upper() if inv.ledger_gst else ""
+        if gstin:
+            section = "B2B"
+            # B2B: POS = customer's state code
+            pos = gstin[:2] if len(gstin) >= 2 and gstin[:2].isdigit() else company_pos
+        elif float(inv.taxable_amount or 0) > 250000:
+            section = "B2CL"
+            pos = company_pos
+        else:
+            section = "B2CS"
+            pos = company_pos
+
+        hsns = ", ".join(item.hsn_sac or "" for item in inv.items if item.hsn_sac)
+        writer.writerow([
+            section,
+            inv.invoice_date.date().isoformat() if inv.invoice_date else "",
+            inv.invoice_number or f"INV-{inv.id}",
+            inv.ledger_name or "",
+            gstin,
+            hsns,
+            f"{float(inv.taxable_amount or 0):.2f}",
+            f"{float(inv.cgst_amount or 0):.2f}",
+            f"{float(inv.sgst_amount or 0):.2f}",
+            f"{float(inv.igst_amount or 0):.2f}",
+            f"{float(inv.total_amount or 0):.2f}",
+            pos,
+        ])
+
+    csv_bytes = csv_buffer.getvalue().encode("utf-8-sig")
+    filename = f"gstr1_{from_date}_{to_date}.csv"
+
+    return StreamingResponse(
+        BytesIO(csv_bytes),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/tax-ledger/gstr1/export-pdf")
+def gstr1_export_pdf(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Export GSTR-1 summary as PDF."""
+    company_id = getattr(active_company, "id", None)
+    if from_date > to_date:
+        raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
+
+    # Reuse summary logic inline
+    company = active_company if company_id is not None else db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    currency = company.currency_code if company and company.currency_code else "INR"
+
+    invoices = _gstr1_invoice_query(db, from_date, to_date, company_id)
+    b2b_count = sum(1 for inv in invoices if inv.voucher_type == "sales" and inv.ledger_gst and inv.ledger_gst.strip())
+    b2cl_count = sum(1 for inv in invoices if inv.voucher_type == "sales" and (not inv.ledger_gst or not inv.ledger_gst.strip()) and float(inv.taxable_amount or 0) > 250000)
+    b2cs_count = sum(1 for inv in invoices if inv.voucher_type == "sales" and (not inv.ledger_gst or not inv.ledger_gst.strip()) and float(inv.taxable_amount or 0) <= 250000 and (float(inv.cgst_amount or 0) + float(inv.sgst_amount or 0) + float(inv.igst_amount or 0)) > 0)
+
+    nil_rated_count = sum(1 for inv in invoices if inv.voucher_type == "sales" and (not inv.ledger_gst or not inv.ledger_gst.strip()) and float(inv.cgst_amount or 0) + float(inv.sgst_amount or 0) + float(inv.igst_amount or 0) == 0)
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+    body {{ font-family: Arial, sans-serif; font-size: 11px; margin: 24px; }}
+    h1 {{ font-size: 18px; margin-bottom: 4px; }}
+    h2 {{ font-size: 14px; margin-top: 20px; }}
+    .meta {{ color: #555; margin-bottom: 16px; }}
+    table {{ border-collapse: collapse; width: 100%; margin-bottom: 16px; }}
+    th, td {{ border: 1px solid #ccc; padding: 5px 8px; font-size: 10px; }}
+    th {{ background: #f5f5f5; text-align: left; }}
+    .right {{ text-align: right; }}
+</style></head><body>
+<h1>GSTR-1 Filing Report</h1>
+<p class="meta">
+    {_e(company.name if company else '')} &mdash;
+    {from_date} to {to_date}
+</p>
+<h2>Filing Summary</h2>
+<table>
+    <thead><tr>
+        <th>Category</th><th>Invoices</th><th>Taxable Value</th>
+        <th>CGST</th><th>SGST</th><th>IGST</th><th>Total Tax</th>
+    </tr></thead>
+    <tbody>
+        <tr><td>B2B (with GSTIN)</td><td>{b2b_count}</td>
+            <td class="right">₹{sum(float(inv.taxable_amount or 0) for inv in invoices if inv.voucher_type == "sales" and inv.ledger_gst and inv.ledger_gst.strip()):,.2f}</td>
+            <td class="right">₹{sum(float(inv.cgst_amount or 0) for inv in invoices if inv.voucher_type == "sales" and inv.ledger_gst and inv.ledger_gst.strip()):,.2f}</td>
+            <td class="right">₹{sum(float(inv.sgst_amount or 0) for inv in invoices if inv.voucher_type == "sales" and inv.ledger_gst and inv.ledger_gst.strip()):,.2f}</td>
+            <td class="right">₹{sum(float(inv.igst_amount or 0) for inv in invoices if inv.voucher_type == "sales" and inv.ledger_gst and inv.ledger_gst.strip()):,.2f}</td>
+            <td class="right">₹{sum(float(inv.cgst_amount or 0) + float(inv.sgst_amount or 0) + float(inv.igst_amount or 0) for inv in invoices if inv.voucher_type == "sales" and inv.ledger_gst and inv.ledger_gst.strip()):,.2f}</td>
+        </tr>
+        <tr><td>B2CL (&gt;2.5L, no GSTIN)</td><td>{b2cl_count}</td>
+            <td class="right">₹{sum(float(inv.taxable_amount or 0) for inv in invoices if inv.voucher_type == "sales" and (not inv.ledger_gst or not inv.ledger_gst.strip()) and float(inv.taxable_amount or 0) > 250000):,.2f}</td>
+            <td colspan="4" class="right">-</td>
+        </tr>
+        <tr><td>B2CS (&le;2.5L, no GSTIN)</td><td>{b2cs_count}</td>
+            <td class="right">₹{sum(float(inv.taxable_amount or 0) for inv in invoices if inv.voucher_type == "sales" and (not inv.ledger_gst or not inv.ledger_gst.strip()) and float(inv.taxable_amount or 0) <= 250000 and (float(inv.cgst_amount or 0) + float(inv.sgst_amount or 0) + float(inv.igst_amount or 0)) > 0):,.2f}</td>
+            <td colspan="4" class="right">-</td>
+        </tr>
+        <tr><td>Nil Rated / Exempt</td><td>{nil_rated_count}</td>
+            <td colspan="5" class="right">-</td>
+        </tr>
+    </tbody>
+</table>
+<p style="font-size: 9px; color: #888;">Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
+</body></html>"""
+
+    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+    buf = BytesIO(pdf_bytes)
+    filename = f"gstr1_{from_date}_{to_date}.pdf"
+
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
