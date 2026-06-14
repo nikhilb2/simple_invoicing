@@ -497,6 +497,7 @@ export type TaxLedgerEntry = {
   source_voucher_type: 'sales' | 'purchase';
   reference_number: string;
   ledger_name: string;
+  ledger_gst?: string | null;
   particulars: string;
   gst_rate: number;
   taxable_amount: number;
@@ -534,6 +535,66 @@ export type TaxLedger = {
   totals: TaxLedgerTotals;
   fy_label: string | null;
   financial_year_id: number | null;
+};
+
+// GSTR-1 types
+export type Gstr1ValidationError = {
+  invoice_number: string;
+  field: string;
+  message: string;
+  severity: 'error' | 'warning';
+};
+
+export type Gstr1ValidationResult = {
+  status: 'valid' | 'invalid';
+  errors: Gstr1ValidationError[];
+  total_invoices: number;
+  valid_invoices: number;
+  invalid_invoices: number;
+};
+
+export type Gstr1CategorySummary = {
+  invoice_count: number;
+  taxable_value: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  total_tax: number;
+};
+
+export type Gstr1HsnSummaryItem = {
+  hsn_code: string;
+  description?: string | null;
+  uqc: string;
+  quantity: number;
+  taxable_value: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  total_tax: number;
+};
+
+export type Gstr1DocSummary = {
+  total_invoices: number;
+  total_credit_notes: number;
+  total_debit_notes: number;
+  cancelled_invoices: number;
+};
+
+export type Gstr1Summary = {
+  from_date: string;
+  to_date: string;
+  gstin?: string | null;
+  b2b: Gstr1CategorySummary;
+  b2cl: Gstr1CategorySummary;
+  b2cs: Gstr1CategorySummary;
+  credit_notes: Gstr1CategorySummary;
+  debit_notes: Gstr1CategorySummary;
+  nil_rated: Gstr1CategorySummary;
+  exempt: Gstr1CategorySummary;
+  non_gst: Gstr1CategorySummary;
+  hsn_summary: Gstr1HsnSummaryItem[];
+  doc_summary: Gstr1DocSummary;
 };
 
 export type PaymentVoucherType = 'receipt' | 'payment' | 'opening_balance';
