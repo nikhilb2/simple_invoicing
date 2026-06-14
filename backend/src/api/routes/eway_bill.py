@@ -3,14 +3,16 @@ E-Way Bill API routes.
 
 Provides endpoints for:
 - Pre-check available data before generating E-Way Bill
+- E-Way Bill settings
 - Transporter profile management (CRUD)
 - Generate E-Way Bill JSON
 """
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse, Response
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
 from src.api.deps import get_active_company, get_current_user
@@ -36,6 +38,14 @@ from src.services.eway_bill_service import (
     validate_form_data,
 )
 
+
+class EwayBillSettingsOut(BaseModel):
+    eway_enabled: bool = True
+    eway_local_threshold: float = 100000
+    eway_interstate_threshold: float = 50000
+    eway_always_show_button: bool = True
+
+
 router = APIRouter()
 
 
@@ -50,6 +60,23 @@ def _get_products_map(db: Session, invoice: Invoice, company_id: int) -> dict[in
         .all()
     )
     return {p.id: p for p in products}
+
+
+# ── Settings endpoint ──
+
+
+@router.get("/eway-bill/settings", response_model=EwayBillSettingsOut)
+def eway_bill_settings(
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Get the current E-Way Bill configuration for the active company."""
+    return EwayBillSettingsOut(
+        eway_enabled=active_company.eway_enabled,
+        eway_local_threshold=active_company.eway_local_threshold,
+        eway_interstate_threshold=active_company.eway_interstate_threshold,
+        eway_always_show_button=active_company.eway_always_show_button,
+    )
 
 
 # ── Pre-check endpoint ──
@@ -77,10 +104,6 @@ def eway_bill_precheck(
         raise HTTPException(status_code=400, detail="E-Way Bill is only available for Sales invoices.")
     if invoice.status != "active":
         raise HTTPException(status_code=400, detail="E-Way Bill can only be generated for active invoices.")
-
-    # Check GST enabled
-    if not active_company.gst:
-        raise HTTPException(status_code=400, detail="GST is not enabled for your company. Configure GST in Company Settings first.")
 
     buyer = (
         db.query(Buyer)

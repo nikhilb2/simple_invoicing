@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
-import type { Invoice } from '../types/api';
+import type { CompanyProfile, Invoice } from '../types/api';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import SendEmailModal from './SendEmailModal';
 import EwayBillModal from './EwayBillModal';
@@ -20,9 +20,15 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
   const [previewFailed, setPreviewFailed] = useState(false);
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEscapeClose(onClose);
+
+  // Fetch company profile for E-Way Bill visibility rules
+  useEffect(() => {
+    api.get<CompanyProfile>('/company/').then(res => setCompanyProfile(res.data)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -169,7 +175,7 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
             >
               Email Invoice
             </button>
-            {invoice.voucher_type === 'sales' && invoice.status === 'active' && invoice.company_gst && (
+            {invoice.voucher_type === 'sales' && invoice.status === 'active' && companyProfile?.eway_enabled !== false && (
               <button
                 type="button"
                 className="button button--secondary"

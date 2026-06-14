@@ -24,4 +24,8 @@ class CompanyProfile(Base):
     logo_mime_type = Column(String(50), nullable=True)
     additional_company_info = Column(Text, nullable=True)
     show_sku_on_pdf = Column(Boolean, nullable=False, default=False)
+    eway_enabled = Column(Boolean, nullable=False, default=True)
+    eway_local_threshold = Column(Float, nullable=False, default=100000)
+    eway_interstate_threshold = Column(Float, nullable=False, default=50000)
+    eway_always_show_button = Column(Boolean, nullable=False, default=True)
     terms = relationship("CompanyTerm", back_populates="company", order_by="CompanyTerm.serial_number", cascade="all, delete-orphan")

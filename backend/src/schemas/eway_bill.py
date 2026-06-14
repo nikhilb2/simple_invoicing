@@ -103,6 +103,10 @@ class EwayBillPreCheckResult(BaseModel):
     missing_fields: list[EwayBillValidationError]
     form_data: EwayBillFormData
     item_validation: list[EwayBillValidationError]
+    eway_enabled: bool = True
+    threshold_warning: str | None = None
+    eway_local_threshold: float = 100000
+    eway_interstate_threshold: float = 50000
 
 
 class EwayBillTransporterSelectOut(BaseModel):

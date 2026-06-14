@@ -42,6 +42,10 @@ type EwayBillPreCheckResult = {
   missing_fields: EwayBillValidationError[];
   form_data: EwayBillFormData;
   item_validation: EwayBillValidationError[];
+  eway_enabled: boolean;
+  threshold_warning: string | null;
+  eway_local_threshold: number;
+  eway_interstate_threshold: number;
 };
 
 type TransporterProfile = {
@@ -98,6 +102,8 @@ export default function EwayBillModal({ invoice, onClose, onError }: Props) {
   const [subSupplyIsOthers, setSubSupplyIsOthers] = useState(false);
   const [showTransporterManager, setShowTransporterManager] = useState(false);
   const [jsonPreview, setJsonPreview] = useState('');
+  const [thresholdWarning, setThresholdWarning] = useState<string | null>(null);
+  const [ewayEnabled, setEwayEnabled] = useState(true);
 
   useEscapeClose(onClose);
 
@@ -114,6 +120,8 @@ export default function EwayBillModal({ invoice, onClose, onError }: Props) {
         setForm(result.form_data);
         setItemErrors(result.item_validation || []);
         setSubSupplyIsOthers(result.form_data.sub_supply_type === 'Others');
+        setThresholdWarning(result.threshold_warning || null);
+        setEwayEnabled(result.eway_enabled !== false);
 
         // Auto-select default transporter
         const def = (transRes as TransporterProfile[] || []).find(t => t.is_default);
@@ -273,6 +281,7 @@ export default function EwayBillModal({ invoice, onClose, onError }: Props) {
 
   // ── Form state ──
   const errors = [...formErrors, ...itemErrors];
+  const canGenerate = !generating && itemErrors.length === 0 && ewayEnabled;
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="eway-bill-title">
@@ -284,6 +293,21 @@ export default function EwayBillModal({ invoice, onClose, onError }: Props) {
           </div>
           <button className="button button--ghost" onClick={onClose}>Close</button>
         </div>
+
+        {/* E-Way Bill disabled notice */}
+        {!ewayEnabled && (
+          <div style={{ background: 'rgba(255,139,139,0.1)', border: '1px solid rgba(255,139,139,0.3)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
+            <p style={{ color: 'var(--danger)', fontWeight: 700, margin: 0 }}>⚠️ E-Way Bill generation is disabled in Company Settings. Enable it under Company → E-Way Bill Configuration.</p>
+          </div>
+        )}
+
+        {/* Threshold warning (guidance only — never blocks) */}
+        {thresholdWarning && (
+          <div style={{ background: 'rgba(255,193,7,0.08)', border: '1px solid rgba(255,193,7,0.25)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
+            <p style={{ color: '#e0a800', fontWeight: 700, marginBottom: '4px', fontSize: '0.95rem' }}>⚠️ Threshold Notice</p>
+            <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: 0 }}>{thresholdWarning}</p>
+          </div>
+        )}
 
         {/* Validation errors */}
         {errors.length > 0 && (
@@ -483,7 +507,7 @@ export default function EwayBillModal({ invoice, onClose, onError }: Props) {
           <button
             className="button button--primary"
             onClick={handleGenerate}
-            disabled={generating || itemErrors.length > 0}
+            disabled={!canGenerate}
           >
             {generating ? 'Generating...' : 'Generate JSON'}
           </button>
