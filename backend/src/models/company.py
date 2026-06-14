@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, Text, text
+from sqlalchemy import Boolean, Column, Float, Integer, String, Text, text
 from sqlalchemy.orm import relationship
 
 from src.db.base import Base
@@ -26,4 +26,8 @@ class CompanyProfile(Base):
     # server_default so create_all() emits a DB-level default — raw-SQL data
     # migrations (e.g. the company-scope backfill) INSERT without this column.
     show_sku_on_pdf = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    eway_enabled = Column(Boolean, nullable=False, default=True)
+    eway_local_threshold = Column(Float, nullable=False, default=100000)
+    eway_interstate_threshold = Column(Float, nullable=False, default=50000)
+    eway_always_show_button = Column(Boolean, nullable=False, default=True)
     terms = relationship("CompanyTerm", back_populates="company", order_by="CompanyTerm.serial_number", cascade="all, delete-orphan")
