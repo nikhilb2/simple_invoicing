@@ -428,10 +428,30 @@ class TestInvoiceApiProductName:
             assert len(data["items"]) == 1
             assert data["items"][0]["product_name"] == "Mechanical Keyboard"
 
-    def test_product_name_none_when_product_deleted(self, client):
-        """product_name is None if the product no longer exists."""
+    def test_product_delete_blocked_when_linked_to_invoice(self, client):
+        """A product linked to an invoice cannot be deleted via the API."""
         with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0005"):
             ledger_id = _create_ledger(client, name="Del Buyer", gst="27ABCDE9999F1Z9")
+            product_id = _create_product(client, sku="TEMP", name="Temporary Item")
+            _add_inventory(client, product_id=product_id, quantity=10)
+
+            client.post("/api/invoices/", json={
+                "ledger_id": ledger_id,
+                "voucher_type": "sales",
+                "items": [{"product_id": product_id, "quantity": 1}],
+            })
+
+            resp = client.delete(f"/api/products/{product_id}")
+            assert resp.status_code == 400
+
+    def test_product_name_none_when_product_orphaned(self, client, db_session):
+        """product_name is None when the underlying product no longer exists.
+
+        The API blocks deleting a product that is linked to an invoice, so we
+        simulate orphaned/legacy data by removing the product row directly.
+        """
+        with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0006"):
+            ledger_id = _create_ledger(client, name="Orphan Buyer", gst="27ABCDE9999F1Z9")
             product_id = _create_product(client, sku="TEMP", name="Temporary Item")
             _add_inventory(client, product_id=product_id, quantity=10)
 
@@ -442,10 +462,11 @@ class TestInvoiceApiProductName:
             })
             invoice_id = create_resp.json()["id"]
 
-            # Delete the product
-            client.delete(f"/api/products/{product_id}")
+            # Orphan the invoice item by removing the product row directly.
+            db_session.query(Product).filter(Product.id == product_id).delete()
+            db_session.commit()
 
-            # Fetch invoice — should still return but product_name is None
+            # Fetch invoice — should still return but product_name is None.
             resp = client.get(f"/api/invoices/{invoice_id}")
             assert resp.status_code == 200
             data = resp.json()

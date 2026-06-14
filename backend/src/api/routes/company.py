@@ -122,6 +122,7 @@ def _company_to_out(company: CompanyProfile) -> CompanyProfileOut:
         logo_data=company.logo_data,
         logo_mime_type=company.logo_mime_type,
         additional_company_info=company.additional_company_info,
+        show_sku_on_pdf=company.show_sku_on_pdf,
         terms=[
             CompanyTermOut(
                 id=t.id,
