@@ -454,8 +454,13 @@ def test_gstr1_validate_detects_missing_gstin(db_session):
         active_company=None,
     )
 
-    assert result.status == "invalid"
-    assert any("Missing GSTIN" in e.message for e in result.errors)
+    # A missing buyer GSTIN is a B2C supply — it must NOT block filing.
+    # It is surfaced as a warning, and the return stays valid.
+    assert result.status == "valid"
+    gstin_warnings = [e for e in result.errors if e.field == "GSTIN"]
+    assert len(gstin_warnings) == 1
+    assert gstin_warnings[0].severity == "warning"
+    assert "B2C" in gstin_warnings[0].message
 
 
 def test_gstr1_validate_detects_invalid_gstin(db_session):
