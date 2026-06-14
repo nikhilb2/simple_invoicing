@@ -125,9 +125,10 @@ export default function EwayBillModal({ invoice, onClose, onError }: Props) {
       try {
         const [preRes, transRes] = await Promise.all([
           api.get<EwayBillPreCheckResult>(`/invoices/${invoice.id}/eway-bill/precheck`),
-          api.get<TransporterProfile[]>('/eway-bill/transporters').catch(() => []),
+          api.get<TransporterProfile[]>('/eway-bill/transporters').catch(() => null),
         ]);
-        setTransporters(transRes as TransporterProfile[] || []);
+        const transporterList: TransporterProfile[] = transRes?.data ?? [];
+        setTransporters(transporterList);
         const result = preRes.data;
         setForm(result.form_data);
         setItemErrors([...(result.errors || []), ...(result.item_validation || [])]);
@@ -136,7 +137,7 @@ export default function EwayBillModal({ invoice, onClose, onError }: Props) {
         setEwayEnabled(result.eway_enabled !== false);
 
         // Auto-select default transporter
-        const def = (transRes as TransporterProfile[] || []).find(t => t.is_default);
+        const def = transporterList.find(t => t.is_default);
         if (def) {
           setSelectedTransporterId(def.id);
         }
