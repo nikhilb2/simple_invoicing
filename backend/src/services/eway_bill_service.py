@@ -91,6 +91,13 @@ def pre_check(
     buyer_state_code = extract_state_code(buyer_gstin)
     buyer_place = STATE_CODES.get(buyer_state_code, "")
 
+    # E-Way Bill module enabled check
+    if not getattr(company, "eway_enabled", True):
+        errors.append(EwayBillValidationError(
+            field="eway_disabled",
+            message="E-Way Bill generation is disabled in Company Settings."
+        ))
+
     # Validate seller GSTIN
     if not seller_gstin:
         errors.append(EwayBillValidationError(field="seller_gstin", message="Company GSTIN is not set. Please configure it in Company Settings."))
@@ -113,6 +120,18 @@ def pre_check(
                 field=f"item_{inv_item.id}_hsn",
                 message=f"Item '{product_name}' is missing HSN/SAC code. Please add it in Products."
             ))
+
+    # Threshold evaluation (guidance only, never blocks)
+    threshold_warning: str | None = None
+    interstate = seller_state_code != buyer_state_code and seller_state_code != "00" and buyer_state_code != "00"
+    threshold_value = getattr(company, "eway_interstate_threshold" if interstate else "eway_local_threshold", 100000)
+    invoice_value = float(invoice.taxable_amount or 0) + float(invoice.total_tax_amount or 0)
+    if invoice_value < threshold_value:
+        threshold_warning = (
+            f"This invoice (₹{invoice_value:,.2f}) is below the configured "
+            f"{'interstate' if interstate else 'local'} E-Way Bill threshold "
+            f"(₹{threshold_value:,.2f}). Generate only if required."
+        )
 
     valid = len(errors) == 0
 
@@ -138,6 +157,10 @@ def pre_check(
         missing_fields=missing,
         form_data=form_data,
         item_validation=item_errors,
+        eway_enabled=getattr(company, "eway_enabled", True),
+        threshold_warning=threshold_warning,
+        eway_local_threshold=getattr(company, "eway_local_threshold", 100000),
+        eway_interstate_threshold=getattr(company, "eway_interstate_threshold", 50000),
     )
 
 

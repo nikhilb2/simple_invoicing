@@ -736,3 +736,89 @@ def test_total_value_uses_taxable_amount(db_session, invoice, invoice_items, com
     bill = result["billLists"][0]
     assert bill["totalValue"] == 5000.0
     assert bill["totInvValue"] == 5900.0
+
+
+# ── Threshold & eway_enabled tests ──
+
+def test_pre_check_eway_disabled(db_session, invoice, invoice_items, company, buyer, product_with_hsn):
+    """When eway_enabled=False, pre_check should return valid=False with error."""
+    company.eway_enabled = False
+    db_session.flush()
+
+    products_map = {product_with_hsn.id: product_with_hsn}
+    result = pre_check(invoice, company, buyer, invoice_items, products_map)
+
+    assert result.eway_enabled is False
+    assert result.valid is False
+
+
+def test_pre_check_threshold_warning_below_local(db_session, invoice, invoice_items, company, buyer, product_with_hsn):
+    """Below local threshold (seller=29, buyer=27 interstate) should produce warning."""
+    invoice.taxable_amount = Decimal("1000.00")
+    invoice.total_tax_amount = Decimal("180.00")
+    db_session.flush()
+
+    products_map = {product_with_hsn.id: product_with_hsn}
+    result = pre_check(invoice, company, buyer, invoice_items, products_map)
+
+    assert result.threshold_warning is not None
+    assert "below" in (result.threshold_warning or "").lower()
+
+
+def test_pre_check_threshold_warning_above_interstate(db_session, invoice, invoice_items, company, buyer, product_with_hsn):
+    """Above interstate threshold should produce NO warning."""
+    invoice.taxable_amount = Decimal("100000.00")
+    invoice.total_tax_amount = Decimal("18000.00")
+    db_session.flush()
+
+    products_map = {product_with_hsn.id: product_with_hsn}
+    result = pre_check(invoice, company, buyer, invoice_items, products_map)
+
+    # Seller state=29, Buyer state=27 → interstate. Value 118000 > 50000 threshold
+    assert result.threshold_warning is None
+
+
+def test_pre_check_large_invoice_not_blocked(db_session, invoice, invoice_items, company, buyer, product_with_hsn):
+    """Large invoice values should NEVER be blocked — only warned if below threshold."""
+    # ₹50,00,000 invoice
+    invoice.taxable_amount = Decimal("5000000.00")
+    invoice.total_tax_amount = Decimal("900000.00")
+    db_session.flush()
+
+    products_map = {product_with_hsn.id: product_with_hsn}
+    result = pre_check(invoice, company, buyer, invoice_items, products_map)
+
+    # Should be valid and NOT blocked
+    assert result.valid is True
+    assert result.threshold_warning is None  # Above all thresholds
+
+
+def test_pre_check_custom_thresholds(db_session, invoice, invoice_items, company, buyer, product_with_hsn):
+    """Custom threshold values should be used from company settings."""
+    company.eway_local_threshold = 200000
+    company.eway_interstate_threshold = 100000
+    db_session.flush()
+
+    invoice.taxable_amount = Decimal("150000.00")
+    invoice.total_tax_amount = Decimal("27000.00")
+    db_session.flush()
+
+    products_map = {product_with_hsn.id: product_with_hsn}
+    result = pre_check(invoice, company, buyer, invoice_items, products_map)
+
+    assert result.eway_local_threshold == 200000
+    assert result.eway_interstate_threshold == 100000
+    # Interstate (29 ≠ 27): value 177000 > 100000 threshold → no warning
+    assert result.threshold_warning is None
+
+
+def test_pre_check_default_thresholds(db_session, invoice, invoice_items, company, buyer, product_with_hsn):
+    """Default thresholds should be returned when not set."""
+    # New-style company without explicit eway fields
+    # Test defaults via pre_check result
+    products_map = {product_with_hsn.id: product_with_hsn}
+    result = pre_check(invoice, company, buyer, invoice_items, products_map)
+
+    assert result.eway_local_threshold == 100000
+    assert result.eway_interstate_threshold == 50000
+    assert result.eway_enabled is True

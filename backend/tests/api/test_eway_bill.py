@@ -411,3 +411,16 @@ def test_delete_transporter(client, db, company):
     # Verify gone
     resp2 = client.get("/api/eway-bill/transporters")
     assert len(resp2.json()) == 0
+
+
+# ── Settings endpoint ──
+
+def test_eway_bill_settings_defaults(client):
+    """Settings endpoint should return default values."""
+    resp = client.get("/api/eway-bill/settings")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["eway_enabled"] is True
+    assert data["eway_local_threshold"] == 100000
+    assert data["eway_interstate_threshold"] == 50000
+    assert data["eway_always_show_button"] is True
