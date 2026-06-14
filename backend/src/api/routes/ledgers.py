@@ -1538,16 +1538,6 @@ def _derive_place_of_supply(company_gst: str | None) -> str:
     return "00"
 
 
-def _validate_gstin(gstin: str | None) -> str | None:
-    """Validate GSTIN format. Returns error message or None."""
-    if not gstin or not gstin.strip():
-        return "Missing GSTIN"
-    gstin = gstin.strip().upper()
-    if not GSTIN_REGEX.fullmatch(gstin):
-        return f"Invalid GSTIN format: {gstin}"
-    return None
-
-
 def _validate_hsn(hsn: str | None) -> str | None:
     """Validate HSN/SAC code. Returns error message or None."""
     if not hsn or not hsn.strip():
@@ -1648,11 +1638,19 @@ def gstr1_validate(
         # Track for duplicates
         seen_numbers.setdefault(inv_num, []).append(inv.id)
 
-        # GSTIN validation
-        gstin_err = _validate_gstin(inv.ledger_gst)
-        if gstin_err:
+        # GSTIN validation. A missing buyer GSTIN is a legitimate B2C supply
+        # (filed under B2CS/B2CL), so it is a warning — not a blocking error.
+        # A present-but-malformed GSTIN is a real error that must be fixed.
+        ledger_gst = (inv.ledger_gst or "").strip().upper()
+        if not ledger_gst:
             errors.append(Gstr1ValidationError(
-                invoice_number=inv_num, field="GSTIN", message=gstin_err, severity="error",
+                invoice_number=inv_num, field="GSTIN",
+                message="No GSTIN — will be filed as B2C (B2CS/B2CL)", severity="warning",
+            ))
+        elif not GSTIN_REGEX.fullmatch(ledger_gst):
+            errors.append(Gstr1ValidationError(
+                invoice_number=inv_num, field="GSTIN",
+                message=f"Invalid GSTIN format: {ledger_gst}", severity="error",
             ))
 
         # Taxable value check
