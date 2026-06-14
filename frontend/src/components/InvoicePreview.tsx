@@ -169,7 +169,7 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
             >
               Email Invoice
             </button>
-            {invoice.voucher_type === 'sales' && invoice.status === 'active' && (
+            {invoice.voucher_type === 'sales' && invoice.status === 'active' && invoice.company_gst && (
               <button
                 type="button"
                 className="button button--secondary"

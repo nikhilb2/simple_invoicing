@@ -170,6 +170,8 @@ def validate_form_data(form: EwayBillFormData) -> list[EwayBillValidationError]:
         errors.append(EwayBillValidationError(field="supply_type", message="Supply type is required."))
     if not form.sub_supply_type:
         errors.append(EwayBillValidationError(field="sub_supply_type", message="Sub-supply type is required."))
+    if form.sub_supply_type == "Others" and not form.sub_supply_desc.strip():
+        errors.append(EwayBillValidationError(field="sub_supply_desc", message="Sub-supply description is required when 'Others' is selected."))
 
     # Transport
     if form.transport_mode == "1" and form.vehicle_number:
@@ -255,7 +257,7 @@ def generate_eway_bill_json(
         "toPincode": int(form.buyer_pincode) if form.buyer_pincode.isdigit() else 0,
         "actToStateCode": int(form.buyer_state_code) if form.buyer_state_code.isdigit() else 0,
         "toStateCode": int(form.buyer_state_code) if form.buyer_state_code.isdigit() else 0,
-        "totalValue": _money(invoice.total_amount or 0),
+        "totalValue": _money(invoice.taxable_amount or 0),
         "cgstValue": _money(invoice.cgst_amount or 0),
         "sgstValue": _money(invoice.sgst_amount or 0),
         "igstValue": _money(invoice.igst_amount or 0),
