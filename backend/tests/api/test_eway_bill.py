@@ -76,13 +76,16 @@ def client(db, company):
     def override_get_active_company():
         return company
 
+    # Snapshot the global overrides (set in conftest) so we restore them and don't
+    # leak our per-test overrides into other test modules.
+    saved_overrides = dict(app.dependency_overrides)
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_active_company] = override_get_active_company
 
     yield TestClient(app)
 
-    app.dependency_overrides.clear()
+    app.dependency_overrides = saved_overrides
 
 
 @pytest.fixture
@@ -210,7 +213,7 @@ def test_generate_json_200(client, invoice):
         "buyer_state_code": "27",
         "buyer_pincode": "400001",
         "supply_type": "O",
-        "sub_supply_type": "Supply",
+        "sub_supply_type": "1",
         "transport_mode": "1",
         "distance_km": 100,
         "vehicle_number": "HR55AB1234",
@@ -252,7 +255,7 @@ def test_generate_full_json_structure(client, invoice):
         "buyer_state_code": "27",
         "buyer_pincode": "400001",
         "supply_type": "O",
-        "sub_supply_type": "Supply",
+        "sub_supply_type": "1",
         "transport_mode": "1",
         "distance_km": 100,
         "vehicle_number": "HR55AB1234",
@@ -303,7 +306,7 @@ def test_generate_saves_transporter(client, db, company, invoice):
         "buyer_state_code": "27",
         "buyer_pincode": "400001",
         "supply_type": "O",
-        "sub_supply_type": "Supply",
+        "sub_supply_type": "1",
         "transport_mode": "1",
         "distance_km": 100,
         "transporter_name": "Saved Transporter",

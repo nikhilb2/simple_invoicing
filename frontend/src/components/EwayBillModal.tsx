@@ -26,6 +26,7 @@ type EwayBillFormData = {
   buyer_state_code: string;
   buyer_pincode: string;
   supply_type: string;
+  transaction_type: string;
   sub_supply_type: string;
   sub_supply_desc: string;
   transport_mode: string;
@@ -39,6 +40,7 @@ type EwayBillFormData = {
 
 type EwayBillPreCheckResult = {
   valid: boolean;
+  errors: EwayBillValidationError[];
   missing_fields: EwayBillValidationError[];
   form_data: EwayBillFormData;
   item_validation: EwayBillValidationError[];
@@ -60,16 +62,26 @@ type TransporterProfile = {
 
 // ── Constants ──
 
+// Values are the NIC subSupplyType codes the portal expects.
 const SUB_SUPPLY_TYPES = [
-  { value: 'Supply', label: 'Supply' },
-  { value: 'Import', label: 'Import' },
-  { value: 'Export', label: 'Export' },
-  { value: 'Job Work', label: 'Job Work' },
-  { value: 'For Own Use', label: 'For Own Use' },
-  { value: 'Sales Return', label: 'Sales Return' },
-  { value: 'Exhibition', label: 'Exhibition' },
-  { value: 'Line Sales', label: 'Line Sales' },
-  { value: 'Others', label: 'Others' },
+  { value: '1', label: 'Supply' },
+  { value: '2', label: 'Import' },
+  { value: '3', label: 'Export' },
+  { value: '4', label: 'Job Work' },
+  { value: '5', label: 'For Own Use' },
+  { value: '7', label: 'Sales Return' },
+  { value: '12', label: 'Exhibition or Fairs' },
+  { value: '10', label: 'Line Sales' },
+  { value: '8', label: 'Others' },
+];
+const SUB_SUPPLY_OTHERS_CODE = '8';
+
+// NIC transactionType codes.
+const TRANSACTION_TYPES = [
+  { value: '1', label: 'Regular' },
+  { value: '2', label: 'Bill To - Ship To' },
+  { value: '3', label: 'Bill From - Dispatch From' },
+  { value: '4', label: 'Combination of 2 and 3' },
 ];
 
 const TRANSPORT_MODES = [
@@ -118,8 +130,8 @@ export default function EwayBillModal({ invoice, onClose, onError }: Props) {
         setTransporters(transRes as TransporterProfile[] || []);
         const result = preRes.data;
         setForm(result.form_data);
-        setItemErrors(result.item_validation || []);
-        setSubSupplyIsOthers(result.form_data.sub_supply_type === 'Others');
+        setItemErrors([...(result.errors || []), ...(result.item_validation || [])]);
+        setSubSupplyIsOthers(result.form_data.sub_supply_type === SUB_SUPPLY_OTHERS_CODE);
         setThresholdWarning(result.threshold_warning || null);
         setEwayEnabled(result.eway_enabled !== false);
 
@@ -436,10 +448,18 @@ export default function EwayBillModal({ invoice, onClose, onError }: Props) {
                 </select>
               </div>
               <div className="field">
+                <label>Transaction Type</label>
+                <select className="select" value={form.transaction_type} onChange={e => updateForm('transaction_type', e.target.value)}>
+                  {TRANSACTION_TYPES.map(t => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
                 <label>Sub-Supply Type</label>
                 <select className="select" value={form.sub_supply_type} onChange={e => {
                   updateForm('sub_supply_type', e.target.value);
-                  setSubSupplyIsOthers(e.target.value === 'Others');
+                  setSubSupplyIsOthers(e.target.value === SUB_SUPPLY_OTHERS_CODE);
                 }}>
                   {SUB_SUPPLY_TYPES.map(s => (
                     <option key={s.value} value={s.value}>{s.label}</option>
