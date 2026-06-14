@@ -459,7 +459,7 @@ export default function EwayBillModal({ invoice, onClose, onError }: Props) {
               </div>
               <div className="field">
                 <label>Distance (KM)</label>
-                <input className="input" type="number" min={0} value={form.distance_km ?? ''} onChange={e => updateForm('distance_km', e.target.value ? Number(e.target.value) : null)} placeholder="e.g., 200" />
+                <input className="input" type="number" min={0} value={form.distance_km ?? ''} onChange={e => { const v = e.target.value; updateForm('distance_km', v ? Number(v) : 0); }} placeholder="e.g., 200" />
               </div>
               <div className="field">
                 <label>Transporter Name</label>
