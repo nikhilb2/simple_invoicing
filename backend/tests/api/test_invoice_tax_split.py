@@ -142,16 +142,16 @@ def test_intrastate_odd_paise_total_tax_is_not_inflated(db_session):
     assert "GST Split" not in html
 
 
-def test_pdf_unit_price_always_displays_tax_inclusive_value(db_session):
+def _unit_price_html(db_session, *, tax_inclusive: bool, unit_price: float) -> str:
     user, ledger = _seed_common(db_session)
-    product = _create_product_with_inventory(db_session, "UNIT01", 100.00, 18)
+    product = _create_product_with_inventory(db_session, "UNIT01", unit_price, 18)
     invoice = _new_invoice(db_session)
 
     payload = InvoiceCreate(
         ledger_id=ledger.id,
         voucher_type="sales",
-        tax_inclusive=False,
-        items=[InvoiceItemCreate(product_id=product.id, quantity=2, unit_price=100.00)],
+        tax_inclusive=tax_inclusive,
+        items=[InvoiceItemCreate(product_id=product.id, quantity=2, unit_price=unit_price)],
     )
 
     InvoiceProcessor(db_session).apply_payload(
@@ -163,11 +163,27 @@ def test_pdf_unit_price_always_displays_tax_inclusive_value(db_session):
     db_session.flush()
     db_session.refresh(invoice)
 
-    html = _build_invoice_html(invoice, [product])
+    return _build_invoice_html(invoice, [product])
 
-    # Unit price column should always show tax-inclusive per-unit amount.
+
+def test_pdf_unit_price_excludes_tax_when_tax_exclusive(db_session):
+    """tax_inclusive=False → unit price column shows the entered pre-tax amount (#363 toggle).
+
+    The price is shown as entered (100.00) — it is NOT grossed up to the
+    tax-inclusive figure (118.00).
+    """
+    html = _unit_price_html(db_session, tax_inclusive=False, unit_price=100.00)
+    assert "100.00</td>" in html
+    assert "118.00</td>" not in html
+
+
+def test_pdf_unit_price_includes_tax_when_tax_inclusive(db_session):
+    """tax_inclusive=True → unit price column shows the tax-inclusive amount (#363 toggle).
+
+    A price entered as tax-inclusive (118.00) flows through to the column as-is.
+    """
+    html = _unit_price_html(db_session, tax_inclusive=True, unit_price=118.00)
     assert "118.00</td>" in html
-    assert "100.00</td>" not in html
 
 
 def test_intrastate_three_line_case_keeps_tax_exact_with_balanced_split(db_session):
