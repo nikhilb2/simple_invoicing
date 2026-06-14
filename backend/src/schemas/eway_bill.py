@@ -54,8 +54,9 @@ class EwayBillFormData(BaseModel):
     buyer_pincode: str = ""
 
     # Supply details
-    supply_type: str = "O"  # O = Outward
-    sub_supply_type: str = "Supply"
+    supply_type: str = "O"  # O = Outward, I = Inward
+    transaction_type: str = "1"  # 1=Regular, 2=Bill To-Ship To, 3=Bill From-Dispatch From, 4=Combination
+    sub_supply_type: str = "1"  # NIC numeric code (1=Supply, 8=Others, ...)
     sub_supply_desc: str = ""
 
     # Transport details
@@ -100,6 +101,7 @@ class EwayBillValidationError(BaseModel):
 class EwayBillPreCheckResult(BaseModel):
     """Result of checking what data is available vs missing."""
     valid: bool
+    errors: list[EwayBillValidationError] = []
     missing_fields: list[EwayBillValidationError]
     form_data: EwayBillFormData
     item_validation: list[EwayBillValidationError]

@@ -3,11 +3,13 @@ E-Way Bill (EWB) JSON generation service.
 
 Generates GST/NIC portal-compliant E-Way Bill JSON from invoice data,
 company profile, buyer data, and user-supplied transport details.
+
+The output targets the NIC bulk-upload schema (version 1.0.1118) used by
+https://ewaybillgst.gov.in — so codes (sub-supply, transaction, transport
+mode) are emitted as the numeric values NIC expects, not human labels.
 """
 
-import json
 import re
-from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
@@ -47,16 +49,45 @@ STATE_CODES = {
 GSTIN_REGEX = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$")
 VEHICLE_REGEX = re.compile(r"^[A-Z]{2}[0-9]{1,2}[A-Z]{1,2}[0-9]{1,4}$")
 
+# NIC sub-supply type codes (subSupplyType). The frontend sends these codes.
+SUB_SUPPLY_CODES = {
+    "1": "Supply",
+    "2": "Import",
+    "3": "Export",
+    "4": "Job Work",
+    "5": "For Own Use",
+    "7": "Sales Return",
+    "8": "Others",
+    "10": "Line Sales",
+    "12": "Exhibition or Fairs",
+}
+SUB_SUPPLY_OTHERS_CODE = "8"
+
+# NIC transaction type codes (transactionType).
+TRANSACTION_TYPE_CODES = {"1", "2", "3", "4"}
+
+# NIC transport mode codes (transMode): 1=Road, 2=Rail, 3=Air, 4=Ship.
+TRANSPORT_MODE_CODES = {"1", "2", "3", "4"}
+ROAD_MODE = "1"
+
+# GSTIN value used for unregistered (B2C) recipients on the NIC portal.
+UNREGISTERED_GSTIN = "URP"
+
 
 def extract_state_code(gstin: str | None) -> str:
     """Extract the 2-digit state code from a GSTIN."""
-    if gstin and len(gstin) >= 2:
+    if gstin and len(gstin) >= 2 and gstin[:2].isdigit():
         return gstin[:2]
     return "00"
 
 
-def _money(val: float | Decimal) -> float:
-    return round(float(val), 2)
+def _money(val: float | Decimal | None) -> float:
+    return round(float(val or 0), 2)
+
+
+def _s(val: str | None) -> str:
+    """Coerce a possibly-None DB value into a stripped string."""
+    return (val or "").strip()
 
 
 def pre_check(
@@ -70,62 +101,81 @@ def pre_check(
     errors: list[EwayBillValidationError] = []
     missing: list[EwayBillValidationError] = []
 
-    # Build pre-filled form data from existing data
-    seller_gstin = company.gst or ""
-    seller_trade_name = company.name or ""
-    seller_addr_parts = (company.address or "").split("\n")
+    # ── Seller details (from company profile) ──
+    seller_gstin = _s(company.gst)
+    seller_trade_name = _s(company.name)
+    seller_address = _s(company.address)
+    seller_addr_parts = seller_address.split("\n")
     seller_address_1 = seller_addr_parts[0] if seller_addr_parts else ""
     seller_address_2 = "\n".join(seller_addr_parts[1:]) if len(seller_addr_parts) > 1 else ""
-
     seller_state_code = extract_state_code(seller_gstin)
     seller_place = STATE_CODES.get(seller_state_code, "")
+    seller_pincode = _extract_pincode(seller_address)
 
-    # Parse pincode from address
-    seller_pincode = _extract_pincode(company.address or "")
-    buyer_pincode = _extract_pincode(buyer.address if buyer else "")
-    buyer_gstin = buyer.gst if buyer else (invoice.ledger_gst or "")
-    buyer_trade_name = buyer.name if buyer else (invoice.ledger_name or "")
-    buyer_addr_parts = (buyer.address if buyer else (invoice.ledger_address or "")).split("\n")
+    # ── Buyer details (from Buyer record, falling back to invoice ledger snapshot) ──
+    buyer_gstin = _s(buyer.gst) if buyer else _s(invoice.ledger_gst)
+    buyer_trade_name = _s(buyer.name) if buyer else _s(invoice.ledger_name)
+    buyer_address = _s(buyer.address) if buyer else _s(invoice.ledger_address)
+    buyer_addr_parts = buyer_address.split("\n")
     buyer_address_1 = buyer_addr_parts[0] if buyer_addr_parts else ""
     buyer_address_2 = "\n".join(buyer_addr_parts[1:]) if len(buyer_addr_parts) > 1 else ""
     buyer_state_code = extract_state_code(buyer_gstin)
     buyer_place = STATE_CODES.get(buyer_state_code, "")
+    buyer_pincode = _extract_pincode(buyer_address)
 
-    # E-Way Bill module enabled check
-    if not getattr(company, "eway_enabled", True):
+    # ── E-Way Bill module enabled check ──
+    eway_enabled = bool(getattr(company, "eway_enabled", True))
+    if not eway_enabled:
         errors.append(EwayBillValidationError(
             field="eway_disabled",
-            message="E-Way Bill generation is disabled in Company Settings."
+            message="E-Way Bill generation is disabled in Company Settings.",
         ))
 
-    # Validate seller GSTIN
+    # ── Seller GSTIN (mandatory) ──
     if not seller_gstin:
-        errors.append(EwayBillValidationError(field="seller_gstin", message="Company GSTIN is not set. Please configure it in Company Settings."))
+        errors.append(EwayBillValidationError(
+            field="seller_gstin",
+            message="Company GSTIN is not set. Please configure it in Company Settings.",
+        ))
     elif not GSTIN_REGEX.match(seller_gstin):
-        errors.append(EwayBillValidationError(field="seller_gstin", message="Company GSTIN format is invalid."))
+        errors.append(EwayBillValidationError(
+            field="seller_gstin",
+            message="Company GSTIN format is invalid.",
+        ))
 
-    # Validate buyer GSTIN (mandatory for EWB)
+    # ── Buyer GSTIN (optional — empty means B2C / unregistered → "URP") ──
     if not buyer_gstin:
-        missing.append(EwayBillValidationError(field="buyer_gstin", message="Buyer GSTIN is required for E-Way Bill."))
+        missing.append(EwayBillValidationError(
+            field="buyer_gstin",
+            message="Buyer GSTIN is not set. It will be treated as unregistered (URP). "
+                    "Add the buyer's state code below.",
+        ))
     elif not GSTIN_REGEX.match(buyer_gstin):
-        errors.append(EwayBillValidationError(field="buyer_gstin", message="Buyer GSTIN format is invalid."))
+        errors.append(EwayBillValidationError(
+            field="buyer_gstin",
+            message="Buyer GSTIN format is invalid.",
+        ))
 
-    # Check HSN codes on all items
+    # ── HSN/SAC codes on all items (mandatory for EWB) ──
     item_errors: list[EwayBillValidationError] = []
     for inv_item in (items or []):
-        hsn = inv_item.hsn_sac or (products_map.get(inv_item.product_id).hsn_sac if products_map.get(inv_item.product_id) else None)
-        if not hsn or not hsn.strip():
-            product_name = products_map.get(inv_item.product_id).name if products_map.get(inv_item.product_id) else f"Product #{inv_item.product_id}"
+        product = products_map.get(inv_item.product_id)
+        hsn = _s(inv_item.hsn_sac) or (_s(product.hsn_sac) if product else "")
+        if not hsn:
+            product_name = product.name if product else f"Product #{inv_item.product_id}"
             item_errors.append(EwayBillValidationError(
                 field=f"item_{inv_item.id}_hsn",
-                message=f"Item '{product_name}' is missing HSN/SAC code. Please add it in Products."
+                message=f"Item '{product_name}' is missing HSN/SAC code. Please add it in Products.",
             ))
 
-    # Threshold evaluation (guidance only, never blocks)
+    # ── Threshold evaluation (guidance only, never blocks) ──
+    interstate = float(invoice.igst_amount or 0) > 0
+    local_threshold = float(getattr(company, "eway_local_threshold", 100000) or 0)
+    interstate_threshold = float(getattr(company, "eway_interstate_threshold", 50000) or 0)
+    threshold_value = interstate_threshold if interstate else local_threshold
+    invoice_value = _money(invoice.total_amount)
+
     threshold_warning: str | None = None
-    interstate = seller_state_code != buyer_state_code and seller_state_code != "00" and buyer_state_code != "00"
-    threshold_value = getattr(company, "eway_interstate_threshold" if interstate else "eway_local_threshold", 100000)
-    invoice_value = float(invoice.taxable_amount or 0) + float(invoice.total_tax_amount or 0)
     if invoice_value < threshold_value:
         threshold_warning = (
             f"This invoice (₹{invoice_value:,.2f}) is below the configured "
@@ -141,26 +191,27 @@ def pre_check(
         seller_address_1=seller_address_1,
         seller_address_2=seller_address_2,
         seller_place=seller_place,
-        seller_state_code=seller_state_code,
+        seller_state_code=seller_state_code if seller_state_code != "00" else "",
         seller_pincode=seller_pincode,
         buyer_gstin=buyer_gstin,
         buyer_trade_name=buyer_trade_name,
         buyer_address_1=buyer_address_1,
         buyer_address_2=buyer_address_2,
         buyer_place=buyer_place,
-        buyer_state_code=buyer_state_code,
+        buyer_state_code=buyer_state_code if buyer_state_code != "00" else "",
         buyer_pincode=buyer_pincode,
     )
 
     return EwayBillPreCheckResult(
         valid=valid,
+        errors=errors,
         missing_fields=missing,
         form_data=form_data,
         item_validation=item_errors,
-        eway_enabled=getattr(company, "eway_enabled", True),
+        eway_enabled=eway_enabled,
         threshold_warning=threshold_warning,
-        eway_local_threshold=getattr(company, "eway_local_threshold", 100000),
-        eway_interstate_threshold=getattr(company, "eway_interstate_threshold", 50000),
+        eway_local_threshold=local_threshold,
+        eway_interstate_threshold=interstate_threshold,
     )
 
 
@@ -168,41 +219,59 @@ def validate_form_data(form: EwayBillFormData) -> list[EwayBillValidationError]:
     """Validate the complete form data before generating JSON."""
     errors: list[EwayBillValidationError] = []
 
-    # GSTIN validation
-    for field, label in [("seller_gstin", "Seller GSTIN"), ("buyer_gstin", "Buyer GSTIN")]:
-        val = getattr(form, field, "")
-        if not val:
-            errors.append(EwayBillValidationError(field=field, message=f"{label} is required."))
-        elif not GSTIN_REGEX.match(val):
-            errors.append(EwayBillValidationError(field=field, message=f"{label} format is invalid."))
+    # Seller GSTIN — required and well-formed.
+    seller_gstin = _s(form.seller_gstin)
+    if not seller_gstin:
+        errors.append(EwayBillValidationError(field="seller_gstin", message="Seller GSTIN is required."))
+    elif not GSTIN_REGEX.match(seller_gstin):
+        errors.append(EwayBillValidationError(field="seller_gstin", message="Seller GSTIN format is invalid."))
 
-    # State codes
+    # Buyer GSTIN — optional (empty = unregistered/URP), but if present must be valid.
+    buyer_gstin = _s(form.buyer_gstin)
+    if buyer_gstin and not GSTIN_REGEX.match(buyer_gstin):
+        errors.append(EwayBillValidationError(field="buyer_gstin", message="Buyer GSTIN format is invalid."))
+
+    # State codes — both required (used for addressing and intra/inter-state nature).
     for field, label in [("seller_state_code", "Seller State Code"), ("buyer_state_code", "Buyer State Code")]:
-        val = getattr(form, field, "")
-        if not val or val == "00":
-            errors.append(EwayBillValidationError(field=field, message=f"{label} is required and must be a valid 2-digit code."))
+        val = _s(getattr(form, field, ""))
+        if not val or val == "00" or not re.match(r"^\d{2}$", val):
+            errors.append(EwayBillValidationError(
+                field=field,
+                message=f"{label} is required and must be a valid 2-digit code.",
+            ))
 
-    # Pincodes
+    # Pincodes — optional but must be 6 digits when present.
     for field, label in [("seller_pincode", "Seller Pincode"), ("buyer_pincode", "Buyer Pincode")]:
-        val = getattr(form, field, "")
+        val = _s(getattr(form, field, ""))
         if val and not re.match(r"^\d{6}$", val):
             errors.append(EwayBillValidationError(field=field, message=f"{label} must be a 6-digit number."))
 
-    # Supply details
-    if not form.supply_type:
-        errors.append(EwayBillValidationError(field="supply_type", message="Supply type is required."))
-    if not form.sub_supply_type:
+    # Supply details.
+    if form.supply_type not in ("O", "I"):
+        errors.append(EwayBillValidationError(field="supply_type", message="Supply type must be Outward (O) or Inward (I)."))
+    if form.transaction_type not in TRANSACTION_TYPE_CODES:
+        errors.append(EwayBillValidationError(field="transaction_type", message="Transaction type is required."))
+    if form.sub_supply_type not in SUB_SUPPLY_CODES:
         errors.append(EwayBillValidationError(field="sub_supply_type", message="Sub-supply type is required."))
-    if form.sub_supply_type == "Others" and not form.sub_supply_desc.strip():
-        errors.append(EwayBillValidationError(field="sub_supply_desc", message="Sub-supply description is required when 'Others' is selected."))
+    if form.sub_supply_type == SUB_SUPPLY_OTHERS_CODE and not _s(form.sub_supply_desc):
+        errors.append(EwayBillValidationError(
+            field="sub_supply_desc",
+            message="Sub-supply description is required when 'Others' is selected.",
+        ))
 
-    # Transport
-    if form.transport_mode == "1" and form.vehicle_number:
-        if not VEHICLE_REGEX.match(form.vehicle_number.upper()):
-            errors.append(EwayBillValidationError(field="vehicle_number", message="Vehicle number format is invalid (e.g., HR55AB1234)."))
+    # Transport.
+    if form.transport_mode not in TRANSPORT_MODE_CODES:
+        errors.append(EwayBillValidationError(field="transport_mode", message="Transport mode is invalid."))
+    vehicle_number = _s(form.vehicle_number)
+    if form.transport_mode == ROAD_MODE and vehicle_number:
+        if not VEHICLE_REGEX.match(vehicle_number.upper()):
+            errors.append(EwayBillValidationError(
+                field="vehicle_number",
+                message="Vehicle number format is invalid (e.g., HR55AB1234).",
+            ))
 
-    if form.distance_km is not None and form.distance_km <= 0:
-        errors.append(EwayBillValidationError(field="distance_km", message="Distance must be a positive number."))
+    if form.distance_km is not None and form.distance_km < 0:
+        errors.append(EwayBillValidationError(field="distance_km", message="Distance cannot be negative."))
 
     return errors
 
@@ -214,92 +283,107 @@ def generate_eway_bill_json(
     items: list[InvoiceItem],
     products_map: dict[int, Product],
     form: EwayBillFormData,
-) -> str:
-    """Generate the NIC-compliant E-Way Bill JSON string."""
-    # Validate transport mode
-    transport_mode_map = {"1": "1", "2": "2", "3": "3", "4": "4"}
-    trans_mode = transport_mode_map.get(form.transport_mode, "1")
+) -> dict:
+    """Build the NIC-compliant E-Way Bill JSON (returns a dict)."""
+    # The tax nature is whatever the invoice actually computed at creation time,
+    # not a re-derivation from form state codes — this keeps item rates and the
+    # bill-level CGST/SGST/IGST values internally consistent.
+    interstate = float(invoice.igst_amount or 0) > 0
 
-    # Build item list for JSON
+    # ── Item list ──
     bill_items = []
     for inv_item in (items or []):
         product = products_map.get(inv_item.product_id)
-        hsn = inv_item.hsn_sac or (product.hsn_sac if product else "")
+        hsn = _s(inv_item.hsn_sac) or (_s(product.hsn_sac) if product else "")
         gst_rate = float(inv_item.gst_rate or 0)
-        half_rate = gst_rate / 2
-
-        # Determine if IGST or CGST+SGST
-        interstate = extract_state_code(form.seller_gstin) != extract_state_code(form.buyer_gstin)
+        half_rate = round(gst_rate / 2, 3)
 
         bill_items.append({
-            "productName": product.name if product else "",
-            "productDesc": inv_item.description or (product.description if product else "") or "",
-            "hsnCode": hsn,
+            "productName": (product.name if product else "") or "",
+            "productDesc": _s(inv_item.description) or (_s(product.description) if product else "") or (product.name if product else ""),
+            "hsnCode": int(hsn) if hsn.isdigit() else hsn,
             "quantity": float(inv_item.quantity or 0),
-            "qtyUnit": product.unit if product and product.unit else "NOS",
-            "taxableAmount": _money(inv_item.taxable_amount or 0),
+            "qtyUnit": (product.unit if product and product.unit else "NOS").upper()[:3],
+            "taxableAmount": _money(inv_item.taxable_amount),
             "cgstRate": 0 if interstate else half_rate,
             "sgstRate": 0 if interstate else half_rate,
             "igstRate": gst_rate if interstate else 0,
             "cessRate": 0,
+            "cessNonAdvol": 0,
         })
 
-    # Determine document type
-    doc_type = "INV"
-    if invoice.voucher_type == "purchase":
-        doc_type = "INV"  # Still INV for purchases
-
-    # Format invoice date
+    # ── Document date (NIC wants DD/MM/YYYY) ──
     inv_date = invoice.invoice_date
-    if isinstance(inv_date, datetime):
+    if hasattr(inv_date, "strftime"):
         doc_date = inv_date.strftime("%d/%m/%Y")
     else:
-        doc_date = inv_date.strftime("%d/%m/%Y") if hasattr(inv_date, "strftime") else str(inv_date)[:10]
+        doc_date = str(inv_date)[:10]
 
-    # Build the single bill entry
+    # ── Recipient GSTIN: unregistered buyers go in as "URP" ──
+    buyer_gstin = _s(form.buyer_gstin) or UNREGISTERED_GSTIN
+
+    seller_state = int(form.seller_state_code) if _s(form.seller_state_code).isdigit() else 0
+    buyer_state = int(form.buyer_state_code) if _s(form.buyer_state_code).isdigit() else 0
+
+    # ── Money totals (otherValue balances rounding so totInvValue reconciles) ──
+    taxable = _money(invoice.taxable_amount)
+    cgst = _money(invoice.cgst_amount)
+    sgst = _money(invoice.sgst_amount)
+    igst = _money(invoice.igst_amount)
+    tot_inv = _money(invoice.total_amount)
+    other_value = round(tot_inv - (taxable + cgst + sgst + igst), 2)
+
+    sub_supply_desc = _s(form.sub_supply_desc) if form.sub_supply_type == SUB_SUPPLY_OTHERS_CODE else ""
+
     bill_entry = {
-        "userGstin": form.seller_gstin,
-        "supplyType": form.supply_type,
-        "subSupplyType": form.sub_supply_type,
-        "docType": doc_type,
+        "userGstin": _s(form.seller_gstin),
+        "supplyType": form.supply_type or "O",
+        "subSupplyType": form.sub_supply_type or "1",
+        "subSupplyDesc": sub_supply_desc,
+        "docType": "INV",
         "docNo": invoice.invoice_number or str(invoice.id),
         "docDate": doc_date,
-        "fromGstin": form.seller_gstin,
-        "fromTrdName": form.seller_trade_name,
-        "fromAddr1": form.seller_address_1,
-        "fromAddr2": form.seller_address_2,
-        "fromPlace": form.seller_place,
-        "fromPincode": int(form.seller_pincode) if form.seller_pincode.isdigit() else 0,
-        "actFromStateCode": int(form.seller_state_code) if form.seller_state_code.isdigit() else 0,
-        "fromStateCode": int(form.seller_state_code) if form.seller_state_code.isdigit() else 0,
-        "toGstin": form.buyer_gstin,
-        "toTrdName": form.buyer_trade_name,
-        "toAddr1": form.buyer_address_1,
-        "toAddr2": form.buyer_address_2,
-        "toPlace": form.buyer_place,
-        "toPincode": int(form.buyer_pincode) if form.buyer_pincode.isdigit() else 0,
-        "actToStateCode": int(form.buyer_state_code) if form.buyer_state_code.isdigit() else 0,
-        "toStateCode": int(form.buyer_state_code) if form.buyer_state_code.isdigit() else 0,
-        "totalValue": _money(invoice.taxable_amount or 0),
-        "cgstValue": _money(invoice.cgst_amount or 0),
-        "sgstValue": _money(invoice.sgst_amount or 0),
-        "igstValue": _money(invoice.igst_amount or 0),
+        "transactionType": int(form.transaction_type) if _s(form.transaction_type).isdigit() else 1,
+        "fromGstin": _s(form.seller_gstin),
+        "fromTrdName": _s(form.seller_trade_name),
+        "fromAddr1": _s(form.seller_address_1),
+        "fromAddr2": _s(form.seller_address_2),
+        "fromPlace": _s(form.seller_place),
+        "fromPincode": int(form.seller_pincode) if _s(form.seller_pincode).isdigit() else 0,
+        "actFromStateCode": seller_state,
+        "fromStateCode": seller_state,
+        "toGstin": buyer_gstin,
+        "toTrdName": _s(form.buyer_trade_name),
+        "toAddr1": _s(form.buyer_address_1),
+        "toAddr2": _s(form.buyer_address_2),
+        "toPlace": _s(form.buyer_place),
+        "toPincode": int(form.buyer_pincode) if _s(form.buyer_pincode).isdigit() else 0,
+        "actToStateCode": buyer_state,
+        "toStateCode": buyer_state,
+        "totalValue": taxable,
+        "cgstValue": cgst,
+        "sgstValue": sgst,
+        "igstValue": igst,
         "cessValue": 0,
-        "totInvValue": _money(invoice.total_amount or 0),
-        "transMode": int(trans_mode),
+        "TotNonAdvolVal": 0,
+        "otherValue": other_value,
+        "totInvValue": tot_inv,
+        "transMode": int(form.transport_mode) if _s(form.transport_mode).isdigit() else 1,
         "transDistance": form.distance_km or 0,
-        "transporterName": form.transporter_name or "",
-        "transporterId": form.transporter_gstin or "",
-        "vehicleNo": form.vehicle_number or "",
+        "transporterName": _s(form.transporter_name),
+        "transporterId": _s(form.transporter_gstin),
+        "transDocNo": "",
+        "transDocDate": "",
+        "vehicleNo": _s(form.vehicle_number).upper(),
         "vehicleType": form.vehicle_type or "R",
         "itemList": bill_items,
     }
 
-    output = EwayBillOutput(version="1.0.1118", billLists=[bill_entry])
-    return output.model_dump(by_alias=True, exclude_none=True)
+    output = EwayBillOutput(version="1.0.1118", bill_lists=[bill_entry])
+    return output.model_dump(by_alias=True)
 
 
-def _extract_pincode(address: str) -> str:
+def _extract_pincode(address: str | None) -> str:
     """Extract a 6-digit pincode from an address string."""
     if not address:
         return ""
@@ -313,7 +397,7 @@ def get_or_create_default_transporter(db: Session, company_id: int) -> Optional[
         db.query(EwayBillTransporter)
         .filter(
             EwayBillTransporter.company_id == company_id,
-            EwayBillTransporter.is_default == True,
+            EwayBillTransporter.is_default.is_(True),
         )
         .first()
     )
