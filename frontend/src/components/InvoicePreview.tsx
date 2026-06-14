@@ -4,6 +4,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import type { Invoice } from '../types/api';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import SendEmailModal from './SendEmailModal';
+import EwayBillModal from './EwayBillModal';
 
 type InvoicePreviewProps = {
   invoice: Invoice;
@@ -13,6 +14,7 @@ type InvoicePreviewProps = {
 
 export default function InvoicePreview({ invoice, onClose, onError }: InvoicePreviewProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showEwayBillModal, setShowEwayBillModal] = useState(false);
   const [copies, setCopies] = useState(1);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(true);
@@ -167,6 +169,17 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
             >
               Email Invoice
             </button>
+            {invoice.voucher_type === 'sales' && invoice.status === 'active' && (
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => setShowEwayBillModal(true)}
+                title="Generate E-Way Bill JSON"
+                aria-label="Generate E-Way Bill"
+              >
+                Generate E-Way Bill
+              </button>
+            )}
             <button type="button" className="button button--ghost" onClick={onClose} title="Close invoice preview" aria-label="Close invoice preview">
               Close
             </button>
@@ -205,6 +218,14 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
           ) : null}
         </div>
       </div>
+
+      {showEwayBillModal && (
+        <EwayBillModal
+          invoice={invoice}
+          onClose={() => setShowEwayBillModal(false)}
+          onError={(msg) => onError?.(msg)}
+        />
+      )}
 
       {showEmailModal && (
         <SendEmailModal
