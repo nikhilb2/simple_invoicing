@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, Text
+from sqlalchemy import Boolean, Column, Integer, String, Text, text
 from sqlalchemy.orm import relationship
 
 from src.db.base import Base
@@ -23,5 +23,7 @@ class CompanyProfile(Base):
     logo_data = Column(Text, nullable=True)
     logo_mime_type = Column(String(50), nullable=True)
     additional_company_info = Column(Text, nullable=True)
-    show_sku_on_pdf = Column(Boolean, nullable=False, default=False)
+    # server_default so create_all() emits a DB-level default — raw-SQL data
+    # migrations (e.g. the company-scope backfill) INSERT without this column.
+    show_sku_on_pdf = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     terms = relationship("CompanyTerm", back_populates="company", order_by="CompanyTerm.serial_number", cascade="all, delete-orphan")
