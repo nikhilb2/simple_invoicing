@@ -6,51 +6,30 @@
 - eway_always_show_button: Always show button regardless of threshold
 """
 
-import sqlalchemy as sa
-from alembic import op
+from sqlalchemy import text
 
 
-def upgrade():
-    op.add_column(
-        "company_profiles",
-        sa.Column(
-            "eway_enabled",
-            sa.Boolean(),
-            nullable=False,
-            server_default=sa.text("true"),
-        ),
-    )
-    op.add_column(
-        "company_profiles",
-        sa.Column(
-            "eway_local_threshold",
-            sa.Float(),
-            nullable=False,
-            server_default=sa.text("100000"),
-        ),
-    )
-    op.add_column(
-        "company_profiles",
-        sa.Column(
-            "eway_interstate_threshold",
-            sa.Float(),
-            nullable=False,
-            server_default=sa.text("50000"),
-        ),
-    )
-    op.add_column(
-        "company_profiles",
-        sa.Column(
-            "eway_always_show_button",
-            sa.Boolean(),
-            nullable=False,
-            server_default=sa.text("true"),
-        ),
-    )
+def up(conn) -> None:
+    conn.execute(text("""
+        ALTER TABLE company_profiles
+        ADD COLUMN IF NOT EXISTS eway_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+    """))
+    conn.execute(text("""
+        ALTER TABLE company_profiles
+        ADD COLUMN IF NOT EXISTS eway_local_threshold DOUBLE PRECISION NOT NULL DEFAULT 100000;
+    """))
+    conn.execute(text("""
+        ALTER TABLE company_profiles
+        ADD COLUMN IF NOT EXISTS eway_interstate_threshold DOUBLE PRECISION NOT NULL DEFAULT 50000;
+    """))
+    conn.execute(text("""
+        ALTER TABLE company_profiles
+        ADD COLUMN IF NOT EXISTS eway_always_show_button BOOLEAN NOT NULL DEFAULT TRUE;
+    """))
 
 
-def downgrade():
-    op.drop_column("company_profiles", "eway_always_show_button")
-    op.drop_column("company_profiles", "eway_interstate_threshold")
-    op.drop_column("company_profiles", "eway_local_threshold")
-    op.drop_column("company_profiles", "eway_enabled")
+def down(conn) -> None:
+    conn.execute(text("ALTER TABLE company_profiles DROP COLUMN IF EXISTS eway_always_show_button;"))
+    conn.execute(text("ALTER TABLE company_profiles DROP COLUMN IF EXISTS eway_interstate_threshold;"))
+    conn.execute(text("ALTER TABLE company_profiles DROP COLUMN IF EXISTS eway_local_threshold;"))
+    conn.execute(text("ALTER TABLE company_profiles DROP COLUMN IF EXISTS eway_enabled;"))
