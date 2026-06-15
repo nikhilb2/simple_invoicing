@@ -2082,12 +2082,12 @@ def gstr1_export_json(
         hsn_section["hsn_b2c"] = hsn_b2c_rows
 
     # Documents issued (Table 13): nature-of-document code + issued range.
-    def _doc_range(numbers: list[str]) -> dict | None:
+    def _doc_range(numbers: list[str], num: int = 1) -> dict | None:
         nums = sorted(n for n in numbers if n)
         if not nums:
             return None
         return {
-            "num": 1,
+            "num": num,
             "from": nums[0],
             "to": nums[-1],
             "totnum": len(nums),
@@ -2096,9 +2096,29 @@ def gstr1_export_json(
         }
 
     doc_det: list[dict] = []
-    inv_range = _doc_range([inv.invoice_number or f"INV-{inv.id}" for inv in invoices if inv.voucher_type == "sales"])
-    if inv_range:  # 1 = Invoices for outward supply
-        doc_det.append({"doc_num": 1, "docs": [inv_range]})
+    # B2B and B2C invoices must be declared as separate doc ranges (Table 13).
+    # A single merged range spanning both B2B and B2C invoice numbers causes a
+    # portal rejection because B2C invoices only appear aggregated in b2cs and
+    # cannot be individually resolved within a B2B range.
+    b2b_inv_numbers = [
+        inv.invoice_number or f"INV-{inv.id}"
+        for inv in invoices
+        if inv.voucher_type == "sales" and inv.ledger_gst and inv.ledger_gst.strip()
+    ]
+    b2c_inv_numbers = [
+        inv.invoice_number or f"INV-{inv.id}"
+        for inv in invoices
+        if inv.voucher_type == "sales" and not (inv.ledger_gst and inv.ledger_gst.strip())
+    ]
+    inv_docs: list[dict] = []
+    b2b_range = _doc_range(b2b_inv_numbers, num=len(inv_docs) + 1)
+    if b2b_range:
+        inv_docs.append(b2b_range)
+    b2c_range = _doc_range(b2c_inv_numbers, num=len(inv_docs) + 1)
+    if b2c_range:
+        inv_docs.append(b2c_range)
+    if inv_docs:  # 1 = Invoices for outward supply
+        doc_det.append({"doc_num": 1, "docs": inv_docs})
     dn_range = _doc_range([cn.credit_note_number or f"DN-{cn.id}" for cn in credit_notes if cn.credit_note_type != "return"])
     if dn_range:  # 4 = Debit Note
         doc_det.append({"doc_num": 4, "docs": [dn_range]})
