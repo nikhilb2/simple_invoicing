@@ -1110,3 +1110,69 @@ def test_gstr1_hsn_section_splits_b2b_with_rate(db_session):
     assert row["hsn_sc"] == "84713010"
     assert row["rt"] == 18
     assert row["txval"] == 5000.0
+
+
+def test_gstr1_hsn_desc_is_populated(db_session):
+    """HSN rows must include a non-empty 'desc' field (mandatory per GSTN portal schema).
+
+    The portal rejects exports where desc is absent or empty. We use the first
+    non-empty InvoiceItem.description for the HSN group; if none is set we fall
+    back to the HSN code itself so the field is always present and non-empty.
+    """
+    user, ledger = _seed_basics(db_session)
+    company = _make_company(gst="29TESTT1234X1Z5")
+
+    invoice = _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="DESC-001",
+        when=datetime(2026, 4, 5),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    # Patch the item with a description after creation.
+    db_session.query(InvoiceItem).filter_by(invoice_id=invoice.id).update({"description": "Laptop Computer"})
+    db_session.commit()
+
+    data = _export_json_data(db_session, user, company, date(2026, 4, 1), date(2026, 4, 30))
+
+    row = data["hsn"]["hsn_b2b"][0]
+    # desc must be present and non-empty
+    assert "desc" in row, "HSN row missing mandatory 'desc' field"
+    assert row["desc"], "HSN row 'desc' must not be empty"
+    assert row["desc"] == "Laptop Computer"
+
+
+def test_gstr1_hsn_desc_falls_back_to_hsn_code_when_no_description(db_session):
+    """When no item description is set, desc falls back to the HSN code itself.
+
+    This ensures the field is always present and non-empty even for invoices
+    where the item description was left blank.
+    """
+    user, ledger = _seed_basics(db_session)
+    company = _make_company(gst="29TESTT1234X1Z5")
+
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="DESC-002",
+        when=datetime(2026, 4, 6),
+        gst_rate=18,
+        taxable_amount=3000,
+        cgst_amount=270,
+        sgst_amount=270,
+        igst_amount=0,
+    )
+    # No description set on item — helper leaves it NULL.
+    db_session.commit()
+
+    data = _export_json_data(db_session, user, company, date(2026, 4, 1), date(2026, 4, 30))
+
+    row = data["hsn"]["hsn_b2b"][0]
+    assert "desc" in row, "HSN row missing mandatory 'desc' field"
+    assert row["desc"], "HSN row 'desc' must not be empty even when item description is NULL"
+    # Fallback: desc equals the HSN code
+    assert row["desc"] == row["hsn_sc"]

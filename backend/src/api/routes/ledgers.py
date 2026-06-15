@@ -2050,12 +2050,15 @@ def gstr1_export_json(
         for item in inv.items:
             hsn = (item.hsn_sac or "").strip()
             rate = float(item.gst_rate or 0)
-            agg = target.setdefault((hsn, rate), {"qty": 0.0, "txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0})
+            agg = target.setdefault((hsn, rate), {"qty": 0.0, "txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0, "desc": ""})
             agg["qty"] += float(item.quantity or 0)
             agg["txval"] += float(item.taxable_amount or 0)
             agg["iamt"] += float(item.igst_amount or 0)
             agg["camt"] += float(item.cgst_amount or 0)
             agg["samt"] += float(item.sgst_amount or 0)
+            # Carry the first non-empty item description as the HSN desc.
+            if not agg["desc"] and (item.description or "").strip():
+                agg["desc"] = item.description.strip()
 
     def _hsn_rows(hsn_map: dict[tuple[str, float], dict]) -> list[dict]:
         rows: list[dict] = []
@@ -2064,6 +2067,8 @@ def gstr1_export_json(
             rows.append({
                 # hsn_sc must be the first property per the GSTN schema.
                 "hsn_sc": hsn,
+                # desc is mandatory per the GSTN portal schema.
+                "desc": data.get("desc") or hsn,
                 "num": len(rows) + 1,
                 "uqc": "NA" if is_service else "NOS",
                 "rt": rate,
