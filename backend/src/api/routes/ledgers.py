@@ -1882,18 +1882,40 @@ def gstr1_export_json(
     fp = f"{from_date.month:02d}{from_date.year}"
 
     def _nested_items(records) -> list[dict]:
-        """Build the nested itm_det item list used by B2B/B2CL/CDNR sections."""
-        itms: list[dict] = []
+        """Build the nested itm_det item list used by B2B/B2CL/CDNR sections.
+
+        Items with the same GST rate are consolidated into a single entry
+        per GST portal validation rules (error RET191117).
+        """
+        by_rate: dict[float, dict] = {}
         for item in records:
-            itms.append({
-                "num": len(itms) + 1,
-                "itm_det": {
-                    "rt": float(item.gst_rate or 0),
-                    "txval": round(float(item.taxable_amount or 0), 2),
-                    "iamt": round(float(item.igst_amount or 0), 2),
-                    "camt": round(float(item.cgst_amount or 0), 2),
-                    "samt": round(float(item.sgst_amount or 0), 2),
+            rate = float(item.gst_rate or 0)
+            if rate not in by_rate:
+                by_rate[rate] = {
+                    "rt": rate,
+                    "txval": 0.0,
+                    "iamt": 0.0,
+                    "camt": 0.0,
+                    "samt": 0.0,
                     "csamt": 0.0,
+                }
+            by_rate[rate]["txval"] += float(item.taxable_amount or 0)
+            by_rate[rate]["iamt"] += float(item.igst_amount or 0)
+            by_rate[rate]["camt"] += float(item.cgst_amount or 0)
+            by_rate[rate]["samt"] += float(item.sgst_amount or 0)
+
+        itms: list[dict] = []
+        for i, rate in enumerate(sorted(by_rate.keys()), start=1):
+            det = by_rate[rate]
+            itms.append({
+                "num": i,
+                "itm_det": {
+                    "rt": det["rt"],
+                    "txval": round(det["txval"], 2),
+                    "iamt": round(det["iamt"], 2),
+                    "camt": round(det["camt"], 2),
+                    "samt": round(det["samt"], 2),
+                    "csamt": round(det["csamt"], 2),
                 },
             })
         return itms
@@ -1995,16 +2017,35 @@ def gstr1_export_json(
         item_count = len(items) or 1
         # "return" credit notes reduce the supplier's liability → Credit note ("C").
         ntty = "C" if (cn.credit_note_type or "").lower() in ("return", "r", "credit", "c") else "D"
-        itms: list[dict] = []
+        # Consolidate items by GST rate to avoid RET191117.
+        cn_by_rate: dict[float, dict] = {}
         for item in items:
+            rate = float(item.gst_rate or 0)
+            if rate not in cn_by_rate:
+                cn_by_rate[rate] = {
+                    "rt": rate,
+                    "txval": 0.0,
+                    "iamt": 0.0,
+                    "camt": 0.0,
+                    "samt": 0.0,
+                    "csamt": 0.0,
+                }
+            cn_by_rate[rate]["txval"] += float(item.taxable_amount or 0)
+            cn_by_rate[rate]["iamt"] += cn_igst / item_count
+            cn_by_rate[rate]["camt"] += cn_cgst / item_count
+            cn_by_rate[rate]["samt"] += cn_sgst / item_count
+
+        itms: list[dict] = []
+        for i, rate in enumerate(sorted(cn_by_rate.keys()), start=1):
+            det = cn_by_rate[rate]
             itms.append({
-                "num": len(itms) + 1,
+                "num": i,
                 "itm_det": {
-                    "rt": float(item.gst_rate or 0),
-                    "txval": round(float(item.taxable_amount or 0), 2),
-                    "iamt": round(cn_igst / item_count, 2),
-                    "camt": round(cn_cgst / item_count, 2),
-                    "samt": round(cn_sgst / item_count, 2),
+                    "rt": det["rt"],
+                    "txval": round(det["txval"], 2),
+                    "iamt": round(det["iamt"], 2),
+                    "camt": round(det["camt"], 2),
+                    "samt": round(det["samt"], 2),
                     "csamt": 0.0,
                 },
             })
