@@ -692,6 +692,162 @@ def test_gstr1_export_json_structure(db_session):
     assert "doc_issue" in data
 
 
+def test_gstr1_export_json_consolidates_same_rate_items(db_session):
+    """Multiple invoice items with the same GST rate must be consolidated
+    into a single itms entry to avoid RET191117."""
+    user, ledger = _seed_basics(db_session)
+
+    total_taxable = 3000 + 2000
+    total_cgst = 270 + 180
+    total_sgst = 270 + 180
+    invoice = Invoice(
+        invoice_number="JSON-MULTI",
+        ledger_id=ledger.id,
+        ledger_name=ledger.name,
+        ledger_address=ledger.address,
+        ledger_gst=ledger.gst,
+        ledger_phone=ledger.phone_number,
+        company_name="Respawn Pvt Ltd",
+        company_address="1 Billing Street",
+        company_gst="29RESP1234N1Z1",
+        company_phone="8888888888",
+        company_email="accounts@example.com",
+        company_currency_code="INR",
+        voucher_type="sales",
+        status="active",
+        created_by=user.id,
+        taxable_amount=total_taxable,
+        total_tax_amount=total_cgst + total_sgst,
+        cgst_amount=total_cgst,
+        sgst_amount=total_sgst,
+        igst_amount=0,
+        total_amount=total_taxable + total_cgst + total_sgst,
+        invoice_date=datetime(2026, 11, 10),
+    )
+    db_session.add(invoice)
+    db_session.flush()
+
+    for i, (taxable, cgst, sgst) in enumerate([
+        (3000, 270, 270),
+        (2000, 180, 180),
+    ], start=1):
+        db_session.add(InvoiceItem(
+            invoice_id=invoice.id,
+            product_id=i,
+            hsn_sac="84713010",
+            quantity=1,
+            unit_price=taxable,
+            gst_rate=18,
+            taxable_amount=taxable,
+            tax_amount=cgst + sgst,
+            cgst_amount=cgst,
+            sgst_amount=sgst,
+            igst_amount=0,
+            line_total=taxable + cgst + sgst,
+        ))
+    db_session.commit()
+
+    company = _make_company()
+    response = gstr1_export_json(
+        from_date=date(2026, 11, 1),
+        to_date=date(2026, 11, 30),
+        db=db_session,
+        _=user,
+        active_company=company,
+    )
+
+    import json as _json
+    data = _json.loads(response.body)
+    inv = data["b2b"][0]["inv"][0]
+    assert len(inv["itms"]) == 1
+    det = inv["itms"][0]["itm_det"]
+    assert det["rt"] == 18
+    assert det["txval"] == round(total_taxable, 2)
+    assert det["camt"] == round(total_cgst, 2)
+    assert det["samt"] == round(total_sgst, 2)
+
+
+def test_gstr1_export_json_keeps_different_rate_items_separate(db_session):
+    """Items with different GST rates must remain separate itms entries."""
+    user, ledger = _seed_basics(db_session)
+
+    total_taxable = 1000 + 2000
+    total_cgst = 60 + 240
+    total_sgst = 60 + 240
+    invoice = Invoice(
+        invoice_number="JSON-RATES",
+        ledger_id=ledger.id,
+        ledger_name=ledger.name,
+        ledger_address=ledger.address,
+        ledger_gst=ledger.gst,
+        ledger_phone=ledger.phone_number,
+        company_name="Respawn Pvt Ltd",
+        company_address="1 Billing Street",
+        company_gst="29RESP1234N1Z1",
+        company_phone="8888888888",
+        company_email="accounts@example.com",
+        company_currency_code="INR",
+        voucher_type="sales",
+        status="active",
+        created_by=user.id,
+        taxable_amount=total_taxable,
+        total_tax_amount=total_cgst + total_sgst,
+        cgst_amount=total_cgst,
+        sgst_amount=total_sgst,
+        igst_amount=0,
+        total_amount=total_taxable + total_cgst + total_sgst,
+        invoice_date=datetime(2026, 11, 11),
+    )
+    db_session.add(invoice)
+    db_session.flush()
+
+    db_session.add(InvoiceItem(
+        invoice_id=invoice.id,
+        product_id=1,
+        hsn_sac="84713010",
+        quantity=1,
+        unit_price=1000,
+        gst_rate=12,
+        taxable_amount=1000,
+        tax_amount=120,
+        cgst_amount=60,
+        sgst_amount=60,
+        igst_amount=0,
+        line_total=1120,
+    ))
+    db_session.add(InvoiceItem(
+        invoice_id=invoice.id,
+        product_id=2,
+        hsn_sac="84713020",
+        quantity=1,
+        unit_price=2000,
+        gst_rate=24,
+        taxable_amount=2000,
+        tax_amount=480,
+        cgst_amount=240,
+        sgst_amount=240,
+        igst_amount=0,
+        line_total=2480,
+    ))
+    db_session.commit()
+
+    company = _make_company()
+    response = gstr1_export_json(
+        from_date=date(2026, 11, 1),
+        to_date=date(2026, 11, 30),
+        db=db_session,
+        _=user,
+        active_company=company,
+    )
+
+    import json as _json
+    data = _json.loads(response.body)
+    inv = data["b2b"][0]["inv"][0]
+    assert len(inv["itms"]) == 2
+    rates = {it["itm_det"]["rt"] for it in inv["itms"]}
+    assert rates == {12, 24}
+
+
 def test_gstr1_validate_warns_missing_place_of_supply(db_session):
     user, ledger = _seed_basics(db_session)
 
