@@ -36,6 +36,10 @@ class CompanyProfileBase(BaseModel):
     ifsc_code: str | None = None
     additional_company_info: str | None = None
     show_sku_on_pdf: bool = False
+    eway_enabled: bool = True
+    eway_local_threshold: float = 100000
+    eway_interstate_threshold: float = 50000
+    eway_always_show_button: bool = True
 
 
 class CompanyProfileUpdate(CompanyProfileBase):

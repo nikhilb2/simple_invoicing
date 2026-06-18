@@ -612,6 +612,98 @@ function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLEl
 }
 
 // ---------------------------------------------------------------------------
+// EWayBillSettingsCard
+// ---------------------------------------------------------------------------
+
+function EWayBillSettingsCard({
+  form,
+  onChange,
+}: {
+  form: CompanyProfileUpdate;
+  onChange: (patch: Partial<CompanyProfileUpdate>) => void;
+}) {
+  return (
+    <div className="panel">
+      <div className="panel__header">
+        <div>
+          <p className="eyebrow">GST &amp; E-Way Bill</p>
+          <h3 className="nav-panel__title">E-Way Bill Configuration</h3>
+        </div>
+      </div>
+      <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '12px' }}>
+        Configure thresholds and visibility rules for the E-Way Bill feature. Thresholds serve as guidance only and do not block generation.
+      </p>
+
+      <div className="field-grid">
+        <div className="field field--full">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600 }}>
+            <input
+              type="checkbox"
+              checked={form.eway_enabled}
+              onChange={(e) => onChange({ eway_enabled: e.target.checked })}
+            />
+            Enable E-Way Bill Generation
+          </label>
+          <small className="field-hint" style={{ marginLeft: '24px' }}>
+            When disabled, the Generate E-Way Bill button will be hidden across the app.
+          </small>
+        </div>
+
+        <div className="field">
+          <label htmlFor="eway-local-threshold">Local E-Way Threshold Amount</label>
+          <input
+            id="eway-local-threshold"
+            className="input"
+            type="number"
+            min={0}
+            step={1}
+            value={form.eway_local_threshold}
+            onChange={(e) => onChange({ eway_local_threshold: parseFloat(e.target.value) || 0 })}
+            disabled={!form.eway_enabled}
+          />
+          <small className="field-hint">
+            Applied when seller and buyer are in the same state. Default: ₹1,00,000.
+          </small>
+        </div>
+
+        <div className="field">
+          <label htmlFor="eway-interstate-threshold">Interstate E-Way Threshold Amount</label>
+          <input
+            id="eway-interstate-threshold"
+            className="input"
+            type="number"
+            min={0}
+            step={1}
+            value={form.eway_interstate_threshold}
+            onChange={(e) => onChange({ eway_interstate_threshold: parseFloat(e.target.value) || 0 })}
+            disabled={!form.eway_enabled}
+          />
+          <small className="field-hint">
+            Applied when seller and buyer are in different states. Default: ₹50,000.
+          </small>
+        </div>
+
+        <div className="field field--full">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600 }}>
+            <input
+              type="checkbox"
+              checked={form.eway_always_show_button}
+              onChange={(e) => onChange({ eway_always_show_button: e.target.checked })}
+              disabled={!form.eway_enabled}
+            />
+            Always Show E-Way Button
+          </label>
+          <small className="field-hint" style={{ marginLeft: '24px' }}>
+            When enabled, the Generate E-Way Bill button is always visible (with threshold warnings).
+            When disabled, the button is hidden for invoices below the threshold.
+          </small>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // CompanyPage
 // ---------------------------------------------------------------------------
 
@@ -630,6 +722,10 @@ export default function CompanyPage() {
     email: '',
     website: '',
     show_sku_on_pdf: false,
+    eway_enabled: true,
+    eway_local_threshold: 100000,
+    eway_interstate_threshold: 50000,
+    eway_always_show_button: true,
   });
   const [companyId, setCompanyId] = useState<number>(0);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -670,6 +766,10 @@ export default function CompanyPage() {
         email: data.email || '',
         website: data.website || '',
         show_sku_on_pdf: data.show_sku_on_pdf || false,
+        eway_enabled: data.eway_enabled !== undefined ? data.eway_enabled : true,
+        eway_local_threshold: data.eway_local_threshold || 100000,
+        eway_interstate_threshold: data.eway_interstate_threshold || 50000,
+        eway_always_show_button: data.eway_always_show_button !== undefined ? data.eway_always_show_button : true,
       });
       setAdditionalInfo(data.additional_company_info || '');
       if (data.logo_data && data.logo_mime_type) {
@@ -705,6 +805,10 @@ export default function CompanyPage() {
         email: form.email.trim(),
         website: form.website.trim(),
         show_sku_on_pdf: form.show_sku_on_pdf,
+        eway_enabled: form.eway_enabled,
+        eway_local_threshold: form.eway_local_threshold,
+        eway_interstate_threshold: form.eway_interstate_threshold,
+        eway_always_show_button: form.eway_always_show_button,
       };
 
       await api.put<CompanyProfileUpdate>('/company/', payload);
@@ -1007,6 +1111,14 @@ export default function CompanyPage() {
         {/* Terms & Conditions */}
         {!loading && companyId > 0 && (
           <TermsAndConditionsCard companyId={companyId} />
+        )}
+
+        {/* E-Way Bill Settings */}
+        {!loading && (
+          <EWayBillSettingsCard
+            form={form}
+            onChange={(patch) => setForm((current) => ({ ...current, ...patch }))}
+          />
         )}
 
         <InvoiceSeriesCard sectionRef={seriesSectionRef} />

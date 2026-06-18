@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
-import type { Invoice } from '../types/api';
+import type { CompanyProfile, Invoice } from '../types/api';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import SendEmailModal from './SendEmailModal';
+import EwayBillModal from './EwayBillModal';
 
 type InvoicePreviewProps = {
   invoice: Invoice;
@@ -13,14 +14,21 @@ type InvoicePreviewProps = {
 
 export default function InvoicePreview({ invoice, onClose, onError }: InvoicePreviewProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showEwayBillModal, setShowEwayBillModal] = useState(false);
   const [copies, setCopies] = useState(1);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
   const [previewFailed, setPreviewFailed] = useState(false);
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEscapeClose(onClose);
+
+  // Fetch company profile for E-Way Bill visibility rules
+  useEffect(() => {
+    api.get<CompanyProfile>('/company/').then(res => setCompanyProfile(res.data)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -167,6 +175,17 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
             >
               Email Invoice
             </button>
+            {invoice.voucher_type === 'sales' && invoice.status === 'active' && companyProfile?.eway_enabled !== false && (
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => setShowEwayBillModal(true)}
+                title="Generate E-Way Bill JSON"
+                aria-label="Generate E-Way Bill"
+              >
+                Generate E-Way Bill
+              </button>
+            )}
             <button type="button" className="button button--ghost" onClick={onClose} title="Close invoice preview" aria-label="Close invoice preview">
               Close
             </button>
@@ -205,6 +224,14 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
           ) : null}
         </div>
       </div>
+
+      {showEwayBillModal && (
+        <EwayBillModal
+          invoice={invoice}
+          onClose={() => setShowEwayBillModal(false)}
+          onError={(msg) => onError?.(msg)}
+        />
+      )}
 
       {showEmailModal && (
         <SendEmailModal

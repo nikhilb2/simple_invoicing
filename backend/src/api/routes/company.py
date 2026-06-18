@@ -55,6 +55,10 @@ def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> Compa
         account_number=payload.account_number.strip() if payload.account_number else None,
         ifsc_code=payload.ifsc_code.strip().upper() if payload.ifsc_code else None,
         show_sku_on_pdf=payload.show_sku_on_pdf,
+        eway_enabled=payload.eway_enabled,
+        eway_local_threshold=payload.eway_local_threshold,
+        eway_interstate_threshold=payload.eway_interstate_threshold,
+        eway_always_show_button=payload.eway_always_show_button,
     )
     db.add(profile)
     db.commit()
@@ -123,6 +127,10 @@ def _company_to_out(company: CompanyProfile) -> CompanyProfileOut:
         logo_mime_type=company.logo_mime_type,
         additional_company_info=company.additional_company_info,
         show_sku_on_pdf=company.show_sku_on_pdf,
+        eway_enabled=company.eway_enabled,
+        eway_local_threshold=company.eway_local_threshold,
+        eway_interstate_threshold=company.eway_interstate_threshold,
+        eway_always_show_button=company.eway_always_show_button,
         terms=[
             CompanyTermOut(
                 id=t.id,
@@ -245,6 +253,10 @@ def upsert_company_profile(
     profile.ifsc_code = payload.ifsc_code.strip().upper() if payload.ifsc_code else None
     profile.additional_company_info = payload.additional_company_info
     profile.show_sku_on_pdf = payload.show_sku_on_pdf
+    profile.eway_enabled = payload.eway_enabled
+    profile.eway_local_threshold = payload.eway_local_threshold
+    profile.eway_interstate_threshold = payload.eway_interstate_threshold
+    profile.eway_always_show_button = payload.eway_always_show_button
     db.commit()
     db.refresh(profile)
     return _company_to_out(profile)
