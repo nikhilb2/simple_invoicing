@@ -170,6 +170,16 @@ export default function InvoicesPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  // Handle ?duplicate=<id> query param — pre-fill create form from existing invoice
+  useEffect(() => {
+    const duplicateId = searchParams.get('duplicate');
+    if (!duplicateId || editingInvoiceId) return;
+    fetchInvoiceById(Number(duplicateId))
+      .then(startDuplicatingInvoice)
+      .catch(() => setError('Unable to load invoice for duplication.'));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   useEffect(() => {
     if (!composerQuery.error) {
       return;
@@ -334,6 +344,64 @@ export default function InvoicesPage() {
       setSelectedShippingAddressId(null);
       setNewShippingLabel('');
       setNewShippingAddress('');
+    }
+  }
+
+  function startDuplicatingInvoice(invoice: Invoice) {
+    if (!invoice.ledger_id) {
+      setError('This invoice is missing its ledger and cannot be duplicated.');
+      return;
+    }
+
+    if (!invoice.items || invoice.items.length === 0) {
+      setError('This invoice has no line items and cannot be duplicated.');
+      return;
+    }
+
+    setError('');
+    setSuccess('Invoice data loaded. Review and click Create Invoice to save.');
+    setEditingInvoiceId(null);
+    setVoucherType(invoice.voucher_type);
+    setSupplierInvoiceNumber(invoice.supplier_invoice_number ?? '');
+    setReferenceNotes(invoice.voucher_type === 'sales' ? (invoice.reference_notes ?? '') : '');
+    setTaxInclusive(invoice.tax_inclusive ?? false);
+    setApplyRoundOff(invoice.apply_round_off ?? false);
+    setInvoiceDiscountType((invoice.discount_type as 'percentage' | 'net') || 'percentage');
+    setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
+    setSelectedLedgerId(String(invoice.ledger_id));
+    setInvoiceDate(new Date().toISOString().slice(0, 10));
+    setDueDateMode('none');
+    setDueDate('');
+    setDueDateDays('');
+
+    const nextItems = invoice.items.map((line, index) => ({
+      id: index + 1,
+      productId: String(line.product_id),
+      quantity: String(line.quantity),
+      unit_price: String(line.unit_price),
+      description: line.description ?? '',
+      discount_type: (line.discount_type || '') as '' | 'percentage' | 'net',
+      discount_value: line.discount_value != null ? String(line.discount_value) : '',
+    }));
+
+    setItems(nextItems);
+    setNextItemId(nextItems.length + 1);
+    // Restore shipping address state from the invoice being duplicated
+    if (invoice.shipping_address) {
+      setShippingSameAsBilling(false);
+      setSelectedShippingAddressId(null);
+      setNewShippingLabel(invoice.shipping_address_label ?? '');
+      setNewShippingAddress(invoice.shipping_address);
+    } else {
+      setShippingSameAsBilling(true);
+      setSelectedShippingAddressId(null);
+      setNewShippingLabel('');
+      setNewShippingAddress('');
+    }
+
+    // Clear the duplicate query param so a refresh doesn't re-trigger
+    if (searchParams.has('duplicate')) {
+      setSearchParams((prev) => { prev.delete('duplicate'); return prev; }, { replace: true });
     }
   }
 

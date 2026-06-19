@@ -55,12 +55,14 @@ def create_product(
         description=payload.description.strip() if payload.description else None,
         hsn_sac=payload.hsn_sac,
         price=payload.price,
+        purchase_price=payload.purchase_price,
         gst_rate=payload.gst_rate,
         unit=payload.unit,
         allow_decimal=payload.allow_decimal,
         maintain_inventory=payload.maintain_inventory,
         is_producable=payload.is_producable,
         production_cost=payload.production_cost,
+        reorder_level=payload.reorder_level,
     )
     db.add(product)
     db.flush()  # get product.id before committing
@@ -149,10 +151,12 @@ def update_product(
     product.description = payload.description.strip() if payload.description else None
     product.hsn_sac = payload.hsn_sac
     product.price = payload.price
+    product.purchase_price = payload.purchase_price
     product.gst_rate = payload.gst_rate
     product.unit = payload.unit
     product.is_producable = payload.is_producable
     product.production_cost = payload.production_cost
+    product.reorder_level = payload.reorder_level
 
     if product.allow_decimal and not payload.allow_decimal:
         inventory = db.query(Inventory).filter(
@@ -288,10 +292,10 @@ def list_products_with_inventory(
                 "name": product.name,
                 "description": product.description,
                 "hsn_sac": product.hsn_sac,
-                "purchase_price": 0.0,  # Not stored on product; kept for grid compatibility
+                "purchase_price": float(product.purchase_price or 0),
                 "selling_price": float(product.price),
                 "current_stock": float(current_stock),
-                "reorder_level": 0.0,  # Not stored; kept for grid compatibility
+                "reorder_level": float(product.reorder_level or 0),
                 "status": "active" if product.maintain_inventory else "inactive",
                 "unit": product.unit,
                 "gst_rate": float(product.gst_rate),
@@ -347,6 +351,10 @@ def update_product_with_inventory(
         product.hsn_sac = payload.hsn_sac
     if payload.selling_price is not None:
         product.price = payload.selling_price
+    if payload.purchase_price is not None:
+        product.purchase_price = payload.purchase_price
+    if payload.reorder_level is not None:
+        product.reorder_level = payload.reorder_level
     if payload.gst_rate is not None:
         if payload.gst_rate < 0 or payload.gst_rate > 100:
             raise HTTPException(status_code=400, detail="GST rate must be between 0 and 100")
@@ -401,10 +409,10 @@ def update_product_with_inventory(
         "name": product.name,
         "description": product.description,
         "hsn_sac": product.hsn_sac,
-        "purchase_price": 0.0,
+        "purchase_price": float(product.purchase_price or 0),
         "selling_price": float(product.price),
         "current_stock": stock,
-        "reorder_level": 0.0,
+        "reorder_level": float(product.reorder_level or 0),
         "status": "active" if product.maintain_inventory else "inactive",
         "unit": product.unit,
         "gst_rate": float(product.gst_rate),
@@ -453,10 +461,10 @@ def export_products_csv(
             product.name,
             product.sku,
             "",  # Category — not stored
-            "0.00",
+            str(float(product.purchase_price or 0)),
             str(product.price),
             str(float(stock)),
-            "0",  # Reorder level
+            str(float(product.reorder_level or 0)),
             product.description or "",
             product.hsn_sac or "",
             product.unit or "",
@@ -546,6 +554,16 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
         except ValueError:
             stock = 0
 
+        try:
+            purchase_price = float(values.get("purchase_price") or 0)
+        except ValueError:
+            purchase_price = 0
+
+        try:
+            reorder_level = float(values.get("reorder_level") or 0)
+        except ValueError:
+            reorder_level = 0
+
         existing = (
             db.query(Product)
             .filter(
@@ -558,7 +576,9 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
         if existing:
             existing.name = item_name
             existing.price = selling_price
+            existing.purchase_price = purchase_price
             existing.gst_rate = gst_rate
+            existing.reorder_level = reorder_level
             if values.get("description"):
                 existing.description = values["description"]
             if values.get("hsn_code"):
@@ -589,7 +609,9 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
                 description=values.get("description") or None,
                 hsn_sac=values.get("hsn_code") or None,
                 price=selling_price,
+                purchase_price=purchase_price,
                 gst_rate=gst_rate,
+                reorder_level=reorder_level,
                 unit=values.get("unit") or "Pieces",
             )
             db.add(product)

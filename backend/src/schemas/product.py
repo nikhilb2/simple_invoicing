@@ -11,12 +11,14 @@ class ProductCreate(BaseModel):
     description: Optional[str] = None
     hsn_sac: Optional[str] = None
     price: float
+    purchase_price: float = 0
     gst_rate: float = 0
     unit: str = "Pieces"
     allow_decimal: bool = False
     maintain_inventory: bool = True
     is_producable: bool = False
     production_cost: Optional[float] = None
+    reorder_level: float = 0
     initial_quantity: float = 0
 
     @field_validator("hsn_sac")
@@ -40,12 +42,14 @@ class ProductOut(BaseModel):
     description: Optional[str]
     hsn_sac: Optional[str]
     price: float
+    purchase_price: float = 0
     gst_rate: float
     unit: str
     allow_decimal: bool
     maintain_inventory: bool
     is_producable: bool
     production_cost: Optional[float]
+    reorder_level: float = 0
     created_at: Optional[datetime] = None
 
     class Config:
@@ -59,15 +63,16 @@ class ProductWithInventoryOut(BaseModel):
     description: Optional[str] = None
     hsn_sac: Optional[str] = None
     price: float
+    purchase_price: float = 0
     gst_rate: float
     unit: str
     allow_decimal: bool
     maintain_inventory: bool
     is_producable: bool
     production_cost: Optional[float] = None
+    reorder_level: float = 0
     created_at: Optional[datetime] = None
     current_stock: float = 0
-    reorder_level: float = 0
     status: str = "active"
 
     class Config:

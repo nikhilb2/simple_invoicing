@@ -252,6 +252,172 @@ class TestCSVImport:
         assert len(data["errors"]) > 0
 
 
+class TestProductPurchasePriceAndReorderLevel:
+    """Tests for purchase_price and reorder_level fields on products (Issue #385)."""
+
+    def test_create_product_with_purchase_price_and_reorder_level(self, client):
+        res = client.post("/api/products/", json={
+            "sku": "PPR001",
+            "name": "Margin Test Product",
+            "price": 150.0,
+            "purchase_price": 90.0,
+            "reorder_level": 5.0,
+            "gst_rate": 18,
+            "maintain_inventory": True,
+            "initial_quantity": 20,
+        })
+        assert res.status_code == 200
+
+        # Fields should appear in the inventory grid
+        inv_res = client.get("/api/products/with-inventory?search=Margin")
+        assert inv_res.status_code == 200
+        items = inv_res.json()["items"]
+        assert len(items) == 1
+        assert items[0]["purchase_price"] == 90.0
+        assert items[0]["reorder_level"] == 5.0
+        assert items[0]["selling_price"] == 150.0
+
+    def test_update_purchase_price_via_inventory_endpoint(self, client):
+        # Create with defaults
+        create_res = client.post("/api/products/", json={
+            "sku": "PPR002",
+            "name": "Update Purchase Price",
+            "price": 100.0,
+            "gst_rate": 0,
+            "maintain_inventory": True,
+            "initial_quantity": 10,
+        })
+        assert create_res.status_code == 200
+        product_id = create_res.json()["id"]
+
+        # Update purchase_price via with-inventory endpoint
+        update_res = client.put(f"/api/products/{product_id}/with-inventory", json={
+            "purchase_price": 60.0,
+        })
+        assert update_res.status_code == 200
+        assert update_res.json()["purchase_price"] == 60.0
+
+        # Verify persisted
+        inv_res = client.get("/api/products/with-inventory?search=Update Purchase")
+        assert inv_res.status_code == 200
+        item = inv_res.json()["items"][0]
+        assert item["purchase_price"] == 60.0
+
+    def test_update_reorder_level_via_inventory_endpoint(self, client):
+        create_res = client.post("/api/products/", json={
+            "sku": "PPR003",
+            "name": "Reorder Level Test",
+            "price": 50.0,
+            "gst_rate": 5,
+            "maintain_inventory": True,
+            "initial_quantity": 0,
+        })
+        assert create_res.status_code == 200
+        product_id = create_res.json()["id"]
+
+        update_res = client.put(f"/api/products/{product_id}/with-inventory", json={
+            "reorder_level": 10.0,
+        })
+        assert update_res.status_code == 200
+        assert update_res.json()["reorder_level"] == 10.0
+
+        inv_res = client.get("/api/products/with-inventory?search=Reorder Level")
+        item = inv_res.json()["items"][0]
+        assert item["reorder_level"] == 10.0
+
+    def test_purchase_price_appears_in_csv_export(self, client):
+        client.post("/api/products/", json={
+            "sku": "PPR004",
+            "name": "CSV Purchase Price",
+            "price": 200.0,
+            "purchase_price": 120.0,
+            "reorder_level": 3.0,
+            "gst_rate": 12,
+            "maintain_inventory": True,
+            "initial_quantity": 7,
+        })
+
+        res = client.get("/api/products/export-csv")
+        assert res.status_code == 200
+        content = res.text
+
+        import csv, io
+        reader = csv.DictReader(io.StringIO(content))
+        headers = reader.fieldnames
+        assert "Purchase Price" in headers, f"Missing 'Purchase Price' in CSV headers: {headers}"
+        assert "Reorder Level" in headers, f"Missing 'Reorder Level' in CSV headers: {headers}"
+
+        rows = {r["Item Code"]: r for r in reader}
+        assert "PPR004" in rows
+        assert float(rows["PPR004"]["Purchase Price"]) == 120.0
+        assert float(rows["PPR004"]["Reorder Level"]) == 3.0
+        assert float(rows["PPR004"]["Selling Price"]) == 200.0
+
+    def test_csv_import_with_purchase_price_and_reorder_level(self, client):
+        csv_content = (
+            "Item Name,Item Code,Selling Price,Purchase Price,Reorder Level,Current Stock,Tax\n"
+            "Import Margin A,PPR005,150,90,5,20,18\n"
+        )
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 1
+        assert data["errors"] == []
+
+        inv_res = client.get("/api/products/with-inventory?search=Import Margin")
+        items = inv_res.json()["items"]
+        assert len(items) == 1
+        assert items[0]["purchase_price"] == 90.0
+        assert items[0]["reorder_level"] == 5.0
+        assert items[0]["selling_price"] == 150.0
+        assert items[0]["current_stock"] == 20
+
+    def test_default_purchase_price_and_reorder_level_are_zero(self, client):
+        """Products created without purchase_price/reorder_level default to 0."""
+        res = client.post("/api/products/", json={
+            "sku": "PPR006",
+            "name": "Default Fields Test",
+            "price": 75.0,
+            "gst_rate": 0,
+            "maintain_inventory": True,
+            "initial_quantity": 0,
+        })
+        assert res.status_code == 200
+
+        inv_res = client.get("/api/products/with-inventory?search=Default Fields")
+        item = inv_res.json()["items"][0]
+        assert item["purchase_price"] == 0.0
+        assert item["reorder_level"] == 0.0
+
+
+class TestCSVExportFields:
+    """Verify exported CSV contains all required fields per Issue #385."""
+
+    def test_export_csv_has_all_required_fields(self, client):
+        import csv, io
+        client.post("/api/products/", json={
+            "sku": "FLD001",
+            "name": "Full Fields Test",
+            "price": 50.0,
+            "purchase_price": 30.0,
+            "reorder_level": 2.0,
+            "gst_rate": 18,
+            "maintain_inventory": True,
+            "initial_quantity": 5,
+        })
+        res = client.get("/api/products/export-csv")
+        assert res.status_code == 200
+        reader = csv.DictReader(io.StringIO(res.text))
+        headers = set(reader.fieldnames or [])
+        required = {"Item Name", "Item Code", "Purchase Price", "Selling Price",
+                    "Current Stock", "Reorder Level", "Description", "HSN Code", "Unit", "Tax"}
+        missing = required - headers
+        assert not missing, f"CSV export missing fields: {missing}"
+
+
 class TestCSVExportImportRoundtrip:
     def test_export_then_import_csv(self, client):
         """Export all products to CSV, then import them back — should update existing, create none."""

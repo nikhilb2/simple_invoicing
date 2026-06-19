@@ -68,13 +68,12 @@ export default function InvoicesAdvancedView() {
   }
 
   const duplicateMutation = useMutation({
-    mutationFn: (invoiceId: number) => api.post<{ id: number; invoice_number: string }>(`/invoices/${invoiceId}/duplicate`),
+    mutationFn: (invoiceId: number) => api.get<Invoice>(`/invoices/${invoiceId}`),
     onSuccess: (data) => {
-      setActionSuccess(`Invoice duplicated as #${data.data.invoice_number}. Redirecting to edit…`);
-      void queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
-      setTimeout(() => navigate(`/invoices?edit=${data.data.id}`), 1200);
+      setActionSuccess('Invoice data loaded. Opening create page…');
+      setTimeout(() => navigate(`/invoices?duplicate=${data.data.id}`), 400);
     },
-    onError: (err) => setActionError(getApiErrorMessage(err, 'Unable to duplicate invoice')),
+    onError: (err) => setActionError(getApiErrorMessage(err, 'Unable to load invoice for duplication')),
   });
 
   function handleDuplicate(invoice: Invoice) {

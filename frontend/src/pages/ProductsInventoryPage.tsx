@@ -45,6 +45,7 @@ export default function ProductsInventoryPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
+  const [currencyCode, setCurrencyCode] = useState('USD');
   const pageSize = 50;
 
   // Inline editing state
@@ -73,10 +74,16 @@ export default function ProductsInventoryPage() {
       if (statusFilter) {
         params.status = statusFilter;
       }
-      const res = await api.get<PaginatedProductsInv>('/products/with-inventory', { params });
-      setRows(res.data.items);
-      setTotal(res.data.total);
-      setTotalPages(res.data.total_pages);
+      const [productsRes, companyRes] = await Promise.all([
+        api.get<PaginatedProductsInv>('/products/with-inventory', { params }),
+        api.get('/company').catch(() => null),
+      ]);
+      setRows(productsRes.data.items);
+      setTotal(productsRes.data.total);
+      setTotalPages(productsRes.data.total_pages);
+      if (companyRes?.data?.currency_code) {
+        setCurrencyCode(companyRes.data.currency_code);
+      }
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to load products and inventory'));
     } finally {
@@ -117,8 +124,14 @@ export default function ProductsInventoryPage() {
       case 'selling_price':
         value = String(row.selling_price);
         break;
+      case 'purchase_price':
+        value = String(row.purchase_price);
+        break;
       case 'current_stock':
         value = String(row.current_stock);
+        break;
+      case 'reorder_level':
+        value = String(row.reorder_level);
         break;
       case 'gst_rate':
         value = String(row.gst_rate);
@@ -162,8 +175,14 @@ export default function ProductsInventoryPage() {
         case 'selling_price':
           payload.selling_price = Number(editValue);
           break;
+        case 'purchase_price':
+          payload.purchase_price = Number(editValue);
+          break;
         case 'current_stock':
           payload.current_stock = Number(editValue);
+          break;
+        case 'reorder_level':
+          payload.reorder_level = Number(editValue);
           break;
         case 'gst_rate':
           payload.gst_rate = Number(editValue);
@@ -272,7 +291,9 @@ export default function ProductsInventoryPage() {
         <th>SKU</th>
         <th>Category</th>
         <th>Selling Price</th>
+        <th>Purchase Price</th>
         <th>Stock</th>
+        <th>Reorder</th>
         <th>Description</th>
         <th>HSN Code</th>
         <th>Unit</th>
@@ -285,7 +306,8 @@ export default function ProductsInventoryPage() {
           <td>${escapeHtml(r.name)}</td>
           <td>${escapeHtml(r.sku)}</td>
           <td></td>
-          <td class="num">${formatCurrency(r.selling_price, 'USD')}</td>
+          <td class="num">${formatCurrency(r.selling_price, currencyCode)}</td>
+          <td class="num">${formatCurrency(r.purchase_price, currencyCode)}</td>
           <td class="num">${r.current_stock}</td>
           <td>${escapeHtml(r.description || '')}</td>
           <td>${escapeHtml(r.hsn_sac || '')}</td>
@@ -421,7 +443,9 @@ export default function ProductsInventoryPage() {
     if (isStatus) {
       display = row.status;
     } else if (field === 'selling_price') {
-      display = formatCurrency(row.selling_price, 'USD');
+      display = formatCurrency(row.selling_price, currencyCode);
+    } else if (field === 'purchase_price') {
+      display = formatCurrency(row.purchase_price, currencyCode);
     } else if (field === 'gst_rate') {
       display = `${row.gst_rate}%`;
     } else {
@@ -538,9 +562,11 @@ export default function ProductsInventoryPage() {
                   <th style={{ padding: '8px 10px', textAlign: 'right' }}>
                     <SortHeader col="price" label="Selling Price" />
                   </th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Purchase Price</th>
                   <th style={{ padding: '8px 10px', textAlign: 'right' }}>
                     <SortHeader col="stock" label="Stock" />
                   </th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Reorder</th>
                   <th style={{ padding: '8px 10px', textAlign: 'center' }}>Status</th>
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>GST</th>
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>HSN</th>
@@ -551,13 +577,13 @@ export default function ProductsInventoryPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={10} style={{ padding: 24, textAlign: 'center' }}>
+                    <td colSpan={12} style={{ padding: 24, textAlign: 'center' }}>
                       Loading products…
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={10} style={{ padding: 24, textAlign: 'center' }}>
+                    <td colSpan={12} style={{ padding: 24, textAlign: 'center' }}>
                       No products match your search.
                     </td>
                   </tr>
@@ -577,7 +603,13 @@ export default function ProductsInventoryPage() {
                         <EditableCell row={row} field="selling_price" label="Price" isNumeric />
                       </td>
                       <td style={{ padding: '6px 10px', textAlign: 'right' }}>
+                        <EditableCell row={row} field="purchase_price" label="Purchase Price" isNumeric />
+                      </td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right' }}>
                         <EditableCell row={row} field="current_stock" label="Stock" isNumeric />
+                      </td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right' }}>
+                        <EditableCell row={row} field="reorder_level" label="Reorder" isNumeric />
                       </td>
                       <td style={{ padding: '6px 10px', textAlign: 'center' }}>
                         <button
