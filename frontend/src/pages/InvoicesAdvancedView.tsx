@@ -67,6 +67,20 @@ export default function InvoicesAdvancedView() {
     navigate('/credit-notes', { state: { invoiceId: invoice.id } });
   }
 
+  const duplicateMutation = useMutation({
+    mutationFn: (invoiceId: number) => api.post<{ id: number; invoice_number: string }>(`/invoices/${invoiceId}/duplicate`),
+    onSuccess: (data) => {
+      setActionSuccess(`Invoice duplicated as #${data.data.invoice_number}. Redirecting to edit…`);
+      void queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
+      setTimeout(() => navigate(`/invoices?edit=${data.data.id}`), 1200);
+    },
+    onError: (err) => setActionError(getApiErrorMessage(err, 'Unable to duplicate invoice')),
+  });
+
+  function handleDuplicate(invoice: Invoice) {
+    duplicateMutation.mutate(invoice.id);
+  }
+
   function handleCancelRequest(invoice: Invoice) {
     requestCancel(invoice.id, invoice.invoice_number);
   }
@@ -345,6 +359,7 @@ export default function InvoicesAdvancedView() {
                   onCancel={handleCancelRequest}
                   onRestore={handleRestore}
                   onCreditNote={handleCreditNote}
+                  onDuplicate={handleDuplicate}
                 />
               ))}
           </div>
