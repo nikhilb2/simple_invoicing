@@ -53,6 +53,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       '/backups': 'Database Backups',
       '/shortcuts': 'Keyboard Shortcuts',
       '/change-password': 'Security',
+      '/api-keys': 'API Keys',
     };
 
 
