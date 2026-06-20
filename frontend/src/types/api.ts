@@ -826,3 +826,22 @@ export type ProduceResponse = {
     }
   >;
 };
+
+export type ApiKey = {
+  id: number;
+  name: string;
+  key_prefix: string;
+  expires_at: string;
+  is_active: boolean;
+  created_at: string;
+  created_by_user_id: number;
+};
+
+export type ApiKeyCreateResponse = ApiKey & {
+  raw_key: string;
+};
+
+export type ApiKeyCreate = {
+  name: string;
+  expires_at: string;
+};

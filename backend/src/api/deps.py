@@ -12,11 +12,53 @@ from src.models.user import User, UserRole
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
+def _authenticate_api_key(token: str, db: Session) -> User | None:
+    """Check token against company-scoped API keys stored in DB."""
+    from datetime import timezone
+    from src.core.security import decrypt_value
+    from src.models.api_key import ApiKey
+
+    if not token.startswith("si_"):
+        return None
+
+    # key_prefix is the first 12 chars of the raw key
+    key_prefix = token[:12]
+    candidates = (
+        db.query(ApiKey)
+        .filter(
+            ApiKey.key_prefix == key_prefix,
+            ApiKey.is_active.is_(True),
+            ApiKey.expires_at > __import__('datetime').datetime.now(timezone.utc),
+        )
+        .all()
+    )
+    for candidate in candidates:
+        try:
+            if decrypt_value(candidate.key_encrypted) == token:
+                # Return the admin user for this company
+                admin_user = (
+                    db.query(User)
+                    .filter(User.role == UserRole.admin)
+                    .first()
+                )
+                if admin_user:
+                    # Bind the company context via active_company_id
+                    admin_user.active_company_id = candidate.company_id
+                    return admin_user
+        except Exception:
+            continue
+    return None
+
+
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
-    # Check static MCP API token first (bypasses JWT for MCP server integration)
+    # Check DB-managed API keys first (company-scoped, encrypted, with expiry)
+    api_key_user = _authenticate_api_key(token, db)
+    if api_key_user is not None:
+        return api_key_user
+
+    # Legacy: static MCP API token via env var
     from src.core.config import settings
     if settings.MCP_API_TOKEN and token == settings.MCP_API_TOKEN:
-        # Try admin user first, fallback to any user
         admin_user = db.query(User).filter(User.role == UserRole.admin).first()
         if admin_user:
             return admin_user
