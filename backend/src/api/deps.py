@@ -13,6 +13,21 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    # Check static MCP API token first (bypasses JWT for MCP server integration)
+    from src.core.config import settings
+    if settings.MCP_API_TOKEN and token == settings.MCP_API_TOKEN:
+        # Try admin user first, fallback to any user
+        admin_user = db.query(User).filter(User.role == UserRole.admin).first()
+        if admin_user:
+            return admin_user
+        any_user = db.query(User).first()
+        if any_user:
+            return any_user
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No users found for MCP token auth",
+        )
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",

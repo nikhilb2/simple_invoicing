@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENVIRONMENT: str = ENVIRONMENT
     SMTP_ENCRYPTION_KEY: str | None = None
+    MCP_API_TOKEN: str | None = None
 
     @model_validator(mode="after")
     def validate_smtp_key_in_production(self):
