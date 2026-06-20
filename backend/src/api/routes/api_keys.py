@@ -22,6 +22,15 @@ def _generate_raw_key() -> str:
     return _KEY_PREFIX + secrets.token_hex(_KEY_BYTES)
 
 
+@router.get("/verify", response_model=dict)
+def verify_api_key(
+    current_user: User = Depends(get_current_user),
+    company: CompanyProfile = Depends(get_active_company),
+):
+    """Lightweight endpoint for MCP server to validate a Bearer api key."""
+    return {"valid": True, "company_id": company.id}
+
+
 @router.post("", response_model=ApiKeyCreateResponse, include_in_schema=False)
 @router.post("/", response_model=ApiKeyCreateResponse, status_code=201)
 def create_api_key(
