@@ -33,6 +33,25 @@ type ImportResult = {
   errors: Array<{ row: number; message: string }>;
 };
 
+type EditingCell = { id: number; field: string } | null;
+
+type EditableCellProps = {
+  row: ProductInvRow;
+  field: string;
+  label: string;
+  currencyCode: string;
+  editingCell: EditingCell;
+  editValue: string;
+  savingCell: string | null;
+  inputRef: React.RefObject<HTMLInputElement>;
+  isNumeric?: boolean;
+  onStartEdit: (row: ProductInvRow, field: string) => void;
+  onEditValueChange: (value: string) => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  onSave: () => Promise<void>;
+  onCancel: () => void;
+};
+
 export default function ProductsInventoryPage() {
   const [rows, setRows] = useState<ProductInvRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,7 +68,7 @@ export default function ProductsInventoryPage() {
   const pageSize = 50;
 
   // Inline editing state
-  const [editingCell, setEditingCell] = useState<{ id: number; field: string } | null>(null);
+  const [editingCell, setEditingCell] = useState<EditingCell>(null);
   const [editValue, setEditValue] = useState('');
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -385,87 +404,18 @@ export default function ProductsInventoryPage() {
     );
   }
 
-  function EditableCell({
-    row,
-    field,
-    label,
-    isNumeric,
-    isStatus,
-  }: {
-    row: ProductInvRow;
-    field: string;
-    label: string;
-    isNumeric?: boolean;
-    isStatus?: boolean;
-  }) {
-    const isEditing = editingCell?.id === row.id && editingCell?.field === field;
-    const cellKey = `${row.id}-${field}`;
-
-    if (isEditing) {
-      return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <input
-            ref={inputRef}
-            type={isNumeric ? 'number' : 'text'}
-            step={isNumeric ? '0.01' : undefined}
-            className="input"
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onKeyDown={handleCellKeyDown}
-            style={{ width: '100%', padding: '2px 6px', fontSize: '13px' }}
-            disabled={savingCell === cellKey}
-          />
-          <button
-            type="button"
-            className="button button--ghost button--icon"
-            onClick={() => void saveEdit()}
-            disabled={savingCell === cellKey}
-            title="Save"
-            aria-label="Save"
-          >
-            {savingCell === cellKey ? '…' : <Check size={14} />}
-          </button>
-          <button
-            type="button"
-            className="button button--ghost button--icon"
-            onClick={cancelEdit}
-            disabled={savingCell === cellKey}
-            title="Cancel"
-            aria-label="Cancel"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      );
-    }
-
-    let display: string;
-    if (isStatus) {
-      display = row.status;
-    } else if (field === 'selling_price') {
-      display = formatCurrency(row.selling_price, currencyCode);
-    } else if (field === 'purchase_price') {
-      display = formatCurrency(row.purchase_price, currencyCode);
-    } else if (field === 'gst_rate') {
-      display = `${row.gst_rate}%`;
-    } else {
-      display = String((row as unknown as Record<string, unknown>)[field] ?? '');
-    }
-
-    return (
-      <span
-        className="editable-cell"
-        onClick={() => startEdit(row, field)}
-        title={`Click to edit ${label}`}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => { if (e.key === 'Enter') startEdit(row, field); }}
-        style={{ cursor: 'pointer', display: 'block', minHeight: 24 }}
-      >
-        {display || <span style={{ opacity: 0.3 }}>—</span>}
-      </span>
-    );
-  }
+  const editableCellProps = {
+    currencyCode,
+    editingCell,
+    editValue,
+    savingCell,
+    inputRef,
+    onStartEdit: startEdit,
+    onEditValueChange: setEditValue,
+    onKeyDown: handleCellKeyDown,
+    onSave: saveEdit,
+    onCancel: cancelEdit,
+  };
 
   return (
     <div className="page-grid">
@@ -591,25 +541,25 @@ export default function ProductsInventoryPage() {
                   rows.map((row) => (
                     <tr key={row.id} className={`inv-row ${row.status === 'inactive' ? 'inv-row--inactive' : ''}`}>
                       <td style={{ padding: '6px 10px' }}>
-                        <EditableCell row={row} field="name" label="Name" />
+                        <EditableCell {...editableCellProps} row={row} field="name" label="Name" />
                       </td>
                       <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontSize: '12px' }}>
-                        <EditableCell row={row} field="sku" label="SKU" />
+                        <EditableCell {...editableCellProps} row={row} field="sku" label="SKU" />
                       </td>
                       <td style={{ padding: '6px 10px', color: 'var(--text-muted, #999)' }}>
                         —
                       </td>
                       <td style={{ padding: '6px 10px', textAlign: 'right' }}>
-                        <EditableCell row={row} field="selling_price" label="Price" isNumeric />
+                        <EditableCell {...editableCellProps} row={row} field="selling_price" label="Price" isNumeric />
                       </td>
                       <td style={{ padding: '6px 10px', textAlign: 'right' }}>
-                        <EditableCell row={row} field="purchase_price" label="Purchase Price" isNumeric />
+                        <EditableCell {...editableCellProps} row={row} field="purchase_price" label="Purchase Price" isNumeric />
                       </td>
                       <td style={{ padding: '6px 10px', textAlign: 'right' }}>
-                        <EditableCell row={row} field="current_stock" label="Stock" isNumeric />
+                        <EditableCell {...editableCellProps} row={row} field="current_stock" label="Stock" isNumeric />
                       </td>
                       <td style={{ padding: '6px 10px', textAlign: 'right' }}>
-                        <EditableCell row={row} field="reorder_level" label="Reorder" isNumeric />
+                        <EditableCell {...editableCellProps} row={row} field="reorder_level" label="Reorder" isNumeric />
                       </td>
                       <td style={{ padding: '6px 10px', textAlign: 'center' }}>
                         <button
@@ -627,16 +577,16 @@ export default function ProductsInventoryPage() {
                         </button>
                       </td>
                       <td style={{ padding: '6px 10px' }}>
-                        <EditableCell row={row} field="gst_rate" label="GST" isNumeric />
+                        <EditableCell {...editableCellProps} row={row} field="gst_rate" label="GST" isNumeric />
                       </td>
                       <td style={{ padding: '6px 10px' }}>
-                        <EditableCell row={row} field="hsn_sac" label="HSN" />
+                        <EditableCell {...editableCellProps} row={row} field="hsn_sac" label="HSN" />
                       </td>
                       <td style={{ padding: '6px 10px' }}>
-                        <EditableCell row={row} field="unit" label="Unit" />
+                        <EditableCell {...editableCellProps} row={row} field="unit" label="Unit" />
                       </td>
                       <td style={{ padding: '6px 10px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        <EditableCell row={row} field="description" label="Description" />
+                        <EditableCell {...editableCellProps} row={row} field="description" label="Description" />
                       </td>
                     </tr>
                   ))
@@ -744,4 +694,91 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+function EditableCell({
+  row,
+  field,
+  label,
+  currencyCode,
+  editingCell,
+  editValue,
+  savingCell,
+  inputRef,
+  isNumeric,
+  onStartEdit,
+  onEditValueChange,
+  onKeyDown,
+  onSave,
+  onCancel,
+}: EditableCellProps) {
+  const isEditing = editingCell?.id === row.id && editingCell?.field === field;
+  const cellKey = `${row.id}-${field}`;
+
+  if (isEditing) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <input
+          ref={inputRef}
+          type={isNumeric ? 'number' : 'text'}
+          step={isNumeric ? '0.01' : undefined}
+          className="input"
+          value={editValue}
+          onChange={(e) => onEditValueChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          style={{ width: '100%', padding: '2px 6px', fontSize: '13px' }}
+          disabled={savingCell === cellKey}
+        />
+        <button
+          type="button"
+          className="button button--ghost button--icon"
+          onClick={() => void onSave()}
+          disabled={savingCell === cellKey}
+          title="Save"
+          aria-label="Save"
+        >
+          {savingCell === cellKey ? '...' : <Check size={14} />}
+        </button>
+        <button
+          type="button"
+          className="button button--ghost button--icon"
+          onClick={onCancel}
+          disabled={savingCell === cellKey}
+          title="Cancel"
+          aria-label="Cancel"
+        >
+          <X size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  let display: string;
+  if (field === 'selling_price') {
+    display = formatCurrency(row.selling_price, currencyCode);
+  } else if (field === 'purchase_price') {
+    display = formatCurrency(row.purchase_price, currencyCode);
+  } else if (field === 'gst_rate') {
+    display = `${row.gst_rate}%`;
+  } else {
+    display = String((row as unknown as Record<string, unknown>)[field] ?? '');
+  }
+
+  return (
+    <span
+      className="editable-cell"
+      onClick={() => onStartEdit(row, field)}
+      title={`Click to edit ${label}`}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          onStartEdit(row, field);
+        }
+      }}
+      style={{ cursor: 'pointer', display: 'block', minHeight: 24 }}
+    >
+      {display || <span style={{ opacity: 0.3 }}>-</span>}
+    </span>
+  );
 }
