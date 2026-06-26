@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kaniko-backend-385
+  namespace: openclaw
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: kaniko
+        image: gcr.io/kaniko-project/executor:latest
+        args:
+        - --context=git://github.com/nikhilb2/simple_invoicing.git#refs/heads/issue-385-inventory-invoice-improvements
+        - --context-sub-path=backend
+        - --destination=ghcr.io/nikhilb2/simple_invoicing-backend:latest
+        - --cache=true
+        - --snapshot-mode=redo
+        - --verbosity=info
+        env:
+        - name: DOCKER_CONFIG
+          value: /kaniko/.docker
+        volumeMounts:
+        - name: docker-config
+          mountPath: /kaniko/.docker
+      volumes:
+      - name: docker-config
+        secret:
+          secretName: ghcr-io-cred
+          items:
+          - key: .dockerconfigjson
+            path: config.json

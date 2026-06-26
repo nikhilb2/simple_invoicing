@@ -25,6 +25,7 @@ from src.services.pdf_templates import (
     _copy_label,
 )
 from src.services.invoice_processor import InvoiceProcessor
+from src.services.series import generate_next_number
 
 router = APIRouter()
 
@@ -492,6 +493,127 @@ def restore_invoice(
         db.commit()
         db.refresh(invoice)
         return invoice
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{invoice_id}/duplicate")
+def duplicate_invoice(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Duplicate an existing invoice as a new DRAFT invoice.
+
+    Copies customer, billing/shipping details, line items, notes, and terms.
+    Generates a new invoice number and sets status to 'active'.
+    Does NOT copy: original invoice number, creation date, payment status,
+    e-invoice refs, e-way bill refs, audit info.
+    """
+    original = (
+        db.query(Invoice)
+        .options(joinedload(Invoice.items))
+        .filter(Invoice.id == invoice_id, Invoice.company_id == active_company.id)
+        .first()
+    )
+    if not original:
+        raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
+
+    try:
+        active_fy = get_active_fy(db, company_id=active_company.id)
+        fy_id = active_fy.id if active_fy else None
+
+        new_invoice = Invoice(
+            total_amount=float(original.total_amount),
+            created_by=original.created_by,
+            company_id=active_company.id,
+            # Copy snapshot fields from original
+            ledger_id=original.ledger_id,
+            ledger_name=original.ledger_name,
+            ledger_address=original.ledger_address,
+            ledger_gst=original.ledger_gst,
+            ledger_phone=original.ledger_phone,
+            company_name=original.company_name,
+            company_address=original.company_address,
+            company_gst=original.company_gst,
+            company_phone=original.company_phone,
+            company_email=original.company_email,
+            company_website=original.company_website,
+            company_currency_code=original.company_currency_code,
+            company_bank_name=original.company_bank_name,
+            company_branch_name=original.company_branch_name,
+            company_account_name=original.company_account_name,
+            company_account_number=original.company_account_number,
+            company_ifsc_code=original.company_ifsc_code,
+            voucher_type=original.voucher_type,
+            supplier_invoice_number=original.supplier_invoice_number,
+            reference_notes=original.reference_notes,
+            tax_inclusive=original.tax_inclusive,
+            apply_round_off=original.apply_round_off,
+            discount_type=original.discount_type,
+            discount_value=original.discount_value,
+            financial_year_id=fy_id,
+            shipping_address=original.shipping_address,
+            shipping_address_label=original.shipping_address_label,
+            company_logo_data=original.company_logo_data,
+            company_logo_mime_type=original.company_logo_mime_type,
+            company_additional_info=original.company_additional_info,
+            company_terms_text=original.company_terms_text,
+            # NEW fields
+            status="active",
+            taxable_amount=original.taxable_amount,
+            total_tax_amount=original.total_tax_amount,
+            cgst_amount=original.cgst_amount,
+            sgst_amount=original.sgst_amount,
+            igst_amount=original.igst_amount,
+            round_off_amount=original.round_off_amount,
+        )
+        db.add(new_invoice)
+        db.flush()
+
+        # Generate new invoice number
+        new_invoice.invoice_number = generate_next_number(
+            db,
+            new_invoice.voucher_type,
+            fy_id,
+            datetime.utcnow().date(),
+            fy_id,
+            company_id=active_company.id,
+        )
+
+        # Copy line items
+        for item in (original.items or []):
+            new_item = InvoiceItem(
+                invoice_id=new_invoice.id,
+                product_id=item.product_id,
+                hsn_sac=item.hsn_sac,
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                gst_rate=item.gst_rate,
+                taxable_amount=item.taxable_amount,
+                tax_amount=item.tax_amount,
+                cgst_amount=item.cgst_amount,
+                sgst_amount=item.sgst_amount,
+                igst_amount=item.igst_amount,
+                line_total=item.line_total,
+                description=item.description,
+                discount_type=item.discount_type,
+                discount_value=item.discount_value,
+            )
+            db.add(new_item)
+
+        # Restore original invoice's snapshot for the new one's `invoice_date`
+        new_invoice.invoice_date = datetime.utcnow()
+
+        db.commit()
+        db.refresh(new_invoice)
+
+        return {"id": new_invoice.id, "invoice_number": new_invoice.invoice_number}
     except HTTPException:
         db.rollback()
         raise
