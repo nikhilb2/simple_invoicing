@@ -12,12 +12,14 @@ class Product(Base):
     description = Column(String, nullable=True)
     hsn_sac = Column(String, nullable=True)
     price = Column(Numeric(10, 2), nullable=False)
+    purchase_price = Column(Numeric(10, 2), nullable=False, default=0)
     gst_rate = Column(Numeric(5, 2), nullable=False, default=0)
     unit = Column(String, nullable=False, default="Pieces")
     allow_decimal = Column(Boolean, nullable=False, default=False)
     maintain_inventory = Column(Boolean, nullable=False, default=True)
     is_producable = Column(Boolean, nullable=False, default=False)
     production_cost = Column(Numeric(12, 2), nullable=True)
+    reorder_level = Column(Numeric(10, 2), nullable=False, default=0)
     created_at = Column(DateTime, server_default=func.now(), nullable=True)
 
     __table_args__ = (

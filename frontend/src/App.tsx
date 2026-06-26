@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ProductsPage from './pages/ProductsPage';
 import InventoryPage from './pages/InventoryPage';
+import ProductsInventoryPage from './pages/ProductsInventoryPage';
 import ProduceItemsPage from './pages/ProduceItemsPage';
 import InvoicesPage from './pages/InvoicesPage';
 import InvoiceDuesPage from './pages/InvoiceDuesPage';
@@ -100,6 +101,7 @@ function AppRoutes() {
       <Route path="/" element={<Protected><CompanyRequired><Layout><DashboardPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/products" element={<Protected><CompanyRequired><Layout><ProductsPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/inventory" element={<Protected><CompanyRequired><Layout><InventoryPage /></Layout></CompanyRequired></Protected>} />
+      <Route path="/products-inventory" element={<Protected><CompanyRequired><Layout><ProductsInventoryPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/produce-items" element={<Protected><CompanyRequired><Layout><ProduceItemsPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/ledgers" element={<Protected><CompanyRequired><Layout><LedgersPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/ledgers/new" element={<Protected><CompanyRequired><Layout><LedgerCreatePage /></Layout></CompanyRequired></Protected>} />
