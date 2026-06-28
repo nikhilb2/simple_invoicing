@@ -61,6 +61,31 @@ export type PaginatedInventoryOut = {
   total_pages: number;
 };
 
+export type DashboardInventoryPreview = {
+  product_id: number;
+  product_name: string;
+  quantity: number;
+};
+
+export type DashboardInvoicePreview = {
+  id: number;
+  invoice_number: string | null;
+  ledger_name: string | null;
+  total_amount: number;
+  invoice_date: string;
+};
+
+export type DashboardSummary = {
+  product_count: number;
+  tracked_inventory_rows: number;
+  total_inventory_units: number;
+  low_stock_count: number;
+  active_invoice_total: number;
+  low_stock_threshold: number;
+  low_stock_items: DashboardInventoryPreview[];
+  recent_invoices: DashboardInvoicePreview[];
+};
+
 export type LedgerAddress = {
   id: number;
   ledger_id: number;
