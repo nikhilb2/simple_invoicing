@@ -2258,3 +2258,226 @@ textarea {
     justify-content: flex-start;
   }
 }
+
+/* ============================================================
+   Dashboard metrics, charts & visualizations
+   ============================================================ */
+
+.stats-grid--dense {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.stat-card__value--danger {
+  color: var(--danger);
+}
+
+.stat-card__value--warning {
+  color: var(--warning);
+}
+
+/* Monthly trend chart -------------------------------------- */
+.chart {
+  display: grid;
+  gap: 14px;
+}
+
+.chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.chart__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.chart__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.chart__swatch--sales {
+  background: var(--accent);
+}
+
+.chart__swatch--purchases {
+  background: #6f8bd8;
+}
+
+.chart__swatch--receipts {
+  background: var(--warning);
+}
+
+.chart__svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart__empty {
+  padding: 40px 0;
+  text-align: center;
+}
+
+.chart__gridline {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.chart__bar--sales {
+  fill: var(--accent);
+}
+
+.chart__bar--purchases {
+  fill: #6f8bd8;
+}
+
+.chart__line {
+  stroke: var(--warning);
+  stroke-width: 2;
+}
+
+.chart__dot {
+  fill: var(--warning);
+}
+
+.chart__xlabel {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+/* Payment status donut ------------------------------------- */
+.donut {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.donut__svg {
+  width: 150px;
+  height: 150px;
+  flex-shrink: 0;
+}
+
+.donut__track {
+  stroke: var(--line);
+}
+
+.donut__arc--paid {
+  stroke: var(--accent);
+}
+
+.donut__arc--partial {
+  stroke: var(--warning);
+}
+
+.donut__arc--unpaid {
+  stroke: var(--danger);
+}
+
+.donut__total {
+  fill: var(--text);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.donut__caption {
+  fill: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.donut__legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+  min-width: 140px;
+}
+
+.donut__legend-item {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.donut__legend-item strong {
+  color: var(--text);
+}
+
+.donut__legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.donut__legend-swatch--paid {
+  background: var(--accent);
+}
+
+.donut__legend-swatch--partial {
+  background: var(--warning);
+}
+
+.donut__legend-swatch--unpaid {
+  background: var(--danger);
+}
+
+/* Top products ---------------------------------------------- */
+.top-products {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 16px;
+}
+
+.top-products__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+  font-size: 0.92rem;
+}
+
+.top-products__name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.top-products__value {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.top-products__track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.top-products__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-deep), var(--accent));
+}
+
+@media (max-width: 1100px) {
+  .stats-grid--dense {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

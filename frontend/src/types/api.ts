@@ -845,3 +845,58 @@ export type ApiKeyCreate = {
   name: string;
   expires_at: string;
 };
+
+export type DashboardMonthlyPoint = {
+  month: string;
+  label: string;
+  sales: number;
+  purchases: number;
+  receipts: number;
+};
+
+export type DashboardTopProduct = {
+  product_id: number;
+  name: string;
+  quantity: number;
+  revenue: number;
+};
+
+export type DashboardMetrics = {
+  currency_code: string;
+  catalog: {
+    total_products: number;
+    producible_products: number;
+  };
+  inventory: {
+    tracked_products: number;
+    total_units: number;
+    low_stock_count: number;
+    out_of_stock_count: number;
+    stock_value: number;
+  };
+  sales: {
+    sales_invoice_count: number;
+    purchase_invoice_count: number;
+    total_sales: number;
+    total_purchases: number;
+    this_month_sales: number;
+    average_invoice_value: number;
+  };
+  receivables: {
+    outstanding_amount: number;
+    overdue_amount: number;
+    overdue_count: number;
+    paid_count: number;
+    partial_count: number;
+    unpaid_count: number;
+  };
+  payments: {
+    received_total: number;
+    paid_total: number;
+    this_month_received: number;
+  };
+  charts: {
+    monthly: DashboardMonthlyPoint[];
+    top_products: DashboardTopProduct[];
+  };
+};
