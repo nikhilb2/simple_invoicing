@@ -4,11 +4,11 @@ test.describe('Dashboard', () => {
   test('displays stats cards after login', async ({ authedPage: page }) => {
     await expect(page.locator('h1')).toContainText('Operations dashboard');
 
-    // Four stat cards should be visible
+    // Key metric cards should be visible
+    await expect(page.locator('.eyebrow', { hasText: 'Net sales' })).toBeVisible();
+    await expect(page.locator('.eyebrow', { hasText: 'Outstanding' })).toBeVisible();
     await expect(page.locator('.eyebrow', { hasText: 'Catalog' })).toBeVisible();
-    await expect(page.locator('.eyebrow', { hasText: 'Stock units' })).toBeVisible();
     await expect(page.locator('.eyebrow', { hasText: 'Low stock' })).toBeVisible();
-    await expect(page.locator('.eyebrow', { hasText: 'Invoice value' })).toBeVisible();
   });
 
   test('shows "Backend synced" chip', async ({ authedPage: page }) => {
