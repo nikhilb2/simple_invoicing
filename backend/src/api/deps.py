@@ -4,6 +4,7 @@ from jose import JWTError
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
+from src.core.config import settings
 from src.core.security import decode_token
 from src.db.session import get_db
 from src.models.company import CompanyProfile
@@ -57,7 +58,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         return api_key_user
 
     # Legacy: static MCP API token via env var
-    from src.core.config import settings
     if settings.MCP_API_TOKEN and token == settings.MCP_API_TOKEN:
         admin_user = db.query(User).filter(User.role == UserRole.admin).first()
         if admin_user:

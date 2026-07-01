@@ -166,7 +166,7 @@ class TestDuplicateInvoice:
         assert res.status_code == 404
 
     def test_duplicate_invoice_preserves_tax_details(self, client):
-        product = _create_product(client, "DUPTAX1", "Tax Test", price=100, gst_rate=18)
+        product = _create_product(client, "DUPTAX1", "Tax Test", price=100)
         ledger = _create_ledger(client, "Tax Customer")
         invoice = _create_invoice(client, product["id"], ledger["id"])
 
