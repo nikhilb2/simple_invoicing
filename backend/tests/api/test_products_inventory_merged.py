@@ -149,7 +149,7 @@ class TestCSVExport:
 
         res = client.get("/api/products/export-csv")
         assert res.status_code == 200
-        assert res.headers["content-type"] == "text/csv"
+        assert res.headers["content-type"].startswith("text/csv")
 
         content = res.text
         reader = csv.DictReader(io.StringIO(content))

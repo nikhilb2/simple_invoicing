@@ -87,7 +87,18 @@ def generate_next_number(
         series = fallback_query.with_for_update().first()
 
     if not series:
-        return "INV-000000"
+        # No series configured — fall back to a simple INV-NNNNNN sequence,
+        # skipping any numbers already used so repeats (e.g. duplicating an
+        # invoice) don't collide on the unique invoice_number constraint.
+        for seq in range(1_000_000):
+            number = f"INV-{seq:06d}"
+            if voucher_type == "payment":
+                existing = db.query(Payment.id).filter(Payment.payment_number == number).first()
+            else:
+                existing = db.query(Invoice.id).filter(Invoice.invoice_number == number).first()
+            if existing is None:
+                return number
+        return f"INV-{int(datetime.utcnow().timestamp())}"
 
     # When the invoice is for a different FY than the active one, borrow the
     # active FY's series for format settings (prefix, year_format, separator,
