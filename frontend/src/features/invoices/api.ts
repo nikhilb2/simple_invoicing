@@ -8,6 +8,7 @@ type InvoiceFilters = {
   showCancelled: boolean;
   financialYearId?: number;
   productId?: number;
+  includeDescription?: boolean;
 };
 
 export type DueInvoiceFilters = {
@@ -33,6 +34,10 @@ function buildInvoiceParams(filters: InvoiceFilters) {
 
   if (typeof filters.productId === 'number') {
     params.product_id = filters.productId;
+  }
+
+  if (filters.includeDescription) {
+    params.include_description = true;
   }
 
   return params;

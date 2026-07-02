@@ -93,12 +93,14 @@ export default function InvoicesAdvancedView() {
   const {
     viewType,
     invoiceSearch,
+    searchDescription,
     showCancelled,
     allowAllFY,
     page,
     productId,
     setViewType,
     setInvoiceSearch,
+    setSearchDescription,
     setShowCancelled,
     setAllowAllFY,
     setPage,
@@ -125,7 +127,7 @@ export default function InvoicesAdvancedView() {
   const financialYearId = shouldUseAllFY ? undefined : activeFY?.id;
 
   const invoicesQuery = useQuery({
-    queryKey: invoiceQueryKeys.list(page, pageSize, invoiceSearch, showCancelled, financialYearId, productId ?? undefined),
+    queryKey: invoiceQueryKeys.list(page, pageSize, invoiceSearch, showCancelled, financialYearId, productId ?? undefined, searchDescription),
     queryFn: () => fetchInvoicePage({
       page,
       pageSize,
@@ -133,6 +135,7 @@ export default function InvoicesAdvancedView() {
       showCancelled,
       financialYearId,
       productId: productId ?? undefined,
+      includeDescription: searchDescription,
     }),
     enabled: isFYReady && !fyLoading,
   });
@@ -149,7 +152,7 @@ export default function InvoicesAdvancedView() {
 
   useEffect(() => {
     resetPage();
-  }, [invoiceSearch, showCancelled, allowAllFY, activeFY?.id, productId]);
+  }, [invoiceSearch, searchDescription, showCancelled, allowAllFY, activeFY?.id, productId]);
 
   const invoices = invoicesQuery.data?.items ?? [];
   const totalPages = invoicesQuery.data?.total_pages ?? 1;
@@ -282,6 +285,16 @@ export default function InvoicesAdvancedView() {
             onChange={(e) => setInvoiceSearch(e.target.value)}
             className="input invoice-feed-view__search"
           />
+
+          {/* Search product description toggle */}
+          <label className="invoice-feed-view__checkbox">
+            <input
+              type="checkbox"
+              checked={searchDescription}
+              onChange={(e) => setSearchDescription(e.target.checked)}
+            />
+            <span>Include product description</span>
+          </label>
 
           {/* Cancelled toggle */}
           <label className="invoice-feed-view__checkbox">
