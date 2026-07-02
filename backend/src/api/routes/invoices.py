@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, joinedload
 from decimal import Decimal
 
@@ -144,7 +144,22 @@ def list_invoices(
       if financial_year_id is not None:
         base = base.filter(Invoice.financial_year_id == financial_year_id)
       if search.strip():
-        base = base.filter(Invoice.ledger_name.ilike(f"%{search.strip()}%"))
+        term = f"%{search.strip()}%"
+        product_match_subq = (
+          db.query(InvoiceItem.invoice_id)
+          .join(Product, Product.id == InvoiceItem.product_id)
+          .filter(
+            Product.company_id == active_company.id,
+            Product.name.ilike(term),
+          )
+          .subquery()
+        )
+        base = base.filter(
+          or_(
+            Invoice.ledger_name.ilike(term),
+            Invoice.id.in_(product_match_subq),
+          )
+        )
       if product_id is not None:
         product_subq = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id).subquery()
         base = base.filter(Invoice.id.in_(product_subq))
