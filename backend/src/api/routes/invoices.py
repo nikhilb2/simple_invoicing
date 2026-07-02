@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, joinedload
 from decimal import Decimal
 
@@ -63,6 +63,28 @@ def _to_invoice_out(
         result.payment_status = payment_summary.payment_status
         result.due_in_days = payment_summary.due_in_days
     return result
+
+
+def _apply_invoice_search_filter(base, db: Session, search: str, active_company_id: int):
+    term = search.strip()
+    if not term:
+        return base
+
+    product_invoice_ids = (
+        db.query(InvoiceItem.invoice_id)
+        .join(Product, Product.id == InvoiceItem.product_id)
+        .filter(
+            Product.company_id == active_company_id,
+            Product.name.ilike(f"%{term}%"),
+        )
+        .subquery()
+    )
+    return base.filter(
+        or_(
+            Invoice.ledger_name.ilike(f"%{term}%"),
+            Invoice.id.in_(product_invoice_ids),
+        )
+    )
 
 
 @router.post("", response_model=InvoiceOut, include_in_schema=False)
@@ -143,8 +165,7 @@ def list_invoices(
         base = base.filter(Invoice.status == "active")
       if financial_year_id is not None:
         base = base.filter(Invoice.financial_year_id == financial_year_id)
-      if search.strip():
-        base = base.filter(Invoice.ledger_name.ilike(f"%{search.strip()}%"))
+      base = _apply_invoice_search_filter(base, db, search, active_company.id)
       if product_id is not None:
         product_subq = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id).subquery()
         base = base.filter(Invoice.id.in_(product_subq))

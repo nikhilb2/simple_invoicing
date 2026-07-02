@@ -382,6 +382,35 @@ class TestInvoiceApiProductName:
             assert len(first_invoice["items"]) == 1
             assert first_invoice["items"][0]["product_name"] == "Office Chair"
 
+    def test_list_invoices_search_matches_product_name(self, client):
+        """GET /api/invoices search matches linked product names."""
+        with patch("src.services.invoice_processor.generate_next_number", side_effect=["INV-SEARCH-1", "INV-SEARCH-2"]):
+            ledger_id = _create_ledger(client, name="Product Search Buyer", gst="27ABCDE9999F2Z1")
+            printer_id = _create_product(client, sku="PRN001", name="Laser Printer")
+            scanner_id = _create_product(client, sku="SCN001", name="Document Scanner")
+            _add_inventory(client, product_id=printer_id, quantity=10)
+            _add_inventory(client, product_id=scanner_id, quantity=10)
+
+            printer_resp = client.post("/api/invoices/", json={
+                "ledger_id": ledger_id,
+                "voucher_type": "sales",
+                "items": [{"product_id": printer_id, "quantity": 1}],
+            })
+            assert printer_resp.status_code == 200, printer_resp.text
+            scanner_resp = client.post("/api/invoices/", json={
+                "ledger_id": ledger_id,
+                "voucher_type": "sales",
+                "items": [{"product_id": scanner_id, "quantity": 1}],
+            })
+            assert scanner_resp.status_code == 200, scanner_resp.text
+
+            resp = client.get("/api/invoices/", params={"search": "Laser"})
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["total"] == 1
+            assert data["items"][0]["id"] == printer_resp.json()["id"]
+            assert data["items"][0]["items"][0]["product_name"] == "Laser Printer"
+
     def test_get_single_invoice_returns_product_name(self, client):
         """GET /api/invoices/{id} returns product_name in items."""
         with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0003"):
