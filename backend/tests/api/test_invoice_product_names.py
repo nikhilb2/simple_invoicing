@@ -428,6 +428,53 @@ class TestInvoiceApiProductName:
             assert len(data["items"]) == 1
             assert data["items"][0]["product_name"] == "Mechanical Keyboard"
 
+    def test_list_invoices_search_matches_product_name(self, client):
+        """GET /api/invoices?search=<product> returns invoices containing that product."""
+        with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0007"):
+            ledger_id = _create_ledger(client, name="Search Buyer", gst="27ABCDE9999F1Z1")
+            tv_id = _create_product(client, sku="TVX", name="Plasma Television")
+            chair_id = _create_product(client, sku="CHX", name="Recliner Chair")
+            _add_inventory(client, product_id=tv_id, quantity=10)
+            _add_inventory(client, product_id=chair_id, quantity=10)
+
+            client.post("/api/invoices/", json={
+                "ledger_id": ledger_id,
+                "voucher_type": "sales",
+                "items": [{"product_id": tv_id, "quantity": 1}],
+            })
+            client.post("/api/invoices/", json={
+                "ledger_id": ledger_id,
+                "voucher_type": "sales",
+                "items": [{"product_id": chair_id, "quantity": 1}],
+            })
+
+            resp = client.get("/api/invoices/", params={"search": "Television"})
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["total"] == 1
+            item_products = [
+                it["product_name"] for inv in data["items"] for it in inv["items"]
+            ]
+            assert "Plasma Television" in item_products
+            assert "Recliner Chair" not in item_products
+
+    def test_search_still_matches_ledger_name(self, client):
+        """Searching by party (ledger) name continues to work alongside product search."""
+        with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0008"):
+            ledger_id = _create_ledger(client, name="Unique Party Name", gst="27ABCDE9999F1Z2")
+            product_id = _create_product(client, sku="WID", name="Widget")
+            _add_inventory(client, product_id=product_id, quantity=10)
+
+            client.post("/api/invoices/", json={
+                "ledger_id": ledger_id,
+                "voucher_type": "sales",
+                "items": [{"product_id": product_id, "quantity": 1}],
+            })
+
+            resp = client.get("/api/invoices/", params={"search": "Unique Party"})
+            assert resp.status_code == 200, resp.text
+            assert resp.json()["total"] == 1
+
     def test_product_delete_blocked_when_linked_to_invoice(self, client):
         """A product linked to an invoice cannot be deleted via the API."""
         with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0005"):

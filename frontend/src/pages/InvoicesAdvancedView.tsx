@@ -277,7 +277,7 @@ export default function InvoicesAdvancedView() {
           {/* Search */}
           <input
             type="text"
-            placeholder="Search invoices..."
+            placeholder="Search by party or product..."
             value={invoiceSearch}
             onChange={(e) => setInvoiceSearch(e.target.value)}
             className="input invoice-feed-view__search"
