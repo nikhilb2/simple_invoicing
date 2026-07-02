@@ -286,14 +286,14 @@ export default function InvoicesAdvancedView() {
             className="input invoice-feed-view__search"
           />
 
-          {/* Search product description toggle */}
+          {/* Search item description toggle */}
           <label className="invoice-feed-view__checkbox">
             <input
               type="checkbox"
               checked={searchDescription}
               onChange={(e) => setSearchDescription(e.target.checked)}
             />
-            <span>Include product description</span>
+            <span>Include item description</span>
           </label>
 
           {/* Cancelled toggle */}

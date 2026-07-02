@@ -148,7 +148,7 @@ def list_invoices(
         term = f"%{search.strip()}%"
         product_match = Product.name.ilike(term)
         if include_description:
-          product_match = or_(product_match, Product.description.ilike(term))
+          product_match = or_(product_match, InvoiceItem.description.ilike(term))
         product_match_subq = (
           db.query(InvoiceItem.invoice_id)
           .join(Product, Product.id == InvoiceItem.product_id)
