@@ -458,6 +458,41 @@ class TestInvoiceApiProductName:
             assert "Plasma Television" in item_products
             assert "Recliner Chair" not in item_products
 
+    def test_search_matches_product_description_only_when_enabled(self, client):
+        """search matches Product.description only when include_description=true."""
+        with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0009"):
+            ledger_id = _create_ledger(client, name="Desc Buyer", gst="27ABCDE9999F1Z3")
+            # Product whose name has no match, but description does.
+            resp = client.post("/api/products/", json={
+                "sku": "GADGET1",
+                "name": "Gizmo",
+                "description": "Waterproof outdoor gadget",
+                "price": 100,
+                "gst_rate": 18,
+            })
+            assert resp.status_code == 200, resp.text
+            product_id = resp.json()["id"]
+            _add_inventory(client, product_id=product_id, quantity=10)
+
+            client.post("/api/invoices/", json={
+                "ledger_id": ledger_id,
+                "voucher_type": "sales",
+                "items": [{"product_id": product_id, "quantity": 1}],
+            })
+
+            # Without the flag, a description-only term returns nothing.
+            resp = client.get("/api/invoices/", params={"search": "Waterproof"})
+            assert resp.status_code == 200, resp.text
+            assert resp.json()["total"] == 0
+
+            # With the flag, the description is searched.
+            resp = client.get(
+                "/api/invoices/",
+                params={"search": "Waterproof", "include_description": "true"},
+            )
+            assert resp.status_code == 200, resp.text
+            assert resp.json()["total"] == 1
+
     def test_search_still_matches_ledger_name(self, client):
         """Searching by party (ledger) name continues to work alongside product search."""
         with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0008"):

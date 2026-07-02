@@ -133,6 +133,7 @@ def list_invoices(
     show_cancelled: bool = Query(False),
     financial_year_id: int | None = Query(None),
     product_id: int | None = Query(None),
+    include_description: bool = Query(False),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -145,12 +146,15 @@ def list_invoices(
         base = base.filter(Invoice.financial_year_id == financial_year_id)
       if search.strip():
         term = f"%{search.strip()}%"
+        product_match = Product.name.ilike(term)
+        if include_description:
+          product_match = or_(product_match, Product.description.ilike(term))
         product_match_subq = (
           db.query(InvoiceItem.invoice_id)
           .join(Product, Product.id == InvoiceItem.product_id)
           .filter(
             Product.company_id == active_company.id,
-            Product.name.ilike(term),
+            product_match,
           )
           .subquery()
         )

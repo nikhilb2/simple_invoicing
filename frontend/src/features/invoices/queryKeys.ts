@@ -13,8 +13,9 @@ export const invoiceQueryKeys = {
     search: string,
     showCancelled: boolean,
     financialYearId?: number,
-    productId?: number
-  ) => ['invoices', 'list', page, pageSize, search, showCancelled, financialYearId ?? 'all', productId ?? 'all'] as const,
+    productId?: number,
+    includeDescription?: boolean
+  ) => ['invoices', 'list', page, pageSize, search, showCancelled, financialYearId ?? 'all', productId ?? 'all', includeDescription ?? false] as const,
   dues: (
     page: number,
     pageSize: number,
