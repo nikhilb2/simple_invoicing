@@ -24,25 +24,10 @@ from src.schemas.dashboard import (
     SalesMetrics,
     TopProduct,
 )
+from src.services.analytics_reports import month_label, month_window
 from src.services.invoice_payments import build_invoice_payment_summaries
 
 router = APIRouter()
-
-MONTHS_IN_TREND = 12
-_MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-
-def _month_window(today: date) -> list[tuple[int, int]]:
-    """Return (year, month) tuples for the trailing MONTHS_IN_TREND months, oldest first."""
-    months: list[tuple[int, int]] = []
-    year, month = today.year, today.month
-    for _ in range(MONTHS_IN_TREND):
-        months.append((year, month))
-        month -= 1
-        if month == 0:
-            month = 12
-            year -= 1
-    return list(reversed(months))
 
 
 @router.get("/metrics", response_model=DashboardMetrics)
@@ -202,7 +187,7 @@ def get_dashboard_metrics(
     )
 
     # --- Monthly trend (DB-agnostic bucketing in Python) -----------------
-    months = _month_window(today)
+    months = month_window(today)
     window_start = date(months[0][0], months[0][1], 1)
     buckets: dict[tuple[int, int], dict[str, Decimal]] = {
         m: {"sales": Decimal("0"), "purchases": Decimal("0"), "receipts": Decimal("0")} for m in months
@@ -244,7 +229,7 @@ def get_dashboard_metrics(
     monthly = [
         MonthlyPoint(
             month=f"{year:04d}-{month:02d}",
-            label=f"{_MONTH_LABELS[month - 1]} {year % 100:02d}",
+            label=month_label(year, month),
             sales=float(buckets[(year, month)]["sales"]),
             purchases=float(buckets[(year, month)]["purchases"]),
             receipts=float(buckets[(year, month)]["receipts"]),
