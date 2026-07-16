@@ -2618,20 +2618,30 @@ textarea {
   flex-wrap: wrap;
 }
 
+/* A panel is a grid/flex item wherever it's used, so it needs the auto minimum
+   overridden for anything that scrolls inside it to actually scroll. */
+.tab-panel {
+  min-width: 0;
+}
+
 /* ── Analytics ────────────────────────────────────────────────────── */
+/* auto-fit rather than flex-wrap: the fields reflow from one row to two to a
+   single column on their own, with no breakpoint to keep in sync. */
 .analytics-filters {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
-  align-items: flex-end;
+  align-items: end;
 }
 
 .analytics-filters__field {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 160px;
-  flex: 1 1 160px;
+  flex: 1 1 150px;
+  /* Overrides the auto minimum so a field can shrink below its content width
+     instead of forcing the row wider than the screen. */
+  min-width: 0;
 }
 
 .analytics-filters__field > span {
@@ -2646,6 +2656,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
 }
 
 .analytics-tab__actions {
@@ -2663,18 +2674,38 @@ textarea {
   justify-content: space-between;
 }
 
+@media (max-width: 720px) {
+  /* Full-width tap targets once the controls are stacked anyway. */
+  .analytics-tab__actions > .button,
+  .analytics-filters__reset .button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .analytics-chart-controls .tab-bar,
+  .analytics-chart-controls .tab-bar .button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
 .chart-frame {
   background: var(--bg-card);
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 16px 8px 8px;
+  /* Recharts' ResponsiveContainer measures its parent; without this it can
+     only ever grow, never shrink back down. */
+  min-width: 0;
 }
 
 /* Wide report tables scroll inside their own container so the page body never
-   scrolls horizontally. */
+   scrolls horizontally. The min-width is what makes that true: without it the
+   table's own min-width propagates up and widens the page instead. */
 .analytics-table-scroll {
   overflow-x: auto;
   width: 100%;
+  min-width: 0;
 }
 
 .analytics-filters__reset {

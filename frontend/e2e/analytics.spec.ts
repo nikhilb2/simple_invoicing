@@ -147,4 +147,36 @@ test.describe('Analytics', () => {
 
     expect(download.suggestedFilename()).toMatch(/^sales_by_product_.*\.csv$/);
   });
+
+  test.describe('on a phone-sized viewport', () => {
+    test.use({ viewport: { width: 390, height: 844 } });
+
+    // The reports are wider than a phone, so they scroll inside their own
+    // container. If an ancestor stops constraining them the whole page starts
+    // scrolling sideways instead — which is what this guards.
+    for (const [name, url] of [
+      ['month-wise', '/analytics'],
+      ['product-wise', '/analytics?tab=product-wise'],
+    ] as const) {
+      test(`${name} does not scroll the page sideways`, async ({ authedPage: page }) => {
+        await page.goto(url);
+        await expect(page.locator('.analytics-table-scroll')).toBeVisible();
+
+        const { doc, win } = await page.evaluate(() => ({
+          doc: document.documentElement.scrollWidth,
+          win: window.innerWidth,
+        }));
+        expect(doc).toBeLessThanOrEqual(win);
+      });
+    }
+
+    test('the wide table still scrolls within its own container', async ({ authedPage: page }) => {
+      await page.goto('/analytics');
+      const scroller = page.locator('.analytics-table-scroll');
+      await expect(scroller).toBeVisible();
+
+      const overflows = await scroller.evaluate((el) => el.scrollWidth > el.clientWidth);
+      expect(overflows).toBe(true);
+    });
+  });
 });

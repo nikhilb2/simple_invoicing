@@ -8,6 +8,7 @@ import {
   YAxis,
 } from 'recharts';
 import type { ProductSalesRow } from '../../../features/analytics/types';
+import useMediaQuery, { NARROW_QUERY } from '../../../hooks/useMediaQuery';
 import formatCurrency, { formatCompactCurrency } from '../../../utils/formatting';
 import { chartColors, tooltipStyle } from './chartTheme';
 
@@ -26,6 +27,8 @@ export default function ProductSalesChart({
   metric: ProductMetric;
   currencyCode: string;
 }) {
+  const narrow = useMediaQuery(NARROW_QUERY);
+
   const dataKey = metric === 'revenue' ? 'total_revenue' : 'quantity_sold';
   const name = metric === 'revenue' ? 'Revenue' : 'Quantity Sold';
   const fill = metric === 'revenue' ? chartColors.revenue : chartColors.sales;
@@ -41,22 +44,28 @@ export default function ProductSalesChart({
   return (
     <div className="chart-frame">
       <ResponsiveContainer width="100%" height={height}>
-        <BarChart data={rows} layout="vertical" margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
+        <BarChart
+          data={rows}
+          layout="vertical"
+          margin={{ top: 8, right: narrow ? 8 : 24, bottom: 8, left: 8 }}
+        >
           <CartesianGrid stroke={chartColors.grid} horizontal={false} />
           <XAxis
             type="number"
             stroke={chartColors.axis}
             tickLine={false}
-            fontSize={12}
+            fontSize={narrow ? 10 : 12}
             tickFormatter={formatAxis}
           />
+          {/* A fixed 140px name column leaves almost no room for the bars on a
+              phone; the tooltip still carries the full name. */}
           <YAxis
             type="category"
             dataKey="name"
             stroke={chartColors.axis}
             tickLine={false}
-            fontSize={12}
-            width={140}
+            fontSize={narrow ? 10 : 12}
+            width={narrow ? 84 : 140}
           />
           <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => [format(value), name]} />
           <Bar dataKey={dataKey} name={name} fill={fill} radius={[0, 4, 4, 0]} />
