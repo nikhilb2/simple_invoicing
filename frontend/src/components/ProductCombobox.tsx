@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import api from '../api/client';
 import type { Product } from '../types/api';
 
@@ -8,10 +9,15 @@ type ProductComboboxProps = {
   value: string; // product id as string
   onChange: (productId: string, product: Product) => void;
   onQueryChange?: (query: string) => void;
+  /**
+   * Opt-in clear button, shown only once a product is selected. Omit it where
+   * the selection is required (invoice line items).
+   */
+  onClear?: () => void;
   required?: boolean;
 };
 
-export default function ProductCombobox({ id, products, value, onChange, onQueryChange, required }: ProductComboboxProps) {
+export default function ProductCombobox({ id, products, value, onChange, onQueryChange, onClear, required }: ProductComboboxProps) {
   const selectedProduct = products.find((p) => String(p.id) === value);
   const [query, setQuery] = useState(selectedProduct ? `${selectedProduct.name} (${selectedProduct.sku})` : '');
   const [open, setOpen] = useState(false);
@@ -131,13 +137,25 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
   }, [value, products]);
 
   const listboxId = `${id}-listbox`;
+  const showClear = Boolean(onClear && value);
+
+  function handleClear() {
+    setQuery('');
+    setOpen(false);
+    setSearching(false);
+    setActiveIndex(-1);
+    setServerResults(null);
+    onQueryChange?.('');
+    onClear?.();
+    inputRef.current?.focus();
+  }
 
   return (
     <div ref={containerRef} className="combobox" style={{ position: 'relative' }}>
       <input
         ref={inputRef}
         id={id}
-        className="input"
+        className={`input${showClear ? ' input--clearable' : ''}`}
         type="text"
         autoComplete="off"
         role="combobox"
@@ -152,6 +170,18 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
         placeholder="Search by name or SKU…"
         required={required}
       />
+      {showClear && (
+        <button
+          type="button"
+          className="combobox__clear"
+          aria-label="Clear selection"
+          // mousedown would fire before the outside-click handler re-syncs the
+          // old label back in.
+          onMouseDown={(e) => { e.preventDefault(); handleClear(); }}
+        >
+          <X size={14} aria-hidden="true" />
+        </button>
+      )}
       {open && suggestions.length > 0 && (
         <ul
           ref={listRef}

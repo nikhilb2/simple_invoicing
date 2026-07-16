@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import type { Ledger } from '../types/api';
 
 type LedgerComboboxProps = {
@@ -6,11 +7,17 @@ type LedgerComboboxProps = {
   ledgers: Ledger[];
   value: string; // ledger id as string
   onChange: (ledgerId: string) => void;
+  /**
+   * Opt-in clear button, shown only once a ledger is selected. Omit it where
+   * the selection is required (invoice forms) — there, having no ledger is not
+   * a valid state, so there is nothing to clear back to.
+   */
+  onClear?: () => void;
   required?: boolean;
   disabled?: boolean;
 };
 
-export default function LedgerCombobox({ id, ledgers, value, onChange, required, disabled }: LedgerComboboxProps) {
+export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, required, disabled }: LedgerComboboxProps) {
   const formatLedgerLabel = (ledger: Ledger) => ledger.gst ? `${ledger.name} (${ledger.gst})` : ledger.name;
   const formatSearchText = (ledger: Ledger) => `${ledger.name} ${ledger.gst || ''}`.toLowerCase();
   const selectedLedger = ledgers.find((l) => String(l.id) === value);
@@ -103,13 +110,23 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, required,
   }, [value, ledgers]);
 
   const listboxId = `${id}-listbox`;
+  const showClear = Boolean(onClear && value);
+
+  function handleClear() {
+    setQuery('');
+    setOpen(false);
+    setSearching(false);
+    setActiveIndex(-1);
+    onClear?.();
+    inputRef.current?.focus();
+  }
 
   return (
     <div ref={containerRef} className="combobox" style={{ position: 'relative' }}>
       <input
         ref={inputRef}
         id={id}
-        className="input"
+        className={`input${showClear ? ' input--clearable' : ''}`}
         type="text"
         autoComplete="off"
         role="combobox"
@@ -125,6 +142,18 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, required,
         required={required}
         disabled={disabled || ledgers.length === 0}
       />
+      {showClear && (
+        <button
+          type="button"
+          className="combobox__clear"
+          aria-label="Clear selection"
+          // mousedown would fire before the input's blur/outside-click handler
+          // re-syncs the old label back in.
+          onMouseDown={(e) => { e.preventDefault(); handleClear(); }}
+        >
+          <X size={14} aria-hidden="true" />
+        </button>
+      )}
       {open && suggestions.length > 0 && (
         <ul
           ref={listRef}

@@ -2689,3 +2689,39 @@ textarea {
   align-items: center;
   gap: 8px;
 }
+
+/* ── Combobox clear button ────────────────────────────────────────── */
+/* Only rendered when the caller opts in via onClear. */
+.input--clearable {
+  /* Keep the value from running under the button. */
+  padding-right: 34px;
+}
+
+.combobox__clear {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: 150ms ease;
+}
+
+.combobox__clear:hover {
+  background: var(--bg-card-strong);
+  color: var(--text);
+}
+
+.combobox__clear:focus-visible {
+  outline: 2px solid var(--sidebar-active-border);
+  outline-offset: 1px;
+}
