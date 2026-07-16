@@ -2481,3 +2481,198 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ── Sidebar icons & collapsible desktop rail ─────────────────────── */
+
+.sidebar__link svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.sidebar__header {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar__collapse {
+  display: none;
+  background: none;
+  border: 1px solid var(--sidebar-border);
+  color: var(--sidebar-muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  line-height: 1;
+  transition: 180ms ease;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar__collapse:hover {
+  background: var(--sidebar-hover-bg);
+  color: var(--sidebar-text);
+}
+
+.sidebar__fy {
+  padding: 12px 10px;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+.sidebar__user-meta {
+  min-width: 0;
+}
+
+/* The rail is desktop-only: the mobile drawer is always full width, so every
+   rule below stays inside this breakpoint. */
+@media (min-width: 768px) {
+  .sidebar__collapse {
+    display: flex;
+    margin-top: 12px;
+    align-self: flex-start;
+  }
+
+  .app-shell,
+  .sidebar {
+    transition: grid-template-columns 180ms ease, width 180ms ease;
+  }
+
+  /* --sidebar-width is consumed by both .app-shell's grid and .sidebar's
+     width, so overriding the token here is the whole rail mechanic. */
+  .app-shell--rail {
+    --sidebar-width: 68px;
+  }
+
+  .app-shell--rail .sidebar__link {
+    justify-content: center;
+    padding: 9px 0;
+  }
+
+  .app-shell--rail .sidebar__nav,
+  .app-shell--rail .sidebar__header,
+  .app-shell--rail .sidebar__footer {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  /* Labels are clipped rather than display:none'd so they stay in the
+     accessibility tree; the NavLink title attribute supplies a hover tooltip. */
+  .app-shell--rail .sidebar__link-label,
+  .app-shell--rail .sidebar__brand-name,
+  .app-shell--rail .sidebar__brand-tagline,
+  .app-shell--rail .sidebar__user-meta {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* Group headings collapse to a rule so the grouping still reads at 68px. */
+  .app-shell--rail .sidebar__group-label {
+    height: 0;
+    padding: 0;
+    overflow: hidden;
+    border-top: 1px solid var(--sidebar-border);
+    margin: 8px 4px;
+  }
+
+  .app-shell--rail .sidebar__brand {
+    justify-content: center;
+  }
+
+  .app-shell--rail .sidebar__collapse {
+    align-self: center;
+  }
+
+  /* 68px cannot hold a company name or an FY label. */
+  .app-shell--rail .sidebar__fy {
+    display: none;
+  }
+
+  .app-shell--rail .sidebar__user {
+    justify-content: center;
+  }
+
+  .app-shell--rail .sidebar__logout {
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+.sidebar__logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────── */
+.tab-bar {
+  display: flex;
+  gap: 0;
+  flex-wrap: wrap;
+}
+
+/* ── Analytics ────────────────────────────────────────────────────── */
+.analytics-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.analytics-filters__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+  flex: 1 1 160px;
+}
+
+.analytics-filters__field > span {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.analytics-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.analytics-tab__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+.analytics-chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.chart-frame {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px 8px 8px;
+}
+
+/* Wide report tables scroll inside their own container so the page body never
+   scrolls horizontally. */
+.analytics-table-scroll {
+  overflow-x: auto;
+  width: 100%;
+}
