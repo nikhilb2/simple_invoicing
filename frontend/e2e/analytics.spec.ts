@@ -1,4 +1,18 @@
+import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
+
+/** Pick the first option in a combobox — avoids depending on seeded names. */
+async function selectFirstOption(page: Page, inputId: string) {
+  await page.locator(`#${inputId}`).click();
+  const option = page.locator(`#${inputId}-listbox [role="option"]`).first();
+  await expect(option).toBeVisible();
+  await option.click();
+}
+
+/** The clear button for a combobox, scoped to its wrapper. */
+function clearButton(page: Page, inputId: string) {
+  return page.locator(`#${inputId}`).locator('..').getByRole('button', { name: 'Clear selection' });
+}
 
 test.describe('Analytics', () => {
   test('is reachable from the sidebar Analytics group', async ({ authedPage: page }) => {
@@ -77,6 +91,41 @@ test.describe('Analytics', () => {
 
     await expect(page).toHaveURL(/tab=product-wise/);
     await expect(page.getByRole('tab', { name: 'Product-wise Sales' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('customer field has no clear button until one is picked', async ({ authedPage: page }) => {
+    await page.goto('/analytics');
+    await expect(clearButton(page, 'analytics-ledger')).toBeHidden();
+
+    await selectFirstOption(page, 'analytics-ledger');
+    await expect(clearButton(page, 'analytics-ledger')).toBeVisible();
+  });
+
+  test('clearing the customer keeps the date range', async ({ authedPage: page }) => {
+    // The point of a per-field clear: dropping a customer shouldn't cost you
+    // the dates you just set.
+    await page.goto('/analytics?from=2026-01-01&to=2026-02-01');
+    await selectFirstOption(page, 'analytics-ledger');
+    await expect(page).toHaveURL(/ledger=/);
+
+    await clearButton(page, 'analytics-ledger').click();
+
+    await expect(page).not.toHaveURL(/ledger=/);
+    await expect(page).toHaveURL(/from=2026-01-01/);
+    await expect(page).toHaveURL(/to=2026-02-01/);
+    await expect(page.locator('#analytics-ledger')).toHaveValue('');
+  });
+
+  test('clearing the product keeps the other filters', async ({ authedPage: page }) => {
+    await page.goto('/analytics?tab=product-wise&from=2026-01-01&to=2026-02-01');
+    await selectFirstOption(page, 'analytics-product');
+    await expect(page).toHaveURL(/product=/);
+
+    await clearButton(page, 'analytics-product').click();
+
+    await expect(page).not.toHaveURL(/product=/);
+    await expect(page).toHaveURL(/from=2026-01-01/);
+    await expect(page.locator('#analytics-product')).toHaveValue('');
   });
 
   test('exports month-wise CSV', async ({ authedPage: page }) => {

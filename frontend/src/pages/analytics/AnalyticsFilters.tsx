@@ -113,6 +113,7 @@ export default function AnalyticsFilters({
           ledgers={ledgersQuery.data ?? []}
           value={filters.ledgerId ? String(filters.ledgerId) : ''}
           onChange={(ledgerId) => onChange({ ...filters, ledgerId: ledgerId ? Number(ledgerId) : undefined })}
+          onClear={() => onChange({ ...filters, ledgerId: undefined })}
         />
       </div>
 
@@ -124,6 +125,7 @@ export default function AnalyticsFilters({
             products={productsQuery.data ?? []}
             value={filters.productId ? String(filters.productId) : ''}
             onChange={(productId) => onChange({ ...filters, productId: productId ? Number(productId) : undefined })}
+            onClear={() => onChange({ ...filters, productId: undefined })}
           />
         </div>
       )}
