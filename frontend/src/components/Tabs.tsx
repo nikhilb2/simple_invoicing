@@ -98,7 +98,7 @@ export function TabPanel({
   children: React.ReactNode;
 }) {
   return (
-    <div role="tabpanel" id={tabPanelId(id)} aria-labelledby={tabId(id)} tabIndex={0}>
+    <div className="tab-panel" role="tabpanel" id={tabPanelId(id)} aria-labelledby={tabId(id)} tabIndex={0}>
       {children}
     </div>
   );

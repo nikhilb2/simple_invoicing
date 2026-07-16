@@ -10,6 +10,7 @@ import {
   YAxis,
 } from 'recharts';
 import type { MonthlySalesRow } from '../../../features/analytics/types';
+import useMediaQuery, { NARROW_QUERY } from '../../../hooks/useMediaQuery';
 import formatCurrency, { formatCompactCurrency } from '../../../utils/formatting';
 import { chartColors, tooltipStyle } from './chartTheme';
 
@@ -28,25 +29,45 @@ export default function MonthlySalesChart({
   rows: MonthlySalesRow[];
   currencyCode: string;
 }) {
+  const narrow = useMediaQuery(NARROW_QUERY);
+
   return (
     <div className="chart-frame">
-      <ResponsiveContainer width="100%" height={320}>
-        <ComposedChart data={rows} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+      <ResponsiveContainer width="100%" height={narrow ? 260 : 320}>
+        <ComposedChart
+          data={rows}
+          margin={{ top: 8, right: narrow ? 4 : 16, bottom: 8, left: narrow ? 0 : 8 }}
+        >
           <CartesianGrid stroke={chartColors.grid} vertical={false} />
-          <XAxis dataKey="label" stroke={chartColors.axis} tickLine={false} fontSize={12} />
+          {/* Angled labels on a phone: twelve "Apr 26"s won't fit flat, and
+              letting Recharts drop every other tick hides months. */}
+          <XAxis
+            dataKey="label"
+            stroke={chartColors.axis}
+            tickLine={false}
+            fontSize={narrow ? 10 : 12}
+            interval={narrow ? 0 : 'preserveEnd'}
+            angle={narrow ? -45 : 0}
+            textAnchor={narrow ? 'end' : 'middle'}
+            height={narrow ? 52 : 30}
+          />
           <YAxis
             yAxisId="left"
             stroke={chartColors.axis}
             tickLine={false}
-            fontSize={12}
+            fontSize={narrow ? 10 : 12}
+            width={narrow ? 44 : 60}
             tickFormatter={(value: number) => formatCompactCurrency(value, currencyCode)}
           />
+          {/* Hidden, not removed — the line still needs this scale to plot
+              against. Its values stay readable in the tooltip. */}
           <YAxis
             yAxisId="right"
             orientation="right"
             stroke={chartColors.axis}
             tickLine={false}
             fontSize={12}
+            hide={narrow}
             tickFormatter={(value: number) => formatCompactCurrency(value, currencyCode)}
           />
           <Tooltip
