@@ -14,6 +14,10 @@ const TABS: TabItem<TabId>[] = [
   { id: 'product-wise', label: 'Product-wise Sales' },
 ];
 
+/** Every filter the URL carries. `tab` is deliberately not one — resetting the
+ *  filters shouldn't throw you back to a different report. */
+const FILTER_PARAMS = ['type', 'fy', 'from', 'to', 'ledger', 'product'] as const;
+
 /**
  * Tabs and filters live in the query string rather than component state, so a
  * report is linkable and bookmarkable — you can send someone the exact view.
@@ -63,6 +67,16 @@ export default function AnalyticsPage() {
     setSearchParams(next, { replace: true });
   };
 
+  // Filters live entirely in the URL, so resetting is just dropping them —
+  // `filters` then falls back to the active FY defaults above.
+  const isFiltered = FILTER_PARAMS.some((param) => searchParams.has(param));
+
+  const onResetFilters = () => {
+    const next = new URLSearchParams(searchParams);
+    FILTER_PARAMS.forEach((param) => next.delete(param));
+    setSearchParams(next, { replace: true });
+  };
+
   const onFiltersChange = (next: Filters) => {
     patchParams({
       type: next.voucherType,
@@ -89,6 +103,8 @@ export default function AnalyticsPage() {
       <AnalyticsFilters
         filters={filters}
         onChange={onFiltersChange}
+        onReset={onResetFilters}
+        canReset={isFiltered}
         showProductFilter={tab === 'product-wise'}
       />
 

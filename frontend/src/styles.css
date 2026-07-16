@@ -2676,3 +2676,16 @@ textarea {
   overflow-x: auto;
   width: 100%;
 }
+
+.analytics-filters__reset {
+  display: flex;
+  align-items: flex-end;
+  /* Sits with the fields rather than stretching like one. */
+  flex: 0 0 auto;
+}
+
+.analytics-filters__reset .button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { RotateCcw } from 'lucide-react';
 import api from '../../api/client';
 import LedgerCombobox from '../../components/LedgerCombobox';
 import ProductCombobox from '../../components/ProductCombobox';
@@ -9,11 +10,20 @@ import type { Ledger, Product } from '../../types/api';
 type Props = {
   filters: Filters;
   onChange: (next: Filters) => void;
+  onReset: () => void;
+  /** False when the filters are already at their defaults. */
+  canReset: boolean;
   /** The product picker only applies to the product report. */
   showProductFilter?: boolean;
 };
 
-export default function AnalyticsFilters({ filters, onChange, showProductFilter = false }: Props) {
+export default function AnalyticsFilters({
+  filters,
+  onChange,
+  onReset,
+  canReset,
+  showProductFilter = false,
+}: Props) {
   const { fyList } = useFY();
 
   const ledgersQuery = useQuery({
@@ -117,6 +127,19 @@ export default function AnalyticsFilters({ filters, onChange, showProductFilter 
           />
         </div>
       )}
+
+      <div className="analytics-filters__reset">
+        <button
+          type="button"
+          className="button button--ghost"
+          onClick={onReset}
+          disabled={!canReset}
+          title="Reset filters to the active financial year"
+        >
+          <RotateCcw size={16} aria-hidden="true" />
+          Reset
+        </button>
+      </div>
     </div>
   );
 }
