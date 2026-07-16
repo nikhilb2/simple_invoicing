@@ -236,6 +236,12 @@ class InvoiceProcessor:
 
         Accepts the output of :meth:`validate_items` and returns a list of
         dicts with the calculated fields for each line item.
+
+        Note: the discount amount is not persisted — only ``discount_type`` and
+        ``discount_value`` are, and ``taxable_amount`` is stored net of it.
+        :mod:`src.services.invoice_discounts` recovers the amount by inverting
+        the arithmetic below for analytics reporting, so changes to the shape of
+        this calculation must be mirrored there.
         """
         results = []
         for item_schema, product, quantity_value in validated_items:

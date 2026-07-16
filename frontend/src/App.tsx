@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -31,6 +32,10 @@ import ChangePasswordPage from './pages/ChangePasswordPage';
 import ApiKeysPage from './pages/ApiKeysPage';
 import EmailHistoryPage from './pages/EmailHistoryPage';
 import Layout from './components/Layout';
+
+// Lazily loaded: this is the only route that pulls in recharts (~100kb gz), and
+// every other route here is imported eagerly — they shouldn't pay for it.
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -107,6 +112,7 @@ function AppRoutes() {
       <Route path="/ledgers/new" element={<Protected><CompanyRequired><Layout><LedgerCreatePage /></Layout></CompanyRequired></Protected>} />
       <Route path="/ledgers/:id" element={<Protected><CompanyRequired><Layout><LedgerViewPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/ledgers/:id/edit" element={<Protected><CompanyRequired><Layout><LedgerCreatePage /></Layout></CompanyRequired></Protected>} />
+      <Route path="/analytics" element={<Protected><CompanyRequired><Layout><Suspense fallback={<div className="empty-state">Loading analytics…</div>}><AnalyticsPage /></Suspense></Layout></CompanyRequired></Protected>} />
       <Route path="/day-book" element={<Protected><CompanyRequired><Layout><DayBookPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/tax-ledger" element={<Protected><CompanyRequired><Layout><TaxLedgerPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/cash-bank" element={<Protected><CompanyRequired><Layout><CashBankPage /></Layout></CompanyRequired></Protected>} />

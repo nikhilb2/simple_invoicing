@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { NAV_SHORTCUTS, resolveDocumentTitle } from '../config/navigation';
 import { useShortcuts } from '../context/ShortcutsContext';
+import { useEscapeClose } from '../hooks/useEscapeClose';
+import { useSidebarStore } from '../store/useSidebarStore';
 import Sidebar from './Sidebar';
 import InvoiceCancelDialog from './InvoiceCancelDialog';
 
@@ -9,75 +12,34 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const { registerAction } = useShortcuts();
   const navigate = useNavigate();
+  const collapsed = useSidebarStore((state) => state.collapsed);
 
+  // The mobile drawer is ephemeral; only the desktop rail persists.
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  useEffect(() => {
-    if (!sidebarOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSidebarOpen(false); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [sidebarOpen]);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+  useEscapeClose(closeSidebar);
 
   useEffect(() => {
-    const cleanups = [
-      registerAction('go_invoices', () => navigate('/invoices')),
-      registerAction('go_ledgers', () => navigate('/ledgers')),
-      registerAction('go_products', () => navigate('/products')),
-      registerAction('go_inventory', () => navigate('/inventory')),
-      registerAction('go_products_inventory', () => navigate('/products-inventory')),
-      registerAction('go_day_book', () => navigate('/day-book')),
-      registerAction('go_tax_ledger', () => navigate('/tax-ledger')),
-      registerAction('open_reports', () => navigate('/day-book')),
-      registerAction('new_customer', () => navigate('/ledgers/new')),
-    ];
+    const cleanups = NAV_SHORTCUTS.map(({ action, to }) =>
+      registerAction(action, () => navigate(to)),
+    );
     return () => cleanups.forEach(fn => fn());
   }, [registerAction, navigate]);
 
   useEffect(() => {
-    const routeTitles: Record<string, string> = {
-      '/': 'Dashboard',
-      '/products': 'Products',
-      '/inventory': 'Inventory',
-      '/products-inventory': 'Products & Inventory',
-      '/ledgers': 'Ledgers',
-      '/ledgers/new': 'New Ledger',
-      '/day-book': 'Day Book',
-      '/tax-ledger': 'Tax Ledger',
-      '/cash-bank': 'Cash & Bank',
-      '/cash-bank/accounts': 'Bank Accounts',
-      '/invoices': 'Invoices',
-      '/invoice-dues': 'Invoice Dues',
-      '/invoices-view': 'Advanced Invoice View',
-      '/credit-notes': 'Credit Notes',
-      '/company': 'Company Profile',
-      '/smtp-settings': 'Email Settings',
-      '/backups': 'Database Backups',
-      '/shortcuts': 'Keyboard Shortcuts',
-      '/change-password': 'Security',
-      '/api-keys': 'API Keys',
-    };
-
-
-    let pageName = 'Simple Invoicing';
-    if (location.pathname.startsWith('/ledgers/')) {
-      pageName = location.pathname.endsWith('/edit') ? 'Edit Ledger' : 'View Ledger';
-    } else {
-      pageName = routeTitles[location.pathname] || 'Simple Invoicing';
-    }
-
-    document.title = `${pageName} | Simple Invoicing`;
+    document.title = `${resolveDocumentTitle(location.pathname)} | Simple Invoicing`;
   }, [location.pathname]);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${collapsed ? ' app-shell--rail' : ''}`}>
       <div className="app-shell__sidebar">
-        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />
       </div>
       {sidebarOpen && (
         <div
           className="sidebar-backdrop"
-          onClick={() => setSidebarOpen(false)}
+          onClick={closeSidebar}
           aria-hidden="true"
         />
       )}

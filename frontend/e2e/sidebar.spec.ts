@@ -14,8 +14,10 @@ test.describe('Sidebar', () => {
   });
 
   // 3. All nav groups present
-  test('sidebar renders Management and Settings groups', async ({ authedPage: page }) => {
-    await expect(page.locator('.sidebar__group-label', { hasText: 'Management' })).toBeVisible();
+  test('sidebar renders the nav groups', async ({ authedPage: page }) => {
+    await expect(page.locator('.sidebar__group-label', { hasText: 'Analytics' })).toBeVisible();
+    await expect(page.locator('.sidebar__group-label', { hasText: 'Catalogue' })).toBeVisible();
+    await expect(page.locator('.sidebar__group-label', { hasText: 'Organisation' })).toBeVisible();
     await expect(page.locator('.sidebar__group-label', { hasText: 'Settings' })).toBeVisible();
   });
 
@@ -38,5 +40,39 @@ test.describe('Sidebar', () => {
     await expect(page.locator('.sidebar')).toBeVisible();
     await page.click('[href="/invoices"]');
     await expect(page.locator('.sidebar')).toBeVisible();
+  });
+
+  // 7. Desktop collapse rail
+  test('collapse toggle puts the shell into rail mode', async ({ authedPage: page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(page.locator('.app-shell')).not.toHaveClass(/app-shell--rail/);
+
+    await page.click('.sidebar__collapse');
+    await expect(page.locator('.app-shell')).toHaveClass(/app-shell--rail/);
+
+    await page.click('.sidebar__collapse');
+    await expect(page.locator('.app-shell')).not.toHaveClass(/app-shell--rail/);
+  });
+
+  test('rail state survives a reload', async ({ authedPage: page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.click('.sidebar__collapse');
+    await expect(page.locator('.app-shell')).toHaveClass(/app-shell--rail/);
+
+    await page.reload();
+    await expect(page.locator('.app-shell')).toHaveClass(/app-shell--rail/);
+  });
+
+  test('nav links keep accessible names in rail mode', async ({ authedPage: page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.click('.sidebar__collapse');
+
+    // Labels are clipped, not removed — they must stay reachable by name.
+    await expect(page.locator('.sidebar').getByRole('link', { name: 'Invoices' })).toBeAttached();
+  });
+
+  test('collapse toggle is hidden on mobile', async ({ authedPage: page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator('.sidebar__collapse')).toBeHidden();
   });
 });
