@@ -1,4 +1,5 @@
-from io import BytesIO
+import csv
+from io import BytesIO, StringIO
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -124,6 +125,57 @@ def create_invoice(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _apply_invoice_filters(
+    query,
+    db: Session,
+    active_company: CompanyProfile,
+    *,
+    search: str = "",
+    show_cancelled: bool = False,
+    financial_year_id: int | None = None,
+    product_id: int | None = None,
+    include_description: bool = False,
+    voucher_type: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+):
+    """Apply the Invoice Feed filters to a base query. Shared by the list and CSV export endpoints."""
+    if not show_cancelled:
+        query = query.filter(Invoice.status == "active")
+    if financial_year_id is not None:
+        query = query.filter(Invoice.financial_year_id == financial_year_id)
+    if voucher_type is not None:
+        query = query.filter(Invoice.voucher_type == voucher_type)
+    if date_from is not None:
+        query = query.filter(func.date(Invoice.invoice_date) >= date_from)
+    if date_to is not None:
+        query = query.filter(func.date(Invoice.invoice_date) <= date_to)
+    if search.strip():
+        term = f"%{search.strip()}%"
+        product_match = Product.name.ilike(term)
+        if include_description:
+            product_match = or_(product_match, InvoiceItem.description.ilike(term))
+        product_match_subq = (
+            db.query(InvoiceItem.invoice_id)
+            .join(Product, Product.id == InvoiceItem.product_id)
+            .filter(
+                Product.company_id == active_company.id,
+                product_match,
+            )
+            .subquery()
+        )
+        query = query.filter(
+            or_(
+                Invoice.ledger_name.ilike(term),
+                Invoice.id.in_(product_match_subq),
+            )
+        )
+    if product_id is not None:
+        product_subq = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id).subquery()
+        query = query.filter(Invoice.id.in_(product_subq))
+    return query
+
+
 @router.get("", response_model=PaginatedInvoiceOut, include_in_schema=False)
 @router.get("/", response_model=PaginatedInvoiceOut)
 def list_invoices(
@@ -134,39 +186,27 @@ def list_invoices(
     financial_year_id: int | None = Query(None),
     product_id: int | None = Query(None),
     include_description: bool = Query(False),
+    voucher_type: str | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     try:
-      base = db.query(Invoice).filter(Invoice.company_id == active_company.id)
-      if not show_cancelled:
-        base = base.filter(Invoice.status == "active")
-      if financial_year_id is not None:
-        base = base.filter(Invoice.financial_year_id == financial_year_id)
-      if search.strip():
-        term = f"%{search.strip()}%"
-        product_match = Product.name.ilike(term)
-        if include_description:
-          product_match = or_(product_match, InvoiceItem.description.ilike(term))
-        product_match_subq = (
-          db.query(InvoiceItem.invoice_id)
-          .join(Product, Product.id == InvoiceItem.product_id)
-          .filter(
-            Product.company_id == active_company.id,
-            product_match,
-          )
-          .subquery()
-        )
-        base = base.filter(
-          or_(
-            Invoice.ledger_name.ilike(term),
-            Invoice.id.in_(product_match_subq),
-          )
-        )
-      if product_id is not None:
-        product_subq = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id).subquery()
-        base = base.filter(Invoice.id.in_(product_subq))
+      base = _apply_invoice_filters(
+        db.query(Invoice).filter(Invoice.company_id == active_company.id),
+        db,
+        active_company,
+        search=search,
+        show_cancelled=show_cancelled,
+        financial_year_id=financial_year_id,
+        product_id=product_id,
+        include_description=include_description,
+        voucher_type=voucher_type,
+        date_from=date_from,
+        date_to=date_to,
+      )
 
       summary_row = base.with_entities(
         func.coalesce(func.sum(Invoice.total_amount), 0),
@@ -218,6 +258,93 @@ def list_invoices(
           financial_year_id=financial_year_id,
         ),
       )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+_VOUCHER_TYPE_LABELS = {"sales": "Sales", "purchase": "Purchase"}
+
+_CSV_COLUMNS = [
+    "Invoice Number",
+    "Invoice Date",
+    "Voucher Type",
+    "Party Name",
+    "GSTIN",
+    "Taxable Value",
+    "CGST",
+    "SGST",
+    "IGST",
+    "Grand Total",
+    "Payment Status",
+]
+
+
+@router.get("/export")
+def export_invoices_csv(
+    search: str = Query(""),
+    show_cancelled: bool = Query(False),
+    financial_year_id: int | None = Query(None),
+    product_id: int | None = Query(None),
+    include_description: bool = Query(False),
+    voucher_type: str | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Export every invoice matching the current Invoice Feed filters as CSV (all pages)."""
+    try:
+        base = _apply_invoice_filters(
+            db.query(Invoice).filter(Invoice.company_id == active_company.id),
+            db,
+            active_company,
+            search=search,
+            show_cancelled=show_cancelled,
+            financial_year_id=financial_year_id,
+            product_id=product_id,
+            include_description=include_description,
+            voucher_type=voucher_type,
+            date_from=date_from,
+            date_to=date_to,
+        )
+
+        invoices = (
+            base.options(joinedload(Invoice.ledger))
+            .order_by(Invoice.id.desc())
+            .all()
+        )
+        payment_summaries = build_invoice_payment_summaries(db, invoices)
+
+        buffer = StringIO(newline="")
+        writer = csv.writer(buffer)
+        writer.writerow(_CSV_COLUMNS)
+        for invoice in invoices:
+            summary = payment_summaries.get(invoice.id)
+            payment_status = summary.payment_status if summary else "unpaid"
+            invoice_date = invoice.invoice_date.date().isoformat() if invoice.invoice_date else ""
+            writer.writerow([
+                invoice.invoice_number or "",
+                invoice_date,
+                _VOUCHER_TYPE_LABELS.get(invoice.voucher_type, invoice.voucher_type or ""),
+                invoice.ledger_name or "",
+                invoice.ledger_gst or "",
+                f"{Decimal(invoice.taxable_amount or 0):.2f}",
+                f"{Decimal(invoice.cgst_amount or 0):.2f}",
+                f"{Decimal(invoice.sgst_amount or 0):.2f}",
+                f"{Decimal(invoice.igst_amount or 0):.2f}",
+                f"{Decimal(invoice.total_amount or 0):.2f}",
+                payment_status,
+            ])
+
+        # utf-8-sig: the BOM makes Excel read non-ASCII party names / symbols correctly.
+        csv_bytes = buffer.getvalue().encode("utf-8-sig")
+        filename = f"invoices_{date.today().isoformat()}.csv"
+        return StreamingResponse(
+            BytesIO(csv_bytes),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
