@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { LayoutGrid, Table as TableIcon, X } from 'lucide-react';
+import { ChevronDown, Download, LayoutGrid, SlidersHorizontal, Table as TableIcon, X } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import type { Invoice } from '../types/api';
@@ -14,7 +14,7 @@ import type { Product } from '../types/api';
 import { useInvoiceFeedViewStore } from '../store/useInvoiceFeedViewStore';
 import { useInvoiceModalStore } from '../store/useInvoiceModalStore';
 import { useInvoiceCancelStore } from '../store/useInvoiceCancelStore';
-import { fetchCompanyProfile, fetchInvoicePage, fetchProducts } from '../features/invoices/api';
+import { exportInvoicesCsv, fetchCompanyProfile, fetchInvoicePage, fetchProducts } from '../features/invoices/api';
 import { invoiceQueryKeys } from '../features/invoices/queryKeys';
 import EmptyState from '../components/EmptyState';
 
@@ -42,6 +42,33 @@ function calculateBreakdown(rows: Invoice[]): Breakdown {
   };
 }
 
+function toISODate(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+type DatePreset = 'today' | 'this_month' | 'prev_month';
+
+function computePreset(preset: DatePreset): { from: string; to: string } {
+  const now = new Date();
+  switch (preset) {
+    case 'today':
+      return { from: toISODate(now), to: toISODate(now) };
+    case 'this_month':
+      return {
+        from: toISODate(new Date(now.getFullYear(), now.getMonth(), 1)),
+        to: toISODate(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+      };
+    case 'prev_month':
+      return {
+        from: toISODate(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+        to: toISODate(new Date(now.getFullYear(), now.getMonth(), 0)),
+      };
+  }
+}
+
 export default function InvoicesAdvancedView() {
   const { activeFY, loading: fyLoading } = useFY();
   const navigate = useNavigate();
@@ -49,6 +76,8 @@ export default function InvoicesAdvancedView() {
   const { requestCancel } = useInvoiceCancelStore();
   const [actionError, setActionError] = useState('');
   const [actionSuccess, setActionSuccess] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const restoreMutation = useMutation({
     mutationFn: (invoiceId: number) => api.post(`/invoices/${invoiceId}/restore`),
@@ -88,6 +117,44 @@ export default function InvoicesAdvancedView() {
     restoreMutation.mutate(invoice.id);
   }
 
+  async function handleExportCsv() {
+    setExporting(true);
+    setActionError('');
+    try {
+      await exportInvoicesCsv({
+        search: invoiceSearch,
+        showCancelled,
+        financialYearId: shouldUseAllFY ? undefined : activeFY?.id,
+        productId: productId ?? undefined,
+        includeDescription: searchDescription,
+        voucherType,
+        dateFrom,
+        dateTo,
+      });
+      setActionSuccess('Invoice CSV downloaded.');
+    } catch (err) {
+      setActionError(getApiErrorMessage(err, 'Unable to export invoices'));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  function handleApplyPreset(preset: 'today' | 'this_month' | 'prev_month' | 'current_fy') {
+    if (preset === 'current_fy') {
+      if (activeFY) {
+        setDateRange(activeFY.start_date.slice(0, 10), activeFY.end_date.slice(0, 10));
+      }
+      return;
+    }
+    const { from, to } = computePreset(preset);
+    setDateRange(from, to);
+  }
+
+  function handleResetFilters() {
+    resetFilters();
+    setSearchParams({});
+  }
+
   const [searchParams, setSearchParams] = useSearchParams();
 
   const {
@@ -98,6 +165,9 @@ export default function InvoicesAdvancedView() {
     allowAllFY,
     page,
     productId,
+    voucherType,
+    dateFrom,
+    dateTo,
     setViewType,
     setInvoiceSearch,
     setSearchDescription,
@@ -106,6 +176,11 @@ export default function InvoicesAdvancedView() {
     setPage,
     resetPage,
     setProductId,
+    setVoucherType,
+    setDateFrom,
+    setDateTo,
+    setDateRange,
+    resetFilters,
   } = useInvoiceFeedViewStore();
 
   // Sync ?product_id from URL into store on mount
@@ -127,7 +202,7 @@ export default function InvoicesAdvancedView() {
   const financialYearId = shouldUseAllFY ? undefined : activeFY?.id;
 
   const invoicesQuery = useQuery({
-    queryKey: invoiceQueryKeys.list(page, pageSize, invoiceSearch, showCancelled, financialYearId, productId ?? undefined, searchDescription),
+    queryKey: invoiceQueryKeys.list(page, pageSize, invoiceSearch, showCancelled, financialYearId, productId ?? undefined, searchDescription, voucherType, dateFrom, dateTo),
     queryFn: () => fetchInvoicePage({
       page,
       pageSize,
@@ -136,6 +211,9 @@ export default function InvoicesAdvancedView() {
       financialYearId,
       productId: productId ?? undefined,
       includeDescription: searchDescription,
+      voucherType,
+      dateFrom,
+      dateTo,
     }),
     enabled: isFYReady && !fyLoading,
   });
@@ -152,7 +230,7 @@ export default function InvoicesAdvancedView() {
 
   useEffect(() => {
     resetPage();
-  }, [invoiceSearch, searchDescription, showCancelled, allowAllFY, activeFY?.id, productId]);
+  }, [invoiceSearch, searchDescription, showCancelled, allowAllFY, activeFY?.id, productId, voucherType, dateFrom, dateTo]);
 
   const invoices = invoicesQuery.data?.items ?? [];
   const totalPages = invoicesQuery.data?.total_pages ?? 1;
@@ -228,6 +306,15 @@ export default function InvoicesAdvancedView() {
     );
   }
 
+  const activeFilterCount = [
+    voucherType !== 'all',
+    Boolean(dateFrom),
+    Boolean(dateTo),
+    allowAllFY,
+    searchDescription,
+    showCancelled,
+  ].filter(Boolean).length;
+
   return (
     <div className="invoice-feed-view stack">
       <section className="panel invoice-feed-view__header">
@@ -236,48 +323,34 @@ export default function InvoicesAdvancedView() {
             <p className="eyebrow">Invoices</p>
             <h1 className="page-title" style={{ margin: 0 }}>Invoice Feed</h1>
           </div>
-        </div>
 
-        <div className="invoice-feed-view__controls">
-          {/* View Toggle */}
-          <div className="button-row">
+          {/* View switcher — segmented tabs, kept separate from the action buttons */}
+          <div className="invoice-feed-view__view-tabs" role="tablist" aria-label="Invoice view">
             <button
               type="button"
+              role="tab"
+              aria-selected={viewType === 'card'}
               onClick={() => setViewType('card')}
-              className={`button button--small ${
-                viewType === 'card'
-                  ? 'button--primary'
-                  : 'button--ghost'
-              }`}
+              className={`button button--small ${viewType === 'card' ? 'button--primary' : 'button--ghost'}`}
             >
-              <LayoutGrid size={18} />
+              <LayoutGrid size={16} />
               Card
             </button>
             <button
               type="button"
+              role="tab"
+              aria-selected={viewType === 'table'}
               onClick={() => setViewType('table')}
-              className={`button button--small ${
-                viewType === 'table'
-                  ? 'button--primary'
-                  : 'button--ghost'
-              }`}
+              className={`button button--small ${viewType === 'table' ? 'button--primary' : 'button--ghost'}`}
             >
-              <TableIcon size={18} />
+              <TableIcon size={16} />
               Table
             </button>
           </div>
+        </div>
 
-          {/* FY Filter Toggle */}
-          <label className="invoice-feed-view__checkbox">
-            <input
-              type="checkbox"
-              checked={allowAllFY}
-              onChange={(e) => setAllowAllFY(e.target.checked)}
-            />
-            <span>Search all FY</span>
-          </label>
-
-          {/* Search */}
+        {/* Toolbar: search + primary actions */}
+        <div className="invoice-feed-view__toolbar">
           <input
             type="text"
             placeholder="Search by party or product..."
@@ -286,7 +359,106 @@ export default function InvoicesAdvancedView() {
             className="input invoice-feed-view__search"
           />
 
-          {/* Search item description toggle */}
+          <div className="invoice-feed-view__toolbar-actions">
+            <button
+              type="button"
+              className={`button button--small ${filtersOpen || activeFilterCount > 0 ? 'button--primary' : 'button--ghost'}`}
+              onClick={() => setFiltersOpen((open) => !open)}
+              aria-expanded={filtersOpen}
+            >
+              <SlidersHorizontal size={16} />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="invoice-feed-view__filter-badge">{activeFilterCount}</span>
+              )}
+              <ChevronDown
+                size={16}
+                className="invoice-feed-view__chevron"
+                style={{ transform: filtersOpen ? 'rotate(180deg)' : 'none' }}
+              />
+            </button>
+
+            <button
+              type="button"
+              className="button button--primary button--small"
+              onClick={handleExportCsv}
+              disabled={exporting}
+            >
+              <Download size={16} />
+              {exporting ? 'Preparing…' : 'Export CSV'}
+            </button>
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              onClick={handleResetFilters}
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+
+        {filtersOpen && (
+        <div className="invoice-feed-view__advanced">
+        {/* Filters: voucher type, date range, presets, toggles */}
+        <div className="invoice-feed-view__filters">
+          <label className="invoice-feed-view__field">
+            <span className="invoice-feed-view__field-label">Voucher type</span>
+            <select
+              className="input"
+              value={voucherType}
+              onChange={(e) => setVoucherType(e.target.value as typeof voucherType)}
+            >
+              <option value="all">All</option>
+              <option value="sales">Sales</option>
+              <option value="purchase">Purchase</option>
+            </select>
+          </label>
+
+          <label className="invoice-feed-view__field">
+            <span className="invoice-feed-view__field-label">From date</span>
+            <input
+              type="date"
+              className="input"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={(e) => setDateFrom(e.target.value)}
+            />
+          </label>
+
+          <label className="invoice-feed-view__field">
+            <span className="invoice-feed-view__field-label">To date</span>
+            <input
+              type="date"
+              className="input"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={(e) => setDateTo(e.target.value)}
+            />
+          </label>
+
+          <div className="invoice-feed-view__field">
+            <span className="invoice-feed-view__field-label">Quick range</span>
+            <div className="button-row">
+              <button type="button" className="button button--ghost button--small" onClick={() => handleApplyPreset('today')}>Today</button>
+              <button type="button" className="button button--ghost button--small" onClick={() => handleApplyPreset('this_month')}>This month</button>
+              <button type="button" className="button button--ghost button--small" onClick={() => handleApplyPreset('prev_month')}>Prev month</button>
+              {activeFY && (
+                <button type="button" className="button button--ghost button--small" onClick={() => handleApplyPreset('current_fy')}>Current FY</button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Boolean toggles */}
+        <div className="invoice-feed-view__toggles">
+          <label className="invoice-feed-view__checkbox">
+            <input
+              type="checkbox"
+              checked={allowAllFY}
+              onChange={(e) => setAllowAllFY(e.target.checked)}
+            />
+            <span>Search all FY</span>
+          </label>
           <label className="invoice-feed-view__checkbox">
             <input
               type="checkbox"
@@ -295,8 +467,6 @@ export default function InvoicesAdvancedView() {
             />
             <span>Include item description</span>
           </label>
-
-          {/* Cancelled toggle */}
           <label className="invoice-feed-view__checkbox">
             <input
               type="checkbox"
@@ -306,6 +476,8 @@ export default function InvoicesAdvancedView() {
             <span>Show cancelled</span>
           </label>
         </div>
+        </div>
+        )}
 
         {/* Current FY Info */}
         {!allowAllFY && (

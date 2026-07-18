@@ -1674,14 +1674,125 @@ textarea {
 }
 
 .invoice-feed-view__controls {
-  display: grid;
-  grid-template-columns: auto auto minmax(240px, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+/* Toolbar row: search grows, actions pinned right */
+.invoice-feed-view__toolbar {
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
 }
 
 .invoice-feed-view__search {
+  flex: 1 1 260px;
   min-width: 0;
+}
+
+.invoice-feed-view__toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.invoice-feed-view__toolbar-actions .button,
+.invoice-feed-view__view-tabs .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Segmented view switcher (Card / Table), styled as tabs */
+.invoice-feed-view__view-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(7, 13, 24, 0.55);
+  flex-shrink: 0;
+}
+
+.invoice-feed-view__view-tabs .button {
+  border-radius: 10px;
+}
+
+.invoice-feed-view__view-tabs .button--ghost {
+  background: transparent;
+  border: 0;
+}
+
+.invoice-feed-view__filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.invoice-feed-view__chevron {
+  transition: transform 160ms ease;
+  opacity: 0.8;
+}
+
+/* Collapsible advanced-filters panel */
+.invoice-feed-view__advanced {
+  margin-top: 14px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  animation: invoice-feed-view__reveal 160ms ease;
+}
+
+@keyframes invoice-feed-view__reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Filters row: labeled fields aligned along their bottom edge */
+.invoice-feed-view__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 20px;
+  align-items: flex-end;
+}
+
+.invoice-feed-view__field {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.invoice-feed-view__field-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.invoice-feed-view__field .button-row {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.invoice-feed-view__toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  align-items: center;
+  margin-top: 12px;
 }
 
 .invoice-feed-view__checkbox {
@@ -2239,7 +2350,69 @@ textarea {
   }
 
   .invoice-feed-view__controls {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* Stack the toolbar: search on top, actions in tidy shared rows below */
+  .invoice-feed-view__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .invoice-feed-view__search {
+    flex: 1 1 auto;
+  }
+
+  .invoice-feed-view__toolbar-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .invoice-feed-view__header .panel__header {
+    flex-wrap: wrap;
+  }
+
+  .invoice-feed-view__view-tabs {
+    flex: 1 1 100%;
+  }
+
+  .invoice-feed-view__view-tabs .button {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .invoice-feed-view__toolbar-actions > .button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  /* Filters: single full-width column */
+  .invoice-feed-view__filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .invoice-feed-view__field {
+    width: 100%;
+  }
+
+  /* Keep quick-range presets as a wrapping row, not stacked */
+  .invoice-feed-view__field .button-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .invoice-feed-view__field .button-row .button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .invoice-feed-view__toggles {
+    margin-left: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
   }
 
   .invoice-feed-breakdown__grid {
