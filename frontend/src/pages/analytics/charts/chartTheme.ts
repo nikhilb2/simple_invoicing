@@ -9,6 +9,8 @@ export const chartColors = {
   sales: '#6ea8fe',
   secondary: '#f6d67b',
   revenue: '#7ee0c0',
+  profit: '#7ee0c0',
+  loss: '#ff8b8b',
   grid: 'rgba(148, 184, 255, 0.14)',
   axis: 'rgba(156, 173, 207, 0.75)',
 };

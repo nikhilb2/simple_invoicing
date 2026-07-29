@@ -25,4 +25,14 @@ export const analyticsQueryKeys = {
       sortBy,
       sortDir,
     ] as const,
+  profitLoss: (filters: AnalyticsFilters) =>
+    [
+      'analytics',
+      'profit-loss',
+      filters.financialYearId ?? 'all',
+      filters.fromDate ?? 'auto',
+      filters.toDate ?? 'auto',
+      filters.ledgerId ?? 'all',
+      filters.productId ?? 'all',
+    ] as const,
 };
