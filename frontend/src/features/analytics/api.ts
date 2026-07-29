@@ -4,6 +4,7 @@ import type {
   MonthlySalesReport,
   ProductSalesReport,
   ProductSortBy,
+  ProfitLossReport,
   SortDir,
 } from './types';
 
@@ -43,6 +44,15 @@ export async function fetchProductSales(
   return response.data;
 }
 
+export async function fetchProfitLoss(filters: AnalyticsFilters): Promise<ProfitLossReport> {
+  const response = await api.get<ProfitLossReport>('/analytics/profit-loss', {
+    // Profit is sales-only server-side; voucher_type from toParams is ignored there.
+    params: { ...toParams(filters), product_id: filters.productId },
+    timeout: REPORT_TIMEOUT_MS,
+  });
+  return response.data;
+}
+
 async function downloadCsv(path: string, params: Record<string, unknown>, filename: string) {
   const response = await api.get(path, {
     params,
@@ -76,5 +86,13 @@ export function downloadProductSalesCsv(
     '/analytics/sales-by-product/csv',
     { ...toParams(filters), product_id: filters.productId, sort_by: sortBy, sort_dir: sortDir },
     `sales_by_product_${period.from}_${period.to}.csv`,
+  );
+}
+
+export function downloadProfitLossCsv(filters: AnalyticsFilters, period: { from: string; to: string }) {
+  return downloadCsv(
+    '/analytics/profit-loss/csv',
+    { ...toParams(filters), product_id: filters.productId },
+    `profit_loss_${period.from}_${period.to}.csv`,
   );
 }

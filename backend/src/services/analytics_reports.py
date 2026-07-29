@@ -299,6 +299,205 @@ def _sort_rows(rows: list[dict], *, sort_by: str, sort_dir: str) -> None:
     rows.sort(key=keys[sort_by], reverse=reverse)
 
 
+def _margin_pct(gross_profit: Decimal, revenue: Decimal) -> Decimal:
+    """Gross margin as a percentage, guarded against zero revenue."""
+    if not revenue:
+        return Decimal("0.00")
+    return _money(gross_profit / revenue * Decimal("100"))
+
+
+@dataclass
+class ProfitLossData:
+    product_rows: list[dict]
+    monthly_rows: list[tuple[int, int, dict]]
+    customer_rows: list[dict]
+    totals: dict
+
+
+def build_profit_loss_report(
+    db: Session,
+    *,
+    company_id: int,
+    voucher_type: str,
+    from_date: date,
+    to_date: date,
+    ledger_id: int | None = None,
+    product_id: int | None = None,
+) -> ProfitLossData:
+    """Profit & loss per product, per month, and per customer.
+
+    Cost basis is the product's *current* ``purchase_price`` — invoice lines
+    carry no cost snapshot, so a historical period is priced at today's cost and
+    its margin shifts if the cost is later edited. Revenue is ``taxable_amount``
+    (ex-GST); GST is pass-through and never counted as profit.
+
+    All three breakdowns come from one line-level scan so the numbers can't
+    diverge. When ``product_id`` is set, ``monthly_rows`` narrows to that
+    product's series — the per-product purchase-vs-sales view reuses it directly.
+    """
+    start, end = _date_bounds(from_date, to_date)
+
+    query = (
+        db.query(
+            Invoice.id,
+            Invoice.invoice_date,
+            Invoice.ledger_id,
+            Invoice.ledger_name,
+            InvoiceItem.product_id,
+            InvoiceItem.quantity,
+            InvoiceItem.taxable_amount,
+            Product.name,
+            Product.sku,
+            Product.purchase_price,
+        )
+        .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
+        .join(Product, Product.id == InvoiceItem.product_id)
+        .filter(
+            Invoice.company_id == company_id,
+            Invoice.status == "active",
+            Invoice.voucher_type == voucher_type,
+            Invoice.invoice_date >= start,
+            Invoice.invoice_date <= end,
+        )
+    )
+    if ledger_id is not None:
+        query = query.filter(Invoice.ledger_id == ledger_id)
+    if product_id is not None:
+        query = query.filter(Product.id == product_id)
+
+    # Per-product, per-month, and per-customer accumulators, all built in one pass.
+    products: dict[int, dict] = {}
+    months: dict[tuple[int, int], dict] = {
+        key: {"quantity": Decimal("0"), "revenue": Decimal("0"), "cogs": Decimal("0")}
+        for key in months_between(from_date, to_date)
+    }
+    customers: dict[int | None, dict] = {}
+    total_invoice_ids: set[int] = set()
+
+    for (
+        invoice_id,
+        invoice_date,
+        row_ledger_id,
+        ledger_name,
+        pid,
+        quantity,
+        taxable,
+        name,
+        sku,
+        purchase_price,
+    ) in query.all():
+        qty = Decimal(str(quantity or 0))
+        revenue = Decimal(str(taxable or 0))
+        cost = Decimal(str(purchase_price or 0))
+        line_cogs = qty * cost
+
+        product = products.get(pid)
+        if product is None:
+            product = {
+                "product_id": pid,
+                "name": name,
+                "sku": sku,
+                "purchase_price": cost,
+                "quantity_sold": Decimal("0"),
+                "revenue": Decimal("0"),
+            }
+            products[pid] = product
+        product["quantity_sold"] += qty
+        product["revenue"] += revenue
+
+        bucket = months.get((invoice_date.year, invoice_date.month))
+        if bucket is not None:  # defensive: query is already range-bounded
+            bucket["quantity"] += qty
+            bucket["revenue"] += revenue
+            bucket["cogs"] += line_cogs
+
+        customer = customers.get(row_ledger_id)
+        if customer is None:
+            customer = {
+                "ledger_id": row_ledger_id,
+                "name": ledger_name or "—",
+                "revenue": Decimal("0"),
+                "cogs": Decimal("0"),
+                "invoice_ids": set(),
+            }
+            customers[row_ledger_id] = customer
+        customer["revenue"] += revenue
+        customer["cogs"] += line_cogs
+        customer["invoice_ids"].add(invoice_id)
+
+        total_invoice_ids.add(invoice_id)
+
+    product_rows: list[dict] = []
+    for product in products.values():
+        revenue = _money(product["revenue"])
+        cogs = _money(product["quantity_sold"] * product["purchase_price"])
+        gross_profit = _money(revenue - cogs)
+        product_rows.append({
+            "product_id": product["product_id"],
+            "name": product["name"],
+            "sku": product["sku"],
+            "quantity_sold": product["quantity_sold"],
+            "sales_amount": revenue,
+            "average_selling_price": average_of(revenue, product["quantity_sold"]),
+            "purchase_price": _money(product["purchase_price"]),
+            "cogs": cogs,
+            "gross_profit": gross_profit,
+            "margin_pct": _margin_pct(gross_profit, revenue),
+        })
+    # Most profitable first — the table opens on what matters and the chart's
+    # Top-N slice is a straight prefix.
+    product_rows.sort(key=lambda row: row["gross_profit"], reverse=True)
+
+    monthly_rows: list[tuple[int, int, dict]] = []
+    for year, month in months_between(from_date, to_date):
+        bucket = months[(year, month)]
+        revenue = _money(bucket["revenue"])
+        cogs = _money(bucket["cogs"])
+        gross_profit = _money(revenue - cogs)
+        monthly_rows.append((year, month, {
+            "quantity": bucket["quantity"],
+            "revenue": revenue,
+            "cogs": cogs,
+            "gross_profit": gross_profit,
+            "margin_pct": _margin_pct(gross_profit, revenue),
+        }))
+
+    customer_rows: list[dict] = []
+    for customer in customers.values():
+        revenue = _money(customer["revenue"])
+        cogs = _money(customer["cogs"])
+        gross_profit = _money(revenue - cogs)
+        customer_rows.append({
+            "ledger_id": customer["ledger_id"],
+            "name": customer["name"],
+            "revenue": revenue,
+            "cogs": cogs,
+            "gross_profit": gross_profit,
+            "margin_pct": _margin_pct(gross_profit, revenue),
+            "invoice_count": len(customer["invoice_ids"]),
+        })
+    customer_rows.sort(key=lambda row: row["gross_profit"], reverse=True)
+
+    total_revenue = sum((row["sales_amount"] for row in product_rows), Decimal("0"))
+    total_cogs = sum((row["cogs"] for row in product_rows), Decimal("0"))
+    total_gross_profit = _money(total_revenue - total_cogs)
+    totals = {
+        "product_count": len(product_rows),
+        "quantity_sold": sum((row["quantity_sold"] for row in product_rows), Decimal("0")),
+        "revenue": _money(total_revenue),
+        "cogs": _money(total_cogs),
+        "gross_profit": total_gross_profit,
+        "margin_pct": _margin_pct(total_gross_profit, total_revenue),
+    }
+
+    return ProfitLossData(
+        product_rows=product_rows,
+        monthly_rows=monthly_rows,
+        customer_rows=customer_rows,
+        totals=totals,
+    )
+
+
 def _distinct_invoice_count(
     db: Session,
     *,

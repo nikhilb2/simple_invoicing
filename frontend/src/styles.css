@@ -2785,10 +2785,26 @@ textarea {
 }
 
 /* ── Tabs ─────────────────────────────────────────────────────────── */
+/* Segmented control — same padded, bordered pill as the invoice feed's
+   Card/Table switcher, so tab bars read consistently across the app. */
 .tab-bar {
-  display: flex;
-  gap: 0;
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(7, 13, 24, 0.55);
   flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.tab-bar .button {
+  border-radius: 10px;
+}
+
+.tab-bar .button--ghost {
+  background: transparent;
+  border: 0;
 }
 
 /* A panel is a grid/flex item wherever it's used, so it needs the auto minimum
@@ -2860,6 +2876,27 @@ textarea {
     flex: 1 1 auto;
     justify-content: center;
   }
+}
+
+.analytics-loss-text {
+  color: var(--danger);
+}
+
+/* Inline "Loss" pill next to a product that sold at or below cost. */
+.analytics-loss-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 139, 139, 0.4);
+  background: rgba(255, 139, 139, 0.12);
+  color: var(--danger);
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 .chart-frame {

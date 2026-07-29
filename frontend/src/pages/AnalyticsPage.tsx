@@ -6,13 +6,18 @@ import type { AnalyticsFilters as Filters, VoucherType } from '../features/analy
 import AnalyticsFilters from './analytics/AnalyticsFilters';
 import MonthlySalesTab from './analytics/MonthlySalesTab';
 import ProductSalesTab from './analytics/ProductSalesTab';
+import ProfitLossTab from './analytics/ProfitLossTab';
 
-type TabId = 'month-wise' | 'product-wise';
+type TabId = 'month-wise' | 'product-wise' | 'profit-loss';
 
 const TABS: TabItem<TabId>[] = [
   { id: 'month-wise', label: 'Month-wise Sales' },
   { id: 'product-wise', label: 'Product-wise Sales' },
+  // Profit & Loss is built but hidden for now — re-add this entry to expose it.
+  // { id: 'profit-loss', label: 'Profit & Loss' },
 ];
+
+const TAB_IDS = TABS.map((t) => t.id);
 
 /** Every filter the URL carries. `tab` is deliberately not one — resetting the
  *  filters shouldn't throw you back to a different report. */
@@ -27,7 +32,8 @@ export default function AnalyticsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { activeFY } = useFY();
 
-  const tab: TabId = searchParams.get('tab') === 'product-wise' ? 'product-wise' : 'month-wise';
+  const tabParam = searchParams.get('tab') as TabId | null;
+  const tab: TabId = tabParam && TAB_IDS.includes(tabParam) ? tabParam : 'month-wise';
 
   const filters: Filters = useMemo(() => {
     const fyParam = searchParams.get('fy');
@@ -95,7 +101,7 @@ export default function AnalyticsPage() {
           <p className="eyebrow">Reports</p>
           <h1 className="page-title">Analytics</h1>
           <p className="section-copy">
-            Sales performance by month and by product, across any date range.
+            Sales, product and profit performance across any date range.
           </p>
         </div>
       </section>
@@ -105,7 +111,7 @@ export default function AnalyticsPage() {
         onChange={onFiltersChange}
         onReset={onResetFilters}
         canReset={isFiltered}
-        showProductFilter={tab === 'product-wise'}
+        showProductFilter={tab === 'product-wise' || tab === 'profit-loss'}
       />
 
       <Tabs
@@ -116,11 +122,9 @@ export default function AnalyticsPage() {
       />
 
       <TabPanel id={tab}>
-        {tab === 'month-wise' ? (
-          <MonthlySalesTab filters={filters} />
-        ) : (
-          <ProductSalesTab filters={filters} />
-        )}
+        {tab === 'month-wise' && <MonthlySalesTab filters={filters} />}
+        {tab === 'product-wise' && <ProductSalesTab filters={filters} />}
+        {tab === 'profit-loss' && <ProfitLossTab filters={filters} />}
       </TabPanel>
     </div>
   );

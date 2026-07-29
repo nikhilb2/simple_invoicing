@@ -74,3 +74,61 @@ class ProductSalesReport(BaseModel):
     sort_dir: str
     rows: list[ProductSalesRow]
     totals: ProductSalesTotals
+
+
+# --- Profit & Loss ---------------------------------------------------------
+# Cost basis is the product's *current* purchase_price (invoice lines carry no
+# cost snapshot). Revenue is taxable_amount, ex-GST — GST is pass-through and
+# never profit. gross_profit = revenue - cogs; margin_pct = gross_profit / revenue.
+
+
+class ProfitLossProductRow(BaseModel):
+    product_id: int
+    name: str
+    sku: str | None = None
+    quantity_sold: float
+    sales_amount: float  # revenue, sum of line taxable_amount (ex-GST)
+    average_selling_price: float  # sales_amount / quantity_sold
+    purchase_price: float  # current unit cost
+    cogs: float  # quantity_sold * purchase_price
+    gross_profit: float  # sales_amount - cogs
+    margin_pct: float  # gross_profit / sales_amount * 100
+
+
+class ProfitLossMonthlyRow(BaseModel):
+    month: str  # "2026-04"
+    label: str  # "Apr 26"
+    quantity: float
+    revenue: float  # ex-GST
+    cogs: float
+    gross_profit: float
+    margin_pct: float
+
+
+class ProfitLossCustomerRow(BaseModel):
+    ledger_id: int | None = None
+    name: str
+    revenue: float
+    cogs: float
+    gross_profit: float
+    margin_pct: float
+    invoice_count: int
+
+
+class ProfitLossTotals(BaseModel):
+    product_count: int
+    quantity_sold: float
+    revenue: float
+    cogs: float
+    gross_profit: float
+    margin_pct: float
+
+
+class ProfitLossReport(BaseModel):
+    currency_code: str
+    voucher_type: str
+    period: ReportPeriod
+    product_rows: list[ProfitLossProductRow]
+    monthly_rows: list[ProfitLossMonthlyRow]
+    customer_rows: list[ProfitLossCustomerRow]
+    totals: ProfitLossTotals

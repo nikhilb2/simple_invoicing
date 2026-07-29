@@ -19,12 +19,18 @@ from src.schemas.analytics import (
     ProductSalesReport,
     ProductSalesRow,
     ProductSalesTotals,
+    ProfitLossCustomerRow,
+    ProfitLossMonthlyRow,
+    ProfitLossProductRow,
+    ProfitLossReport,
+    ProfitLossTotals,
     ReportPeriod,
 )
 from src.services.analytics_reports import (
     average_of,
     build_monthly_sales_report,
     build_product_sales_report,
+    build_profit_loss_report,
     month_label,
     month_window,
 )
@@ -198,6 +204,87 @@ def _product_report(
         sort_by=sort_by,
         sort_dir=sort_dir,
         rows=rows,
+        totals=totals,
+    )
+
+
+def _profit_loss_report(
+    db: Session,
+    *,
+    active_company: CompanyProfile,
+    period: ReportPeriod,
+    ledger_id: int | None,
+    product_id: int | None,
+) -> ProfitLossReport:
+    data = build_profit_loss_report(
+        db,
+        company_id=active_company.id,
+        # Profit is a sales concept — the tab never reports on purchase vouchers.
+        voucher_type="sales",
+        from_date=period.from_date,
+        to_date=period.to_date,
+        ledger_id=ledger_id,
+        product_id=product_id,
+    )
+
+    product_rows = [
+        ProfitLossProductRow(
+            product_id=row["product_id"],
+            name=row["name"],
+            sku=row["sku"],
+            quantity_sold=float(row["quantity_sold"]),
+            sales_amount=float(row["sales_amount"]),
+            average_selling_price=float(row["average_selling_price"]),
+            purchase_price=float(row["purchase_price"]),
+            cogs=float(row["cogs"]),
+            gross_profit=float(row["gross_profit"]),
+            margin_pct=float(row["margin_pct"]),
+        )
+        for row in data.product_rows
+    ]
+
+    monthly_rows = [
+        ProfitLossMonthlyRow(
+            month=f"{year:04d}-{month:02d}",
+            label=month_label(year, month),
+            quantity=float(bucket["quantity"]),
+            revenue=float(bucket["revenue"]),
+            cogs=float(bucket["cogs"]),
+            gross_profit=float(bucket["gross_profit"]),
+            margin_pct=float(bucket["margin_pct"]),
+        )
+        for year, month, bucket in data.monthly_rows
+    ]
+
+    customer_rows = [
+        ProfitLossCustomerRow(
+            ledger_id=row["ledger_id"],
+            name=row["name"],
+            revenue=float(row["revenue"]),
+            cogs=float(row["cogs"]),
+            gross_profit=float(row["gross_profit"]),
+            margin_pct=float(row["margin_pct"]),
+            invoice_count=row["invoice_count"],
+        )
+        for row in data.customer_rows
+    ]
+
+    totals = ProfitLossTotals(
+        product_count=data.totals["product_count"],
+        quantity_sold=float(data.totals["quantity_sold"]),
+        revenue=float(data.totals["revenue"]),
+        cogs=float(data.totals["cogs"]),
+        gross_profit=float(data.totals["gross_profit"]),
+        margin_pct=float(data.totals["margin_pct"]),
+    )
+
+    return ProfitLossReport(
+        currency_code=active_company.currency_code or "USD",
+        voucher_type="sales",
+        period=period,
+        product_rows=product_rows,
+        monthly_rows=monthly_rows,
+        customer_rows=customer_rows,
         totals=totals,
     )
 
@@ -397,4 +484,102 @@ def download_sales_by_product_csv(
     ])
 
     filename = f"sales_by_product_{period.from_date}_{period.to_date}.csv"
+    return _csv_response(buffer, filename)
+
+
+@router.get("/profit-loss", response_model=ProfitLossReport)
+def get_profit_loss(
+    financial_year_id: int | None = Query(None),
+    from_date: date | None = Query(None),
+    to_date: date | None = Query(None),
+    ledger_id: int | None = Query(None),
+    product_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    period = _resolve_period(
+        db,
+        company_id=active_company.id,
+        financial_year_id=financial_year_id,
+        from_date=from_date,
+        to_date=to_date,
+    )
+    return _profit_loss_report(
+        db,
+        active_company=active_company,
+        period=period,
+        ledger_id=ledger_id,
+        product_id=product_id,
+    )
+
+
+@router.get("/profit-loss/csv")
+def download_profit_loss_csv(
+    financial_year_id: int | None = Query(None),
+    from_date: date | None = Query(None),
+    to_date: date | None = Query(None),
+    ledger_id: int | None = Query(None),
+    product_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    period = _resolve_period(
+        db,
+        company_id=active_company.id,
+        financial_year_id=financial_year_id,
+        from_date=from_date,
+        to_date=to_date,
+    )
+    report = _profit_loss_report(
+        db,
+        active_company=active_company,
+        period=period,
+        ledger_id=ledger_id,
+        product_id=product_id,
+    )
+
+    buffer = StringIO(newline="")
+    writer = csv.writer(buffer)
+
+    # Section 1: per-product margins.
+    writer.writerow([
+        "Product", "Item Code", "Quantity Sold", "Avg Selling Price", "Purchase Price",
+        "Revenue", "COGS", "Gross Profit", "Margin %",
+    ])
+    for row in report.product_rows:
+        writer.writerow([
+            row.name,
+            row.sku or "",
+            f"{row.quantity_sold:g}",
+            f"{row.average_selling_price:.2f}",
+            f"{row.purchase_price:.2f}",
+            f"{row.sales_amount:.2f}",
+            f"{row.cogs:.2f}",
+            f"{row.gross_profit:.2f}",
+            f"{row.margin_pct:.2f}",
+        ])
+    writer.writerow([
+        "Totals", "", f"{report.totals.quantity_sold:g}", "", "",
+        f"{report.totals.revenue:.2f}",
+        f"{report.totals.cogs:.2f}",
+        f"{report.totals.gross_profit:.2f}",
+        f"{report.totals.margin_pct:.2f}",
+    ])
+
+    # Section 2: monthly profit trend.
+    writer.writerow([])
+    writer.writerow(["Month", "Quantity", "Revenue", "COGS", "Gross Profit", "Margin %"])
+    for row in report.monthly_rows:
+        writer.writerow([
+            row.label,
+            f"{row.quantity:g}",
+            f"{row.revenue:.2f}",
+            f"{row.cogs:.2f}",
+            f"{row.gross_profit:.2f}",
+            f"{row.margin_pct:.2f}",
+        ])
+
+    filename = f"profit_loss_{period.from_date}_{period.to_date}.csv"
     return _csv_response(buffer, filename)

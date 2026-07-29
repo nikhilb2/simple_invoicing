@@ -366,6 +366,119 @@ class TestProductSales:
         assert res.status_code == 422
 
 
+class TestProfitLoss:
+    def test_product_profit_uses_purchase_price(self, client):
+        # Sell 10 @ 100 (ex-GST) with a cost of 60 → profit 400, margin 40%.
+        product = _create_product(client, "PL-1", "Widget", 100, purchase_price=60)
+        ledger = _create_ledger(client, "Acme")
+        _create_invoice(client, ledger, [{"product_id": product, "quantity": 10, "unit_price": 100, "gst_rate": 18}],
+                        invoice_date=datetime(2026, 3, 10, 12, 0))
+
+        res = client.get("/api/analytics/profit-loss", params={"from_date": "2026-03-01", "to_date": "2026-03-31"})
+        assert res.status_code == 200, res.text
+        row = res.json()["product_rows"][0]
+        assert row["quantity_sold"] == 10
+        assert row["sales_amount"] == 1000.00  # ex-GST
+        assert row["purchase_price"] == 60.00
+        assert row["cogs"] == 600.00
+        assert row["gross_profit"] == 400.00
+        assert row["margin_pct"] == 40.00
+        assert row["average_selling_price"] == 100.00
+
+    def test_totals_and_margin(self, client):
+        widget = _create_product(client, "PL-2", "Widget", 100, purchase_price=60)
+        gadget = _create_product(client, "PL-3", "Gadget", 50, purchase_price=40)
+        ledger = _create_ledger(client, "Acme")
+        _create_invoice(client, ledger, [
+            {"product_id": widget, "quantity": 1, "unit_price": 100, "gst_rate": 18},
+            {"product_id": gadget, "quantity": 1, "unit_price": 50, "gst_rate": 18},
+        ], invoice_date=datetime(2026, 4, 10, 12, 0))
+
+        totals = client.get("/api/analytics/profit-loss", params={
+            "from_date": "2026-04-01", "to_date": "2026-04-30",
+        }).json()["totals"]
+        assert totals["product_count"] == 2
+        assert totals["revenue"] == 150.00
+        assert totals["cogs"] == 100.00  # 60 + 40
+        assert totals["gross_profit"] == 50.00
+        assert totals["margin_pct"] == round(50 / 150 * 100, 2)
+
+    def test_loss_making_product_is_negative(self, client):
+        # Cost above selling price → a loss.
+        product = _create_product(client, "PL-4", "LossLeader", 50, purchase_price=80)
+        ledger = _create_ledger(client, "Acme")
+        _create_invoice(client, ledger, [{"product_id": product, "quantity": 2, "unit_price": 50, "gst_rate": 18}],
+                        invoice_date=datetime(2026, 5, 10, 12, 0))
+
+        row = client.get("/api/analytics/profit-loss", params={
+            "from_date": "2026-05-01", "to_date": "2026-05-31",
+        }).json()["product_rows"][0]
+        assert row["cogs"] == 160.00
+        assert row["gross_profit"] == -60.00
+        assert row["margin_pct"] < 0
+
+    def test_monthly_rows_bucket_profit(self, client):
+        product = _create_product(client, "PL-5", "Widget", 100, purchase_price=60)
+        ledger = _create_ledger(client, "Acme")
+        _create_invoice(client, ledger, [{"product_id": product, "quantity": 1, "unit_price": 100, "gst_rate": 18}],
+                        invoice_date=datetime(2026, 6, 10, 12, 0))
+        _create_invoice(client, ledger, [{"product_id": product, "quantity": 2, "unit_price": 100, "gst_rate": 18}],
+                        invoice_date=datetime(2026, 7, 10, 12, 0))
+
+        rows = client.get("/api/analytics/profit-loss", params={
+            "from_date": "2026-06-01", "to_date": "2026-07-31",
+        }).json()["monthly_rows"]
+        assert [r["month"] for r in rows] == ["2026-06", "2026-07"]
+        assert rows[0]["gross_profit"] == 40.00  # 100 - 60
+        assert rows[1]["gross_profit"] == 80.00  # 200 - 120
+
+    def test_product_filter_narrows_monthly_rows(self, client):
+        widget = _create_product(client, "PL-6", "Widget", 100, purchase_price=60)
+        gadget = _create_product(client, "PL-7", "Gadget", 50, purchase_price=40)
+        ledger = _create_ledger(client, "Acme")
+        _create_invoice(client, ledger, [
+            {"product_id": widget, "quantity": 1, "unit_price": 100, "gst_rate": 18},
+            {"product_id": gadget, "quantity": 1, "unit_price": 50, "gst_rate": 18},
+        ], invoice_date=datetime(2026, 8, 10, 12, 0))
+
+        params = {"from_date": "2026-08-01", "to_date": "2026-08-31"}
+        allp = client.get("/api/analytics/profit-loss", params=params).json()
+        assert allp["monthly_rows"][0]["revenue"] == 150.00
+
+        narrowed = client.get("/api/analytics/profit-loss", params={**params, "product_id": widget}).json()
+        assert len(narrowed["product_rows"]) == 1
+        assert narrowed["monthly_rows"][0]["revenue"] == 100.00
+        assert narrowed["monthly_rows"][0]["gross_profit"] == 40.00
+
+    def test_customer_rows_split_by_ledger(self, client):
+        product = _create_product(client, "PL-8", "Widget", 100, purchase_price=60)
+        acme = _create_ledger(client, "Acme")
+        globex = _create_ledger(client, "Globex")
+        when = datetime(2026, 9, 10, 12, 0)
+        _create_invoice(client, acme, [{"product_id": product, "quantity": 1, "unit_price": 100, "gst_rate": 18}], invoice_date=when)
+        _create_invoice(client, globex, [{"product_id": product, "quantity": 3, "unit_price": 100, "gst_rate": 18}], invoice_date=when)
+
+        customers = {c["name"]: c for c in client.get("/api/analytics/profit-loss", params={
+            "from_date": "2026-09-01", "to_date": "2026-09-30",
+        }).json()["customer_rows"]}
+        assert customers["Acme"]["gross_profit"] == 40.00
+        assert customers["Globex"]["gross_profit"] == 120.00
+        assert customers["Globex"]["invoice_count"] == 1
+
+    def test_purchase_vouchers_excluded(self, client):
+        product = _create_product(client, "PL-9", "Widget", 100, purchase_price=60)
+        ledger = _create_ledger(client, "Acme")
+        when = datetime(2026, 10, 10, 12, 0)
+        _create_invoice(client, ledger, [{"product_id": product, "quantity": 1, "unit_price": 100, "gst_rate": 18}],
+                        voucher_type="purchase", invoice_date=when)
+
+        totals = client.get("/api/analytics/profit-loss", params={
+            "from_date": "2026-10-01", "to_date": "2026-10-31",
+        }).json()["totals"]
+        assert totals["product_count"] == 0
+        assert totals["revenue"] == 0.0
+
+
 class TestCsvExports:
     def test_monthly_csv(self, client):
         product = _create_product(client, "CSV-1", "Widget", 100)
@@ -404,3 +517,20 @@ class TestCsvExports:
         """The BOM is what makes Excel render the currency correctly."""
         res = client.get("/api/analytics/sales-by-month/csv", params={"from_date": "2026-01-01", "to_date": "2026-01-31"})
         assert res.content.startswith(b"\xef\xbb\xbf")
+
+    def test_profit_loss_csv(self, client):
+        product = _create_product(client, "CSV-3", "Widget", 100, purchase_price=60)
+        ledger = _create_ledger(client, "Acme")
+        _create_invoice(client, ledger, [{"product_id": product, "quantity": 2, "unit_price": 100, "gst_rate": 18}],
+                        invoice_date=datetime(2026, 4, 10, 12, 0))
+
+        res = client.get("/api/analytics/profit-loss/csv", params={"from_date": "2026-04-01", "to_date": "2026-04-30"})
+        assert res.status_code == 200
+        assert res.headers["content-type"].startswith("text/csv")
+        assert "profit_loss_2026-04-01_2026-04-30.csv" in res.headers["content-disposition"]
+
+        body = res.content.decode("utf-8-sig")
+        assert "Product,Item Code,Quantity Sold" in body
+        assert "Gross Profit" in body
+        assert "Widget" in body
+        assert "Month,Quantity,Revenue" in body  # the second section

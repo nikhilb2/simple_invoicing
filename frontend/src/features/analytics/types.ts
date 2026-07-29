@@ -64,6 +64,58 @@ export type ProductSalesReport = {
   totals: ProductSalesTotals;
 };
 
+export type ProfitLossProductRow = {
+  product_id: number;
+  name: string;
+  sku: string | null;
+  quantity_sold: number;
+  sales_amount: number; // revenue, ex-GST
+  average_selling_price: number;
+  purchase_price: number; // current unit cost
+  cogs: number;
+  gross_profit: number;
+  margin_pct: number;
+};
+
+export type ProfitLossMonthlyRow = {
+  month: string;
+  label: string;
+  quantity: number;
+  revenue: number;
+  cogs: number;
+  gross_profit: number;
+  margin_pct: number;
+};
+
+export type ProfitLossCustomerRow = {
+  ledger_id: number | null;
+  name: string;
+  revenue: number;
+  cogs: number;
+  gross_profit: number;
+  margin_pct: number;
+  invoice_count: number;
+};
+
+export type ProfitLossTotals = {
+  product_count: number;
+  quantity_sold: number;
+  revenue: number;
+  cogs: number;
+  gross_profit: number;
+  margin_pct: number;
+};
+
+export type ProfitLossReport = {
+  currency_code: string;
+  voucher_type: VoucherType;
+  period: ReportPeriod;
+  product_rows: ProfitLossProductRow[];
+  monthly_rows: ProfitLossMonthlyRow[];
+  customer_rows: ProfitLossCustomerRow[];
+  totals: ProfitLossTotals;
+};
+
 /** Filters shared by both reports; product-only fields are optional. */
 export type AnalyticsFilters = {
   voucherType: VoucherType;
