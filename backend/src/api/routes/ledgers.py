@@ -2142,29 +2142,18 @@ def gstr1_export_json(
         }
 
     doc_det: list[dict] = []
-    # B2B and B2C invoices must be declared as separate doc ranges (Table 13).
-    # A single merged range spanning both B2B and B2C invoice numbers causes a
-    # portal rejection because B2C invoices only appear aggregated in b2cs and
-    # cannot be individually resolved within a B2B range.
-    b2b_inv_numbers = [
+    # Table 13 reports the invoice document series, irrespective of whether the
+    # recipient is registered. Splitting one sales series into B2B and B2C
+    # subsets creates overlapping ranges and incorrect document counts whenever
+    # the two kinds of invoice are interleaved.
+    inv_numbers = [
         inv.invoice_number or f"INV-{inv.id}"
         for inv in invoices
-        if inv.voucher_type == "sales" and inv.ledger_gst and inv.ledger_gst.strip()
+        if inv.voucher_type == "sales"
     ]
-    b2c_inv_numbers = [
-        inv.invoice_number or f"INV-{inv.id}"
-        for inv in invoices
-        if inv.voucher_type == "sales" and not (inv.ledger_gst and inv.ledger_gst.strip())
-    ]
-    inv_docs: list[dict] = []
-    b2b_range = _doc_range(b2b_inv_numbers, num=len(inv_docs) + 1)
-    if b2b_range:
-        inv_docs.append(b2b_range)
-    b2c_range = _doc_range(b2c_inv_numbers, num=len(inv_docs) + 1)
-    if b2c_range:
-        inv_docs.append(b2c_range)
-    if inv_docs:  # 1 = Invoices for outward supply
-        doc_det.append({"doc_num": 1, "docs": inv_docs})
+    inv_range = _doc_range(inv_numbers)
+    if inv_range:  # 1 = Invoices for outward supply
+        doc_det.append({"doc_num": 1, "docs": [inv_range]})
     dn_range = _doc_range([cn.credit_note_number or f"DN-{cn.id}" for cn in credit_notes if cn.credit_note_type != "return"])
     if dn_range:  # 4 = Debit Note
         doc_det.append({"doc_num": 4, "docs": [dn_range]})

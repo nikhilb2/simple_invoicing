@@ -1162,13 +1162,8 @@ def test_gstr1_doc_issue_uses_nature_code_and_ranges(db_session):
     assert rng["net_issue"] == 2
 
 
-def test_gstr1_doc_issue_splits_b2b_and_b2c_ranges(db_session):
-    """doc_issue must produce separate docs entries for B2B and B2C invoices.
-
-    A single merged range covering both B2B and B2C invoice numbers causes a
-    portal rejection because B2C invoices only appear aggregated in b2cs and
-    the portal cannot resolve them individually within a B2B range.
-    """
+def test_gstr1_doc_issue_keeps_b2b_and_b2c_in_same_invoice_series(db_session):
+    """Table 13 must not split one invoice series by recipient registration."""
     user, ledger = _seed_basics(db_session)
     company = _make_company(gst="29TESTT1234X1Z5")
 
@@ -1207,6 +1202,20 @@ def test_gstr1_doc_issue_splits_b2b_and_b2c_ranges(db_session):
         sgst_amount=19,
         igst_amount=0,
     )
+
+    # Another B2B invoice after the B2C invoice makes a registration-based split
+    # produce overlapping 068-070 and 069-069 ranges.
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="INV-2026-27-070",
+        when=datetime(2026, 6, 16),
+        gst_rate=18,
+        taxable_amount=2000,
+        cgst_amount=180,
+        sgst_amount=180,
+        igst_amount=0,
+    )
     db_session.commit()
 
     data = _export_json_data(db_session, user, company, date(2026, 6, 1), date(2026, 6, 30))
@@ -1215,29 +1224,14 @@ def test_gstr1_doc_issue_splits_b2b_and_b2c_ranges(db_session):
     inv_doc = next(d for d in doc_det if d["doc_num"] == 1)
     docs = inv_doc["docs"]
 
-    # Must have TWO separate range entries: one for B2B, one for B2C
-    assert len(docs) == 2, (
-        f"Expected 2 separate doc ranges (B2B + B2C), got {len(docs)}: {docs}"
-    )
-
-    nums = [d["num"] for d in docs]
-    assert nums == [1, 2], f"docs 'num' fields should be 1 and 2, got {nums}"
-
-    b2b_doc = docs[0]
-    assert b2b_doc["from"] == "INV-2026-27-068"
-    assert b2b_doc["to"] == "INV-2026-27-068"
-    assert b2b_doc["totnum"] == 1
-    assert b2b_doc["net_issue"] == 1
-
-    b2c_doc = docs[1]
-    assert b2c_doc["from"] == "INV-2026-27-069"
-    assert b2c_doc["to"] == "INV-2026-27-069"
-    assert b2c_doc["totnum"] == 1
-    assert b2c_doc["net_issue"] == 1
-
-    # The single merged range INV-068 → INV-069 must NOT appear
-    merged = [d for d in docs if d["from"] == "INV-2026-27-068" and d["to"] == "INV-2026-27-069"]
-    assert not merged, "B2B and B2C ranges must not be merged into a single doc entry"
+    assert len(docs) == 1
+    invoice_series = docs[0]
+    assert invoice_series["num"] == 1
+    assert invoice_series["from"] == "INV-2026-27-068"
+    assert invoice_series["to"] == "INV-2026-27-070"
+    assert invoice_series["totnum"] == 3
+    assert invoice_series["cancel"] == 0
+    assert invoice_series["net_issue"] == 3
 
 
 def test_gstr1_hsn_section_splits_b2b_with_rate(db_session):
