@@ -17,6 +17,9 @@ import {
   Package,
   PackageSearch,
   Percent,
+  ShoppingCart,
+  Store,
+  Tag,
   Users,
   Wallet,
   type LucideIcon,
@@ -44,7 +47,7 @@ export type NavItem = {
   /** document.title, when it should differ from the sidebar label. */
   title?: string;
   icon: LucideIcon;
-  /** NavLink `end` — only '/' needs it. */
+  /** NavLink `end` — needed by '/' and by any item with routed children. */
   end?: boolean;
   /** Hide the link from admins-only users. Visibility only; see file header. */
   adminOnly?: boolean;
@@ -107,6 +110,24 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    id: 'marketplace',
+    label: 'Marketplace',
+    // Sits between Catalogue and Organisation: it is where the catalogue leaves
+    // this instance, and it is not an organisation-level concern.
+    //
+    // The group is shown unconditionally, connection or not — teaching
+    // visibleNavGroups about connection state would make the sidebar depend on
+    // a network call. Each page renders its own "Connect to a marketplace"
+    // empty state instead.
+    items: [
+      // `end` because /marketplace/listings and /marketplace/orders are children
+      // of this path and would otherwise leave Browse permanently highlighted.
+      { to: '/marketplace', label: 'Browse', title: 'Marketplace', icon: Store, end: true },
+      { to: '/marketplace/listings', label: 'My Listings', icon: Tag },
+      { to: '/marketplace/orders', label: 'Orders', title: 'Marketplace Orders', icon: ShoppingCart },
+    ],
+  },
+  {
     id: 'organisation',
     label: 'Organisation',
     items: [
@@ -123,6 +144,13 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: '/backups', label: 'Backups', title: 'Database Backups', icon: DatabaseBackup, adminOnly: true },
       { to: '/email-history', label: 'Email History', icon: MailCheck, adminOnly: true },
       { to: '/api-keys', label: 'API Keys', icon: KeyRound, adminOnly: true },
+      {
+        to: '/marketplace/settings',
+        label: 'Marketplace',
+        title: 'Marketplace Settings',
+        icon: Store,
+        adminOnly: true,
+      },
       { to: '/change-password', label: 'Change Password', title: 'Security', icon: Lock },
       { to: '/shortcuts', label: 'Keyboard Shortcuts', icon: Keyboard },
     ],

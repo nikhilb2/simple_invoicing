@@ -250,7 +250,13 @@ class InvoiceProcessor:
                 if item_schema.unit_price is not None
                 else Decimal(str(product.price))
             )
-            gst_rate = Decimal(str(product.gst_rate or 0))
+            # A per-line gst_rate overrides the product master: marketplace purchases
+            # must book the seller's declared rate, or the buyer's purchase invoice
+            # and the seller's sales invoice disagree on tax.
+            item_gst_rate = getattr(item_schema, "gst_rate", None)
+            gst_rate = Decimal(
+                str(item_gst_rate if item_gst_rate is not None else (product.gst_rate or 0))
+            )
 
             if tax_inclusive:
                 line_total = _money(unit_price * quantity_value)
@@ -461,7 +467,10 @@ class InvoiceProcessor:
                 invoice_id=invoice.id,
                 product_id=result["product"].id,
                 quantity=float(result["quantity_value"]),
-                hsn_sac=result["product"].hsn_sac,
+                hsn_sac=(
+                    getattr(result["item_schema"], "hsn_sac", None)
+                    or result["product"].hsn_sac
+                ),
                 unit_price=float(result["unit_price"]),
                 gst_rate=float(result["gst_rate"]),
                 taxable_amount=float(result["taxable_amount"]),

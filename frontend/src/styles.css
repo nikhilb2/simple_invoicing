@@ -2966,3 +2966,480 @@ textarea {
   outline: 2px solid var(--sidebar-active-border);
   outline-offset: 1px;
 }
+
+/* ── Marketplace ──────────────────────────────────────────────────── */
+.marketplace-page {
+  display: grid;
+  gap: 16px;
+}
+
+/* Segmented Card/Table switcher, matching the invoice feed's. */
+.marketplace-view-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(7, 13, 24, 0.55);
+  flex-shrink: 0;
+}
+
+.marketplace-view-tabs .button {
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.marketplace-view-tabs .button--ghost {
+  background: transparent;
+  border: 0;
+}
+
+.marketplace-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.marketplace-toolbar__search {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.marketplace-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.marketplace-toolbar__actions .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.marketplace-filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.marketplace-chevron {
+  transition: transform 160ms ease;
+  opacity: 0.8;
+}
+
+.marketplace-drawer {
+  margin-top: 14px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  animation: marketplace-reveal 160ms ease;
+}
+
+@keyframes marketplace-reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* auto-fit rather than flex-wrap: the filters reflow on their own, with no
+   breakpoint to keep in sync. */
+.marketplace-drawer__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
+.marketplace-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.marketplace-field__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.marketplace-checkbox {
+  display: inline-flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 12px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.marketplace-checkbox input {
+  accent-color: var(--accent);
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.marketplace-results {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.marketplace-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.marketplace-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--bg-card);
+}
+
+.marketplace-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.marketplace-card__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.marketplace-card__price {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--accent);
+}
+
+.marketplace-card__price small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.marketplace-card__description {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+  /* Descriptions are seller-authored and unbounded; cap them so one long entry
+     can't stretch its card past the rest of the grid row. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.marketplace-card__seller {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.marketplace-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 0;
+}
+
+.marketplace-card__meta dt {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.marketplace-card__meta dd {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+/* GSTIN ownership is unverified in v1 — this badge is required wherever a
+   counterparty is named, so it is deliberately loud rather than subtle. */
+.marketplace-unverified {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(246, 214, 123, 0.4);
+  background: rgba(246, 214, 123, 0.12);
+  color: var(--warning);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.marketplace-note {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.marketplace-note--emphasis {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line-strong);
+  background: rgba(87, 209, 201, 0.08);
+  color: var(--text);
+}
+
+.marketplace-note--warning {
+  color: var(--warning);
+}
+
+.marketplace-note--error {
+  color: var(--danger);
+}
+
+.marketplace-alert {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(246, 214, 123, 0.35);
+  background: rgba(246, 214, 123, 0.1);
+  color: var(--warning);
+}
+
+.marketplace-alert p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.marketplace-alert code {
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.marketplace-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px 18px;
+  margin: 16px 0 0;
+}
+
+.marketplace-summary dt {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.marketplace-summary dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.marketplace-summary__hint {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.marketplace-summary__total dd {
+  color: var(--accent);
+  font-size: 1.1rem;
+}
+
+.marketplace-buy__seller {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 0.9rem;
+}
+
+.marketplace-meta {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(87, 209, 201, 0.06);
+}
+
+.marketplace-meta h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.marketplace-meta ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.7;
+}
+
+.marketplace-meta a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* Wide tables scroll inside their own container so the page body never scrolls
+   horizontally. The min-width is what makes that true. */
+.marketplace-table-scroll {
+  overflow-x: auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.marketplace-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.marketplace-table th {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.marketplace-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.marketplace-table td .table-subtext,
+.marketplace-table td .marketplace-note {
+  display: block;
+  margin-top: 4px;
+}
+
+.marketplace-table .button-row {
+  gap: 6px;
+}
+
+/* A failed auto-post is the one thing on this page a user must not scroll past. */
+.marketplace-row--failed td {
+  background: rgba(255, 139, 139, 0.08);
+}
+
+.marketplace-linklike {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.marketplace-linklike:hover {
+  text-decoration: underline;
+}
+
+.marketplace-pagination {
+  justify-content: center;
+  align-items: center;
+}
+
+.marketplace-pagination__label {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.modal-panel--marketplace-order {
+  width: min(760px, 100%);
+}
+
+/* Status chips: the base .status-chip is the neutral/positive case, so only the
+   states that need to read differently are overridden. */
+.status-chip--pending,
+.status-chip--paused,
+.status-chip--draft {
+  background: rgba(246, 214, 123, 0.12);
+  color: var(--warning);
+}
+
+.status-chip--warning,
+.status-chip--failed,
+.status-chip--rejected,
+.status-chip--cancelled,
+.status-chip--expired {
+  background: rgba(255, 139, 139, 0.12);
+  color: var(--danger);
+}
+
+.status-chip--withdrawn {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+}
+
+/* The connection status panel takes a left edge in its status colour so the
+   state is readable before any of the copy is. */
+.marketplace-status {
+  border-left: 3px solid var(--accent);
+}
+
+.marketplace-status--pending_approval {
+  border-left-color: var(--warning);
+}
+
+.marketplace-status--unauthorized,
+.marketplace-status--suspended {
+  border-left-color: var(--danger);
+}
+
+.marketplace-status--unregistered,
+.marketplace-status--disconnected {
+  border-left-color: var(--line-strong);
+}
+
+@media (max-width: 720px) {
+  .marketplace-toolbar__actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .marketplace-toolbar__actions > .button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .marketplace-card-grid {
+    grid-template-columns: 1fr;
+  }
+}

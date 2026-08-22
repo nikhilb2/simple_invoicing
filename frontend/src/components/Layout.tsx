@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { NAV_SHORTCUTS, resolveDocumentTitle } from '../config/navigation';
 import { useShortcuts } from '../context/ShortcutsContext';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import { useMarketplaceSync } from '../features/marketplace/useMarketplaceSync';
 import { useSidebarStore } from '../store/useSidebarStore';
 import Sidebar from './Sidebar';
 import InvoiceCancelDialog from './InvoiceCancelDialog';
@@ -13,6 +14,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { registerAction } = useShortcuts();
   const navigate = useNavigate();
   const collapsed = useSidebarStore((state) => state.collapsed);
+
+  // Mounted here rather than on the marketplace pages: the central server can
+  // never reach a self-hosted instance, so orders only arrive while something
+  // polls — and that has to keep happening wherever the user is in the app.
+  useMarketplaceSync();
 
   // The mobile drawer is ephemeral; only the desktop rail persists.
   const [sidebarOpen, setSidebarOpen] = useState(false);

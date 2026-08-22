@@ -12,6 +12,11 @@ class InvoiceItemCreate(BaseModel):
     description: str | None = None
     discount_type: Literal["percentage", "net"] | None = None
     discount_value: float | None = None
+    # Per-line overrides of the product master. Marketplace purchases must book the
+    # SELLER's rate and HSN — if the buyer's local product carries a different rate,
+    # the two legally-linked invoices would disagree on tax. None = use the product.
+    gst_rate: float | None = None
+    hsn_sac: str | None = None
 
 
 class InvoiceCreate(BaseModel):
