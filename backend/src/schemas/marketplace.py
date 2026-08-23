@@ -1,15 +1,39 @@
 """Pydantic schemas for the instance-side marketplace API.
 
-Note the asymmetry with the wire contract: the central server transports money
-and quantities as decimal strings (float round-tripping silently corrupts tax
-arithmetic), but our own browser-facing API stays consistent with the rest of
-this backend and uses floats. Conversion happens in the service layer.
+Money and quantities go out as decimal STRINGS, matching MARKETPLACE.md section 1
+rather than the float convention the rest of this backend uses. That looks
+inconsistent until you notice the browse/catalog endpoints proxy the central
+server's payloads through untouched: if our own endpoints emitted floats, the
+frontend would face two different representations of the same value inside one
+feature. It parses these with exact decimal arithmetic, so a JSON float both
+breaks that parser and silently rounds tax.
 """
 
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
+
+
+def _money_str(value) -> str | None:
+    """Two-decimal fixed point. Numeric columns arrive as Decimal on Postgres
+    but float on SQLite, so route through str() before quantizing to avoid
+    binary-float artefacts."""
+    if value is None:
+        return None
+    return str(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def _qty_str(value) -> str | None:
+    """Quantities are Numeric(12,3); trailing zeros are trimmed so a whole
+    number reads as "50" rather than "50.000"."""
+    if value is None:
+        return None
+    quantized = Decimal(str(value)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+    # normalize() renders some integers in scientific notation (5E+1); format
+    # with "f" to keep it plain.
+    return format(quantized.normalize(), "f")
 
 
 # ---------------------------------------------------------------------------
@@ -57,10 +81,14 @@ class ConnectionOut(BaseModel):
     last_sync_at: datetime | None = None
     last_sync_error: str | None = None
     auto_accept: bool = True
-    auto_accept_max_amount: float | None = None
+    auto_accept_max_amount: Decimal | None = None
     auto_post: bool = False
     registered_at: datetime | None = None
     created_at: datetime | None = None
+
+    @field_serializer('auto_accept_max_amount')
+    def _ser_money(self, value, _info):
+        return _money_str(value)
 
     class Config:
         from_attributes = True
@@ -98,19 +126,27 @@ class ListingOut(BaseModel):
     remote_listing_id: str | None = None
     title: str
     description: str | None = None
-    asking_price: float
+    asking_price: Decimal
     currency_code: str = "INR"
-    gst_rate: float = 0
+    gst_rate: Decimal = Decimal("0")
     hsn_sac: str | None = None
     unit: str = "Pieces"
     allow_decimal: bool = False
-    min_order_quantity: float | None = None
-    max_order_quantity: float | None = None
-    available_quantity_published: float | None = None
+    min_order_quantity: Decimal | None = None
+    max_order_quantity: Decimal | None = None
+    available_quantity_published: Decimal | None = None
     status: str
     listing_type: str = "buy_now"
     last_published_at: datetime | None = None
     last_error: str | None = None
+
+    @field_serializer('asking_price', 'gst_rate')
+    def _ser_money(self, value, _info):
+        return _money_str(value)
+
+    @field_serializer('min_order_quantity', 'max_order_quantity', 'available_quantity_published')
+    def _ser_qty(self, value, _info):
+        return _qty_str(value)
 
     class Config:
         from_attributes = True
@@ -181,11 +217,19 @@ class OrderItemOut(BaseModel):
     remote_listing_id: str | None = None
     title: str | None = None
     product_id: int | None = None
-    quantity: float
+    quantity: Decimal
     unit: str | None = None
-    unit_price: float
-    gst_rate: float
+    unit_price: Decimal
+    gst_rate: Decimal
     hsn_sac: str | None = None
+
+    @field_serializer('unit_price', 'gst_rate')
+    def _ser_money(self, value, _info):
+        return _money_str(value)
+
+    @field_serializer('quantity')
+    def _ser_qty(self, value, _info):
+        return _qty_str(value)
 
     class Config:
         from_attributes = True
@@ -206,7 +250,7 @@ class OrderOut(BaseModel):
     counterparty_phone: str | None = None
     counterparty_email: str | None = None
     currency_code: str = "INR"
-    remote_total_amount: float | None = None
+    remote_total_amount: Decimal | None = None
     order_placed_at: datetime | None = None
     expires_at: datetime | None = None
     accepted_at: datetime | None = None
@@ -228,6 +272,10 @@ class OrderOut(BaseModel):
     remote_posting_reported: bool = False
     last_event_seq: int = 0
     items: list[OrderItemOut] = Field(default_factory=list)
+
+    @field_serializer('remote_total_amount')
+    def _ser_money(self, value, _info):
+        return _money_str(value)
 
     class Config:
         from_attributes = True

@@ -208,7 +208,7 @@ class TestConnectionRoutes:
         body = response.json()
         assert body["auto_accept"] is False
         assert body["auto_post"] is True
-        assert body["auto_accept_max_amount"] == 5000.0
+        assert body["auto_accept_max_amount"] == "5000.00"
 
     def test_defaults_are_auto_accept_on_and_auto_post_off(self, client, db_session, fake):
         """Phase 3 posture: orders land in the Orders page and a human posts them."""
@@ -313,7 +313,7 @@ class TestListingRoutes:
         assert body["remote_listing_id"].startswith("lst_")
         assert body["status"] == "active"
         # Seller's own rate and HSN — they are what the buyer will book.
-        assert body["gst_rate"] == 18.0
+        assert body["gst_rate"] == "18.00"
         assert body["hsn_sac"] == "8482"
 
         listed = client.get("/api/marketplace/listings", headers=headers_for(company)).json()
@@ -324,7 +324,7 @@ class TestListingRoutes:
             json={"asking_price": 130.0, "status": "paused"},
             headers=headers_for(company),
         )
-        assert patched.json()["asking_price"] == 130.0
+        assert patched.json()["asking_price"] == "130.00"
         assert fake.listings[body["remote_listing_id"]]["asking_price"] == "130.0"
 
         assert (
@@ -413,9 +413,9 @@ class TestOrderRoutes:
         assert body["side"] == "buy"
         assert body["state"] == "pending"
         assert body["counterparty_gstin"] == GST_A
-        assert body["remote_total_amount"] == 1250.0
+        assert body["remote_total_amount"] == "1250.00"
         assert len(body["items"]) == 1
-        assert body["items"][0]["gst_rate"] == 18.0
+        assert body["items"][0]["gst_rate"] == "18.00"
         # Nothing is posted off a pending order.
         assert body["posting_state"] == "not_required"
 
