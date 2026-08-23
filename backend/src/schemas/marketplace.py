@@ -61,7 +61,7 @@ class ConnectionRegisterIn(BaseModel):
 
 class ConnectionUpdateIn(BaseModel):
     auto_accept: bool | None = None
-    auto_accept_max_amount: float | None = None
+    auto_accept_max_amount: Decimal | None = None
     auto_post: bool | None = None
     display_name: str | None = None
 
@@ -102,20 +102,20 @@ class ListingCreateIn(BaseModel):
     product_id: int
     title: str | None = None
     description: str | None = None
-    asking_price: float
-    min_order_quantity: float | None = None
-    max_order_quantity: float | None = None
-    available_quantity: float | None = None
+    asking_price: Decimal
+    min_order_quantity: Decimal | None = None
+    max_order_quantity: Decimal | None = None
+    available_quantity: Decimal | None = None
     listing_type: Literal["buy_now"] = "buy_now"
 
 
 class ListingUpdateIn(BaseModel):
     title: str | None = None
     description: str | None = None
-    asking_price: float | None = None
-    min_order_quantity: float | None = None
-    max_order_quantity: float | None = None
-    available_quantity: float | None = None
+    asking_price: Decimal | None = None
+    min_order_quantity: Decimal | None = None
+    max_order_quantity: Decimal | None = None
+    available_quantity: Decimal | None = None
     status: Literal["active", "paused"] | None = None
 
 
@@ -169,18 +169,25 @@ class BrowseListingOut(BaseModel):
     listing_id: str
     title: str | None = None
     description: str | None = None
-    asking_price: float | None = None
+    asking_price: Decimal | None = None
     currency_code: str = "INR"
-    gst_rate: float | None = None
+    gst_rate: Decimal | None = None
     hsn_sac: str | None = None
     unit: str | None = None
     allow_decimal: bool = False
-    min_order_quantity: float | None = None
-    max_order_quantity: float | None = None
-    available_quantity: float | None = None
+    min_order_quantity: Decimal | None = None
+    max_order_quantity: Decimal | None = None
+    available_quantity: Decimal | None = None
     available_quantity_as_of: datetime | None = None
     seller: BrowseSellerOut | None = None
 
+    @field_serializer('asking_price', 'gst_rate')
+    def _ser_money(self, value, _info):
+        return _money_str(value)
+
+    @field_serializer('min_order_quantity', 'max_order_quantity', 'available_quantity')
+    def _ser_qty(self, value, _info):
+        return _qty_str(value)
 
 class BrowseResultOut(BaseModel):
     items: list[BrowseListingOut] = Field(default_factory=list)
@@ -194,7 +201,7 @@ class BrowseResultOut(BaseModel):
 
 class OrderCreateIn(BaseModel):
     listing_id: str
-    quantity: float
+    quantity: Decimal
     buyer_note: str | None = None
     delivery_address: str | None = None
 
