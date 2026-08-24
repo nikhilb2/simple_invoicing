@@ -88,6 +88,7 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
           <div className="field">
             <label htmlFor="key-name">Key name</label>
             <input
+              className="input"
               id="key-name"
               ref={nameRef}
               type="text"
@@ -102,6 +103,7 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
           <div className="field">
             <label htmlFor="key-expires">Expires on</label>
             <input
+              className="input"
               id="key-expires"
               type="date"
               value={expiresAt}
@@ -113,13 +115,13 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
             <p style={{ fontSize: '0.78rem', opacity: 0.6, marginTop: '4px' }}>Maximum 1 year from today.</p>
           </div>
 
-          {error && <p className="form-error">{error}</p>}
+          {error && <p className="marketplace-note marketplace-note--error">{error}</p>}
 
-          <div className="form-actions">
-            <button type="button" className="btn btn--ghost" onClick={onClose} disabled={saving}>
+          <div className="button-row" style={{ justifyContent: 'flex-end' }}>
+            <button type="button" className="button button--ghost" onClick={onClose} disabled={saving}>
               Cancel
             </button>
-            <button type="submit" className="btn btn--primary" disabled={saving || !name.trim() || !expiresAt}>
+            <button type="submit" className="button button--primary" disabled={saving || !name.trim() || !expiresAt}>
               {saving ? 'Creating…' : 'Create key'}
             </button>
           </div>
@@ -185,7 +187,7 @@ function RevealModal({ rawKey, name, onClose }: RevealModalProps) {
           <span style={{ flex: 1 }}>{rawKey}</span>
           <button
             type="button"
-            className="btn btn--ghost"
+            className="button button--ghost"
             style={{ flexShrink: 0, padding: '4px 8px' }}
             onClick={copyKey}
             title="Copy to clipboard"
@@ -195,8 +197,8 @@ function RevealModal({ rawKey, name, onClose }: RevealModalProps) {
           </button>
         </div>
 
-        <div className="form-actions" style={{ marginTop: '20px' }}>
-          <button type="button" className="btn btn--primary" onClick={onClose}>
+        <div className="button-row" style={{ justifyContent: 'flex-end', marginTop: '20px' }}>
+          <button type="button" className="button button--primary" onClick={onClose}>
             Done, I've saved it
           </button>
         </div>
@@ -256,19 +258,18 @@ export default function ApiKeysPage() {
   const now = new Date();
 
   return (
-    <div className="page-container">
-      <div className="page-header">
-        <div className="page-header__left">
+    <div className="page-grid">
+      <section className="page-hero">
+        <div>
+          <p className="eyebrow">Settings</p>
           <h1 className="page-title">API Keys</h1>
-          <p className="page-subtitle">Manage long-lived API keys for MCP server and integrations.</p>
+          <p className="section-copy">Manage long-lived API keys for MCP server and integrations.</p>
         </div>
-        <div className="page-header__actions">
-          <button className="btn btn--primary" onClick={() => setShowCreate(true)}>
-            <Plus size={16} />
-            New API key
-          </button>
-        </div>
-      </div>
+        <button className="button button--primary" onClick={() => setShowCreate(true)}>
+          <Plus size={16} />
+          New API key
+        </button>
+      </section>
 
       {loading ? (
         <p style={{ opacity: 0.5 }}>Loading…</p>
@@ -304,13 +305,13 @@ export default function ApiKeysPage() {
                       {formatExpiry(k.expires_at)}
                     </td>
                     <td>
-                      <span className={`badge ${expired ? 'badge--danger' : 'badge--success'}`}>
+                      <span className={`status-chip ${expired ? 'status-chip--error' : 'status-chip--success'}`}>
                         {expired ? 'Expired' : 'Active'}
                       </span>
                     </td>
                     <td>
                       <button
-                        className="btn btn--ghost btn--icon"
+                        className="button button--ghost button--icon"
                         title="Delete key"
                         onClick={() => setDeleteTarget(k)}
                       >

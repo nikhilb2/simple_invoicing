@@ -115,7 +115,9 @@ export default function CompanySelector() {
           aria-haspopup="listbox"
           aria-expanded={companyDropdownOpen}
         >
-          <span>{activeCompany?.name?.trim() || 'Select company'}</span>
+          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {activeCompany?.name?.trim() || 'Select company'}
+          </span>
           <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>▾</span>
         </button>
         {companyDropdownOpen && (

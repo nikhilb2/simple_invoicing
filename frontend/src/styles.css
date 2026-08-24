@@ -92,6 +92,10 @@ textarea {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  /* A grid item's automatic minimum is its content's min-content, so without
+     this a wide table or a long unbroken string widens the whole page instead
+     of scrolling inside its own container. */
+  min-width: 0;
   padding: 0;               /* padding moves to inner elements */
 }
 
@@ -218,6 +222,10 @@ textarea {
   font-weight: 600;
   color: var(--sidebar-text);
   display: block;
+  /* An email has no break opportunity and the rail cannot grow. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar__user-role {
@@ -349,6 +357,9 @@ textarea {
 .empty-state,
 .table-subtext {
   color: var(--muted);
+  /* Emails, URLs and SKUs are unbreakable tokens; without this they run out of
+     their grid track and over the next column. */
+  overflow-wrap: anywhere;
 }
 
 .empty-state {
@@ -404,15 +415,14 @@ textarea {
   align-items: end;
 }
 
-/* The prose column is what absorbs a narrow page; the chip beside it is sized
-   by its own text and must not be squeezed into two lines. */
+/* The prose column is what absorbs a narrow page; whatever trails it — a chip,
+   a button, a cluster of both — is sized by its own content. */
 .page-hero > :first-child {
   min-width: 0;
 }
 
-.page-hero > .status-chip {
+.page-hero > :not(:first-child) {
   flex-shrink: 0;
-  white-space: nowrap;
 }
 
 .page-title {
@@ -420,6 +430,18 @@ textarea {
   font-size: clamp(1.8rem, 3vw, 2.6rem);
   line-height: 1;
   letter-spacing: -0.05em;
+}
+
+/* The panel heading. It is an <h2> in 86 places and had no rule of its own, so
+   every one of them was carrying the user-agent's 0.83em block margins — which
+   is what opened the gap under the eyebrow and left the header's chip floating
+   level with the eyebrow rather than the title. */
+.nav-panel__title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
 }
 
 .page-grid,
@@ -479,7 +501,20 @@ textarea {
   justify-content: space-between;
   gap: 12px;
   align-items: start;
+  flex-wrap: wrap;
   margin-bottom: 20px;
+}
+
+/* The title block is what gives up width when the panel narrows — without this
+   the chip or button beside it is crushed and wraps mid-label instead. */
+.panel__header > :first-child,
+.stack-header > :first-child {
+  min-width: 0;
+}
+
+.panel__header > .button-row,
+.stack-header > .button-row {
+  flex-shrink: 0;
 }
 
 .stack {
@@ -492,6 +527,12 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   align-items: start;
+}
+
+/* A row of summary cards shares a row height — otherwise a card whose label
+   wraps to two lines leaves its neighbours short. */
+.field-grid > .summary-box {
+  align-self: stretch;
 }
 
 /* Opt-in for a row of plain label+control fields: a label that wraps to two
@@ -715,6 +756,21 @@ textarea {
   flex-shrink: 0;
 }
 
+/* A sort affordance inside a table header. Undefined until now, so it carried
+   full .button padding and inflated every sortable column's minimum width. */
+.inventory-sort-btn {
+  gap: 4px;
+  padding: 4px 6px;
+  font-size: 0.78rem;
+  border-radius: 8px;
+  background: transparent;
+  border-color: transparent;
+}
+
+.inventory-sort-btn--active {
+  border-color: var(--line);
+}
+
 /* Split button group: primary action + caret dropdown trigger */
 .split-button {
   display: inline-flex;
@@ -820,6 +876,10 @@ textarea {
   display: grid;
   gap: 4px;
   flex: 1;
+  /* Error copy carries hosts and addresses — unbreakable tokens that would
+     otherwise push the dismiss button out of the toast. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .toast__title {
@@ -833,6 +893,7 @@ textarea {
 }
 
 .toast__dismiss {
+  flex-shrink: 0;
   border: none;
   background: transparent;
   color: inherit;
@@ -1032,16 +1093,46 @@ textarea {
   }
 }
 
+/* A chip is sized by its own short label — the prose or buttons beside it must
+   absorb a narrowing panel, never squeeze the chip into two lines. */
 .status-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
   border-radius: 999px;
   padding: 8px 12px;
   background: rgba(87, 209, 201, 0.1);
   color: #bffbf6;
   font-size: 0.84rem;
   font-weight: 700;
+}
+
+/* Same reason as `.button > svg` — an inline SVG is a shrinkable flex item. */
+.status-chip > svg,
+.action-dropdown__item > svg {
+  flex-shrink: 0;
+}
+
+/* Escape hatch for a chip holding arbitrary text (a URL, an opaque id) rather
+   than a short label: it wraps instead of running past the panel edge. */
+.status-chip--breakable {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Used by the tax-ledger validation chip; without these it fell back to the
+   neutral teal and an invalid state read as a passing one. */
+.status-chip--success {
+  background: rgba(87, 209, 201, 0.12);
+  color: #bffbf6;
+}
+
+.status-chip--error {
+  background: rgba(255, 139, 139, 0.12);
+  color: var(--danger);
 }
 
 .table-list,
@@ -1054,6 +1145,20 @@ textarea {
 .table-row,
 .invoice-row,
 .mini-row,
+/* Inventory rows carry four cells (meta, stock, dates, adjust controls) and
+   their children already carry `flex:` values — the shared three-track
+   .table-row grid was dropping the fourth onto its own line. */
+.inventory-feed-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.inventory-feed-row > .table-row__meta {
+  min-width: 0;
+}
+
 .line-item {
   display: grid;
   gap: 12px;
@@ -1082,6 +1187,12 @@ textarea {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
 
+/* Two tracks fit meta + price. A row that also carries actions needs a third,
+   or they auto-place onto a second row under the meta. */
+.invoice-row:has(> .invoice-row__actions) {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
 .invoice-row--sales {
   border-left: 4px solid rgba(34, 197, 94, 0.4);
 }
@@ -1099,11 +1210,17 @@ textarea {
 }
 
 .table-row {
-  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr) auto;
+  /* The middle track holds a currency figure, which has no break opportunity —
+     floored at min-content it takes its width from the 1.8fr meta column
+     instead of overflowing into the actions beside it. */
+  grid-template-columns: minmax(0, 1.8fr) minmax(min-content, 1fr) auto;
 }
 
+/* "Amount (incl. GST)" wraps in its track while "Qty" does not, so align on the
+   bottom edge — the labels take the slack and the controls stay on one line. */
 .line-item {
-  grid-template-columns: minmax(0, 1.5fr) 100px 130px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1.5fr) 100px 150px minmax(0, 1fr) auto;
+  align-items: end;
 }
 
 .invoice-row__type-indicator {
@@ -1214,6 +1331,10 @@ textarea {
 .invoice-row__meta {
   display: grid;
   gap: 6px;
+  /* Emails, filenames and migration hashes are single unbreakable tokens; the
+     automatic minimum would otherwise push them past the panel edge. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .receipt-allocation-strip {
@@ -1352,6 +1473,7 @@ textarea {
 .invoice-row__price {
   font-weight: 800;
   font-size: 1.22rem;
+  white-space: nowrap;
 }
 
 .pill {
@@ -1386,6 +1508,9 @@ textarea {
   margin: 10px 0 0;
   font-size: 2rem;
   font-weight: 800;
+  /* Currency strings have no spaces, so at 2rem in a narrow grid track they
+     overflow the box instead of wrapping. */
+  overflow-wrap: anywhere;
 }
 
 .login-page {
@@ -1454,6 +1579,20 @@ textarea {
 
 .text-right {
   text-align: right;
+}
+
+/* Used for the sort-direction announcement in table headers. It had no rule at
+   all, so "(asc)" was rendering as visible text inside the sort button. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .modal-overlay {
@@ -1635,6 +1774,37 @@ textarea {
   border-radius: 14px;
   background: white;
   border: 1px solid #d9e2f2;
+}
+
+/* Generic settings-page tables. Both class names were used in markup but
+   defined nowhere, so their cells had no padding and collided. */
+.table,
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td,
+.data-table th,
+.data-table td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.table th,
+.data-table th {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.table tr:last-child td,
+.data-table tr:last-child td {
+  border-bottom: 0;
 }
 
 .invoice-sheet__table-wrap {
@@ -2108,7 +2278,9 @@ textarea {
 
 .invoice-compact-card__grid {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  /* The side column holds a fixed-width row of icon buttons; sizing it by
+     content stops the two text columns from starving it into wrapping. */
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
   gap: 14px;
   align-items: start;
 }
@@ -2136,6 +2308,7 @@ textarea {
   display: inline-flex;
   gap: 8px;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .invoice-compact-card__cancelled-badge {
@@ -2671,11 +2844,18 @@ textarea {
 .top-products__name {
   font-weight: 600;
   color: var(--text);
+  /* Override the auto minimum so a long name truncates instead of pushing the
+     figure beside it out of the panel. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .top-products__value {
   color: var(--muted);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .top-products__track {
@@ -3167,12 +3347,16 @@ textarea {
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
+  /* Seller-authored and unbounded, like the description below. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .marketplace-card__price {
   font-family: 'Space Grotesk', sans-serif;
   font-weight: 700;
   white-space: nowrap;
+  flex-shrink: 0;
   color: var(--accent);
 }
 
@@ -3313,6 +3497,10 @@ textarea {
   color: var(--danger);
 }
 
+.marketplace-alert > svg {
+  flex-shrink: 0;
+}
+
 .marketplace-alert {
   display: flex;
   gap: 12px;
@@ -3356,6 +3544,10 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* Opaque ids and GSTINs do not fit a 150px track and cannot break on their
+     own — without this they spill over the cell beside them. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .marketplace-summary__hint {
@@ -3440,8 +3632,20 @@ textarea {
   margin-top: 4px;
 }
 
+/* A second chip in the same cell (a failed posting beside the order state)
+   belongs on its own line, not glued to the first. */
+.marketplace-table td .status-chip + .status-chip {
+  display: flex;
+  width: fit-content;
+  margin-top: 4px;
+}
+
+/* The axis is re-declared because the <=720px `.button-row { flex-direction:
+   column }` override would otherwise stack these inside a shrink-wrapped cell. */
 .marketplace-table .button-row {
   gap: 6px;
+  flex-direction: row;
+  width: auto;
   flex-wrap: nowrap;
   justify-content: flex-end;
 }
@@ -3473,6 +3677,7 @@ textarea {
 }
 
 .marketplace-pagination {
+  flex-direction: row;
   justify-content: center;
   align-items: center;
 }

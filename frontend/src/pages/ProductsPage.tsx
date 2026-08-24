@@ -371,7 +371,7 @@ export default function ProductsPage() {
                       title="Configure Bill of Materials"
                       aria-label="Configure Bill of Materials"
                     >
-                      <Settings2 size={15} style={{ marginRight: 6 }} />
+                      <Settings2 size={15} />
                       Configure Bill of Materials
                     </button>
                   ) : (

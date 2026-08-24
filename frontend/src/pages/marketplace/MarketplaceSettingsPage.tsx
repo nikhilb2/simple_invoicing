@@ -177,7 +177,9 @@ export default function MarketplaceSettingsPage() {
             <p className="eyebrow">Connection status</p>
             <h2 className="nav-panel__title">{statusCopy.label}</h2>
           </div>
-          {connection?.base_url && <span className="status-chip">{connection.base_url}</span>}
+          {connection?.base_url && (
+            <span className="status-chip status-chip--breakable">{connection.base_url}</span>
+          )}
         </div>
         <p className="section-copy">{statusCopy.detail}</p>
 

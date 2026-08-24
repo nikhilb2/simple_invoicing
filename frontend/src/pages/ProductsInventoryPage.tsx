@@ -457,7 +457,7 @@ export default function ProductsInventoryPage() {
                 aria-label="Search products"
               />
             </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <select
                 className="select"
                 value={statusFilter}
@@ -476,7 +476,7 @@ export default function ProductsInventoryPage() {
                 title="Export CSV"
                 aria-label="Export CSV"
               >
-                <Download size={15} style={{ marginRight: 4 }} />
+                <Download size={15} />
                 CSV
               </button>
               <button
@@ -486,7 +486,7 @@ export default function ProductsInventoryPage() {
                 title="Export PDF"
                 aria-label="Export PDF"
               >
-                <FileDown size={15} style={{ marginRight: 4 }} />
+                <FileDown size={15} />
                 PDF
               </button>
               <button
@@ -496,7 +496,7 @@ export default function ProductsInventoryPage() {
                 title="Import CSV"
                 aria-label="Import CSV"
               >
-                <Upload size={15} style={{ marginRight: 4 }} />
+                <Upload size={15} />
                 Import
               </button>
             </div>

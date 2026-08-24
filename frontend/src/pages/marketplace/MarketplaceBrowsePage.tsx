@@ -366,13 +366,15 @@ export default function MarketplaceBrowsePage() {
                           <td>{listing.gst_rate}%</td>
                           <td><span className="table-subtext">{availabilityLabel(listing)}</span></td>
                           <td>
-                            <button
-                              type="button"
-                              className="button button--primary button--small"
-                              onClick={() => { setBuyError(''); setBuyTarget(listing); }}
-                            >
-                              Buy now
-                            </button>
+                            <div className="button-row">
+                              <button
+                                type="button"
+                                className="button button--primary button--small"
+                                onClick={() => { setBuyError(''); setBuyTarget(listing); }}
+                              >
+                                Buy now
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
