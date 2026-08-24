@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
+import { Boxes, Plus, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../../api/client';
 import type { CompanyAccount, CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerAddress, Payment, PaymentCreate, Product } from '../../types/api';
 import InvoicePreview from '../../components/InvoicePreview';
@@ -10,6 +11,7 @@ import LedgerCombobox from '../../components/LedgerCombobox';
 import formatCurrency from '../../utils/formatting';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../../utils/invoiceTax';
 import { createDueDateFormState, formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../../utils/invoiceDueDate.ts';
+import { readInvoiceComposerPrefs, updateInvoiceComposerPrefs } from '../../utils/invoiceComposerPrefs.ts';
 import { useFY } from '../../context/FYContext';
 import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses } from '../../features/invoices/api';
 import { invoiceQueryKeys } from '../../features/invoices/queryKeys';
@@ -32,15 +34,19 @@ export default function InvoicesPage() {
   const feedbackError = useInvoiceComposerStore((state) => state.feedbackError);
   const feedbackSuccess = useInvoiceComposerStore((state) => state.feedbackSuccess);
   const clearFeedback = useInvoiceComposerStore((state) => state.clearFeedback);
+  /* Settings the user picks the same way on most invoices are restored here.
+     Read in an initializer rather than an effect so a remembered choice is
+     already applied on first paint instead of flipping in after it. */
+  const [initialPrefs] = useState(readInvoiceComposerPrefs);
   const [products, setProducts] = useState<Product[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [companyAccounts, setCompanyAccounts] = useState<CompanyAccount[]>([]);
   const [voucherType, setVoucherType] = useState<'sales' | 'purchase' | 'payment' | 'receipt'>('sales');
   const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [taxInclusive, setTaxInclusive] = useState(false);
-  const [applyRoundOff, setApplyRoundOff] = useState(false);
-  const [invoiceDiscountType, setInvoiceDiscountType] = useState<'percentage' | 'net'>('percentage');
+  const [taxInclusive, setTaxInclusive] = useState(initialPrefs.taxInclusive);
+  const [applyRoundOff, setApplyRoundOff] = useState(initialPrefs.applyRoundOff);
+  const [invoiceDiscountType, setInvoiceDiscountType] = useState<'percentage' | 'net'>(initialPrefs.invoiceDiscountType);
   const [invoiceDiscountValue, setInvoiceDiscountValue] = useState('');
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
   const [referenceNotes, setReferenceNotes] = useState('');
@@ -49,12 +55,16 @@ export default function InvoicesPage() {
   const [selectedPaymentAccountId, setSelectedPaymentAccountId] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
-  const [dueDateMode, setDueDateMode] = useState<DueDateMode>('none');
+  const [dueDateMode, setDueDateMode] = useState<DueDateMode>(initialPrefs.dueDateMode);
   const [dueDate, setDueDate] = useState('');
-  const [dueDateDays, setDueDateDays] = useState('');
+  const [dueDateDays, setDueDateDays] = useState(initialPrefs.dueDateDays);
   const [items, setItems] = useState<InvoiceFormItem[]>([createItem(1)]);
   const [nextItemId, setNextItemId] = useState(2);
   const [editingInvoiceId, setEditingInvoiceId] = useState<number | null>(null);
+  /** Everything that is not needed to write an ordinary invoice lives behind
+   *  this. It opens itself when a value inside it is actually in use — editing
+   *  an invoice that carries a discount must not hide the discount. */
+  const [showAdvanced, setShowAdvanced] = useState(initialPrefs.showAdvanced);
   // Shipping address state (sales invoices only)
   const [ledgerAddresses, setLedgerAddresses] = useState<LedgerAddress[]>([]);
   const [shippingSameAsBilling, setShippingSameAsBilling] = useState(true);
@@ -253,6 +263,27 @@ export default function InvoicesPage() {
     daysFromInvoice: dueDateDays,
   });
 
+  /* Which advanced settings this invoice actually uses. It names them on the
+     closed row, so the disclosure is worth reading before opening it. */
+  const advancedInUse = [
+    dueDateMode !== 'none' ? 'due date' : '',
+    supplierInvoiceNumber.trim() || referenceNotes.trim() ? 'reference' : '',
+    voucherType === 'sales' && !shippingSameAsBilling ? 'shipping address' : '',
+    Number(invoiceDiscountValue) > 0 ? 'discount' : '',
+    applyRoundOff ? 'round off' : '',
+  ].filter(Boolean);
+  const advancedSummary = advancedInUse.length > 0
+    ? `In use: ${advancedInUse.join(' · ')}`
+    : 'Due date, reference, shipping address, discount, round off';
+
+  /* Never hide a setting that is in use: an invoice opened for editing can
+     carry any of these, and a closed disclosure would put them out of sight
+     while they still affect the total. */
+  const advancedCount = advancedInUse.length;
+  useEffect(() => {
+    if (advancedCount > 0) setShowAdvanced(true);
+  }, [advancedCount]);
+
   function addItem() {
     const defaultProduct = products[0];
     setItems((current) => [...current, createItem(nextItemId, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))]);
@@ -268,12 +299,20 @@ export default function InvoicesPage() {
   }
 
   function resetInvoiceForm() {
+    /* The next invoice starts from the user's standing preferences, not from
+       hard defaults — otherwise every remembered setting would be lost the
+       moment an invoice is created. Read fresh rather than reusing the value
+       from mount, since they may have changed during the session. */
+    const prefs = readInvoiceComposerPrefs();
+    setShowAdvanced(prefs.showAdvanced);
     setEditingInvoiceId(null);
     setSupplierInvoiceNumber('');
     setReferenceNotes('');
-    setTaxInclusive(false);
-    setApplyRoundOff(false);
-    setInvoiceDiscountType('percentage');
+    setTaxInclusive(prefs.taxInclusive);
+    setApplyRoundOff(prefs.applyRoundOff);
+    setInvoiceDiscountType(prefs.invoiceDiscountType);
+    // Per-invoice, never remembered: a carried-over discount would silently
+    // reduce the next invoice's total.
     setInvoiceDiscountValue('');
     setPaymentMode('cash');
     setPaymentReference('');
@@ -283,9 +322,9 @@ export default function InvoicesPage() {
     setItems([createItem(1, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))]);
     setNextItemId(2);
     setInvoiceDate(new Date().toISOString().slice(0, 10));
-    setDueDateMode('none');
+    setDueDateMode(prefs.dueDateMode);
     setDueDate('');
-    setDueDateDays('');
+    setDueDateDays(prefs.dueDateDays);
     setShippingSameAsBilling(true);
     setSelectedShippingAddressId(null);
     setNewShippingLabel('');
@@ -589,7 +628,13 @@ export default function InvoicesPage() {
               </div>
 
               <div className="field">
-                <label htmlFor="invoice-ledger">Ledger</label>
+                <div className="field__label-row">
+                  <label htmlFor="invoice-ledger">Ledger</label>
+                  <button type="button" className="link-button" onClick={openLedgerCreateModal}>
+                    <Plus size={13} />
+                    New ledger
+                  </button>
+                </div>
                 <LedgerCombobox
                   id="invoice-ledger"
                   ledgers={ledgers}
@@ -617,7 +662,23 @@ export default function InvoicesPage() {
                   </p>
                 ) : null}
               </div>
+            </div>
 
+            <label className="form-advanced-toggle">
+              <input
+                type="checkbox"
+                checked={showAdvanced}
+                onChange={(event) => {
+                  setShowAdvanced(event.target.checked);
+                  updateInvoiceComposerPrefs({ showAdvanced: event.target.checked });
+                }}
+              />
+              <span className="form-advanced-toggle__label">Advanced options</span>
+              <span className="form-advanced-toggle__hint">{advancedSummary}</span>
+            </label>
+
+            {showAdvanced ? (
+              <div className="field-grid">
               {voucherType !== 'payment' && voucherType !== 'receipt' ? (
                 <>
                   <div className="field">
@@ -626,7 +687,11 @@ export default function InvoicesPage() {
                       id="invoice-due-mode"
                       className="select"
                       value={dueDateMode}
-                      onChange={(event) => setDueDateMode(event.target.value as DueDateMode)}
+                      onChange={(event) => {
+                        const mode = event.target.value as DueDateMode;
+                        setDueDateMode(mode);
+                        updateInvoiceComposerPrefs({ dueDateMode: mode });
+                      }}
                     >
                       <option value="none">No due date</option>
                       <option value="exact">Choose exact date</option>
@@ -658,7 +723,10 @@ export default function InvoicesPage() {
                         min="0"
                         step="1"
                         value={dueDateDays}
-                        onChange={(event) => setDueDateDays(event.target.value)}
+                        onChange={(event) => {
+                          setDueDateDays(event.target.value);
+                          updateInvoiceComposerPrefs({ dueDateDays: event.target.value });
+                        }}
                         placeholder="0"
                       />
                     </div>
@@ -801,39 +869,20 @@ export default function InvoicesPage() {
                 </div>
               ) : null}
 
-              <div className="button-row">
-                <button type="button" className="button button--secondary" onClick={openLedgerCreateModal} title="Add ledger" aria-label="Add ledger">
-                  Add ledger
-                </button>
-                {voucherType !== 'payment' && voucherType !== 'receipt' ? (
-                  <button type="button" className="button button--secondary" onClick={openProductCreateModal} title="Add product" aria-label="Add product">
-                    Add product
-                  </button>
-                ) : null}
-                {voucherType !== 'payment' && voucherType !== 'receipt' ? (
-                  <button type="button" className="button button--secondary" onClick={openStockUpdateModal} title="Update stock" aria-label="Update stock">
-                    Update stock
-                  </button>
-                ) : null}
               </div>
-            </div>
+            ) : null}
 
-            {voucherType !== 'payment' && voucherType !== 'receipt' ? (
+            {showAdvanced && voucherType !== 'payment' && voucherType !== 'receipt' ? (
               <div className="stack" style={{ gap: '8px' }}>
                 <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 0 }}>
-                  <input
-                    id="invoice-tax-inclusive"
-                    type="checkbox"
-                    checked={taxInclusive}
-                    onChange={(event) => setTaxInclusive(event.target.checked)}
-                  />
-                  <label htmlFor="invoice-tax-inclusive" style={{ marginBottom: 0, cursor: 'pointer' }}>Prices include GST</label>
-
                   <input
                     id="invoice-apply-round-off"
                     type="checkbox"
                     checked={applyRoundOff}
-                    onChange={(event) => setApplyRoundOff(event.target.checked)}
+                    onChange={(event) => {
+                      setApplyRoundOff(event.target.checked);
+                      updateInvoiceComposerPrefs({ applyRoundOff: event.target.checked });
+                    }}
                   />
                   <label htmlFor="invoice-apply-round-off" style={{ marginBottom: 0, cursor: 'pointer' }}>Apply round off</label>
                 </div>
@@ -852,7 +901,10 @@ export default function InvoicesPage() {
                       name="inv-disc-type"
                       value="percentage"
                       checked={invoiceDiscountType === 'percentage'}
-                      onChange={() => setInvoiceDiscountType('percentage')}
+                      onChange={() => {
+                        setInvoiceDiscountType('percentage');
+                        updateInvoiceComposerPrefs({ invoiceDiscountType: 'percentage' });
+                      }}
                     />
                     <label htmlFor="invoice-discount-percentage" style={{ marginBottom: 0, cursor: 'pointer', fontSize: '13px' }}>%</label>
                     <input
@@ -861,7 +913,10 @@ export default function InvoicesPage() {
                       name="inv-disc-type"
                       value="net"
                       checked={invoiceDiscountType === 'net'}
-                      onChange={() => setInvoiceDiscountType('net')}
+                      onChange={() => {
+                        setInvoiceDiscountType('net');
+                        updateInvoiceComposerPrefs({ invoiceDiscountType: 'net' });
+                      }}
                     />
                     <label htmlFor="invoice-discount-net" style={{ marginBottom: 0, cursor: 'pointer', fontSize: '13px' }}>Flat</label>
                   </div>
@@ -950,6 +1005,31 @@ export default function InvoicesPage() {
 
             {voucherType !== 'payment' && voucherType !== 'receipt' ? (
               <div className="stack">
+                <div className="line-items__header">
+                  <p className="eyebrow" style={{ margin: 0 }}>Line items</p>
+                  <div className="line-items__tools">
+                    <label className="inline-check" htmlFor="invoice-tax-inclusive">
+                      <input
+                        id="invoice-tax-inclusive"
+                        type="checkbox"
+                        checked={taxInclusive}
+                        onChange={(event) => {
+                          setTaxInclusive(event.target.checked);
+                          updateInvoiceComposerPrefs({ taxInclusive: event.target.checked });
+                        }}
+                      />
+                      Prices include GST
+                    </label>
+                    <button type="button" className="link-button" onClick={openProductCreateModal}>
+                      <Plus size={13} />
+                      New product
+                    </button>
+                    <button type="button" className="link-button" onClick={openStockUpdateModal}>
+                      <Boxes size={13} />
+                      Update stock
+                    </button>
+                  </div>
+                </div>
                 {items.map((item, index) => {
                   const selectedProduct = products.find((product) => product.id === Number(item.productId));
                   const selectedUnit = selectedProduct?.unit || 'Pieces';
@@ -968,7 +1048,7 @@ export default function InvoicesPage() {
                   }
 
                   return (
-                    <div key={item.id} className="line-item">
+                    <div key={item.id} className="line-item line-item--discount">
                       <div className="field">
                         <label htmlFor={`invoice-product-${item.id}`}>Line {index + 1}</label>
                         <ProductCombobox
@@ -1011,23 +1091,9 @@ export default function InvoicesPage() {
                         />
                       </div>
 
-                      <div className="line-item__price">
-                        {formatCurrency(lineTotal, activeCurrencyCode)}
-                        <div className="table-subtext">
-                          {formatInvoiceTaxBreakdown({
-                            gstRate,
-                            taxAmount,
-                            currencyCode: activeCurrencyCode,
-                            interstateSupply: composerInterstateSupply,
-                          })}
-                        </div>
-                      </div>
-                      <button type="button" className="button button--danger" onClick={() => removeItem(item.id)} title={`Remove line item ${index + 1}`} aria-label={`Remove line item ${index + 1}`}>
-                        Remove
-                      </button>
-                      {/* Item-level discount */}
-                      <div className="field" style={{ minWidth: '140px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                      <div className="field line-item__discount">
+                        <label htmlFor={`item-disc-value-${item.id}`}>Discount</label>
+                        <div className="line-item__discount-modes">
                           <input
                             id={`item-disc-pct-${item.id}`}
                             type="radio"
@@ -1036,7 +1102,7 @@ export default function InvoicesPage() {
                             checked={item.discount_type === 'percentage'}
                             onChange={() => updateItem(item.id, 'discount_type', 'percentage')}
                           />
-                          <label htmlFor={`item-disc-pct-${item.id}`} style={{ marginBottom: 0, cursor: 'pointer', fontSize: '11px' }}>%</label>
+                          <label htmlFor={`item-disc-pct-${item.id}`}>%</label>
                           <input
                             id={`item-disc-net-${item.id}`}
                             type="radio"
@@ -1045,7 +1111,7 @@ export default function InvoicesPage() {
                             checked={item.discount_type === 'net'}
                             onChange={() => updateItem(item.id, 'discount_type', 'net')}
                           />
-                          <label htmlFor={`item-disc-net-${item.id}`} style={{ marginBottom: 0, cursor: 'pointer', fontSize: '11px' }}>Flat</label>
+                          <label htmlFor={`item-disc-net-${item.id}`}>Flat</label>
                         </div>
                         <input
                           id={`item-disc-value-${item.id}`}
@@ -1055,10 +1121,32 @@ export default function InvoicesPage() {
                           min="0"
                           value={item.discount_value}
                           onChange={(event) => updateItem(item.id, 'discount_value', event.target.value)}
-                          placeholder="Disc"
-                          style={{ width: '100%', padding: '4px 6px', fontSize: '12px' }}
+                          placeholder="0"
                         />
                       </div>
+
+                      <div className="line-item__price">
+                        <span className="line-item__label">Line total</span>
+                        <span>{formatCurrency(lineTotal, activeCurrencyCode)}</span>
+                        <span className="table-subtext">
+                          {formatInvoiceTaxBreakdown({
+                            gstRate,
+                            taxAmount,
+                            currencyCode: activeCurrencyCode,
+                            interstateSupply: composerInterstateSupply,
+                          })}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="button button--danger button--icon"
+                        onClick={() => removeItem(item.id)}
+                        title={`Remove line item ${index + 1}`}
+                        aria-label={`Remove line item ${index + 1}`}
+                      >
+                        <Trash2 size={15} />
+                      </button>
                       <div className="field" style={{ gridColumn: '1 / -1' }}>
                         <label htmlFor={`invoice-description-${item.id}`}>Description (optional)</label>
                         <textarea

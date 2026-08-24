@@ -942,6 +942,7 @@ export default function LedgerViewPage() {
                     <span className="invoice-row__price">
                       {entry.debit > 0 ? `Dr ${formatCurrency(entry.debit, activeCurrencyCode)}` : `Cr ${formatCurrency(entry.credit, activeCurrencyCode)}`}
                     </span>
+                    <div className="invoice-row__actions">
                     {entry.entry_type === 'invoice' ? (
                       <button
                         type="button"
@@ -993,6 +994,7 @@ export default function LedgerViewPage() {
                         </button>
                       </div>
                     )}
+                    </div>
                   </div>
                 ))
               : null}

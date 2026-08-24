@@ -3,6 +3,8 @@ import { ArrowUpDown, Download, Upload, FileDown, Eye, EyeOff, Check, X } from '
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import formatCurrency from '../utils/formatting';
+import PublishToMarketplaceButton from '../components/PublishToMarketplaceButton';
+import { useCanPublishToMarketplace } from '../features/marketplace/useMarketplaceSync';
 
 type ProductInvRow = {
   id: number;
@@ -53,6 +55,9 @@ type EditableCellProps = {
 };
 
 export default function ProductsInventoryPage() {
+  // Decides whether the Marketplace column exists at all, so an unconnected
+  // company does not get an empty 13th column.
+  const canPublish = useCanPublishToMarketplace();
   const [rows, setRows] = useState<ProductInvRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -452,7 +457,7 @@ export default function ProductsInventoryPage() {
                 aria-label="Search products"
               />
             </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <select
                 className="select"
                 value={statusFilter}
@@ -471,7 +476,7 @@ export default function ProductsInventoryPage() {
                 title="Export CSV"
                 aria-label="Export CSV"
               >
-                <Download size={15} style={{ marginRight: 4 }} />
+                <Download size={15} />
                 CSV
               </button>
               <button
@@ -481,7 +486,7 @@ export default function ProductsInventoryPage() {
                 title="Export PDF"
                 aria-label="Export PDF"
               >
-                <FileDown size={15} style={{ marginRight: 4 }} />
+                <FileDown size={15} />
                 PDF
               </button>
               <button
@@ -491,7 +496,7 @@ export default function ProductsInventoryPage() {
                 title="Import CSV"
                 aria-label="Import CSV"
               >
-                <Upload size={15} style={{ marginRight: 4 }} />
+                <Upload size={15} />
                 Import
               </button>
             </div>
@@ -522,18 +527,21 @@ export default function ProductsInventoryPage() {
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>HSN</th>
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>Unit</th>
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>Description</th>
+                  {canPublish && (
+                    <th style={{ padding: '8px 10px', textAlign: 'center' }}>Marketplace</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={12} style={{ padding: 24, textAlign: 'center' }}>
+                    <td colSpan={canPublish ? 13 : 12} style={{ padding: 24, textAlign: 'center' }}>
                       Loading products…
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={12} style={{ padding: 24, textAlign: 'center' }}>
+                    <td colSpan={canPublish ? 13 : 12} style={{ padding: 24, textAlign: 'center' }}>
                       No products match your search.
                     </td>
                   </tr>
@@ -588,6 +596,15 @@ export default function ProductsInventoryPage() {
                       <td style={{ padding: '6px 10px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         <EditableCell {...editableCellProps} row={row} field="description" label="Description" />
                       </td>
+                      {canPublish && (
+                        <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                          <PublishToMarketplaceButton
+                            productId={row.id}
+                            productName={row.name}
+                            quantity={row.current_stock}
+                          />
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}

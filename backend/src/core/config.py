@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = ENVIRONMENT
     SMTP_ENCRYPTION_KEY: str | None = None
     MCP_API_TOKEN: str | None = None
+    # Declared as real fields, not read via getattr: `extra = "ignore"` below means
+    # an undeclared name resolves to nothing at all, so a getattr fallback would
+    # silently return None forever.
+    MARKETPLACE_ALLOW_INSECURE_URL: bool = False
+    MARKETPLACE_HTTP_TIMEOUT_SECONDS: int = 15
 
     @model_validator(mode="after")
     def validate_smtp_key_in_production(self):

@@ -31,11 +31,18 @@ import KeyboardShortcutsPage from './pages/KeyboardShortcutsPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
 import ApiKeysPage from './pages/ApiKeysPage';
 import EmailHistoryPage from './pages/EmailHistoryPage';
+import MyListingsPage from './pages/marketplace/MyListingsPage';
+import MarketplaceOrdersPage from './pages/marketplace/MarketplaceOrdersPage';
+import MarketplaceSettingsPage from './pages/marketplace/MarketplaceSettingsPage';
 import Layout from './components/Layout';
 
 // Lazily loaded: this is the only route that pulls in recharts (~100kb gz), and
 // every other route here is imported eagerly — they shouldn't pay for it.
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+
+// Browse is the marketplace's heaviest page and the one an instance with no
+// connection never opens, so it isn't in the main bundle either.
+const MarketplaceBrowsePage = lazy(() => import('./pages/marketplace/MarketplaceBrowsePage'));
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -121,6 +128,10 @@ function AppRoutes() {
       <Route path="/invoice-dues" element={<Protected><CompanyRequired><Layout><InvoiceDuesPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/invoices-view" element={<Protected><CompanyRequired><Layout><InvoicesAdvancedView /></Layout></CompanyRequired></Protected>} />
       <Route path="/credit-notes" element={<Protected><CompanyRequired><Layout><CreditNotesPage /></Layout></CompanyRequired></Protected>} />
+      <Route path="/marketplace" element={<Protected><CompanyRequired><Layout><Suspense fallback={<div className="empty-state">Loading marketplace…</div>}><MarketplaceBrowsePage /></Suspense></Layout></CompanyRequired></Protected>} />
+      <Route path="/marketplace/listings" element={<Protected><CompanyRequired><Layout><MyListingsPage /></Layout></CompanyRequired></Protected>} />
+      <Route path="/marketplace/orders" element={<Protected><CompanyRequired><Layout><MarketplaceOrdersPage /></Layout></CompanyRequired></Protected>} />
+      <Route path="/marketplace/settings" element={<Protected><CompanyRequired><AdminOnly><Layout><MarketplaceSettingsPage /></Layout></AdminOnly></CompanyRequired></Protected>} />
       <Route path="/company" element={<Protected><Layout><CompanyPage /></Layout></Protected>} />
       <Route path="/smtp-settings" element={<Protected><CompanyRequired><AdminOnly><Layout><SmtpSettingsPage /></Layout></AdminOnly></CompanyRequired></Protected>} />
       <Route path="/backups" element={<Protected><CompanyRequired><AdminOnly><Layout><BackupsPage /></Layout></AdminOnly></CompanyRequired></Protected>} />

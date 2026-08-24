@@ -92,6 +92,10 @@ textarea {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  /* A grid item's automatic minimum is its content's min-content, so without
+     this a wide table or a long unbroken string widens the whole page instead
+     of scrolling inside its own container. */
+  min-width: 0;
   padding: 0;               /* padding moves to inner elements */
 }
 
@@ -218,6 +222,10 @@ textarea {
   font-weight: 600;
   color: var(--sidebar-text);
   display: block;
+  /* An email has no break opportunity and the rail cannot grow. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar__user-role {
@@ -349,6 +357,9 @@ textarea {
 .empty-state,
 .table-subtext {
   color: var(--muted);
+  /* Emails, URLs and SKUs are unbreakable tokens; without this they run out of
+     their grid track and over the next column. */
+  overflow-wrap: anywhere;
 }
 
 .empty-state {
@@ -404,11 +415,33 @@ textarea {
   align-items: end;
 }
 
+/* The prose column is what absorbs a narrow page; whatever trails it — a chip,
+   a button, a cluster of both — is sized by its own content. */
+.page-hero > :first-child {
+  min-width: 0;
+}
+
+.page-hero > :not(:first-child) {
+  flex-shrink: 0;
+}
+
 .page-title {
   margin: 0;
   font-size: clamp(1.8rem, 3vw, 2.6rem);
   line-height: 1;
   letter-spacing: -0.05em;
+}
+
+/* The panel heading. It is an <h2> in 86 places and had no rule of its own, so
+   every one of them was carrying the user-agent's 0.83em block margins — which
+   is what opened the gap under the eyebrow and left the header's chip floating
+   level with the eyebrow rather than the title. */
+.nav-panel__title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
 }
 
 .page-grid,
@@ -468,7 +501,20 @@ textarea {
   justify-content: space-between;
   gap: 12px;
   align-items: start;
+  flex-wrap: wrap;
   margin-bottom: 20px;
+}
+
+/* The title block is what gives up width when the panel narrows — without this
+   the chip or button beside it is crushed and wraps mid-label instead. */
+.panel__header > :first-child,
+.stack-header > :first-child {
+  min-width: 0;
+}
+
+.panel__header > .button-row,
+.stack-header > .button-row {
+  flex-shrink: 0;
 }
 
 .stack {
@@ -481,6 +527,133 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   align-items: start;
+}
+
+/* A row of summary cards shares a row height — otherwise a card whose label
+   wraps to two lines leaves its neighbours short. */
+.field-grid > .summary-box {
+  align-self: stretch;
+}
+
+/* A field label with an inline action beside it — "Ledger    + New ledger".
+   The shortcut sits where you discover you need it, rather than in a row of
+   buttons competing with the form's own submit. */
+.field__label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* A quiet, text-weight action. For maintenance shortcuts that must stay
+   reachable without reading as a primary action. */
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.link-button > svg {
+  flex-shrink: 0;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.link-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+/* A checkbox and its label on one line, for options that read as a sentence
+   rather than as a labelled field. */
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.inline-check input {
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* The advanced-options disclosure: everything an ordinary invoice does not
+   need. The hint names what is inside, and what is currently set. */
+.form-advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+}
+
+.form-advanced-toggle input {
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.form-advanced-toggle__label {
+  font-weight: 800;
+  font-size: 0.92rem;
+}
+
+.form-advanced-toggle__hint {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* Line items get a header carrying the price-entry mode and the catalogue
+   shortcuts, so both sit with the fields they govern. */
+.line-items__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.line-items__tools {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* Opt-in for a row of plain label+control fields: a label that wraps to two
+   lines must not drop its own control below the one beside it, so the label
+   row takes the slack and the controls stay on one line. Only for fields whose
+   heights differ by their *labels* — a row holding a textarea wants the
+   default top alignment instead. */
+.field-grid--align-controls {
+  align-items: stretch;
+}
+
+.field-grid--align-controls > .field {
+  grid-template-rows: 1fr auto;
+}
+
+.field-grid--align-controls > .field > label {
+  align-self: start;
 }
 
 .field,
@@ -611,6 +784,13 @@ textarea {
 }
 
 .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  line-height: 1.2;
+  white-space: nowrap;
   border: 0;
   border-radius: 16px;
   padding: 12px 18px;
@@ -621,6 +801,12 @@ textarea {
 
 .button:hover {
   transform: translateY(-1px);
+}
+
+/* Lucide icons are inline SVGs — without this they are shrinkable flex items
+   and squash before the label does. */
+.button > svg {
+  flex-shrink: 0;
 }
 
 .button:disabled {
@@ -651,6 +837,7 @@ textarea {
 }
 
 .button--small {
+  gap: 6px;
   padding: 8px 12px;
   font-size: 0.85rem;
   font-weight: 700;
@@ -671,6 +858,21 @@ textarea {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+/* A sort affordance inside a table header. Undefined until now, so it carried
+   full .button padding and inflated every sortable column's minimum width. */
+.inventory-sort-btn {
+  gap: 4px;
+  padding: 4px 6px;
+  font-size: 0.78rem;
+  border-radius: 8px;
+  background: transparent;
+  border-color: transparent;
+}
+
+.inventory-sort-btn--active {
+  border-color: var(--line);
 }
 
 /* Split button group: primary action + caret dropdown trigger */
@@ -778,6 +980,10 @@ textarea {
   display: grid;
   gap: 4px;
   flex: 1;
+  /* Error copy carries hosts and addresses — unbreakable tokens that would
+     otherwise push the dismiss button out of the toast. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .toast__title {
@@ -791,6 +997,7 @@ textarea {
 }
 
 .toast__dismiss {
+  flex-shrink: 0;
   border: none;
   background: transparent;
   color: inherit;
@@ -990,16 +1197,46 @@ textarea {
   }
 }
 
+/* A chip is sized by its own short label — the prose or buttons beside it must
+   absorb a narrowing panel, never squeeze the chip into two lines. */
 .status-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
   border-radius: 999px;
   padding: 8px 12px;
   background: rgba(87, 209, 201, 0.1);
   color: #bffbf6;
   font-size: 0.84rem;
   font-weight: 700;
+}
+
+/* Same reason as `.button > svg` — an inline SVG is a shrinkable flex item. */
+.status-chip > svg,
+.action-dropdown__item > svg {
+  flex-shrink: 0;
+}
+
+/* Escape hatch for a chip holding arbitrary text (a URL, an opaque id) rather
+   than a short label: it wraps instead of running past the panel edge. */
+.status-chip--breakable {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Used by the tax-ledger validation chip; without these it fell back to the
+   neutral teal and an invalid state read as a passing one. */
+.status-chip--success {
+  background: rgba(87, 209, 201, 0.12);
+  color: #bffbf6;
+}
+
+.status-chip--error {
+  background: rgba(255, 139, 139, 0.12);
+  color: var(--danger);
 }
 
 .table-list,
@@ -1012,6 +1249,20 @@ textarea {
 .table-row,
 .invoice-row,
 .mini-row,
+/* Inventory rows carry four cells (meta, stock, dates, adjust controls) and
+   their children already carry `flex:` values — the shared three-track
+   .table-row grid was dropping the fourth onto its own line. */
+.inventory-feed-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.inventory-feed-row > .table-row__meta {
+  min-width: 0;
+}
+
 .line-item {
   display: grid;
   gap: 12px;
@@ -1040,6 +1291,12 @@ textarea {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
 
+/* Two tracks fit meta + price. A row that also carries actions needs a third,
+   or they auto-place onto a second row under the meta. */
+.invoice-row:has(> .invoice-row__actions) {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
 .invoice-row--sales {
   border-left: 4px solid rgba(34, 197, 94, 0.4);
 }
@@ -1057,11 +1314,75 @@ textarea {
 }
 
 .table-row {
-  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr) auto;
+  /* The middle track holds a currency figure, which has no break opportunity —
+     floored at min-content it takes its width from the 1.8fr meta column
+     instead of overflowing into the actions beside it. */
+  grid-template-columns: minmax(0, 1.8fr) minmax(min-content, 1fr) auto;
 }
 
+/* Product · Qty · Price · Discount · Line total · Remove, with the description
+   spanning underneath. Every cell that belongs to the row now has a track of
+   its own — the discount used to auto-place onto a second row by itself.
+   Labels differ in height ("Amount (incl. GST)" wraps where "Qty" does not),
+   so the row aligns on the bottom edge and the controls stay on one line. */
 .line-item {
-  grid-template-columns: minmax(0, 1.5fr) 100px 130px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1.5fr) 100px 150px minmax(min-content, 1fr) auto;
+  align-items: end;
+  gap: 12px 10px;
+}
+
+/* Only the composer's rows carry a per-line discount. The quick-create modal
+   uses .line-item with one cell fewer, so the extra track is opt-in — without
+   this its line total would sit in the narrow discount column. */
+.line-item--discount {
+  grid-template-columns: minmax(0, 1.6fr) 88px 124px 128px minmax(min-content, 1fr) auto;
+}
+
+/* Matches .field label so an unlabelled cell reads like a labelled one. */
+.line-item__label {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+/* The line total is a figure plus a tax breakdown. Only the figure is a single
+   unbreakable token — the breakdown beneath it must wrap rather than run over
+   the Remove button beside it. */
+.line-item__price {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+  text-align: right;
+}
+
+.line-item__price .table-subtext {
+  white-space: normal;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+/* Discount cell: unit toggle above, value below, inside one narrow track. */
+.line-item__discount {
+  display: grid;
+  gap: 4px;
+}
+
+.line-item__discount-modes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.line-item__discount-modes label {
+  margin: 0;
+  cursor: pointer;
+}
+
+.line-item__discount-modes input {
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .invoice-row__type-indicator {
@@ -1172,6 +1493,10 @@ textarea {
 .invoice-row__meta {
   display: grid;
   gap: 6px;
+  /* Emails, filenames and migration hashes are single unbreakable tokens; the
+     automatic minimum would otherwise push them past the panel edge. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .receipt-allocation-strip {
@@ -1310,6 +1635,7 @@ textarea {
 .invoice-row__price {
   font-weight: 800;
   font-size: 1.22rem;
+  white-space: nowrap;
 }
 
 .pill {
@@ -1344,6 +1670,9 @@ textarea {
   margin: 10px 0 0;
   font-size: 2rem;
   font-weight: 800;
+  /* Currency strings have no spaces, so at 2rem in a narrow grid track they
+     overflow the box instead of wrapping. */
+  overflow-wrap: anywhere;
 }
 
 .login-page {
@@ -1412,6 +1741,20 @@ textarea {
 
 .text-right {
   text-align: right;
+}
+
+/* Used for the sort-direction announcement in table headers. It had no rule at
+   all, so "(asc)" was rendering as visible text inside the sort button. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .modal-overlay {
@@ -1593,6 +1936,37 @@ textarea {
   border-radius: 14px;
   background: white;
   border: 1px solid #d9e2f2;
+}
+
+/* Generic settings-page tables. Both class names were used in markup but
+   defined nowhere, so their cells had no padding and collided. */
+.table,
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td,
+.data-table th,
+.data-table td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.table th,
+.data-table th {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.table tr:last-child td,
+.data-table tr:last-child td {
+  border-bottom: 0;
 }
 
 .invoice-sheet__table-wrap {
@@ -2066,7 +2440,9 @@ textarea {
 
 .invoice-compact-card__grid {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  /* The side column holds a fixed-width row of icon buttons; sizing it by
+     content stops the two text columns from starving it into wrapping. */
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
   gap: 14px;
   align-items: start;
 }
@@ -2094,6 +2470,7 @@ textarea {
   display: inline-flex;
   gap: 8px;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .invoice-compact-card__cancelled-badge {
@@ -2629,11 +3006,18 @@ textarea {
 .top-products__name {
   font-weight: 600;
   color: var(--text);
+  /* Override the auto minimum so a long name truncates instead of pushing the
+     figure beside it out of the panel. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .top-products__value {
   color: var(--muted);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .top-products__track {
@@ -2965,4 +3349,1022 @@ textarea {
 .combobox__clear:focus-visible {
   outline: 2px solid var(--sidebar-active-border);
   outline-offset: 1px;
+}
+
+/* ── Marketplace ──────────────────────────────────────────────────── */
+.marketplace-page {
+  display: grid;
+  gap: 16px;
+}
+
+/* Segmented Card/Table switcher, matching the invoice feed's. */
+.marketplace-view-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(7, 13, 24, 0.55);
+  flex-shrink: 0;
+}
+
+.marketplace-view-tabs .button {
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.marketplace-view-tabs .button--ghost {
+  background: transparent;
+  border: 0;
+}
+
+.marketplace-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.marketplace-toolbar__search {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.marketplace-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.marketplace-toolbar__actions .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.marketplace-filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.marketplace-chevron {
+  transition: transform 160ms ease;
+  opacity: 0.8;
+}
+
+.marketplace-drawer {
+  margin-top: 14px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  animation: marketplace-reveal 160ms ease;
+}
+
+@keyframes marketplace-reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* auto-fit rather than flex-wrap: the filters reflow on their own, with no
+   breakpoint to keep in sync. */
+.marketplace-drawer__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
+.marketplace-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.marketplace-field__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.marketplace-checkbox {
+  display: inline-flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 12px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.marketplace-checkbox input {
+  accent-color: var(--accent);
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.marketplace-results {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.marketplace-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.marketplace-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--bg-card);
+}
+
+.marketplace-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.marketplace-card__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  /* Seller-authored and unbounded, like the description below. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.marketplace-card__price {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.marketplace-card__price small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.marketplace-card__description {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+  /* Descriptions are seller-authored and unbounded; cap them so one long entry
+     can't stretch its card past the rest of the grid row. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.marketplace-card__seller {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.marketplace-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 0;
+}
+
+.marketplace-card__meta dt {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.marketplace-card__meta dd {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+/* GSTIN ownership is unverified in v1 — this badge is required wherever a
+   counterparty is named, so it is deliberately loud rather than subtle. */
+.marketplace-unverified {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(246, 214, 123, 0.4);
+  background: rgba(246, 214, 123, 0.12);
+  color: var(--warning);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* Dashboard announcement for marketplace publishing. Borrows the marketplace
+   accent so the card reads as belonging to that feature, not as chrome. */
+.promo-card {
+  border-color: var(--line-strong);
+  background:
+    linear-gradient(135deg, rgba(87, 209, 201, 0.09) 0%, rgba(87, 209, 201, 0) 55%),
+    var(--bg-card-strong);
+}
+
+.promo-card__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Tax-exclusive vs tax-inclusive price entry on the publish form. */
+.marketplace-price-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.marketplace-price-mode legend {
+  padding: 0 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(156, 173, 207, 0.8);
+}
+
+.marketplace-price-mode label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.marketplace-price-mode input {
+  cursor: pointer;
+}
+
+.marketplace-note {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.marketplace-note--emphasis {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line-strong);
+  background: rgba(87, 209, 201, 0.08);
+  color: var(--text);
+}
+
+.marketplace-note--warning {
+  color: var(--warning);
+}
+
+.marketplace-note--error {
+  color: var(--danger);
+}
+
+.marketplace-alert > svg {
+  flex-shrink: 0;
+}
+
+.marketplace-alert {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(246, 214, 123, 0.35);
+  background: rgba(246, 214, 123, 0.1);
+  color: var(--warning);
+}
+
+.marketplace-alert p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.marketplace-alert code {
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.marketplace-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px 18px;
+  margin: 16px 0 0;
+}
+
+.marketplace-summary dt {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.marketplace-summary dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Opaque ids and GSTINs do not fit a 150px track and cannot break on their
+     own — without this they spill over the cell beside them. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.marketplace-summary__hint {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.marketplace-summary__total dd {
+  color: var(--accent);
+  font-size: 1.1rem;
+}
+
+.marketplace-buy__seller {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 0.9rem;
+}
+
+.marketplace-meta {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(87, 209, 201, 0.06);
+}
+
+.marketplace-meta h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.marketplace-meta ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.7;
+}
+
+.marketplace-meta a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* Wide tables scroll inside their own container so the page body never scrolls
+   horizontally. The min-width is what makes that true. */
+.marketplace-table-scroll {
+  overflow-x: auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.marketplace-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.marketplace-table th {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.marketplace-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.marketplace-table td .table-subtext,
+.marketplace-table td .marketplace-note {
+  display: block;
+  margin-top: 4px;
+}
+
+/* A second chip in the same cell (a failed posting beside the order state)
+   belongs on its own line, not glued to the first. */
+.marketplace-table td .status-chip + .status-chip {
+  display: flex;
+  width: fit-content;
+  margin-top: 4px;
+}
+
+/* The axis is re-declared because the <=720px `.button-row { flex-direction:
+   column }` override would otherwise stack these inside a shrink-wrapped cell. */
+.marketplace-table .button-row {
+  gap: 6px;
+  flex-direction: row;
+  width: auto;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+/* The actions cell is sized by its buttons and keeps them on one row — the
+   content columns give up the width, and the wrapper scrolls if none is left. */
+.marketplace-table td:has(> .button-row) {
+  width: 1%;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* A failed auto-post is the one thing on this page a user must not scroll past. */
+.marketplace-row--failed td {
+  background: rgba(255, 139, 139, 0.08);
+}
+
+.marketplace-linklike {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.marketplace-linklike:hover {
+  text-decoration: underline;
+}
+
+.marketplace-pagination {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+}
+
+.marketplace-pagination__label {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.modal-panel--marketplace-order {
+  width: min(760px, 100%);
+}
+
+/* Status chips: the base .status-chip is the neutral/positive case, so only the
+   states that need to read differently are overridden. */
+.status-chip--pending,
+.status-chip--paused,
+.status-chip--draft {
+  background: rgba(246, 214, 123, 0.12);
+  color: var(--warning);
+}
+
+.status-chip--warning,
+.status-chip--failed,
+.status-chip--rejected,
+.status-chip--cancelled,
+.status-chip--expired {
+  background: rgba(255, 139, 139, 0.12);
+  color: var(--danger);
+}
+
+.status-chip--withdrawn {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+}
+
+/* The connection status panel takes a left edge in its status colour so the
+   state is readable before any of the copy is. */
+.marketplace-status {
+  border-left: 3px solid var(--accent);
+}
+
+.marketplace-status--pending_approval {
+  border-left-color: var(--warning);
+}
+
+.marketplace-status--unauthorized,
+.marketplace-status--suspended {
+  border-left-color: var(--danger);
+}
+
+.marketplace-status--unregistered,
+.marketplace-status--disconnected {
+  border-left-color: var(--line-strong);
+}
+
+@media (max-width: 720px) {
+  .marketplace-toolbar__actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .marketplace-toolbar__actions > .button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .marketplace-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Ledger master (/ledgers) ─────────────────────────────────────── */
+
+/* The hero's trailing cluster — the count chip and the create button. It was
+   an inline `display:flex` on the element; named here so both hero rows in the
+   ledger routes wrap the same way on a narrow page. */
+.page-hero__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ledger-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Search sits inside its own field with the magnifier and the clear affordance
+   overlaid, so the row reads as one control rather than a stack of label,
+   input and button. */
+.ledger-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 300px;
+  min-width: 0;
+}
+
+.ledger-search__icon {
+  position: absolute;
+  left: 15px;
+  color: rgba(156, 173, 207, 0.75);
+  pointer-events: none;
+}
+
+.ledger-search__input {
+  padding-left: 42px;
+  padding-right: 40px;
+}
+
+/* WebKit draws its own cancel glyph on type=search; ours is themed and sits in
+   the same place, so the two would overlap. */
+.ledger-search__input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.ledger-search__clear {
+  position: absolute;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(148, 184, 255, 0.12);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.ledger-search__clear:hover {
+  background: rgba(148, 184, 255, 0.22);
+  color: var(--text);
+}
+
+.ledger-toolbar__count {
+  margin: 0 0 0 auto;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ledger-toolbar__count strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* ── The row card ─────────────────────────────────────────────────── */
+
+.ledger-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 184, 255, 0.12);
+  background: linear-gradient(135deg, rgba(10, 22, 40, 0.6) 0%, rgba(15, 29, 48, 0.4) 100%);
+  overflow: hidden;
+  transition: transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease, background 200ms ease;
+}
+
+/* A rail on the leading edge that lights up with the row. It is the only thing
+   that moves on hover besides the lift, which keeps a long list calm. */
+.ledger-card::before {
+  content: '';
+  position: absolute;
+  inset: 14px auto 14px 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, var(--accent) 0%, rgba(126, 141, 255, 0.9) 100%);
+  opacity: 0;
+  transform: scaleY(0.35);
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.ledger-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(148, 184, 255, 0.26);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+  background: linear-gradient(135deg, rgba(87, 209, 201, 0.07) 0%, rgba(79, 125, 255, 0.07) 100%);
+}
+
+.ledger-card:hover::before,
+.ledger-card:focus-within::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+/* Monogram tile. The tint is derived from the ledger's name, so a ledger keeps
+   the same colour wherever it appears and the eye can find it again without
+   reading. */
+.ledger-card__avatar {
+  --tone: 148, 184, 255;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: rgb(var(--tone));
+  background: linear-gradient(150deg, rgba(var(--tone), 0.26) 0%, rgba(var(--tone), 0.07) 100%);
+  border: 1px solid rgba(var(--tone), 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.ledger-card__avatar--1 { --tone: 87, 209, 201; }
+.ledger-card__avatar--2 { --tone: 141, 171, 255; }
+.ledger-card__avatar--3 { --tone: 183, 155, 255; }
+.ledger-card__avatar--4 { --tone: 246, 214, 123; }
+.ledger-card__avatar--5 { --tone: 255, 152, 164; }
+.ledger-card__avatar--6 { --tone: 126, 231, 166; }
+
+.ledger-card__body {
+  gap: 10px;
+  align-content: start;
+}
+
+.ledger-card__headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+/* The name is the row's primary action — opening the statement — so it is a
+   real button rather than a label with a view icon parked beside it. */
+.ledger-card__name {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.06rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  transition: color 160ms ease;
+}
+
+.ledger-card__name:hover {
+  color: var(--accent);
+}
+
+.ledger-card__name:focus-visible {
+  outline: 2px solid rgba(87, 209, 201, 0.6);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.ledger-card__contacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.ledger-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(148, 184, 255, 0.07);
+  border: 1px solid rgba(148, 184, 255, 0.14);
+  color: #c7d7f4;
+  font-size: 0.76rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ledger-chip > svg {
+  flex-shrink: 0;
+  color: rgba(156, 173, 207, 0.7);
+}
+
+.ledger-chip--gst {
+  background: rgba(87, 209, 201, 0.1);
+  border-color: rgba(87, 209, 201, 0.26);
+  color: #a8f0e8;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-chip--gst > svg {
+  color: var(--accent);
+}
+
+.ledger-card__address {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.ledger-card__address > svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  opacity: 0.7;
+}
+
+/* Bank details are reference data, not identity — recessed into their own
+   strip so they sit behind the name and contacts in the reading order. */
+.ledger-card__bank {
+  /* Sized by its own facts rather than stretched across the row — a two-field
+     strip beside a wide card would otherwise read as an empty box. */
+  justify-self: start;
+  max-width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(8, 16, 29, 0.56);
+  border: 1px solid rgba(148, 184, 255, 0.12);
+}
+
+.ledger-card__bank > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: rgba(148, 184, 255, 0.55);
+}
+
+.ledger-card__bank-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin: 0;
+  min-width: 0;
+}
+
+.ledger-card__bank-facts > div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ledger-card__bank-facts dt {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(156, 173, 207, 0.6);
+}
+
+.ledger-card__bank-facts dd {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #dce7fb;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ledger-card__aside {
+  display: grid;
+  justify-items: end;
+  align-content: start;
+  gap: 10px;
+}
+
+.ledger-card__id {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(148, 184, 255, 0.1);
+  color: rgba(156, 173, 207, 0.6);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Where there is a pointer, the row's controls stay quiet until it arrives.
+   Touch has no hover to recover them with, so they stay at full strength. */
+@media (hover: hover) {
+  .ledger-card__actions {
+    opacity: 0.6;
+    transition: opacity 180ms ease;
+  }
+
+  .ledger-card:hover .ledger-card__actions,
+  .ledger-card:focus-within .ledger-card__actions {
+    opacity: 1;
+  }
+}
+
+/* ── Loading skeletons ────────────────────────────────────────────── */
+
+.ledger-skeletons {
+  display: grid;
+  gap: 12px;
+}
+
+.ledger-skeleton {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 184, 255, 0.1);
+  background: rgba(10, 22, 40, 0.45);
+}
+
+.ledger-skeleton__lines {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+}
+
+.ledger-skeleton__avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+}
+
+.ledger-skeleton__line {
+  width: 70%;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.ledger-skeleton__line--title {
+  width: 38%;
+  height: 14px;
+}
+
+.ledger-skeleton__line--short {
+  width: 52%;
+}
+
+.ledger-skeleton__avatar,
+.ledger-skeleton__line {
+  background: linear-gradient(
+    90deg,
+    rgba(148, 184, 255, 0.06) 0%,
+    rgba(148, 184, 255, 0.16) 50%,
+    rgba(148, 184, 255, 0.06) 100%
+  );
+  background-size: 220% 100%;
+  animation: ledger-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes ledger-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* ── Pagination ───────────────────────────────────────────────────── */
+
+.ledger-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(148, 184, 255, 0.1);
+}
+
+.ledger-pagination__status {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-pagination__status strong {
+  color: var(--text);
+  font-weight: 800;
+}
+
+@media (max-width: 720px) {
+  /* The shared `.table-row → 1fr` mobile rule would drop the avatar onto its
+     own line; the monogram column is narrow enough to keep. */
+  .ledger-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 16px;
+  }
+
+  .ledger-card__aside {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .ledger-toolbar__count {
+    margin-left: 0;
+  }
+
+  .ledger-pagination {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ledger-skeleton__avatar,
+  .ledger-skeleton__line {
+    animation: none;
+  }
+
+  .ledger-card,
+  .ledger-card::before {
+    transition: none;
+  }
+
+  .ledger-card:hover {
+    transform: none;
+  }
 }

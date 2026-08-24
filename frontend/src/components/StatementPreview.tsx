@@ -137,7 +137,7 @@ export default function StatementPreview({ ledger, statement, company, currencyC
             ))}
           </section>
 
-          <section>
+          <section className="invoice-sheet__table-wrap">
             <table className="invoice-sheet__table">
               <thead>
                 <tr>

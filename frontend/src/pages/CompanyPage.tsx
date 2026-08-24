@@ -844,7 +844,7 @@ export default function CompanyPage() {
 
       {/* -------- Branding Section (Logo + Additional Info) -------- */}
       {!loading && (
-        <section className="content-grid">
+        <section className="content-grid content-grid--single">
           <article className="panel stack" style={{ gap: '24px' }}>
             <LogoUploadCard logoUrl={logoUrl} onLogoChanged={loadCompanyProfile} />
             <AdditionalInfoSection
