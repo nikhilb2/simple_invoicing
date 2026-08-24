@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
+import MarketplacePromoCard from '../components/MarketplacePromoCard';
 import EmptyState from '../components/EmptyState';
 import { MonthlyTrendChart, PaymentStatusDonut, TopProductsBars } from '../components/DashboardCharts';
 import type { DashboardMetrics, InventoryRow, Invoice, PaginatedInventoryOut } from '../types/api';
@@ -149,6 +150,8 @@ export default function DashboardPage() {
       </section>
 
       <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
+
+      <MarketplacePromoCard />
 
       <section className="stats-grid stats-grid--dense">
         {statCards.map((card) => (

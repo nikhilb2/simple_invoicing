@@ -63,6 +63,32 @@ export function percentOfDecimal(base: Decimal, rate: Decimal): Decimal {
   return { units: product.units, scale: product.scale + 2 };
 }
 
+/**
+ * `a / b`, rounded half-up to `scale` decimals.
+ *
+ * Unlike every other operation here this one cannot be exact — a rate like 18%
+ * makes the tax-exclusive price a repeating decimal — so the rounding is
+ * explicit and the caller chooses the scale it will actually store.
+ */
+export function divideDecimal(a: Decimal, b: Decimal, scale: number): Decimal | null {
+  if (b.units === 0n) return null;
+
+  // result = round(a / b * 10^scale), with the two operands' own scales folded
+  // into the exponent so the whole thing stays integer arithmetic.
+  const shift = scale + b.scale - a.scale;
+  const numerator = shift >= 0 ? a.units * 10n ** BigInt(shift) : a.units;
+  const denominator = shift >= 0 ? b.units : b.units * 10n ** BigInt(-shift);
+
+  const negative = (numerator < 0n) !== (denominator < 0n);
+  const absNumerator = numerator < 0n ? -numerator : numerator;
+  const absDenominator = denominator < 0n ? -denominator : denominator;
+
+  const quotient = absNumerator / absDenominator;
+  const remainder = absNumerator % absDenominator;
+  const rounded = remainder * 2n >= absDenominator ? quotient + 1n : quotient;
+  return { units: negative ? -rounded : rounded, scale };
+}
+
 export function formatDecimal(value: Decimal, minFractionDigits = 2): string {
   const scale = Math.max(value.scale, minFractionDigits);
   const scaled = rescale(value, scale);
@@ -114,6 +140,73 @@ export function computeOrderTotals(unitPrice: string, quantity: string, gstRate:
     cgst: formatDecimal(cgst, 2),
     sgst: formatDecimal(sgst, 2),
     total: formatDecimal(addDecimal(taxable, tax), 2),
+  };
+}
+
+/**
+ * Tax-exclusive <-> tax-inclusive conversion for a listing's unit price.
+ *
+ * The contract stores `asking_price` tax-exclusive and nothing about that
+ * changes — these exist so the seller may *type* whichever number they actually
+ * have on their price list, and see the other one before they publish.
+ *
+ * Both round to two decimals because that is the precision the price is stored
+ * at (`Numeric(12,2)`, quantized again by the backend serializer). Rounding here
+ * rather than later means the number the seller confirms is the number that
+ * ships — a gross price entered at a rate that does not divide evenly comes back
+ * a paisa off, and it is better to show that than to hide it.
+ */
+const HUNDRED: Decimal = { units: 100n, scale: 0 };
+
+export function inclusiveFromExclusive(exclusive: string, gstRate: string): string | null {
+  const price = parseDecimal(exclusive);
+  const rate = parseDecimal(gstRate);
+  if (!price || !rate) return null;
+  return formatDecimal(roundDecimal(addDecimal(price, percentOfDecimal(price, rate)), 2), 2);
+}
+
+export function exclusiveFromInclusive(inclusive: string, gstRate: string): string | null {
+  const price = parseDecimal(inclusive);
+  const rate = parseDecimal(gstRate);
+  if (!price || !rate) return null;
+  // net = gross * 100 / (100 + rate) — a division, so it is the one step here
+  // that cannot be exact.
+  const net = divideDecimal(multiplyDecimal(price, HUNDRED), addDecimal(HUNDRED, rate), 2);
+  return net ? formatDecimal(net, 2) : null;
+}
+
+/**
+ * The tax-exclusive price to publish, given what the seller typed and which of
+ * the two prices they meant.
+ *
+ * This is the rule the whole toggle rests on: `asking_price` on the wire is
+ * always tax-exclusive, so an inclusive entry has to be divided down before it
+ * leaves. A rate of `null` means no product is chosen yet and there is nothing
+ * to divide by — the text is kept as typed and reinterpreted once one is, so a
+ * price entered before the product is not silently taken as net.
+ */
+export function canonicalAskingPrice(
+  typed: string,
+  includesTax: boolean,
+  gstRate: string | null,
+): string {
+  if (!includesTax || gstRate === null) return typed;
+  return exclusiveFromInclusive(typed, gstRate) ?? '';
+}
+
+/** Per-unit net/tax/gross for the publish form's price preview. Mirrors
+ *  `computeOrderTotals` at quantity 1, which is what a buyer will see. */
+export function computeUnitPrice(exclusive: string, gstRate: string) {
+  const price = parseDecimal(exclusive);
+  const rate = parseDecimal(gstRate);
+  if (!price || !rate) return null;
+
+  const net = roundDecimal(price, 2);
+  const tax = roundDecimal(percentOfDecimal(net, rate), 2);
+  return {
+    net: formatDecimal(net, 2),
+    tax: formatDecimal(tax, 2),
+    gross: formatDecimal(addDecimal(net, tax), 2),
   };
 }
 

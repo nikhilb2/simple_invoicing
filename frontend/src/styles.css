@@ -404,6 +404,17 @@ textarea {
   align-items: end;
 }
 
+/* The prose column is what absorbs a narrow page; the chip beside it is sized
+   by its own text and must not be squeezed into two lines. */
+.page-hero > :first-child {
+  min-width: 0;
+}
+
+.page-hero > .status-chip {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .page-title {
   margin: 0;
   font-size: clamp(1.8rem, 3vw, 2.6rem);
@@ -481,6 +492,23 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   align-items: start;
+}
+
+/* Opt-in for a row of plain label+control fields: a label that wraps to two
+   lines must not drop its own control below the one beside it, so the label
+   row takes the slack and the controls stay on one line. Only for fields whose
+   heights differ by their *labels* — a row holding a textarea wants the
+   default top alignment instead. */
+.field-grid--align-controls {
+  align-items: stretch;
+}
+
+.field-grid--align-controls > .field {
+  grid-template-rows: 1fr auto;
+}
+
+.field-grid--align-controls > .field > label {
+  align-self: start;
 }
 
 .field,
@@ -611,6 +639,13 @@ textarea {
 }
 
 .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  line-height: 1.2;
+  white-space: nowrap;
   border: 0;
   border-radius: 16px;
   padding: 12px 18px;
@@ -621,6 +656,12 @@ textarea {
 
 .button:hover {
   transform: translateY(-1px);
+}
+
+/* Lucide icons are inline SVGs — without this they are shrinkable flex items
+   and squash before the label does. */
+.button > svg {
+  flex-shrink: 0;
 }
 
 .button:disabled {
@@ -651,6 +692,7 @@ textarea {
 }
 
 .button--small {
+  gap: 6px;
   padding: 8px 12px;
   font-size: 0.85rem;
   font-weight: 700;
@@ -3198,6 +3240,56 @@ textarea {
   cursor: help;
 }
 
+/* Dashboard announcement for marketplace publishing. Borrows the marketplace
+   accent so the card reads as belonging to that feature, not as chrome. */
+.promo-card {
+  border-color: var(--line-strong);
+  background:
+    linear-gradient(135deg, rgba(87, 209, 201, 0.09) 0%, rgba(87, 209, 201, 0) 55%),
+    var(--bg-card-strong);
+}
+
+.promo-card__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Tax-exclusive vs tax-inclusive price entry on the publish form. */
+.marketplace-price-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.marketplace-price-mode legend {
+  padding: 0 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(156, 173, 207, 0.8);
+}
+
+.marketplace-price-mode label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.marketplace-price-mode input {
+  cursor: pointer;
+}
+
 .marketplace-note {
   margin: 0;
   font-size: 0.8rem;
@@ -3350,6 +3442,16 @@ textarea {
 
 .marketplace-table .button-row {
   gap: 6px;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+/* The actions cell is sized by its buttons and keeps them on one row — the
+   content columns give up the width, and the wrapper scrolls if none is left. */
+.marketplace-table td:has(> .button-row) {
+  width: 1%;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 /* A failed auto-post is the one thing on this page a user must not scroll past. */

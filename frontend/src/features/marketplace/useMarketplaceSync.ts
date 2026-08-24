@@ -30,6 +30,18 @@ export function useMarketplaceConnection() {
 }
 
 /**
+ * Whether this company can publish to a marketplace right now.
+ *
+ * `PublishToMarketplaceButton` gates itself, but a page that gives the action
+ * its own table column has to know before it renders the header — otherwise an
+ * unconnected company gets a permanently empty column.
+ */
+export function useCanPublishToMarketplace(): boolean {
+  const { data } = useMarketplaceConnection();
+  return data?.status === 'connected';
+}
+
+/**
  * Mounted once in Layout. This is the primary delivery path for marketplace
  * events — the central server can never reach a self-hosted instance, so
  * nothing arrives unless something here asks for it.

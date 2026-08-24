@@ -7,6 +7,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import BOMConfigModal from '../components/BOMConfigModal';
 import formatCurrency from '../utils/formatting';
 import EmptyState from '../components/EmptyState';
+import PublishToMarketplaceButton from '../components/PublishToMarketplaceButton';
 
 const UNIT_OPTIONS = ['Pieces', 'Kg', 'g', 'm', 'l', 'Ounce'];
 const CUSTOM_UNIT_VALUE = '__custom__';
@@ -462,6 +463,11 @@ export default function ProductsPage() {
                     </div>
                     <span className="table-row__price">{formatCurrency(product.price, activeCurrencyCode)}</span>
                     <div className="table-row__actions">
+                      <PublishToMarketplaceButton
+                        productId={product.id}
+                        productName={product.name}
+                        product={product}
+                      />
                       {product.is_producable ? (
                         <button
                           type="button"

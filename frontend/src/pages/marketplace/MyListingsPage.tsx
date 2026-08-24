@@ -8,7 +8,7 @@ import StatusToasts from '../../components/StatusToasts';
 import { createListing, fetchMyListings, updateListing, withdrawListing } from '../../features/marketplace/api';
 import { marketplaceQueryKeys } from '../../features/marketplace/queryKeys';
 import { useMarketplaceConnection } from '../../features/marketplace/useMarketplaceSync';
-import { formatMoney, formatQuantity } from '../../features/marketplace/decimal';
+import { formatMoney, formatQuantity, inclusiveFromExclusive } from '../../features/marketplace/decimal';
 import type { ListingStatus, MarketplaceListing } from '../../features/marketplace/types';
 import { fetchProducts } from '../../features/invoices/api';
 import { invoiceQueryKeys } from '../../features/invoices/queryKeys';
@@ -117,8 +117,9 @@ export default function MyListingsPage() {
           <p className="eyebrow">Marketplace</p>
           <h1 className="page-title">My listings</h1>
           <p className="section-copy">
-            Products you have published for other businesses to buy. Prices are per unit and
-            tax-exclusive.
+            Products you have published for other businesses to buy. Prices are per unit; the
+            marketplace publishes the tax-exclusive figure, with what a buyer pays shown beneath
+            it.
           </p>
         </div>
         {connectionQuery.data && <SyncStatusChip connection={connectionQuery.data} />}
@@ -185,7 +186,15 @@ export default function MyListingsPage() {
                             <span className="marketplace-note marketplace-note--error">{listing.last_error}</span>
                           )}
                         </td>
-                        <td>{formatMoney(listing.asking_price, listing.currency_code)}</td>
+                        <td>
+                          {formatMoney(listing.asking_price, listing.currency_code)}
+                          {inclusiveFromExclusive(listing.asking_price, listing.gst_rate) && (
+                            <span className="table-subtext">
+                              {inclusiveFromExclusive(listing.asking_price, listing.gst_rate)} incl.
+                              GST
+                            </span>
+                          )}
+                        </td>
                         <td>
                           {formatQuantity(listing.available_quantity_published)}
                           <span className="table-subtext">
