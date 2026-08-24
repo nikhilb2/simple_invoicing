@@ -6,7 +6,7 @@ import StatusToasts from '../../components/StatusToasts';
 import { downloadProfitLossCsv, fetchProfitLoss } from '../../features/analytics/api';
 import { analyticsQueryKeys } from '../../features/analytics/queryKeys';
 import type { AnalyticsFilters, ProfitLossProductRow } from '../../features/analytics/types';
-import formatCurrency from '../../utils/formatting';
+import formatCurrency, { formatCompactCurrency } from '../../utils/formatting';
 import MonthlyProfitChart from './charts/MonthlyProfitChart';
 import ProfitByProductChart from './charts/ProfitByProductChart';
 
@@ -92,17 +92,23 @@ export default function ProfitLossTab({ filters }: { filters: AnalyticsFilters }
           <section className="stats-grid stats-grid--dense">
             <article className="stat-card">
               <p className="eyebrow">Revenue (ex-GST)</p>
-              <p className="stat-card__value">{formatCurrency(totals.revenue, currency)}</p>
+              <p className="stat-card__value" title={formatCurrency(totals.revenue, currency)}>
+                {formatCompactCurrency(totals.revenue, currency)}
+              </p>
               <p className="muted-text">Taxable value of sales.</p>
             </article>
             <article className="stat-card">
               <p className="eyebrow">Cost of goods sold</p>
-              <p className="stat-card__value">{formatCurrency(totals.cogs, currency)}</p>
+              <p className="stat-card__value" title={formatCurrency(totals.cogs, currency)}>
+                {formatCompactCurrency(totals.cogs, currency)}
+              </p>
               <p className="muted-text">Quantity sold × purchase price.</p>
             </article>
             <article className="stat-card">
               <p className="eyebrow">Gross profit</p>
-              <p className={`stat-card__value${profitTone}`}>{formatCurrency(totals.gross_profit, currency)}</p>
+              <p className={`stat-card__value${profitTone}`} title={formatCurrency(totals.gross_profit, currency)}>
+                {formatCompactCurrency(totals.gross_profit, currency)}
+              </p>
               <p className="muted-text">Revenue − cost of goods sold.</p>
             </article>
             <article className="stat-card">

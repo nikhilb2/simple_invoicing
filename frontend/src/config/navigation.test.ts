@@ -25,6 +25,13 @@ describe('resolveDocumentTitle', () => {
     expect(resolveDocumentTitle('/email-history')).toBe('Email History');
   });
 
+  it('titles the marketplace routes, including the admin-only settings page', () => {
+    expect(resolveDocumentTitle('/marketplace')).toBe('Marketplace');
+    expect(resolveDocumentTitle('/marketplace/listings')).toBe('My Listings');
+    expect(resolveDocumentTitle('/marketplace/orders')).toBe('Marketplace Orders');
+    expect(resolveDocumentTitle('/marketplace/settings')).toBe('Marketplace Settings');
+  });
+
   it('titles hidden routes', () => {
     expect(resolveDocumentTitle('/invoices-view')).toBe('Advanced Invoice View');
   });
@@ -60,6 +67,37 @@ describe('visibleNavGroups', () => {
     const paths = visibleNavGroups(true).flatMap((group) => group.items.map((item) => item.to));
     expect(paths).toContain('/api-keys');
     expect(paths).toContain('/smtp-settings');
+  });
+
+  it('hides marketplace settings from non-admins but keeps the trading pages', () => {
+    const paths = visibleNavGroups(false).flatMap((group) => group.items.map((item) => item.to));
+    expect(paths).not.toContain('/marketplace/settings');
+    expect(paths).toContain('/marketplace');
+  });
+
+  it('shows the marketplace group to everyone, connected or not', () => {
+    // Deliberately unconditional: the sidebar must not depend on a network
+    // call for connection state. Each page renders its own connect prompt.
+    for (const isAdmin of [true, false]) {
+      const marketplace = visibleNavGroups(isAdmin).find((group) => group.id === 'marketplace');
+      expect(marketplace?.label).toBe('Marketplace');
+      expect(marketplace?.items.map((item) => item.to)).toEqual([
+        '/marketplace',
+        '/marketplace/listings',
+        '/marketplace/orders',
+      ]);
+    }
+  });
+
+  it('orders the marketplace group between catalogue and organisation', () => {
+    const ids = visibleNavGroups(true).map((group) => group.id);
+    expect(ids.indexOf('marketplace')).toBeGreaterThan(ids.indexOf('catalogue'));
+    expect(ids.indexOf('marketplace')).toBeLessThan(ids.indexOf('organisation'));
+  });
+
+  it('marks /marketplace as an exact NavLink match', () => {
+    // Without `end` the Browse link stays highlighted on every child route.
+    expect(NAV_ITEMS.find((item) => item.to === '/marketplace')?.end).toBe(true);
   });
 
   it('never surfaces hidden items', () => {

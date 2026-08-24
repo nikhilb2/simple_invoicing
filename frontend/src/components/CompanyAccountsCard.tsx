@@ -237,7 +237,7 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
 
           {isAdmin ? (
             <>
-              <div className="field-grid">
+              <div className="field-grid field-grid--align-controls">
                 <div className="field">
                   <label htmlFor="new-account-type">Type</label>
                   <select
@@ -380,7 +380,7 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
               if (!draft) return null;
               return (
                 <div key={account.id} className="panel" style={{ padding: '16px' }}>
-                  <div className="field-grid">
+                  <div className="field-grid field-grid--align-controls">
                     <div className="field">
                       <label htmlFor={`account-type-${account.id}`}>Type</label>
                       <select

@@ -216,7 +216,7 @@ export default function BOMConfigModal({ productId, productName, onClose }: BOMC
                         <strong>{c.component_name}</strong>
                         <span className="table-subtext">{c.component_sku} · {c.component_unit}</span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div className="table-row__actions" style={{ alignItems: 'center', flexWrap: 'nowrap' }}>
                         <input
                           className="input"
                           type="number"

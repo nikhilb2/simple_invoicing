@@ -62,6 +62,20 @@ test.describe('Invoices', () => {
     return { sku, productName, ledgerName };
   }
 
+  /**
+   * Due date, supplier reference, reference notes, shipping address, invoice
+   * discount and round-off now sit behind the composer's "Advanced options"
+   * disclosure. It opens itself when a loaded invoice already uses one of
+   * them, so this is a no-op in that case.
+   */
+  async function openAdvanced(page: import('@playwright/test').Page) {
+    const toggle = page.locator('.form-advanced-toggle input[type="checkbox"]');
+    await expect(toggle).toBeVisible();
+    if (!(await toggle.isChecked())) {
+      await toggle.check();
+    }
+  }
+
   test('displays invoice composer heading', async ({ authedPage: page }) => {
     await page.click('[href="/invoices"]');
     await expect(page.locator('h1')).toContainText('Invoice composer');
@@ -72,7 +86,7 @@ test.describe('Invoices', () => {
 
     await page.click('[href="/invoices"]');
     await page.waitForTimeout(500);
-    await page.getByRole('button', { name: 'Add ledger' }).click();
+    await page.getByRole('button', { name: 'New ledger' }).click();
 
     const modal = page.getByRole('dialog', { name: 'Create ledger' });
     await expect(modal).toBeVisible();
@@ -94,7 +108,7 @@ test.describe('Invoices', () => {
 
     await page.click('[href="/invoices"]');
     await page.waitForTimeout(500);
-    await page.getByRole('button', { name: 'Add product' }).click();
+    await page.getByRole('button', { name: 'New product' }).click();
 
     const modal = page.getByRole('dialog', { name: 'Create product' });
     await expect(modal).toBeVisible();
@@ -239,7 +253,8 @@ test.describe('Invoices', () => {
     const countBefore = await lineItems.count();
 
     // Remove the last line item
-    await page.locator('.line-item').last().locator('button:has-text("Remove")').click();
+    // The row action is an icon button now — matched by its accessible name.
+    await page.locator('.line-item').last().locator('button[aria-label^="Remove line item"]').click();
     await expect(page.locator('.line-item')).toHaveCount(countBefore - 1);
   });
 
@@ -372,6 +387,7 @@ test.describe('Invoices', () => {
   test('supplier invoice # field is hidden for sales invoices', async ({ authedPage: page }) => {
     await page.click('[href="/invoices"]');
     await page.waitForTimeout(500);
+    await openAdvanced(page);
 
     await page.selectOption('#invoice-voucher-type', 'sales');
     await expect(page.locator('#invoice-supplier-ref')).not.toBeVisible();
@@ -380,6 +396,7 @@ test.describe('Invoices', () => {
   test('reference notes field is visible for sales invoices', async ({ authedPage: page }) => {
     await page.click('[href="/invoices"]');
     await page.waitForTimeout(500);
+    await openAdvanced(page);
 
     await page.selectOption('#invoice-voucher-type', 'sales');
     await expect(page.locator('#invoice-reference-notes')).toBeVisible();
@@ -388,6 +405,7 @@ test.describe('Invoices', () => {
   test('reference notes field is hidden for purchase invoices', async ({ authedPage: page }) => {
     await page.click('[href="/invoices"]');
     await page.waitForTimeout(500);
+    await openAdvanced(page);
 
     await page.selectOption('#invoice-voucher-type', 'purchase');
     await expect(page.locator('#invoice-reference-notes')).not.toBeVisible();
@@ -396,6 +414,7 @@ test.describe('Invoices', () => {
   test('supplier invoice # field is visible for purchase invoices', async ({ authedPage: page }) => {
     await page.click('[href="/invoices"]');
     await page.waitForTimeout(500);
+    await openAdvanced(page);
 
     await page.selectOption('#invoice-voucher-type', 'purchase');
     await expect(page.locator('#invoice-supplier-ref')).toBeVisible();
@@ -416,6 +435,7 @@ test.describe('Invoices', () => {
     await selectComboboxOption(page, productInputId, sku);
     await page.locator('[id^="invoice-quantity-"]').first().fill('3');
 
+    await openAdvanced(page);
     await page.fill('#invoice-supplier-ref', supplierRef);
 
     await page.click('button:has-text("Create invoice")');
@@ -431,6 +451,7 @@ test.describe('Invoices', () => {
     await page.click('[href="/invoices"]');
     await page.waitForTimeout(500);
 
+    await openAdvanced(page);
     await page.selectOption('#invoice-voucher-type', 'purchase');
     await page.fill('#invoice-supplier-ref', 'TEMP-REF-123');
 
@@ -456,6 +477,7 @@ test.describe('Invoices', () => {
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
     await selectComboboxOption(page, productInputId, sku);
     await page.locator('[id^="invoice-quantity-"]').first().fill('2');
+    await openAdvanced(page);
     await page.fill('#invoice-supplier-ref', supplierRef);
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'Purchase invoice created');
@@ -481,6 +503,7 @@ test.describe('Invoices', () => {
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
     await selectComboboxOption(page, productInputId, sku);
     await page.locator('[id^="invoice-quantity-"]').first().fill('2');
+    await openAdvanced(page);
     await page.fill('#invoice-reference-notes', referenceNotes);
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'Sales invoice created');
@@ -604,21 +627,62 @@ test.describe('Invoices', () => {
     await expect(page.locator('#invoice-tax-inclusive')).toBeChecked();
   });
 
-  test('cancel edit resets tax-inclusive checkbox', async ({ authedPage: page }) => {
+  /* Replaces 'cancel edit resets tax-inclusive checkbox'. The composer now
+     remembers price-entry mode as a standing preference, so a reload restoring
+     the box to unchecked would be the bug, not the expected result. */
+  test('remembers the tax-inclusive choice across a reload', async ({ authedPage: page }) => {
     await page.click('[href="/invoices"]');
     await page.waitForTimeout(500);
 
     await page.check('#invoice-tax-inclusive');
     await expect(page.locator('#invoice-tax-inclusive')).toBeChecked();
 
-    // Without creating an invoice, simulate clicking "Cancel edit" via resetInvoiceForm
-    // (We need to be in edit mode; trigger it by mock-navigating or checking state reset on page reload)
-    // Simplest: reload the page — the state should reset
+    await page.reload();
+    await page.waitForTimeout(500);
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+    await expect(page.locator('#invoice-tax-inclusive')).toBeChecked();
+
+    // Turning it back off is remembered the same way.
+    await page.uncheck('#invoice-tax-inclusive');
     await page.reload();
     await page.waitForTimeout(500);
     await page.click('[href="/invoices"]');
     await page.waitForTimeout(500);
     await expect(page.locator('#invoice-tax-inclusive')).not.toBeChecked();
+  });
+
+  test('remembers whether advanced options are open, and reopens them for an invoice that uses them', async ({ authedPage: page }) => {
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+
+    const toggle = page.locator('.form-advanced-toggle input[type="checkbox"]');
+    await expect(toggle).not.toBeChecked();
+    await expect(page.locator('#invoice-due-mode')).toHaveCount(0);
+
+    await openAdvanced(page);
+    await expect(page.locator('#invoice-due-mode')).toBeVisible();
+
+    await page.reload();
+    await page.waitForTimeout(500);
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+    await expect(toggle).toBeChecked();
+
+    // Collapsing it is an explicit choice and is honoured for the rest of the
+    // session, even with a setting in use...
+    await page.selectOption('#invoice-due-mode', 'days');
+    await toggle.uncheck();
+    await expect(page.locator('#invoice-due-mode')).toHaveCount(0);
+
+    // ...but a composer that loads with that setting still in use reopens it,
+    // so a value affecting the invoice is never hidden behind a closed row.
+    await page.reload();
+    await page.waitForTimeout(500);
+    await page.click('[href="/invoices"]');
+    await page.waitForTimeout(500);
+    await expect(toggle).toBeChecked();
+    await expect(page.locator('#invoice-due-mode')).toHaveValue('days');
   });
 
   // ---------------------------------------------------------------------------
@@ -665,6 +729,7 @@ test.describe('Invoices', () => {
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
     await selectComboboxOption(page, productInputId, sku);
     await page.locator('[id^="invoice-quantity-"]').first().fill('1');
+    await openAdvanced(page);
     await page.fill('#invoice-supplier-ref', supplierRef);
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'Purchase invoice created');
@@ -773,6 +838,7 @@ test.describe('Invoices', () => {
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
     await selectComboboxOption(page, productInputId, sku);
     await page.locator('[id^="invoice-quantity-"]').first().fill('1');
+    await openAdvanced(page);
     await page.fill('#invoice-supplier-ref', 'SP-E2E-PDF');
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'Purchase invoice created');

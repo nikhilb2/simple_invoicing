@@ -382,7 +382,7 @@ export default function InvoiceDuesPage() {
                       </span>
                     </div>
                     <span className="invoice-row__price">{formatCurrency(invoice.total_amount, currencyCode)}</span>
-                    <div style={{ display: 'flex', gap: '6px' }}>
+                    <div className="invoice-row__actions">
                       {invoice.ledger_id ? (
                         <Link className="button button--ghost button--small" to={`/ledgers/${invoice.ledger_id}`}>
                           Ledger

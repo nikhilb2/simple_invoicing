@@ -192,7 +192,7 @@ function SmtpFormModal({ editing, onClose, onSaved, onError }: SmtpFormModalProp
         </div>
 
         <form className="stack" onSubmit={handleSubmit} style={{ marginTop: '16px' }}>
-          <div className="field-grid">
+          <div className="field-grid field-grid--align-controls">
             <div className="field">
               <label htmlFor="smtp-name">Name</label>
               <input
@@ -281,7 +281,7 @@ function SmtpFormModal({ editing, onClose, onSaved, onError }: SmtpFormModalProp
             </div>
           </div>
 
-          <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+          <label className="field" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
             <input
               type="checkbox"
               checked={form.use_starttls}

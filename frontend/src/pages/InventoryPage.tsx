@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowUpDown, FileText } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
+import PublishToMarketplaceButton from '../components/PublishToMarketplaceButton';
 import type { InventoryAdjust, InventoryRow, PaginatedInventoryOut } from '../types/api';
 
 type SortBy = 'name' | 'quantity' | 'date_added' | 'last_sold';
@@ -217,6 +218,12 @@ export default function InventoryPage() {
                       >
                         <FileText size={15} />
                       </button>
+                      <PublishToMarketplaceButton
+                        productId={row.product_id}
+                        productName={row.product_name}
+                        quantity={row.quantity}
+                        variant="small"
+                      />
                     </div>
                   </div>
                 ))

@@ -65,7 +65,9 @@ export default function SidebarFYSwitcher() {
             aria-haspopup="listbox"
             aria-expanded={fyDropdownOpen}
           >
-            <span>{activeFY ? activeFY.label : 'No active FY'}</span>
+            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {activeFY ? activeFY.label : 'No active FY'}
+            </span>
             <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>▾</span>
           </button>
           {fyDropdownOpen && (

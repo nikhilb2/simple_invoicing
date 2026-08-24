@@ -92,7 +92,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             {userEmail ? userEmail[0].toUpperCase() : 'U'}
           </div>
           <div className="sidebar__user-meta">
-            <span className="sidebar__user-email">{userEmail ?? 'Active user'}</span>
+            <span className="sidebar__user-email" title={userEmail ?? undefined}>{userEmail ?? 'Active user'}</span>
             <span className="sidebar__user-role">{isAdmin ? 'Admin' : 'User'}</span>
           </div>
         </div>
