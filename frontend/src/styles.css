@@ -535,6 +535,110 @@ textarea {
   align-self: stretch;
 }
 
+/* A field label with an inline action beside it — "Ledger    + New ledger".
+   The shortcut sits where you discover you need it, rather than in a row of
+   buttons competing with the form's own submit. */
+.field__label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* A quiet, text-weight action. For maintenance shortcuts that must stay
+   reachable without reading as a primary action. */
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.link-button > svg {
+  flex-shrink: 0;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.link-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+/* A checkbox and its label on one line, for options that read as a sentence
+   rather than as a labelled field. */
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.inline-check input {
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* The advanced-options disclosure: everything an ordinary invoice does not
+   need. The hint names what is inside, and what is currently set. */
+.form-advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+}
+
+.form-advanced-toggle input {
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.form-advanced-toggle__label {
+  font-weight: 800;
+  font-size: 0.92rem;
+}
+
+.form-advanced-toggle__hint {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* Line items get a header carrying the price-entry mode and the catalogue
+   shortcuts, so both sit with the fields they govern. */
+.line-items__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.line-items__tools {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
 /* Opt-in for a row of plain label+control fields: a label that wraps to two
    lines must not drop its own control below the one beside it, so the label
    row takes the slack and the controls stay on one line. Only for fields whose
@@ -1216,11 +1320,69 @@ textarea {
   grid-template-columns: minmax(0, 1.8fr) minmax(min-content, 1fr) auto;
 }
 
-/* "Amount (incl. GST)" wraps in its track while "Qty" does not, so align on the
-   bottom edge — the labels take the slack and the controls stay on one line. */
+/* Product · Qty · Price · Discount · Line total · Remove, with the description
+   spanning underneath. Every cell that belongs to the row now has a track of
+   its own — the discount used to auto-place onto a second row by itself.
+   Labels differ in height ("Amount (incl. GST)" wraps where "Qty" does not),
+   so the row aligns on the bottom edge and the controls stay on one line. */
 .line-item {
-  grid-template-columns: minmax(0, 1.5fr) 100px 150px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1.5fr) 100px 150px minmax(min-content, 1fr) auto;
   align-items: end;
+  gap: 12px 10px;
+}
+
+/* Only the composer's rows carry a per-line discount. The quick-create modal
+   uses .line-item with one cell fewer, so the extra track is opt-in — without
+   this its line total would sit in the narrow discount column. */
+.line-item--discount {
+  grid-template-columns: minmax(0, 1.6fr) 88px 124px 128px minmax(min-content, 1fr) auto;
+}
+
+/* Matches .field label so an unlabelled cell reads like a labelled one. */
+.line-item__label {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+/* The line total is a figure plus a tax breakdown. Only the figure is a single
+   unbreakable token — the breakdown beneath it must wrap rather than run over
+   the Remove button beside it. */
+.line-item__price {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+  text-align: right;
+}
+
+.line-item__price .table-subtext {
+  white-space: normal;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+/* Discount cell: unit toggle above, value below, inside one narrow track. */
+.line-item__discount {
+  display: grid;
+  gap: 4px;
+}
+
+.line-item__discount-modes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.line-item__discount-modes label {
+  margin: 0;
+  cursor: pointer;
+}
+
+.line-item__discount-modes input {
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .invoice-row__type-indicator {
