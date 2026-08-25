@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink } from './fixtures';
 
 /**
  * Helper: create a product (with stock) + ledger, navigate to /invoices, and
@@ -10,7 +10,7 @@ async function createInvoicePrerequisites(page: Parameters<typeof selectCombobox
   const ledgerName = `CancelTest-${Date.now().toString(36)}`;
 
   // Create product
-  await page.click('.sidebar [href="/products"]');
+  await clickNavLink(page, '/products');
   await page.fill('#sku', sku);
   await page.fill('#name', `CancelProd ${sku}`);
   await page.fill('#price', '100');
@@ -19,7 +19,7 @@ async function createInvoicePrerequisites(page: Parameters<typeof selectCombobox
   await expectSuccess(page, 'Product created');
 
   // Add inventory
-  await page.click('.sidebar [href="/inventory"]');
+  await clickNavLink(page, '/inventory');
   // Wait for ProductCombobox to be enabled (products loaded)
   await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   await selectComboboxOption(page, 'inventory-product', sku);
@@ -28,7 +28,7 @@ async function createInvoicePrerequisites(page: Parameters<typeof selectCombobox
   await expectSuccess(page, 'Inventory updated');
 
   // Create ledger
-  await page.click('[href="/ledgers"]');
+  await clickNavLink(page, '/ledgers');
   await page.click('button:has-text("Create ledger")');
   await page.fill('#ledger-name', ledgerName);
   await page.fill('#ledger-address', 'Cancel Street');
@@ -38,7 +38,7 @@ async function createInvoicePrerequisites(page: Parameters<typeof selectCombobox
   await expectSuccess(page, 'Ledger created');
 
   // Navigate to invoices and create one sales invoice
-  await page.click('[href="/invoices"]');
+  await clickNavLink(page, '/invoices');
   // Wait for LedgerCombobox to be enabled (ledgers loaded)
   await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   await page.selectOption('#invoice-voucher-type', 'sales');
@@ -180,7 +180,7 @@ test.describe('Invoice cancellation', () => {
     await expectSuccess(page, 'Invoice cancelled');
 
     // Navigate away and come back
-    await page.click('.sidebar [href="/products"]');
+    await clickNavLink(page, '/products');
     await openInvoiceFeed(page);
 
     // Still hidden in default view

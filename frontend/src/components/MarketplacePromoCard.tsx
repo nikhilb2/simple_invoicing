@@ -132,7 +132,7 @@ export default function MarketplacePromoCard() {
         ) : (
           <>
             {isAdmin && (
-              <Link to="/marketplace/settings" className="button button--primary button--small">
+              <Link to="/settings/marketplace" className="button button--primary button--small">
                 <Store size={15} />
                 Connect to a marketplace
               </Link>

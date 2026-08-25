@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink } from './fixtures';
 
 const LEDGER_EMAIL = 'buyer@example.com';
 const EXPECT_TIMEOUT_MS = Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '2000');
@@ -11,7 +11,7 @@ async function createLedgerAndNavigateToView(
   page: import('@playwright/test').Page,
   ledgerName: string,
 ) {
-  await page.click('[href="/ledgers"]');
+  await clickNavLink(page, '/ledgers');
   await page.click('button:has-text("Create ledger")');
   await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
@@ -149,7 +149,7 @@ test.describe('Send Email Modal', () => {
       const ledgerName = `EmailInvLedger-${Date.now().toString(36)}`;
 
       // Create product
-      await page.click('.sidebar [href="/products"]');
+      await clickNavLink(page, '/products');
       await page.fill('#sku', sku);
       await page.fill('#name', productName);
       await page.fill('#price', '500');
@@ -158,7 +158,7 @@ test.describe('Send Email Modal', () => {
       await expectSuccess(page, 'Product created');
 
       // Add inventory
-      await page.click('.sidebar [href="/inventory"]');
+      await clickNavLink(page, '/inventory');
       await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
       await selectComboboxOption(page, 'inventory-product', sku);
       await page.fill('#inventory-quantity', '20');
@@ -166,7 +166,7 @@ test.describe('Send Email Modal', () => {
       await expectSuccess(page, 'Inventory updated');
 
       // Create ledger with email
-      await page.click('[href="/ledgers"]');
+      await clickNavLink(page, '/ledgers');
       await page.click('button:has-text("Create ledger")');
       await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
       await page.fill('#ledger-name', ledgerName);
@@ -178,7 +178,7 @@ test.describe('Send Email Modal', () => {
       await expectSuccess(page, 'Ledger created');
 
       // Create invoice
-      await page.click('[href="/invoices"]');
+      await clickNavLink(page, '/invoices');
       await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
       await page.selectOption('#invoice-voucher-type', 'sales');
       await selectComboboxOption(page, 'invoice-ledger', ledgerName);
@@ -238,7 +238,7 @@ test.describe('Send Email Modal', () => {
       const ledgerName = `EmailStmtLedger-${Date.now().toString(36)}`;
 
       // Create product
-      await page.click('.sidebar [href="/products"]');
+      await clickNavLink(page, '/products');
       await page.fill('#sku', sku);
       await page.fill('#name', `StmtProd-${sku}`);
       await page.fill('#price', '100');
@@ -247,7 +247,7 @@ test.describe('Send Email Modal', () => {
       await expectSuccess(page, 'Product created');
 
       // Add inventory
-      await page.click('.sidebar [href="/inventory"]');
+      await clickNavLink(page, '/inventory');
       await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
       await selectComboboxOption(page, 'inventory-product', sku);
       await page.fill('#inventory-quantity', '10');
@@ -255,7 +255,7 @@ test.describe('Send Email Modal', () => {
       await expectSuccess(page, 'Inventory updated');
 
       // Create ledger with email
-      await page.click('[href="/ledgers"]');
+      await clickNavLink(page, '/ledgers');
       await page.click('button:has-text("Create ledger")');
       await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
       await page.fill('#ledger-name', ledgerName);
@@ -267,7 +267,7 @@ test.describe('Send Email Modal', () => {
       await expectSuccess(page, 'Ledger created');
 
       // Create an invoice so the statement has entries
-      await page.click('[href="/invoices"]');
+      await clickNavLink(page, '/invoices');
       await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
       await page.selectOption('#invoice-voucher-type', 'sales');
       await selectComboboxOption(page, 'invoice-ledger', ledgerName);
@@ -278,7 +278,7 @@ test.describe('Send Email Modal', () => {
       await expectSuccess(page, 'invoice created');
 
       // Navigate to ledger view
-      await page.click('[href="/ledgers"]');
+      await clickNavLink(page, '/ledgers');
       await page.waitForTimeout(500);
       await page.fill('#ledger-search', ledgerName);
       await page.waitForTimeout(500);

@@ -1,13 +1,20 @@
 import { test, expect, expectSuccess, uniqueGstin } from './fixtures';
 
 test.describe('Company Profile', () => {
-  test('displays billing identity heading', async ({ authedPage: page }) => {
-    await page.click('[href="/company"]');
+  // Company left the main rail in the sidebar redesign — the only way to it in
+  // the UI is now Settings -> Company. This is the one test that walks that
+  // path; the rest go straight to the URL, since their subject is the form.
+  test('is reachable from the sidebar via Settings', async ({ authedPage: page }) => {
+    await page.locator('.sidebar__link--settings').click();
+    await expect(page).toHaveURL('/settings');
+
+    await page.locator('.settings-nav__link[href="/settings/company"]').click();
+    await expect(page).toHaveURL('/settings/company');
     await expect(page.locator('h1')).toContainText('Billing identity');
   });
 
   test('saves company profile', async ({ authedPage: page }) => {
-    await page.click('[href="/company"]');
+    await page.goto('/settings/company');
 
     // Wait for form to be ready
     await expect(page.locator('#company-name')).toBeVisible({ timeout: 5_000 });
@@ -30,7 +37,7 @@ test.describe('Company Profile', () => {
   test('saves company profile with bank details', async ({
     authedPage: page,
   }) => {
-    await page.click('[href="/company"]');
+    await page.goto('/settings/company');
     await expect(page.locator('#company-name')).toBeVisible({ timeout: 5_000 });
 
     await page.fill('#company-name', 'Bank Details Corp');
@@ -50,7 +57,7 @@ test.describe('Company Profile', () => {
   test('persists company data across page reloads', async ({
     authedPage: page,
   }) => {
-    await page.click('[href="/company"]');
+    await page.goto('/settings/company');
     await expect(page.locator('#company-name')).toBeVisible({ timeout: 5_000 });
 
     const companyName = `Persist Co ${Date.now().toString(36)}`;
@@ -70,7 +77,7 @@ test.describe('Company Profile', () => {
   test('currency dropdown has multiple options', async ({
     authedPage: page,
   }) => {
-    await page.click('[href="/company"]');
+    await page.goto('/settings/company');
     await expect(page.locator('#company-currency')).toBeVisible({
       timeout: 5_000,
     });

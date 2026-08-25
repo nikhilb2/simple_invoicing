@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures';
+import { test, expect, clickNavLink } from './fixtures';
 
 /** Pick the first option in a combobox — avoids depending on seeded names. */
 async function selectFirstOption(page: Page, inputId: string) {
@@ -15,8 +15,8 @@ function clearButton(page: Page, inputId: string) {
 }
 
 test.describe('Analytics', () => {
-  test('is reachable from the sidebar Analytics group', async ({ authedPage: page }) => {
-    await page.click('.sidebar [href="/analytics"]');
+  test('is reachable from the sidebar Reports section', async ({ authedPage: page }) => {
+    await clickNavLink(page, '/analytics');
     await expect(page).toHaveURL(/\/analytics/);
     await expect(page.locator('.page-title')).toHaveText('Analytics');
   });

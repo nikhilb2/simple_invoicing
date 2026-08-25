@@ -1,15 +1,15 @@
-import { test, expect, expectSuccess, expectError, uniqueGstin } from './fixtures';
+import { test, expect, expectSuccess, expectError, uniqueGstin, clickNavLink } from './fixtures';
 
 test.describe('Ledgers CRUD', () => {
   const uniqueName = () => `Ledger-${Date.now().toString(36)}`;
 
   test('displays ledger master heading', async ({ authedPage: page }) => {
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await expect(page.locator('h1')).toContainText('Ledger master');
   });
 
   test('creates a new ledger via create page', async ({ authedPage: page }) => {
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     await expect(page.locator('h1')).toContainText('Create ledger');
 
@@ -30,7 +30,7 @@ test.describe('Ledgers CRUD', () => {
   });
 
   test('creates ledger with bank details', async ({ authedPage: page }) => {
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
 
     const name = uniqueName();
@@ -53,7 +53,7 @@ test.describe('Ledgers CRUD', () => {
   });
 
   test('creates and edits ledger opening balance', async ({ authedPage: page }) => {
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
 
     const name = uniqueName();
@@ -95,7 +95,7 @@ test.describe('Ledgers CRUD', () => {
   });
 
   test('edits an existing ledger via edit page', async ({ authedPage: page }) => {
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     const name = uniqueName();
 
@@ -129,7 +129,7 @@ test.describe('Ledgers CRUD', () => {
   });
 
   test('deletes a ledger', async ({ authedPage: page }) => {
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     const name = uniqueName();
 
@@ -154,7 +154,7 @@ test.describe('Ledgers CRUD', () => {
   });
 
   test('views a ledger and sees statement page', async ({ authedPage: page }) => {
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     const name = uniqueName();
 
@@ -185,7 +185,7 @@ test.describe('Ledgers CRUD', () => {
   });
 
   test('cancel on create page returns to list', async ({ authedPage: page }) => {
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
@@ -198,7 +198,7 @@ test.describe('Ledgers CRUD', () => {
     const nameA = `SearchAlpha-${Date.now().toString(36)}`;
     const nameB = `SearchBeta-${Date.now().toString(36)}`;
 
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
 
     // Create first ledger
     await page.click('button:has-text("Create ledger")');
@@ -234,7 +234,7 @@ test.describe('Ledgers CRUD', () => {
   });
 
   test('shows search-no-results message when search finds nothing', async ({ authedPage: page }) => {
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.fill('#ledger-search', 'ZZZZNONEXISTENT999');
     await page.waitForTimeout(500);
 

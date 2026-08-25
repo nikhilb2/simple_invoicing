@@ -1,7 +1,9 @@
-import { LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { Link, NavLink } from 'react-router-dom';
+import { useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ChevronRight, LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import SidebarFYSwitcher from './SidebarFYSwitcher';
-import { visibleNavGroups } from '../config/navigation';
+import { SETTINGS_ENTRY, sectionIdForPath, visiblePrimaryNav, type NavLeaf } from '../config/navigation';
 import { useAuth } from '../context/AuthContext';
 import { useSidebarStore } from '../store/useSidebarStore';
 
@@ -10,12 +12,43 @@ interface SidebarProps {
   onClose?: () => void;
 }
 
+function linkClass(isActive: boolean, extra = '') {
+  return `sidebar__link${extra}${isActive ? ' sidebar__link--active' : ''}`;
+}
+
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const { isAdmin, userEmail, logout } = useAuth();
-  const { collapsed, toggleCollapsed } = useSidebarStore();
-  const groups = visibleNavGroups(isAdmin);
+  const { collapsed, toggleCollapsed, openSection, toggleSection, openSectionFor } = useSidebarStore();
+  const location = useLocation();
+  const entries = visiblePrimaryNav(isAdmin);
+  const currentSection = sectionIdForPath(location.pathname);
 
   // Escape-to-close lives in Layout, which owns the drawer state.
+
+  // Arriving inside a section opens it. Manual toggles are left alone: this
+  // only fires when the path changes, so a section the user opened by hand
+  // while staying put stays open.
+  useEffect(() => {
+    if (currentSection) openSectionFor(currentSection);
+  }, [currentSection, openSectionFor]);
+
+  const renderLeaf = (item: NavLeaf, extraClass = '') => {
+    const Icon = item.icon;
+    return (
+      <NavLink
+        key={item.to}
+        to={item.to}
+        end={item.end}
+        className={({ isActive }) => linkClass(isActive, extraClass)}
+        onClick={() => onClose?.()}
+        // Tooltip stands in for the label once the rail collapses.
+        title={item.label}
+      >
+        <Icon size={18} aria-hidden="true" />
+        <span className="sidebar__link-label">{item.label}</span>
+      </NavLink>
+    );
+  };
 
   return (
     <aside
@@ -49,44 +82,73 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       </div>
 
       <nav className="sidebar__nav" id="sidebar-nav" aria-label="Sidebar navigation">
-        {groups.map((group) => (
-          <div
-            className="sidebar__group"
-            key={group.id}
-            role="group"
-            {...(group.label ? { 'aria-labelledby': `nav-group-${group.id}` } : {})}
-          >
-            {group.label && (
-              <p className="sidebar__group-label" id={`nav-group-${group.id}`}>
-                {group.label}
-              </p>
-            )}
-            {group.items.map((item) => {
-              const Icon = item.icon;
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.end}
-                  className={({ isActive }) =>
-                    `sidebar__link${isActive ? ' sidebar__link--active' : ''}`
-                  }
-                  onClick={() => onClose?.()}
-                  // Tooltip stands in for the label once the rail collapses.
-                  title={item.label}
-                >
-                  <Icon size={18} aria-hidden="true" />
-                  <span className="sidebar__link-label">{item.label}</span>
-                </NavLink>
-              );
-            })}
-          </div>
-        ))}
+        {entries.map((entry) => {
+          if (entry.kind === 'link') return renderLeaf(entry);
+
+          const Icon = entry.icon;
+          const isCurrent = currentSection === entry.id;
+
+          // A 68px rail has no room to expand into, and a disclosure that
+          // opens onto clipped labels is a dead end — so the rail links
+          // straight to the section's first page instead.
+          if (collapsed) {
+            return (
+              <NavLink
+                key={entry.id}
+                to={entry.children[0].to}
+                className={linkClass(isCurrent, ' sidebar__link--rail-section')}
+                onClick={() => onClose?.()}
+                title={entry.label}
+              >
+                <Icon size={18} aria-hidden="true" />
+                <span className="sidebar__link-label">{entry.label}</span>
+              </NavLink>
+            );
+          }
+
+          const isExpanded = openSection === entry.id;
+          return (
+            <div className="sidebar__section" key={entry.id}>
+              <button
+                type="button"
+                className={`sidebar__link sidebar__section-toggle${isCurrent ? ' sidebar__section-toggle--current' : ''}`}
+                onClick={() => toggleSection(entry.id)}
+                aria-expanded={isExpanded}
+                aria-controls={`nav-section-${entry.id}`}
+              >
+                <Icon size={18} aria-hidden="true" />
+                <span className="sidebar__link-label">{entry.label}</span>
+                <ChevronRight
+                  size={15}
+                  aria-hidden="true"
+                  className={`sidebar__chevron${isExpanded ? ' sidebar__chevron--open' : ''}`}
+                />
+              </button>
+
+              <AnimatePresence initial={false}>
+                {isExpanded && (
+                  <motion.div
+                    id={`nav-section-${entry.id}`}
+                    className="sidebar__section-items"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.18, ease: 'easeOut' }}
+                  >
+                    {entry.children.map((child) => renderLeaf(child, ' sidebar__link--child'))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })}
       </nav>
 
       <SidebarFYSwitcher />
 
       <div className="sidebar__footer">
+        {renderLeaf(SETTINGS_ENTRY, ' sidebar__link--settings')}
+
         <div className="sidebar__user">
           <div className="sidebar__user-avatar">
             {userEmail ? userEmail[0].toUpperCase() : 'U'}

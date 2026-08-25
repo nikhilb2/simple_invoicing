@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueGstin, selectComboboxOption } from './fixtures';
+import { test, expect, expectSuccess, uniqueGstin, selectComboboxOption, clickNavLink } from './fixtures';
 
 test.describe('Payment Vouchers from Invoices Page', () => {
   /**
@@ -6,7 +6,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
    */
   async function createLedger(page: import('@playwright/test').Page, suffix = '') {
     const ledgerName = `PVLedger-${Date.now().toString(36)}${suffix}`;
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);
@@ -19,14 +19,14 @@ test.describe('Payment Vouchers from Invoices Page', () => {
   }
 
   test('Payment option appears in voucher type dropdown', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await expect(page.locator('h1')).toContainText('Invoice composer', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     const select = page.locator('#invoice-voucher-type');
     await expect(select.locator('option[value="payment"]')).toHaveCount(1);
   });
 
   test('selecting Payment type shows payment sub-form instead of line items', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await expect(page.locator('h1')).toContainText('Invoice composer', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Before selecting payment, line items should be present
@@ -52,7 +52,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
   test('creates a payment voucher and it appears in Payment Vouchers tab', async ({ authedPage: page }) => {
     const ledgerName = await createLedger(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await expect(page.locator('h1')).toContainText('Invoice composer', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Select Payment voucher type
@@ -83,7 +83,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
   test('payment number is auto-numbered with PAY prefix', async ({ authedPage: page }) => {
     const ledgerName = await createLedger(page, '-num');
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await expect(page.locator('h1')).toContainText('Invoice composer', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     await page.selectOption('#invoice-voucher-type', 'payment');
@@ -104,7 +104,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
   test('payment number reflects saved series suffix', async ({ authedPage: page }) => {
     const ledgerName = await createLedger(page, '-suffix');
 
-    await page.click('[href="/company"]');
+    await page.goto('/settings/company');
     await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     const paymentSeriesRow = page.locator('xpath=//strong[normalize-space()="Payment"]/ancestor::div[contains(@class,"panel")][1]');
@@ -114,7 +114,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
     await paymentSeriesRow.locator('button:has-text("Save")').click();
     await expect(page.locator('text=Saved').first()).toBeVisible({ timeout: 8_000 });
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await expect(page.locator('h1')).toContainText('Invoice composer', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     await page.selectOption('#invoice-voucher-type', 'payment');
@@ -131,7 +131,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
     const body = await createResponse.json();
     expect(body.payment_number || '').toMatch(/\/PV$/);
 
-    await page.click('[href="/company"]');
+    await page.goto('/settings/company');
     await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     const resetPaymentSeriesRow = page.locator('xpath=//strong[normalize-space()="Payment"]/ancestor::div[contains(@class,"panel")][1]');
     await resetPaymentSeriesRow.locator('[id^="series-suffix-"]').fill('');
@@ -142,7 +142,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
   test('payment amount validation prevents zero amount', async ({ authedPage: page }) => {
     const ledgerName = await createLedger(page, '-val');
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await expect(page.locator('h1')).toContainText('Invoice composer', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     await page.selectOption('#invoice-voucher-type', 'payment');
@@ -159,7 +159,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
   });
 
   test('switching back to Sales from Payment restores line items', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await expect(page.locator('h1')).toContainText('Invoice composer', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Select Payment
@@ -177,7 +177,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
   });
 
   test('Invoices tab and Payment Vouchers tab are both visible', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await expect(page.locator('h1')).toContainText('Invoice composer', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Composer now links to a dedicated invoice feed view.

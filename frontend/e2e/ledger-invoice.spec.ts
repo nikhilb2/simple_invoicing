@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink } from './fixtures';
 
 async function setStatementRangeToCurrentMonth(page: import('@playwright/test').Page) {
   const today = new Date();
@@ -17,7 +17,7 @@ test.describe('Create Invoice from Ledger View', () => {
     const ledgerName = `LI-Ledger-${Date.now().toString(36)}`;
 
     // 1. Create product
-    await page.click('.sidebar [href="/products"]');
+    await clickNavLink(page, '/products');
     await page.fill('#sku', sku);
     await page.fill('#name', productName);
     await page.fill('#price', '500');
@@ -26,7 +26,7 @@ test.describe('Create Invoice from Ledger View', () => {
     await expectSuccess(page, 'Product created');
 
     // 2. Add inventory
-    await page.click('.sidebar [href="/inventory"]');
+    await clickNavLink(page, '/inventory');
     await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await selectComboboxOption(page, 'inventory-product', sku);
     await page.fill('#inventory-quantity', '100');
@@ -34,7 +34,7 @@ test.describe('Create Invoice from Ledger View', () => {
     await expectSuccess(page, 'Inventory updated');
 
     // 3. Create ledger
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);
@@ -143,7 +143,7 @@ test.describe('Create Invoice from Ledger View', () => {
 test.describe('Ledger View Actions Dropdown', () => {
   test('dropdown opens on caret click and shows both actions', async ({ authedPage: page }) => {
     // Create a minimal ledger and navigate to its view page
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     const ledgerName = `DropdownLedger-${Date.now().toString(36)}`;
@@ -174,7 +174,7 @@ test.describe('Ledger View Actions Dropdown', () => {
   });
 
   test('dropdown closes when clicking outside', async ({ authedPage: page }) => {
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     const ledgerName = `DropdownClose-${Date.now().toString(36)}`;

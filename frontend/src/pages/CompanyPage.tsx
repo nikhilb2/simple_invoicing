@@ -759,7 +759,7 @@ export default function CompanyPage() {
     }
 
     if (setupRequiredByRoute) {
-      navigate('/company', { replace: true });
+      navigate('/settings/company', { replace: true });
     }
   }
 

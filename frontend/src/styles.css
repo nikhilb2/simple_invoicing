@@ -175,10 +175,8 @@ textarea {
   gap: 4px;
 }
 
-.sidebar__group {
-  margin-bottom: 8px;
-}
-
+/* The heading above the company and financial-year switchers. The nav's own
+   group headings went away with the flat list — sections label themselves. */
 .sidebar__group-label {
   font-size: 0.65rem;
   font-weight: 700;
@@ -221,7 +219,7 @@ textarea {
   background: var(--sidebar-footer-bg);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .sidebar__user {
@@ -3326,15 +3324,6 @@ a.invoice-row {
     border: 0;
   }
 
-  /* Group headings collapse to a rule so the grouping still reads at 68px. */
-  .app-shell--rail .sidebar__group-label {
-    height: 0;
-    padding: 0;
-    overflow: hidden;
-    border-top: 1px solid var(--sidebar-border);
-    margin: 8px 4px;
-  }
-
   .app-shell--rail .sidebar__brand {
     justify-content: center;
   }
@@ -3364,6 +3353,88 @@ a.invoice-row {
   justify-content: center;
   gap: 8px;
 }
+
+/* ── Sidebar sections (accordion) ─────────────────────────────────── */
+/* One section is open at a time, so the rail holds ~10 rows however many
+   sections exist. The toggle reuses .sidebar__link so a parent row and a leaf
+   row share a hit target and a resting colour. */
+
+.sidebar__section {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar__section-toggle {
+  position: relative;
+  width: 100%;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+/* The section that owns the current route. Deliberately quieter than
+   --active: the leaf inside it carries the accent, and two accented rows in
+   one column read as two current pages. */
+.sidebar__section-toggle--current {
+  color: var(--sidebar-text);
+}
+
+/* A 2px tick in the gutter — enough to say "the page you are on is in here"
+   without competing with the accent on the active leaf itself. */
+.sidebar__section-toggle--current::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  width: 2px;
+  height: 16px;
+  margin-top: -8px;
+  border-radius: 2px;
+  background: var(--sidebar-active-text);
+}
+
+.sidebar__chevron {
+  margin-left: auto;
+  opacity: 0.6;
+  transition: transform 180ms ease;
+}
+
+.sidebar__chevron--open {
+  transform: rotate(90deg);
+}
+
+/* AnimatePresence animates the height, so the wrapper must clip. */
+.sidebar__section-items {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* The guide rail that ties children to their parent. */
+  margin: 2px 0 2px 19px;
+  padding-left: 11px;
+  border-left: 1px solid var(--sidebar-border);
+}
+
+.sidebar__link--child {
+  font-size: 0.83rem;
+  padding: 7px 10px;
+  gap: 9px;
+}
+
+.sidebar__link--child svg {
+  width: 15px;
+  height: 15px;
+  opacity: 0.85;
+}
+
+/* Settings sits in the footer rather than the nav: it is navigation, but not
+   the kind you scan past on the way to work. The rail rules for .sidebar__link
+   already centre it at 68px. */
+.sidebar__link--settings {
+  margin: 0 -6px 2px;
+}
+
 
 /* ── Tabs ─────────────────────────────────────────────────────────── */
 /* Segmented control — same padded, bordered pill as the invoice feed's
@@ -4636,5 +4707,244 @@ a.invoice-row {
 
   .sidebar-toggle {
     min-height: 40px;
+  }
+}
+
+
+/* ── Settings shell ───────────────────────────────────────────────── */
+/* Settings were seven rows in the main rail. They are one now, and this is the
+   frame behind it: a sub-nav that only exists inside /settings, so the extra
+   level of depth costs nothing on any other page. */
+
+.settings-shell {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: clamp(20px, 3vw, 40px);
+  align-items: start;
+}
+
+.settings-nav {
+  position: sticky;
+  /* Clears .page-frame's top padding so the rail doesn't ride up under it. */
+  top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 10px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  border-radius: 20px;
+  backdrop-filter: blur(18px);
+}
+
+.settings-nav__back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  transition: 150ms ease;
+}
+
+.settings-nav__back:hover,
+.settings-nav__back--active {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.settings-nav__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-nav__group + .settings-nav__group {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-nav__group-label {
+  margin: 0 0 2px;
+  padding: 0 10px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sidebar-section-label);
+}
+
+.settings-nav__link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--muted);
+  border: 1px solid transparent;
+  transition: 150ms ease;
+}
+
+.settings-nav__link:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.settings-nav__link--active {
+  color: var(--accent);
+  background: var(--sidebar-active-bg);
+  border-color: var(--sidebar-active-border);
+  font-weight: 600;
+}
+
+.settings-nav__link svg {
+  flex-shrink: 0;
+}
+
+.settings-shell__content {
+  min-width: 0;
+}
+
+/* ── Settings overview cards ──────────────────────────────────────── */
+.settings-overview__group {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-overview__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 12px;
+}
+
+.settings-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  border-radius: 20px;
+  transition: border-color 150ms ease, transform 150ms ease, background 150ms ease;
+}
+
+.settings-card:hover {
+  border-color: var(--line-strong);
+  background: var(--bg-card-strong);
+  transform: translateY(-2px);
+}
+
+.settings-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: var(--sidebar-active-bg);
+  border: 1px solid var(--sidebar-active-border);
+  color: var(--accent);
+}
+
+.settings-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-card__title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.settings-card__copy {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.settings-card__chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--muted);
+  opacity: 0.5;
+  transition: 150ms ease;
+}
+
+.settings-card:hover .settings-card__chevron {
+  opacity: 1;
+  color: var(--accent);
+  transform: translateX(2px);
+}
+
+/* Nine links stacked above the content would push the actual settings off a
+   phone screen, so the rail becomes a horizontally scrolling strip of chips. */
+@media (max-width: 900px) {
+  .settings-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-nav {
+    position: static;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 16px;
+    overflow-x: auto;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+    /* Fades both ends so the strip reads as scrollable rather than truncated.
+       The mask follows the scroll box, so it sits over whichever chip is at
+       the edge — including the one the active-chip scroll pushed off the left. */
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 24px,
+      #000 calc(100% - 24px),
+      transparent
+    );
+  }
+
+  .settings-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-nav__back {
+    margin-bottom: 0;
+    flex-shrink: 0;
+  }
+
+  .settings-nav__group {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .settings-nav__group + .settings-nav__group {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+    padding-left: 6px;
+    border-left: 1px solid var(--line);
+  }
+
+  /* The group headings are the one thing a single row cannot carry. */
+  .settings-nav__group-label {
+    display: none;
+  }
+
+  .settings-nav__link {
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 }

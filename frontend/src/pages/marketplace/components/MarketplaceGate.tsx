@@ -19,7 +19,7 @@ const HAS_CONNECTION = ['connected', 'pending_approval', 'suspended', 'unauthori
  * Renders the "connect first" state instead of the page when this company has
  * no marketplace connection.
  *
- * The nav group is deliberately always visible — `visibleNavGroups(isAdmin)`
+ * The nav group is deliberately always visible — `visiblePrimaryNav(isAdmin)`
  * knows nothing about connection state — so every marketplace page has to be
  * able to explain itself to someone who has never connected.
  */
@@ -44,7 +44,7 @@ export default function MarketplaceGate({ connection, isLoading, failed, childre
         <EmptyState
           message="This company is not connected to a marketplace. Connect one to browse listings from other businesses, publish your own surplus stock, and trade."
           action={
-            <Link to="/marketplace/settings" className="button button--primary">
+            <Link to="/settings/marketplace" className="button button--primary">
               <Store size={16} />
               Connect to a marketplace
             </Link>
