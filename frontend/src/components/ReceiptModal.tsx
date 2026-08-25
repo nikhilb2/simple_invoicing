@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
+import { track } from '../lib/analytics';
 import type { CompanyAccount, OutstandingInvoice, Payment, PaymentCreate, PaymentInvoiceAllocation } from '../types/api';
 import { fetchOutstandingInvoices } from '../features/invoices/api';
 import formatCurrency from '../utils/formatting';
@@ -136,6 +137,14 @@ export default function ReceiptModal({
     try {
       setSubmitting(true);
       const res = await api.post<Payment>('/payments/', form);
+      track('payment_recorded', {
+        payment_id: res.data.id,
+        voucher_type: 'receipt',
+        amount: form.amount,
+        mode: form.mode ?? null,
+        allocated_invoice_count: form.invoice_allocations?.length ?? 0,
+        source: 'receipt_modal',
+      });
       const warningMsg = res.data.warnings?.includes('invoice_date_outside_fy') && activeFY
         ? ` ⚠️ This date is outside the active financial year (${activeFY.label}). The receipt was still recorded.`
         : '';

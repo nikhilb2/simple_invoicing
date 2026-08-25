@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import api from '../api/client';
+import { identifyUser, resetAnalyticsUser, setUserProperties, track } from '../lib/analytics';
 import type { AuthToken, UserProfile } from '../types/api';
 
 function decodeEmailFromToken(token: string | null) {
@@ -54,6 +55,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       } else {
         localStorage.removeItem('active_company_id');
       }
+      setUserProperties({
+        role: res.data.role,
+        active_company_id: res.data.active_company_id ?? null,
+      });
       set({ userRole: res.data.role });
     } catch {
       set({ userRole: null });
@@ -64,14 +69,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const res = await api.post<AuthToken>('/auth/login', { email, password });
     localStorage.setItem('token', res.data.access_token);
     localStorage.setItem('refresh_token', res.data.refresh_token);
+    const identifiedEmail = decodeEmailFromToken(res.data.access_token);
     set({
       token: res.data.access_token,
-      userEmail: decodeEmailFromToken(res.data.access_token),
+      userEmail: identifiedEmail,
     });
+
+    // Identify before the first post-login event so the anonymous events this
+    // browser already captured are stitched onto the operator's person.
+    if (identifiedEmail) {
+      identifyUser(identifiedEmail, { email: identifiedEmail });
+    }
+    track('user_logged_in');
+
     await get().hydrateUserRole();
   },
 
   logout: () => {
+    track('user_logged_out');
+    resetAnalyticsUser();
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('active_company_id');

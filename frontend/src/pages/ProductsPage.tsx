@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pencil, Trash2, Settings2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
+import { track } from '../lib/analytics';
 import type { CompanyProfile, PaginatedProducts, Product, ProductCreate } from '../types/api';
 import StatusToasts from '../components/StatusToasts';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -125,6 +126,13 @@ export default function ProductsPage() {
         setSuccess('Product updated successfully.');
       } else {
         await api.post<Product>('/products/', payload);
+        track('product_created', {
+          gst_rate: payload.gst_rate,
+          maintain_inventory: payload.maintain_inventory,
+          is_producable: payload.is_producable,
+          has_opening_stock: Number(form.initial_quantity) > 0,
+          source: 'products_page',
+        });
         setSuccess('Product created successfully.');
       }
 

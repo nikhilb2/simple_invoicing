@@ -181,6 +181,17 @@ FRONTEND_DEV_HOST_PORT=5173
 | `VITE_API_BASE_URL` | `http://localhost:8000/api` | `/api` | Backend API endpoint |
 | `VITE_APP_NAME` | `Simple Invoicing` | `Simple Invoicing` | App display name |
 | `VITE_LOG_LEVEL` | `debug` | `error` | Console logging verbosity |
+| `VITE_POSTHOG_PROJECT_TOKEN` | `phc_...` | `phc_...` | PostHog project token (product analytics) |
+| `VITE_POSTHOG_HOST` | `https://eu.i.posthog.com` | `https://eu.i.posthog.com` | PostHog ingestion host (`us.i.posthog.com` for US Cloud) |
+
+**PostHog Note**: Both PostHog variables are optional — leave them blank and the
+app runs with analytics disabled, silently and in every environment. Nothing
+warns you about a missing token, so if you expect events and see none, check
+these two first. The project token is write-only and ships in the JavaScript
+bundle, so it is not a secret. For container builds, pass them as
+`--build-arg VITE_POSTHOG_PROJECT_TOKEN=... --build-arg VITE_POSTHOG_HOST=...`;
+Vite inlines them at build time, so an already-built image cannot be
+reconfigured at runtime.
 
 **Vite Note**: All frontend variables must be prefixed with `VITE_` to be accessible in the code via `import.meta.env`.
 

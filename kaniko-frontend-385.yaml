@@ -19,6 +19,12 @@ spec:
         - --cache=true
         - --snapshot-mode=redo
         - --verbosity=info
+        # The git build context has no .env.production (it is gitignored), so
+        # the PostHog keys have to arrive as build args or the shipped bundle
+        # boots with analytics disabled. The project token is a write-only
+        # public key and is served in the bundle regardless.
+        - --build-arg=VITE_POSTHOG_PROJECT_TOKEN=phc_v4VGPGt4UDKo6hDVbeQzvwTHaUJGQ7fCxaGJGm2v7DKK
+        - --build-arg=VITE_POSTHOG_HOST=https://eu.i.posthog.com
         env:
         - name: DOCKER_CONFIG
           value: /kaniko/.docker

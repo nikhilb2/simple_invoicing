@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowUpDown, FileText } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
+import { track } from '../lib/analytics';
 import StatusToasts from '../components/StatusToasts';
 import PublishToMarketplaceButton from '../components/PublishToMarketplaceButton';
 import type { InventoryAdjust, InventoryRow, PaginatedInventoryOut } from '../types/api';
@@ -78,6 +79,11 @@ export default function InventoryPage() {
       setSuccess('');
       const payload: InventoryAdjust = { product_id: productId, quantity: delta };
       await api.post('/inventory/adjust', payload);
+      track('inventory_adjusted', {
+        product_id: productId,
+        direction: delta > 0 ? 'increase' : 'decrease',
+        source: 'inventory_page',
+      });
       setAdjusting((prev) => ({ ...prev, [productId]: '' }));
       setSuccess('Inventory updated.');
       await loadInventory();

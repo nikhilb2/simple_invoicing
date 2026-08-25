@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpDown, Download, Upload, FileDown, Eye, EyeOff, Check, X } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
+import { track } from '../lib/analytics';
 import StatusToasts from '../components/StatusToasts';
 import formatCurrency from '../utils/formatting';
 import PublishToMarketplaceButton from '../components/PublishToMarketplaceButton';
@@ -381,6 +382,11 @@ export default function ProductsInventoryPage() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setImportResult(res.data);
+      track('products_csv_imported', {
+        created_count: res.data.created,
+        updated_count: res.data.updated,
+        error_count: res.data.errors.length,
+      });
       if (res.data.errors.length === 0) {
         setSuccess('CSV imported successfully!');
       }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
+import { track } from '../lib/analytics';
 import type { Invoice } from '../types/api';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import SendEmailModal from './SendEmailModal';
@@ -79,6 +80,11 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
       link.download = `invoice_${invoice.invoice_number || invoice.id}.pdf`;
       link.click();
       window.URL.revokeObjectURL(url);
+      track('invoice_pdf_downloaded', {
+        invoice_id: invoice.id,
+        voucher_type: invoice.voucher_type,
+        copies,
+      });
     } catch (err) {
       onError?.(getApiErrorMessage(err, 'Unable to download PDF'));
     }
