@@ -6,7 +6,7 @@
  *
  * We use the far-future years 2031/2032 to avoid conflicts with real data.
  */
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink } from './fixtures';
 
 test.use({ timezoneId: 'Asia/Kolkata' });
 
@@ -59,7 +59,7 @@ async function ensureAndActivateFY(
 }
 
 async function configureActiveFySalesSeries(page: import('@playwright/test').Page) {
-  await page.click('[href="/company"]');
+  await page.goto('/settings/company');
   await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
   const prefixInput = page.locator('[id^="series-prefix-"]').first();
@@ -99,7 +99,7 @@ async function getFinancialYearIdByLabel(
 }
 
 async function getSalesNextSequence(page: import('@playwright/test').Page): Promise<number> {
-  await page.click('[href="/company"]');
+  await page.goto('/settings/company');
   await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   const salesRow = page.locator('xpath=//strong[normalize-space()="Sales"]/ancestor::div[contains(@class,"panel")][1]');
   const nextText = await salesRow.locator('text=/Next: #\\d+/').textContent();
@@ -117,7 +117,7 @@ async function seedInvoiceData(page: import('@playwright/test').Page) {
   const ledgerName = `FYSeriesLedger-${Date.now().toString(36)}`;
 
   // Product
-  await page.click('.sidebar [href="/products"]');
+  await clickNavLink(page, '/products');
   await page.fill('#sku', sku);
   await page.fill('#name', productName);
   await page.fill('#price', '100');
@@ -126,7 +126,7 @@ async function seedInvoiceData(page: import('@playwright/test').Page) {
   await expectSuccess(page, 'Product created');
 
   // Inventory
-  await page.click('.sidebar [href="/inventory"]');
+  await clickNavLink(page, '/inventory');
   await page.waitForTimeout(500);
   await selectComboboxOption(page, 'inventory-product', sku);
   await page.fill('#inventory-quantity', '100');
@@ -134,7 +134,7 @@ async function seedInvoiceData(page: import('@playwright/test').Page) {
   await expectSuccess(page, 'Inventory updated');
 
   // Ledger
-  await page.click('[href="/ledgers"]');
+  await clickNavLink(page, '/ledgers');
   await page.click('button:has-text("Create ledger")');
   await page.fill('#ledger-name', ledgerName);
   await page.fill('#ledger-address', '1 FY Series Rd');
@@ -153,7 +153,7 @@ async function createInvoiceOnDate(
   sku: string,
   invoiceDate: string,
 ): Promise<{ invoiceNumber: string; financialYearId: number | null }> {
-  await page.click('[href="/invoices"]');
+  await clickNavLink(page, '/invoices');
   await page.waitForTimeout(500);
 
   await page.selectOption('#invoice-voucher-type', 'sales');

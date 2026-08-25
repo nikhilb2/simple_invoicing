@@ -1,24 +1,24 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, clickNavLink } from './fixtures';
 
 test.describe('Day Book', () => {
   test('displays day book heading', async ({ authedPage: page }) => {
-    await page.click('[href="/day-book"]');
+    await clickNavLink(page, '/day-book');
     await expect(page.locator('h1')).toContainText('Day book');
   });
 
   test('shows voucher range inputs', async ({ authedPage: page }) => {
-    await page.click('[href="/day-book"]');
+    await clickNavLink(page, '/day-book');
     await expect(page.locator('#day-book-from')).toBeVisible();
     await expect(page.locator('#day-book-to')).toBeVisible();
   });
 
   test('displays voucher register section', async ({ authedPage: page }) => {
-    await page.click('[href="/day-book"]');
+    await clickNavLink(page, '/day-book');
     await expect(page.getByRole('heading', { name: 'Voucher register' })).toBeVisible();
   });
 
   test('filters vouchers by date range', async ({ authedPage: page }) => {
-    await page.click('[href="/day-book"]');
+    await clickNavLink(page, '/day-book');
 
     // Set a wide date range
     const today = new Date();
@@ -46,7 +46,7 @@ test.describe('Day Book', () => {
     const ledgerName = `DB-Ledger-${Date.now().toString(36)}`;
 
     // Create product
-    await page.click('.sidebar [href="/products"]');
+    await clickNavLink(page, '/products');
     await page.fill('#sku', sku);
     await page.fill('#name', `DayBook Prod ${sku}`);
     await page.fill('#price', '200');
@@ -55,7 +55,7 @@ test.describe('Day Book', () => {
     await expectSuccess(page, 'Product created');
 
     // Add inventory
-    await page.click('.sidebar [href="/inventory"]');
+    await clickNavLink(page, '/inventory');
     await page.waitForTimeout(500);
     const productSelect = page.locator('#inventory-product');
     const options = productSelect.locator('option');
@@ -73,7 +73,7 @@ test.describe('Day Book', () => {
     await expectSuccess(page, 'Inventory updated');
 
     // Create ledger
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     await page.fill('#ledger-name', ledgerName);
     await page.fill('#ledger-address', 'DayBook Street');
@@ -83,7 +83,7 @@ test.describe('Day Book', () => {
     await expectSuccess(page, 'Ledger created');
 
     // Create a sales invoice
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
     await page.selectOption('#invoice-voucher-type', 'sales');
 
@@ -114,7 +114,7 @@ test.describe('Day Book', () => {
     await expectSuccess(page, 'invoice created');
 
     // Now go to Day Book
-    await page.click('[href="/day-book"]');
+    await clickNavLink(page, '/day-book');
     const today = new Date();
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     await page.fill(

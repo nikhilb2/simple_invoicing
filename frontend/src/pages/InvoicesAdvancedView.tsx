@@ -294,7 +294,7 @@ export default function InvoicesAdvancedView() {
                 <button
                   type="button"
                   className="button button--ghost"
-                  onClick={() => navigate('/company')}
+                  onClick={() => navigate('/settings/company')}
                 >
                   Open Company Setup
                 </button>

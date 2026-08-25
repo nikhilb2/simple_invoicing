@@ -1,9 +1,9 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink } from './fixtures';
 
 test.describe('Ledger Statement', () => {
   test('shows period statement for a ledger', async ({ authedPage: page }) => {
     // Create a ledger first via the create page
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await expect(page.locator('h1')).toContainText('Ledger master');
     await page.click('button:has-text("Create ledger")');
     await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
@@ -45,7 +45,7 @@ test.describe('Ledger Statement', () => {
     const ledgerName = `LSLedger-${Date.now().toString(36)}`;
 
     // 1. Create product
-    await page.click('.sidebar [href="/products"]');
+    await clickNavLink(page, '/products');
     await page.fill('#sku', sku);
     await page.fill('#name', productName);
     await page.fill('#price', '200');
@@ -54,7 +54,7 @@ test.describe('Ledger Statement', () => {
     await expectSuccess(page, 'Product created');
 
     // 2. Add inventory
-    await page.click('.sidebar [href="/inventory"]');
+    await clickNavLink(page, '/inventory');
     await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await selectComboboxOption(page, 'inventory-product', sku);
     await page.fill('#inventory-quantity', '100');
@@ -62,7 +62,7 @@ test.describe('Ledger Statement', () => {
     await expectSuccess(page, 'Inventory updated');
 
     // 3. Create ledger via create page
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);
@@ -75,7 +75,7 @@ test.describe('Ledger Statement', () => {
     await expectSuccess(page, 'Ledger created');
 
     // 4. Create a sales invoice for this ledger
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.selectOption('#invoice-voucher-type', 'sales');
     await selectComboboxOption(page, 'invoice-ledger', ledgerName);
@@ -88,7 +88,7 @@ test.describe('Ledger Statement', () => {
     await expectSuccess(page, 'invoice created');
 
     // 5. Navigate to ledger view page via the list
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.waitForTimeout(500);
     await page.fill('#ledger-search', ledgerName);
     await page.waitForTimeout(1_000);

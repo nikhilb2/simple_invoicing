@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { MotionConfig } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -35,6 +35,9 @@ import EmailHistoryPage from './pages/EmailHistoryPage';
 import MyListingsPage from './pages/marketplace/MyListingsPage';
 import MarketplaceOrdersPage from './pages/marketplace/MarketplaceOrdersPage';
 import MarketplaceSettingsPage from './pages/marketplace/MarketplaceSettingsPage';
+import SettingsLayout from './pages/settings/SettingsLayout';
+import SettingsOverviewPage from './pages/settings/SettingsOverviewPage';
+import { LEGACY_REDIRECTS } from './config/navigation';
 import Layout from './components/Layout';
 
 // Lazily loaded: this is the only route that pulls in recharts (~100kb gz), and
@@ -94,10 +97,44 @@ function CompanyRequired({ children }: { children: React.ReactNode }) {
   }
 
   if (!isCompanyConfigured(companyQuery.data)) {
-    return <Navigate to="/company?setup=required" replace />;
+    return <Navigate to="/settings/company?setup=required" replace />;
   }
 
   return children;
+}
+
+/**
+ * A settings page, framed by the settings sub-navigation.
+ *
+ * The guard combination is passed as props rather than nested by hand at each
+ * call site: nine settings routes composing up to four guards each is where the
+ * inline style stopped paying for itself. `requireCompany` is false for exactly
+ * one page — /settings/company is where CompanyRequired *sends* people, so
+ * guarding it with CompanyRequired would be a redirect loop.
+ */
+function SettingsRoute({
+  admin = false,
+  requireCompany = true,
+  children,
+}: {
+  admin?: boolean;
+  requireCompany?: boolean;
+  children: React.ReactNode;
+}) {
+  let node = (
+    <Layout>
+      <SettingsLayout>{children}</SettingsLayout>
+    </Layout>
+  );
+  if (admin) node = <AdminOnly>{node}</AdminOnly>;
+  if (requireCompany) node = <CompanyRequired>{node}</CompanyRequired>;
+  return <Protected>{node}</Protected>;
+}
+
+/** A moved route. Keeps the query string so ?setup=required survives the hop. */
+function LegacyRedirect({ to }: { to: string }) {
+  const { search, hash } = useLocation();
+  return <Navigate to={`${to}${search}${hash}`} replace />;
 }
 
 function AppRoutes() {
@@ -132,14 +169,22 @@ function AppRoutes() {
       <Route path="/marketplace" element={<Protected><CompanyRequired><Layout><Suspense fallback={<div className="empty-state">Loading marketplace…</div>}><MarketplaceBrowsePage /></Suspense></Layout></CompanyRequired></Protected>} />
       <Route path="/marketplace/listings" element={<Protected><CompanyRequired><Layout><MyListingsPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/marketplace/orders" element={<Protected><CompanyRequired><Layout><MarketplaceOrdersPage /></Layout></CompanyRequired></Protected>} />
-      <Route path="/marketplace/settings" element={<Protected><CompanyRequired><AdminOnly><Layout><MarketplaceSettingsPage /></Layout></AdminOnly></CompanyRequired></Protected>} />
-      <Route path="/company" element={<Protected><Layout><CompanyPage /></Layout></Protected>} />
-      <Route path="/smtp-settings" element={<Protected><CompanyRequired><AdminOnly><Layout><SmtpSettingsPage /></Layout></AdminOnly></CompanyRequired></Protected>} />
-      <Route path="/backups" element={<Protected><CompanyRequired><AdminOnly><Layout><BackupsPage /></Layout></AdminOnly></CompanyRequired></Protected>} />
-      <Route path="/email-history" element={<Protected><CompanyRequired><AdminOnly><Layout><EmailHistoryPage /></Layout></AdminOnly></CompanyRequired></Protected>} />
-      <Route path="/api-keys" element={<Protected><CompanyRequired><AdminOnly><Layout><ApiKeysPage /></Layout></AdminOnly></CompanyRequired></Protected>} />
-      <Route path="/shortcuts" element={<Protected><CompanyRequired><Layout><KeyboardShortcutsPage /></Layout></CompanyRequired></Protected>} />
-      <Route path="/change-password" element={<Protected><CompanyRequired><Layout><ChangePasswordPage /></Layout></CompanyRequired></Protected>} />
+      {/* ── Settings ───────────────────────────────────────────────── */}
+      <Route path="/settings" element={<SettingsRoute requireCompany={false}><SettingsOverviewPage /></SettingsRoute>} />
+      <Route path="/settings/company" element={<SettingsRoute requireCompany={false}><CompanyPage /></SettingsRoute>} />
+      <Route path="/settings/marketplace" element={<SettingsRoute admin><MarketplaceSettingsPage /></SettingsRoute>} />
+      <Route path="/settings/email" element={<SettingsRoute admin><SmtpSettingsPage /></SettingsRoute>} />
+      <Route path="/settings/email-history" element={<SettingsRoute admin><EmailHistoryPage /></SettingsRoute>} />
+      <Route path="/settings/security" element={<SettingsRoute><ChangePasswordPage /></SettingsRoute>} />
+      <Route path="/settings/shortcuts" element={<SettingsRoute><KeyboardShortcutsPage /></SettingsRoute>} />
+      <Route path="/settings/api-keys" element={<SettingsRoute admin><ApiKeysPage /></SettingsRoute>} />
+      <Route path="/settings/backups" element={<SettingsRoute admin><BackupsPage /></SettingsRoute>} />
+
+      {/* Where those pages used to live. */}
+      {Object.entries(LEGACY_REDIRECTS).map(([from, to]) => (
+        <Route key={from} path={from} element={<LegacyRedirect to={to} />} />
+      ))}
+
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

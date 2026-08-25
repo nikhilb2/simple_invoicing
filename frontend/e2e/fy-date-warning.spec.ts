@@ -1,4 +1,4 @@
-import { test, expect, uniqueGstin, expectSuccess } from './fixtures';
+import { test, expect, uniqueGstin, expectSuccess, clickNavLink } from './fixtures';
 
 /**
  * Financial year used for all warning tests.
@@ -49,7 +49,7 @@ async function activateTestFY(page: import('@playwright/test').Page) {
 test.describe('FY Date Warning — InvoicesPage invoice form', () => {
   test('shows warning when invoice date is before active FY start', async ({ authedPage: page }) => {
     await activateTestFY(page);
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.fill('#invoice-date', DATE_OUTSIDE_FY_BEFORE);
@@ -62,7 +62,7 @@ test.describe('FY Date Warning — InvoicesPage invoice form', () => {
 
   test('shows warning when invoice date is after active FY end', async ({ authedPage: page }) => {
     await activateTestFY(page);
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.fill('#invoice-date', DATE_OUTSIDE_FY_AFTER);
@@ -73,7 +73,7 @@ test.describe('FY Date Warning — InvoicesPage invoice form', () => {
 
   test('warning disappears when invoice date is moved inside active FY', async ({ authedPage: page }) => {
     await activateTestFY(page);
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     // Trigger warning
@@ -93,7 +93,7 @@ test.describe('FY Date Warning — InvoicesPage invoice form', () => {
 test.describe('FY Date Warning — CreateInvoiceModal (LedgerView)', () => {
   async function seedLedgerAndNavigate(page: import('@playwright/test').Page) {
     const ledgerName = `FYWarnInv-${Date.now().toString(36)}`;
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);
@@ -152,7 +152,7 @@ test.describe('FY Date Warning — CreateInvoiceModal (LedgerView)', () => {
 test.describe('FY Date Warning — Payment form (LedgerView)', () => {
   async function seedLedgerAndOpenPaymentModal(page: import('@playwright/test').Page) {
     const ledgerName = `FYWarnPay-${Date.now().toString(36)}`;
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);

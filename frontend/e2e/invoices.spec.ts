@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink } from './fixtures';
 
 test.describe('Invoices', () => {
   async function openInvoiceFeed(page: import('@playwright/test').Page) {
@@ -31,7 +31,7 @@ test.describe('Invoices', () => {
     const ledgerName = `Inv-Ledger-${Date.now().toString(36)}`;
 
     // 1. Create product
-    await page.click('.sidebar [href="/products"]');
+    await clickNavLink(page, '/products');
     await page.fill('#sku', sku);
     await page.fill('#name', productName);
     await page.fill('#price', '100');
@@ -40,7 +40,7 @@ test.describe('Invoices', () => {
     await expectSuccess(page, 'Product created');
 
     // 2. Add inventory
-    await page.click('.sidebar [href="/inventory"]');
+    await clickNavLink(page, '/inventory');
     await page.waitForTimeout(500);
     await page.getByRole('searchbox', { name: 'Search inventory by name or SKU' }).fill(sku);
     const inventoryRow = page.locator('.inventory-feed-row', { hasText: sku }).first();
@@ -50,7 +50,7 @@ test.describe('Invoices', () => {
     await expectSuccess(page, 'Inventory updated');
 
     // 3. Create ledger
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     await page.fill('#ledger-name', ledgerName);
     await page.fill('#ledger-address', '789 Invoice Blvd');
@@ -77,14 +77,14 @@ test.describe('Invoices', () => {
   }
 
   test('displays invoice composer heading', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await expect(page.locator('h1')).toContainText('Invoice composer');
   });
 
   test('creates a ledger from the quick-create modal and selects it in the composer', async ({ authedPage: page }) => {
     const ledgerName = `QuickLedger-${Date.now().toString(36)}`;
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
     await page.getByRole('button', { name: 'New ledger' }).click();
 
@@ -106,7 +106,7 @@ test.describe('Invoices', () => {
     const sku = uniqueSku();
     const productName = `Quick Product ${sku}`;
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
     await page.getByRole('button', { name: 'New product' }).click();
 
@@ -130,7 +130,7 @@ test.describe('Invoices', () => {
   test('updates stock from the invoice quick action modal', async ({ authedPage: page }) => {
     const { sku } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
     await page.getByRole('button', { name: 'Update stock' }).click();
 
@@ -148,7 +148,7 @@ test.describe('Invoices', () => {
   test('paginates invoices and supports search', async ({ authedPage: page }) => {
     const { sku, ledgerName } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     // Create a sales invoice so there's at least one in the list
@@ -182,7 +182,7 @@ test.describe('Invoices', () => {
   test('creates a sales invoice', async ({ authedPage: page }) => {
     const { sku, ledgerName } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     // Select voucher type
@@ -208,7 +208,7 @@ test.describe('Invoices', () => {
   test('creates a purchase invoice', async ({ authedPage: page }) => {
     const { sku, ledgerName } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.selectOption('#invoice-voucher-type', 'purchase');
@@ -229,7 +229,7 @@ test.describe('Invoices', () => {
   test('adds multiple line items', async ({ authedPage: page }) => {
     const { sku, ledgerName } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.selectOption('#invoice-voucher-type', 'sales');
@@ -244,7 +244,7 @@ test.describe('Invoices', () => {
   });
 
   test('removes a line item', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     // Add a second line item
@@ -263,7 +263,7 @@ test.describe('Invoices', () => {
   }) => {
     const { sku, ledgerName } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     // Create invoice first
@@ -287,7 +287,7 @@ test.describe('Invoices', () => {
   test('shows projected total while composing', async ({
     authedPage: page,
   }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await expect(page.locator('h1')).toContainText('Invoice composer');
     // The projected total chip should exist somewhere on page
     // It updates as line items are filled
@@ -296,7 +296,7 @@ test.describe('Invoices', () => {
   test('creates an invoice with a custom (backdated) invoice date', async ({ authedPage: page }) => {
     const { sku, ledgerName } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     // Select voucher type
@@ -332,7 +332,7 @@ test.describe('Invoices', () => {
   });
 
   test('invoice date defaults to today', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     const dateInput = page.locator('#invoice-date');
@@ -385,7 +385,7 @@ test.describe('Invoices', () => {
   });
 
   test('supplier invoice # field is hidden for sales invoices', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
     await openAdvanced(page);
 
@@ -394,7 +394,7 @@ test.describe('Invoices', () => {
   });
 
   test('reference notes field is visible for sales invoices', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
     await openAdvanced(page);
 
@@ -403,7 +403,7 @@ test.describe('Invoices', () => {
   });
 
   test('reference notes field is hidden for purchase invoices', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
     await openAdvanced(page);
 
@@ -412,7 +412,7 @@ test.describe('Invoices', () => {
   });
 
   test('supplier invoice # field is visible for purchase invoices', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
     await openAdvanced(page);
 
@@ -424,7 +424,7 @@ test.describe('Invoices', () => {
     const { sku, ledgerName } = await seedInvoiceData(page);
     const supplierRef = `SUP-${Date.now().toString(36).toUpperCase()}`;
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.selectOption('#invoice-voucher-type', 'purchase');
@@ -448,7 +448,7 @@ test.describe('Invoices', () => {
   });
 
   test('supplier invoice # field clears when switching from purchase to sales', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await openAdvanced(page);
@@ -468,7 +468,7 @@ test.describe('Invoices', () => {
     const { sku, ledgerName } = await seedInvoiceData(page);
     const supplierRef = `EDIT-${Date.now().toString(36).toUpperCase()}`;
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     // Create purchase invoice with supplier ref
@@ -495,7 +495,7 @@ test.describe('Invoices', () => {
     const { sku, ledgerName } = await seedInvoiceData(page);
     const referenceNotes = `PO-${Date.now().toString(36).toUpperCase()}`;
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.selectOption('#invoice-voucher-type', 'sales');
@@ -516,7 +516,7 @@ test.describe('Invoices', () => {
   });
 
   test('tax-inclusive checkbox is unchecked by default', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     const checkbox = page.locator('#invoice-tax-inclusive');
@@ -525,7 +525,7 @@ test.describe('Invoices', () => {
   });
 
   test('checking tax-inclusive relabels price column to "Amount (incl. GST)"', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     // Default: "Price"
@@ -546,7 +546,7 @@ test.describe('Invoices', () => {
     //   line_total=118, taxable=100.00, tax=18.00
     const { sku, ledgerName } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.selectOption('#invoice-voucher-type', 'sales');
@@ -577,7 +577,7 @@ test.describe('Invoices', () => {
     //   taxable=100, tax=18, total=118
     const { sku, ledgerName } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.selectOption('#invoice-voucher-type', 'sales');
@@ -604,7 +604,7 @@ test.describe('Invoices', () => {
   test('edit restores tax-inclusive checkbox state', async ({ authedPage: page }) => {
     const { sku, ledgerName } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.selectOption('#invoice-voucher-type', 'sales');
@@ -631,7 +631,7 @@ test.describe('Invoices', () => {
      remembers price-entry mode as a standing preference, so a reload restoring
      the box to unchecked would be the bug, not the expected result. */
   test('remembers the tax-inclusive choice across a reload', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.check('#invoice-tax-inclusive');
@@ -639,7 +639,7 @@ test.describe('Invoices', () => {
 
     await page.reload();
     await page.waitForTimeout(500);
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
     await expect(page.locator('#invoice-tax-inclusive')).toBeChecked();
 
@@ -647,13 +647,13 @@ test.describe('Invoices', () => {
     await page.uncheck('#invoice-tax-inclusive');
     await page.reload();
     await page.waitForTimeout(500);
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
     await expect(page.locator('#invoice-tax-inclusive')).not.toBeChecked();
   });
 
   test('remembers whether advanced options are open, and reopens them for an invoice that uses them', async ({ authedPage: page }) => {
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     const toggle = page.locator('.form-advanced-toggle input[type="checkbox"]');
@@ -665,7 +665,7 @@ test.describe('Invoices', () => {
 
     await page.reload();
     await page.waitForTimeout(500);
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
     await expect(toggle).toBeChecked();
 
@@ -679,7 +679,7 @@ test.describe('Invoices', () => {
     // so a value affecting the invoice is never hidden behind a closed row.
     await page.reload();
     await page.waitForTimeout(500);
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
     await expect(toggle).toBeChecked();
     await expect(page.locator('#invoice-due-mode')).toHaveValue('days');
@@ -692,7 +692,7 @@ test.describe('Invoices', () => {
   test('purchase invoice preview shows supplier on left and company on right', async ({ authedPage: page }) => {
     const { sku, ledgerName } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.selectOption('#invoice-voucher-type', 'purchase');
@@ -721,7 +721,7 @@ test.describe('Invoices', () => {
     const { sku, ledgerName } = await seedInvoiceData(page);
     const supplierRef = `SP-${Date.now().toString(36).toUpperCase()}`;
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.selectOption('#invoice-voucher-type', 'purchase');
@@ -749,7 +749,7 @@ test.describe('Invoices', () => {
   test('purchase invoice preview without supplier ref hides supplier ref row', async ({ authedPage: page }) => {
     const { sku, ledgerName } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.selectOption('#invoice-voucher-type', 'purchase');
@@ -775,7 +775,7 @@ test.describe('Invoices', () => {
   test('purchase invoice preview has no bank details and shows tax breakup', async ({ authedPage: page }) => {
     const { sku, ledgerName } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.selectOption('#invoice-voucher-type', 'purchase');
@@ -802,7 +802,7 @@ test.describe('Invoices', () => {
   test('sales invoice preview layout is unchanged', async ({ authedPage: page }) => {
     const { sku, ledgerName } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.selectOption('#invoice-voucher-type', 'sales');
@@ -830,7 +830,7 @@ test.describe('Invoices', () => {
   test('purchase invoice PDF endpoint returns 200 and application/pdf', async ({ authedPage: page }) => {
     const { sku, ledgerName } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.selectOption('#invoice-voucher-type', 'purchase');
@@ -862,7 +862,7 @@ test.describe('Invoices', () => {
   test('sales invoice PDF endpoint returns 200 and application/pdf', async ({ authedPage: page }) => {
     const { sku, ledgerName } = await seedInvoiceData(page);
 
-    await page.click('[href="/invoices"]');
+    await clickNavLink(page, '/invoices');
     await page.waitForTimeout(500);
 
     await page.selectOption('#invoice-voucher-type', 'sales');

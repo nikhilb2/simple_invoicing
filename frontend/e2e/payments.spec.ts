@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueGstin } from './fixtures';
+import { test, expect, expectSuccess, uniqueGstin, clickNavLink } from './fixtures';
 
 async function setStatementRangeToCurrentMonth(page: import('@playwright/test').Page) {
   const today = new Date();
@@ -11,7 +11,7 @@ test.describe('Payments (Receipt / Payment)', () => {
   test('records a receipt and verifies it appears in the ledger statement', async ({ authedPage: page }) => {
     // 1. Create a ledger
     const ledgerName = `PayLedger-${Date.now().toString(36)}`;
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);
@@ -61,7 +61,7 @@ test.describe('Payments (Receipt / Payment)', () => {
   test('records a payment and verifies it appears in the ledger statement', async ({ authedPage: page }) => {
     // 1. Create a ledger
     const ledgerName = `PayOutLedger-${Date.now().toString(36)}`;
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);
@@ -105,7 +105,7 @@ test.describe('Payments (Receipt / Payment)', () => {
   test('payment form validates amount greater than zero', async ({ authedPage: page }) => {
     // 1. Create a ledger
     const ledgerName = `ValLedger-${Date.now().toString(36)}`;
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);

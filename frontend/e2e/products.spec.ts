@@ -1,13 +1,13 @@
-import { test, expect, expectSuccess, expectError, uniqueSku } from './fixtures';
+import { test, expect, expectSuccess, expectError, uniqueSku, clickNavLink } from './fixtures';
 
 test.describe('Products CRUD', () => {
   test('displays catalog intake heading', async ({ authedPage: page }) => {
-    await page.click('.sidebar [href="/products"]');
+    await clickNavLink(page, '/products');
     await expect(page.locator('h1')).toContainText('Catalog intake');
   });
 
   test('paginates products and supports search', async ({ authedPage: page }) => {
-    await page.click('.sidebar [href="/products"]');
+    await clickNavLink(page, '/products');
 
     // Create several products to verify pagination controls / search
     const skus: string[] = [];
@@ -45,7 +45,7 @@ test.describe('Products CRUD', () => {
   });
 
   test('creates a new product', async ({ authedPage: page }) => {
-    await page.click('.sidebar [href="/products"]');
+    await clickNavLink(page, '/products');
     const sku = uniqueSku();
 
     await page.fill('#sku', sku);
@@ -67,7 +67,7 @@ test.describe('Products CRUD', () => {
   });
 
   test('rejects duplicate SKU', async ({ authedPage: page }) => {
-    await page.click('.sidebar [href="/products"]');
+    await clickNavLink(page, '/products');
     const sku = uniqueSku();
 
     // Create first product
@@ -88,7 +88,7 @@ test.describe('Products CRUD', () => {
   });
 
   test('edits an existing product', async ({ authedPage: page }) => {
-    await page.click('.sidebar [href="/products"]');
+    await clickNavLink(page, '/products');
     const sku = uniqueSku();
 
     // Create a product
@@ -121,7 +121,7 @@ test.describe('Products CRUD', () => {
   });
 
   test('deletes a product', async ({ authedPage: page }) => {
-    await page.click('.sidebar [href="/products"]');
+    await clickNavLink(page, '/products');
     const sku = uniqueSku();
 
     // Create a product
@@ -147,7 +147,7 @@ test.describe('Products CRUD', () => {
   });
 
   test('validates GST rate range (0-100)', async ({ authedPage: page }) => {
-    await page.click('.sidebar [href="/products"]');
+    await clickNavLink(page, '/products');
     const sku = uniqueSku();
 
     await page.fill('#sku', sku);
@@ -170,7 +170,7 @@ test.describe('Products CRUD', () => {
   });
 
   test('shows search-no-results message when search finds nothing', async ({ authedPage: page }) => {
-    await page.click('.sidebar [href="/products"]');
+    await clickNavLink(page, '/products');
     await page.fill('#product-search', 'ZZZZNONEXISTENT999');
     await page.waitForTimeout(500);
 

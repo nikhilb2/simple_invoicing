@@ -134,7 +134,7 @@ export default function MarketplaceBrowsePage() {
                   ? 'Your marketplace registration is awaiting operator approval. Browsing opens as soon as it is approved — no action needed.'
                   : 'This connection cannot trade right now. Open Marketplace settings for details.'
               }
-              action={{ label: 'Open marketplace settings', onClick: () => navigate('/marketplace/settings') }}
+              action={{ label: 'Open marketplace settings', onClick: () => navigate('/settings/marketplace') }}
             />
           </div>
         ) : (

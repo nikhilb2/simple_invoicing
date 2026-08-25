@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess } from './fixtures';
+import { test, expect, expectSuccess, openSidebarSection } from './fixtures';
 
 test.describe('Dashboard', () => {
   test('displays stats cards after login', async ({ authedPage: page }) => {
@@ -28,22 +28,33 @@ test.describe('Dashboard', () => {
   });
 
   test('navigation links are present', async ({ authedPage: page }) => {
-    const links = [
-      'Overview',
-      'Products',
-      'Inventory',
-      'Ledgers',
-      'Day Book',
-      'Invoices',
-      'Company',
+    const sidebar = page.locator('.sidebar');
+
+    // The rail is two-level now: two plain links at the top, a settings link
+    // in the footer, and four disclosure buttons in between. Company is gone
+    // from the rail entirely — it lives behind /settings (see settings-nav).
+    for (const label of ['Overview', 'Ledgers', 'Settings']) {
+      await expect(sidebar.getByRole('link', { name: label, exact: true })).toBeVisible();
+    }
+    for (const label of ['Sales', 'Catalogue', 'Reports', 'Marketplace']) {
+      await expect(sidebar.getByRole('button', { name: label, exact: true })).toBeVisible();
+    }
+
+    // The leaves are only in the DOM while their section is open, so each one
+    // has to be disclosed before it can be asserted. Scoped to the sidebar and
+    // exact: the dashboard's stat cards are links too, and the sidebar itself
+    // carries a "Products & Inventory" entry — a substring match on "Products"
+    // or "Inventory" hits several of them.
+    const sections: [string, string[]][] = [
+      ['catalogue', ['Products', 'Inventory']],
+      ['reports', ['Day Book']],
+      ['sales', ['Invoices']],
     ];
-    for (const label of links) {
-      // Scoped to the sidebar and exact: the dashboard's stat cards are links
-      // too, and the sidebar itself carries a "Products & Inventory" entry —
-      // a substring match on "Products" or "Inventory" hits several of them.
-      await expect(
-        page.locator('.sidebar').getByRole('link', { name: label, exact: true }),
-      ).toBeVisible();
+    for (const [sectionId, labels] of sections) {
+      await openSidebarSection(page, sectionId);
+      for (const label of labels) {
+        await expect(sidebar.getByRole('link', { name: label, exact: true })).toBeVisible();
+      }
     }
   });
 });
