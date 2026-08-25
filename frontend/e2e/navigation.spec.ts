@@ -19,7 +19,7 @@ test.describe('Navigation', () => {
     ];
 
     for (const [href, heading] of routes) {
-      await page.click(`[href="${href}"]`);
+      await page.click(`.sidebar__link[href="${href}"]`);
       await expect(page.locator('h1')).toContainText(heading, {
         timeout: 5_000,
       });
@@ -27,7 +27,7 @@ test.describe('Navigation', () => {
   });
 
   test('brand link navigates to dashboard', async ({ authedPage: page }) => {
-    await page.click('[href="/products"]');
+    await page.click('.sidebar [href="/products"]');
     await expect(page.locator('h1')).toContainText('Catalog intake');
     await page.locator('a.sidebar__brand').click();
     await expect(page.locator('h1')).toContainText('Operations dashboard');

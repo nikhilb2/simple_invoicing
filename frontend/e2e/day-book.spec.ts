@@ -46,7 +46,7 @@ test.describe('Day Book', () => {
     const ledgerName = `DB-Ledger-${Date.now().toString(36)}`;
 
     // Create product
-    await page.click('[href="/products"]');
+    await page.click('.sidebar [href="/products"]');
     await page.fill('#sku', sku);
     await page.fill('#name', `DayBook Prod ${sku}`);
     await page.fill('#price', '200');
@@ -55,7 +55,7 @@ test.describe('Day Book', () => {
     await expectSuccess(page, 'Product created');
 
     // Add inventory
-    await page.click('[href="/inventory"]');
+    await page.click('.sidebar [href="/inventory"]');
     await page.waitForTimeout(500);
     const productSelect = page.locator('#inventory-product');
     const options = productSelect.locator('option');

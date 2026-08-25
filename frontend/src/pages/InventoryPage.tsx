@@ -199,7 +199,7 @@ export default function InventoryPage() {
                       />
                       <button
                         type="button"
-                        className="button button--secondary"
+                        className={`button button--secondary${submittingId === row.product_id ? ' is-busy' : ''}`}
                         onClick={() => void applyAdjustment(row.product_id)}
                         disabled={submittingId === row.product_id || !adjusting[row.product_id] || !row.maintain_inventory}
                         title={`Apply adjustment for ${row.product_name}`}

@@ -106,7 +106,11 @@ export default function AnalyticsFilters({
         </select>
       </label>
 
-      <div className="analytics-filters__field">
+      {/* Every other filter here wraps its control in a <label>; these two used
+          a plain <div> + <span>, so the combobox input had no accessible name
+          at all. htmlFor rather than wrapping, because the combobox carries a
+          clear button and a listbox of its own. */}
+      <label className="analytics-filters__field" htmlFor="analytics-ledger">
         <span>Customer</span>
         <LedgerCombobox
           id="analytics-ledger"
@@ -115,10 +119,10 @@ export default function AnalyticsFilters({
           onChange={(ledgerId) => onChange({ ...filters, ledgerId: ledgerId ? Number(ledgerId) : undefined })}
           onClear={() => onChange({ ...filters, ledgerId: undefined })}
         />
-      </div>
+      </label>
 
       {showProductFilter && (
-        <div className="analytics-filters__field">
+        <label className="analytics-filters__field" htmlFor="analytics-product">
           <span>Product</span>
           <ProductCombobox
             id="analytics-product"
@@ -127,7 +131,7 @@ export default function AnalyticsFilters({
             onChange={(productId) => onChange({ ...filters, productId: productId ? Number(productId) : undefined })}
             onClear={() => onChange({ ...filters, productId: undefined })}
           />
-        </div>
+        </label>
       )}
 
       <div className="analytics-filters__reset">

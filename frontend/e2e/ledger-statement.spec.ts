@@ -45,7 +45,7 @@ test.describe('Ledger Statement', () => {
     const ledgerName = `LSLedger-${Date.now().toString(36)}`;
 
     // 1. Create product
-    await page.click('[href="/products"]');
+    await page.click('.sidebar [href="/products"]');
     await page.fill('#sku', sku);
     await page.fill('#name', productName);
     await page.fill('#price', '200');
@@ -54,7 +54,7 @@ test.describe('Ledger Statement', () => {
     await expectSuccess(page, 'Product created');
 
     // 2. Add inventory
-    await page.click('[href="/inventory"]');
+    await page.click('.sidebar [href="/inventory"]');
     await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await selectComboboxOption(page, 'inventory-product', sku);
     await page.fill('#inventory-quantity', '100');

@@ -1127,15 +1127,17 @@ export default function InvoicesPage() {
 
                       <div className="line-item__price">
                         <span className="line-item__label">Line total</span>
-                        <span>{formatCurrency(lineTotal, activeCurrencyCode)}</span>
-                        <span className="table-subtext">
-                          {formatInvoiceTaxBreakdown({
-                            gstRate,
-                            taxAmount,
-                            currencyCode: activeCurrencyCode,
-                            interstateSupply: composerInterstateSupply,
-                          })}
-                        </span>
+                        <div className="line-item__price-value">
+                          <span>{formatCurrency(lineTotal, activeCurrencyCode)}</span>
+                          <span className="table-subtext">
+                            {formatInvoiceTaxBreakdown({
+                              gstRate,
+                              taxAmount,
+                              currencyCode: activeCurrencyCode,
+                              interstateSupply: composerInterstateSupply,
+                            })}
+                          </span>
+                        </div>
                       </div>
 
                       <button
@@ -1147,12 +1149,14 @@ export default function InvoicesPage() {
                       >
                         <Trash2 size={15} />
                       </button>
-                      <div className="field" style={{ gridColumn: '1 / -1' }}>
+                      <div className="field field--full">
                         <label htmlFor={`invoice-description-${item.id}`}>Description (optional)</label>
+                        {/* One row, resizable: an optional note used to open at two rows and
+                            take up more of the line item than the fields that price it. */}
                         <textarea
                           id={`invoice-description-${item.id}`}
                           className="input"
-                          rows={2}
+                          rows={1}
                           value={item.description}
                           onChange={(event) => updateItem(item.id, 'description', event.target.value)}
                           placeholder="Serial number, batch code, or item notes"

@@ -1,6 +1,7 @@
 import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { MotionConfig } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { FYProvider } from './context/FYContext';
 import { ShortcutsProvider } from './context/ShortcutsContext';
@@ -146,12 +147,20 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <FYProvider>
-        <ShortcutsProvider>
-          <AppRoutes />
-        </ShortcutsProvider>
-      </FYProvider>
-    </AuthProvider>
+    /* The page transition in Layout and the dropdown animations moved
+       regardless of the OS "reduce motion" setting — the stylesheet's
+       prefers-reduced-motion block cannot reach a framer-motion animation
+       because those are driven from JS. `reducedMotion="user"` makes every
+       motion element in the tree drop its transform and layout animation when
+       the user has asked for that, keeping only opacity. */
+    <MotionConfig reducedMotion="user">
+      <AuthProvider>
+        <FYProvider>
+          <ShortcutsProvider>
+            <AppRoutes />
+          </ShortcutsProvider>
+        </FYProvider>
+      </AuthProvider>
+    </MotionConfig>
   );
 }

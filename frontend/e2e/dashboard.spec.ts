@@ -38,7 +38,12 @@ test.describe('Dashboard', () => {
       'Company',
     ];
     for (const label of links) {
-      await expect(page.getByRole('link', { name: label })).toBeVisible();
+      // Scoped to the sidebar and exact: the dashboard's stat cards are links
+      // too, and the sidebar itself carries a "Products & Inventory" entry —
+      // a substring match on "Products" or "Inventory" hits several of them.
+      await expect(
+        page.locator('.sidebar').getByRole('link', { name: label, exact: true }),
+      ).toBeVisible();
     }
   });
 });
