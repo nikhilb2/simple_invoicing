@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
+import { track } from '../lib/analytics';
 
 type EmailType = 'invoice' | 'statement' | 'reminder';
 
@@ -78,6 +79,12 @@ export default function SendEmailModal({
         payload.to_date = toDate;
       }
       await api.post(getEndpoint(), payload);
+      track('document_emailed', {
+        document_type: type,
+        entity_id: entityId,
+        has_cc: Boolean(cc.trim()),
+        has_message: Boolean(message.trim()),
+      });
       onSuccess('Email sent successfully');
       onClose();
     } catch (err) {

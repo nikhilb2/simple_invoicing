@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
+import { track } from '../lib/analytics';
 import { createTerm, deleteTerm, removeLogo, updateTerm, uploadLogo } from '../api/company';
 import StatusToasts from '../components/StatusToasts';
 import { useAuth } from '../context/AuthContext';
@@ -708,6 +709,14 @@ export default function CompanyPage() {
       };
 
       await api.put<CompanyProfileUpdate>('/company/', payload);
+      // initialSetupRequired separates activation (a brand-new instance
+      // finishing onboarding) from an established company editing its address.
+      track('company_profile_saved', {
+        is_initial_setup: initialSetupRequired,
+        has_gst: Boolean(payload.gst),
+        has_logo: Boolean(logoUrl),
+        currency_code: payload.currency_code,
+      });
       setSuccess('Company profile saved. New invoices will now show this as billing company.');
       if (initialSetupRequired && payload.name) {
         setShowFirstSetupPrompt(true);

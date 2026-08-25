@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Boxes, Plus, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../../api/client';
+import { track } from '../../lib/analytics';
 import type { CompanyAccount, CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerAddress, Payment, PaymentCreate, Product } from '../../types/api';
 import InvoicePreview from '../../components/InvoicePreview';
 import StatusToasts from '../../components/StatusToasts';
@@ -473,6 +474,12 @@ export default function InvoicesPage() {
         };
 
         await api.post<Payment>('/payments/', payload);
+        track('payment_voucher_created', {
+          amount: Number(paymentAmount),
+          mode: paymentMode || null,
+          has_account: Boolean(selectedPaymentAccountId),
+          source: 'invoices_page',
+        });
         setSuccess('Payment voucher created successfully.');
         resetInvoiceForm();
       } catch (err) {
@@ -518,6 +525,13 @@ export default function InvoicesPage() {
 
       if (editingInvoiceId) {
         const res = await api.put<Invoice>(`/invoices/${editingInvoiceId}`, payload);
+        track('invoice_updated', {
+          invoice_id: res.data.id,
+          voucher_type: voucherType,
+          line_item_count: payload.items.length,
+          total_amount: res.data.total_amount,
+          tax_inclusive: taxInclusive,
+        });
         setSuccess('Invoice updated successfully. Inventory has been recalculated.');
         setPreviewInvoice(res.data);
         if (searchParams.has('edit')) {
@@ -525,6 +539,19 @@ export default function InvoicesPage() {
         }
       } else {
         const res = await api.post<Invoice>('/invoices/', payload);
+        // The app's core conversion event — everything else on this page is a
+        // step towards getting a document out the door.
+        track('invoice_created', {
+          invoice_id: res.data.id,
+          voucher_type: voucherType,
+          line_item_count: payload.items.length,
+          total_amount: res.data.total_amount,
+          total_tax_amount: res.data.total_tax_amount,
+          tax_inclusive: taxInclusive,
+          has_invoice_discount: Boolean(payload.discount_value),
+          outside_active_fy: Boolean(res.data.warnings?.includes('invoice_date_outside_fy')),
+          source: 'invoices_page',
+        });
         const baseMsg =
           voucherType === 'sales'
             ? 'Sales invoice created. Inventory has been reduced.'

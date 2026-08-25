@@ -3,6 +3,7 @@ import { FilePlus2, RefreshCw, Search, XCircle } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { cancelCreditNote, createCreditNote, listCreditNotes } from '../api/creditNotes';
 import api, { getApiErrorMessage } from '../api/client';
+import { track } from '../lib/analytics';
 import LedgerCombobox from '../components/LedgerCombobox';
 import StatusToasts from '../components/StatusToasts';
 import EmptyState from '../components/EmptyState';
@@ -374,6 +375,14 @@ export default function CreditNotesPage() {
     try {
       setSubmitting(true);
       const response = await createCreditNote(payload);
+      track('credit_note_created', {
+        credit_note_id: response.data.id,
+        credit_note_type: creditNoteType,
+        invoice_count: selectedInvoiceIds.length,
+        line_item_count: payloadItems.length,
+        total_amount: response.data.total_amount,
+        has_reason: Boolean(reason.trim()),
+      });
       setSuccess(`Credit note ${response.data.credit_note_number} created.`);
       setReason('');
       setSelectedInvoiceIds([]);

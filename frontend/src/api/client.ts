@@ -1,4 +1,5 @@
-import axios, { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
+import { trackException } from '../lib/analytics';
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -6,6 +7,30 @@ const api = axios.create({
   baseURL,
   timeout: 10000,
 });
+
+/**
+ * Sends server faults and dropped connections to PostHog error tracking.
+ *
+ * Deliberately narrow: 4xx responses are the backend telling the user they got
+ * something wrong (validation, permissions, an expired token) and are normal
+ * traffic, so only 5xx and requests that never got a reply are reported. The
+ * request URL goes along, the request body never does — it carries ledger and
+ * invoice contents.
+ */
+function reportServerFailure(error: AxiosError) {
+  const status = error.response?.status;
+  if (status !== undefined && status < 500) {
+    return;
+  }
+
+  trackException(error, {
+    request_url: error.config?.url,
+    request_method: error.config?.method,
+    status_code: status ?? null,
+    // No response at all: the backend is down, or the network dropped.
+    is_network_error: !error.response,
+  });
+}
 
 let refreshPromise: Promise<string | null> | null = null;
 
@@ -31,6 +56,8 @@ api.interceptors.response.use(
     if (!axios.isAxiosError(error)) {
       return Promise.reject(error);
     }
+
+    reportServerFailure(error);
 
     const status = error.response?.status;
     const originalRequest = error.config as RetryableRequestConfig | undefined;

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
+import { track } from '../lib/analytics';
 import StatusToasts from '../components/StatusToasts';
 import type { Ledger, LedgerCreate } from '../types/api';
 import {
@@ -93,7 +94,13 @@ export default function   LedgerCreatePage() {
         await api.put<Ledger>(`/ledgers/${editingLedgerId}`, payload);
         navigate('/ledgers', { state: { success: 'Ledger updated successfully.' } });
       } else {
-        await api.post<Ledger>('/ledgers/', payload);
+        const res = await api.post<Ledger>('/ledgers/', payload);
+        track('ledger_created', {
+          ledger_id: res.data.id,
+          has_gst: Boolean(payload.gst),
+          has_opening_balance: Number(payload.opening_balance) !== 0,
+          has_bank_details: Boolean(payload.account_number),
+        });
         navigate('/ledgers', { state: { success: 'Ledger created successfully.' } });
       }
     } catch (err) {

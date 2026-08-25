@@ -1,4 +1,5 @@
 import api, { cleanParams } from '../../api/client';
+import { track } from '../../lib/analytics';
 import type {
   BuyNowPayload,
   CatalogFilters,
@@ -100,8 +101,18 @@ export async function fetchMyListings(): Promise<MarketplaceListing[]> {
   return Array.isArray(res.data) ? res.data : res.data.items;
 }
 
+// The marketplace funnel is instrumented here rather than at each call site:
+// listings are published from three screens (My listings, Products, Inventory)
+// and orders are acted on from two, and one event per action beats five
+// near-identical copies drifting apart.
 export async function createListing(payload: ListingCreatePayload): Promise<MarketplaceListing> {
   const res = await api.post<MarketplaceListing>('/marketplace/listings', payload);
+  track('marketplace_listing_published', {
+    listing_id: res.data.id,
+    product_id: payload.product_id,
+    has_title: Boolean(payload.title),
+    has_min_order_quantity: Boolean(payload.min_order_quantity),
+  });
   return res.data;
 }
 
@@ -145,16 +156,31 @@ export async function fetchOrder(orderId: number): Promise<MarketplaceOrder> {
 
 export async function placeOrder(payload: BuyNowPayload): Promise<MarketplaceOrder> {
   const res = await api.post<MarketplaceOrder>('/marketplace/orders', payload);
+  track('marketplace_order_placed', {
+    order_id: res.data.id,
+    total_amount: res.data.remote_total_amount,
+    currency_code: res.data.currency_code,
+    has_buyer_note: Boolean(payload.buyer_note),
+  });
   return res.data;
 }
 
 export async function acceptOrder(orderId: number): Promise<MarketplaceOrder> {
   const res = await api.post<MarketplaceOrder>(`/marketplace/orders/${orderId}/accept`);
+  track('marketplace_order_accepted', {
+    order_id: orderId,
+    total_amount: res.data.remote_total_amount,
+    currency_code: res.data.currency_code,
+  });
   return res.data;
 }
 
 export async function rejectOrder(orderId: number, payload: RejectOrderPayload): Promise<MarketplaceOrder> {
   const res = await api.post<MarketplaceOrder>(`/marketplace/orders/${orderId}/reject`, payload);
+  track('marketplace_order_rejected', {
+    order_id: orderId,
+    reason: payload.reason,
+  });
   return res.data;
 }
 
