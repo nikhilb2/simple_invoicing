@@ -31,7 +31,7 @@ test.describe('Invoices', () => {
     const ledgerName = `Inv-Ledger-${Date.now().toString(36)}`;
 
     // 1. Create product
-    await page.click('[href="/products"]');
+    await page.click('.sidebar [href="/products"]');
     await page.fill('#sku', sku);
     await page.fill('#name', productName);
     await page.fill('#price', '100');
@@ -40,7 +40,7 @@ test.describe('Invoices', () => {
     await expectSuccess(page, 'Product created');
 
     // 2. Add inventory
-    await page.click('[href="/inventory"]');
+    await page.click('.sidebar [href="/inventory"]');
     await page.waitForTimeout(500);
     await page.getByRole('searchbox', { name: 'Search inventory by name or SKU' }).fill(sku);
     const inventoryRow = page.locator('.inventory-feed-row', { hasText: sku }).first();

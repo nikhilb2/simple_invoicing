@@ -4,9 +4,11 @@ import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import MarketplacePromoCard from '../components/MarketplacePromoCard';
 import EmptyState from '../components/EmptyState';
+import InvoicePreview from '../components/InvoicePreview';
 import { MonthlyTrendChart, PaymentStatusDonut, TopProductsBars } from '../components/DashboardCharts';
 import type { DashboardMetrics, InventoryRow, Invoice, PaginatedInventoryOut } from '../types/api';
 import formatCurrency, { formatCompactCurrency } from '../utils/formatting';
+import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 
 function normalizeInventoryRows(payload: PaginatedInventoryOut | InventoryRow[] | unknown): InventoryRow[] {
   if (Array.isArray(payload)) {
@@ -21,10 +23,19 @@ function normalizeInventoryRows(payload: PaginatedInventoryOut | InventoryRow[] 
 
 const LOW_STOCK_THRESHOLD = 5;
 
+/* The API's raw values ("unpaid") read as a field name in a row of prose. */
+const PAYMENT_STATUS_LABEL: Record<Invoice['payment_status'], string> = {
+  paid: 'Paid',
+  partial: 'Part paid',
+  unpaid: 'Unpaid',
+};
+
 export default function DashboardPage() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [lowStock, setLowStock] = useState<InventoryRow[]>([]);
   const [recentInvoices, setRecentInvoices] = useState<Invoice[]>([]);
+  // The list already holds whole invoices, so previewing one costs no refetch.
+  const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const currencyCode = metrics?.currency_code || 'USD';
@@ -85,6 +96,13 @@ export default function DashboardPage() {
     width: string;
     copy: string;
     tone?: 'danger' | 'warning';
+    /* Name of the destination, used for the link's accessible name. */
+    toLabel?: string;
+    /* Where the figure is actionable. "30 invoices past their due date" is a
+       worklist, not a readout, and the only way to act on it used to be to
+       find the matching page in the sidebar yourself. Cards without an
+       obvious destination stay plain rather than inventing one. */
+    to?: string;
   }> = [
     {
       eyebrow: 'Net sales',
@@ -94,12 +112,16 @@ export default function DashboardPage() {
     },
     {
       eyebrow: 'Outstanding',
+      to: '/invoice-dues',
+      toLabel: 'Invoice Dues',
       ...(metrics ? money(metrics.receivables.outstanding_amount) : { value: null }),
       width: '120px',
       copy: `${(metrics?.receivables.unpaid_count ?? 0) + (metrics?.receivables.partial_count ?? 0)} invoices awaiting payment.`,
     },
     {
       eyebrow: 'Overdue',
+      to: '/invoice-dues',
+      toLabel: 'Invoice Dues',
       ...(metrics ? money(metrics.receivables.overdue_amount) : { value: null }),
       width: '110px',
       copy: `${metrics?.receivables.overdue_count ?? 0} invoices past their due date.`,
@@ -113,18 +135,24 @@ export default function DashboardPage() {
     },
     {
       eyebrow: 'Catalog',
+      to: '/products',
+      toLabel: 'Products',
       value: metrics ? String(metrics.catalog.total_products) : null,
       width: '60px',
       copy: 'Products available for quoting and invoicing.',
     },
     {
       eyebrow: 'Stock value',
+      to: '/inventory',
+      toLabel: 'Inventory',
       ...(metrics ? money(metrics.inventory.stock_value) : { value: null }),
       width: '120px',
       copy: `${metrics?.inventory.total_units ?? 0} units across ${metrics?.inventory.tracked_products ?? 0} tracked products.`,
     },
     {
       eyebrow: 'Low stock',
+      to: '/inventory',
+      toLabel: 'Inventory',
       value: metrics ? String(metrics.inventory.low_stock_count) : null,
       width: '50px',
       copy: `${metrics?.inventory.out_of_stock_count ?? 0} products are out of stock.`,
@@ -154,18 +182,38 @@ export default function DashboardPage() {
       <MarketplacePromoCard />
 
       <section className="stats-grid stats-grid--dense">
-        {statCards.map((card) => (
-          <article key={card.eyebrow} className="stat-card">
-            <p className="eyebrow">{card.eyebrow}</p>
-            <p
-              className={`stat-card__value${card.tone ? ` stat-card__value--${card.tone}` : ''}`}
-              title={!loading && metrics ? card.title : undefined}
+        {statCards.map((card) => {
+          const body = (
+            <>
+              <p className="eyebrow">{card.eyebrow}</p>
+              <p
+                className={`stat-card__value${card.tone ? ` stat-card__value--${card.tone}` : ''}`}
+                title={!loading && metrics ? card.title : undefined}
+              >
+                {loading || !metrics ? skeleton(card.width) : card.value}
+              </p>
+              <p className="muted-text">{card.copy}</p>
+            </>
+          );
+
+          return card.to ? (
+            <Link
+              key={card.eyebrow}
+              to={card.to}
+              className="stat-card stat-card--link"
+              /* Without this the link's accessible name is the card's whole
+                 text — "Catalog 377 Products available for quoting and
+                 invoicing" — which is what a screen reader announces on focus.
+                 Name it for where it goes; the figure is still read from the
+                 card body. */
+              aria-label={`${card.eyebrow}: open ${card.toLabel}`}
             >
-              {loading || !metrics ? skeleton(card.width) : card.value}
-            </p>
-            <p className="muted-text">{card.copy}</p>
-          </article>
-        ))}
+              {body}
+            </Link>
+          ) : (
+            <article key={card.eyebrow} className="stat-card">{body}</article>
+          );
+        })}
       </section>
 
       <section className="content-grid">
@@ -283,18 +331,38 @@ export default function DashboardPage() {
             ) : null}
             {!loading
               ? recentInvoices.map((invoice) => (
-                  <div key={invoice.id} className="invoice-row">
+                  <button
+                    key={invoice.id}
+                    type="button"
+                    className={`invoice-row invoice-row--${invoice.voucher_type}`}
+                    onClick={() => setPreviewInvoice(invoice)}
+                    title={`Preview invoice ${invoice.invoice_number || `#${invoice.id}`}`}
+                  >
                     <div className="invoice-row__meta">
                       <strong>{invoice.ledger?.name || invoice.ledger_name || 'Unknown ledger'}</strong>
-                      <span className="table-subtext">Invoice #{invoice.id}</span>
+                      <span className="table-subtext">
+                        {invoice.invoice_number || `#${invoice.id}`}
+                        {' · '}
+                        {formatInvoiceDateLabel(invoice.invoice_date)}
+                        {' · '}
+                        {PAYMENT_STATUS_LABEL[invoice.payment_status]}
+                      </span>
                     </div>
                     <span className="invoice-row__price">{formatCurrency(invoice.total_amount, currencyCode)}</span>
-                  </div>
+                  </button>
                 ))
               : null}
           </div>
         </article>
       </section>
+
+      {previewInvoice ? (
+        <InvoicePreview
+          invoice={previewInvoice}
+          onClose={() => setPreviewInvoice(null)}
+          onError={(message) => setError(message)}
+        />
+      ) : null}
     </div>
   );
 }

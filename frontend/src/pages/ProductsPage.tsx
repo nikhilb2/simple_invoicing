@@ -184,7 +184,7 @@ export default function ProductsPage() {
 
       <StatusToasts error={error} success={success} onClearError={() => setError('')} onClearSuccess={() => setSuccess('')} />
 
-      <section className="content-grid">
+      <section className="content-grid content-grid--aside-form">
         <article className="panel stack">
           <div className="panel__header">
             <div>

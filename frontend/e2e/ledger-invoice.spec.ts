@@ -17,7 +17,7 @@ test.describe('Create Invoice from Ledger View', () => {
     const ledgerName = `LI-Ledger-${Date.now().toString(36)}`;
 
     // 1. Create product
-    await page.click('[href="/products"]');
+    await page.click('.sidebar [href="/products"]');
     await page.fill('#sku', sku);
     await page.fill('#name', productName);
     await page.fill('#price', '500');
@@ -26,7 +26,7 @@ test.describe('Create Invoice from Ledger View', () => {
     await expectSuccess(page, 'Product created');
 
     // 2. Add inventory
-    await page.click('[href="/inventory"]');
+    await page.click('.sidebar [href="/inventory"]');
     await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await selectComboboxOption(page, 'inventory-product', sku);
     await page.fill('#inventory-quantity', '100');

@@ -2,18 +2,18 @@ import { test, expect, expectSuccess, expectError, uniqueSku, selectComboboxOpti
 
 test.describe('Inventory Management', () => {
   test('displays stock adjustments heading', async ({ authedPage: page }) => {
-    await page.click('[href="/inventory"]');
+    await page.click('.sidebar [href="/inventory"]');
     await expect(page.locator('h1')).toContainText('Stock adjustments');
   });
 
   test('shows stock ledger section', async ({ authedPage: page }) => {
-    await page.click('[href="/inventory"]');
+    await page.click('.sidebar [href="/inventory"]');
     await expect(page.getByText('Stock ledger')).toBeVisible();
   });
 
   test('adds stock to a product', async ({ authedPage: page }) => {
     // First create a product to stock
-    await page.click('[href="/products"]');
+    await page.click('.sidebar [href="/products"]');
     const sku = uniqueSku();
     await page.fill('#sku', sku);
     await page.fill('#name', `Inv Test ${sku}`);
@@ -23,7 +23,7 @@ test.describe('Inventory Management', () => {
     await expectSuccess(page, 'Product created');
 
     // Go to inventory
-    await page.click('[href="/inventory"]');
+    await page.click('.sidebar [href="/inventory"]');
     await page.waitForTimeout(500);
 
     // Select product and add stock
@@ -40,7 +40,7 @@ test.describe('Inventory Management', () => {
 
   test('deducts stock from a product', async ({ authedPage: page }) => {
     // Create a product and stock it
-    await page.click('[href="/products"]');
+    await page.click('.sidebar [href="/products"]');
     const sku = uniqueSku();
     await page.fill('#sku', sku);
     await page.fill('#name', `Deduct Test ${sku}`);
@@ -50,7 +50,7 @@ test.describe('Inventory Management', () => {
     await expectSuccess(page, 'Product created');
 
     // Add stock
-    await page.click('[href="/inventory"]');
+    await page.click('.sidebar [href="/inventory"]');
     await page.waitForTimeout(500);
     await selectComboboxOption(page, 'inventory-product', sku);
     await page.fill('#inventory-quantity', '20');
@@ -66,7 +66,7 @@ test.describe('Inventory Management', () => {
 
   test('blocks negative ending balance', async ({ authedPage: page }) => {
     // Create a product with no stock
-    await page.click('[href="/products"]');
+    await page.click('.sidebar [href="/products"]');
     const sku = uniqueSku();
     await page.fill('#sku', sku);
     await page.fill('#name', `NoBal Test ${sku}`);
@@ -75,7 +75,7 @@ test.describe('Inventory Management', () => {
     await page.click('button:has-text("Create product")');
     await expectSuccess(page, 'Product created');
 
-    await page.click('[href="/inventory"]');
+    await page.click('.sidebar [href="/inventory"]');
     await page.waitForTimeout(500);
 
     await selectComboboxOption(page, 'inventory-product', sku);
@@ -89,7 +89,7 @@ test.describe('Inventory Management', () => {
   test('shows low stock indicator for qty <= 5', async ({
     authedPage: page,
   }) => {
-    await page.click('[href="/products"]');
+    await page.click('.sidebar [href="/products"]');
     const sku = uniqueSku();
     await page.fill('#sku', sku);
     await page.fill('#name', `Low Stock ${sku}`);
@@ -99,7 +99,7 @@ test.describe('Inventory Management', () => {
     await expectSuccess(page, 'Product created');
 
     // Add just 3 units
-    await page.click('[href="/inventory"]');
+    await page.click('.sidebar [href="/inventory"]');
     await page.waitForTimeout(500);
     await selectComboboxOption(page, 'inventory-product', sku);
     await page.fill('#inventory-quantity', '3');

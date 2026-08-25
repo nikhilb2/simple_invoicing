@@ -10,7 +10,7 @@ async function createInvoicePrerequisites(page: Parameters<typeof selectCombobox
   const ledgerName = `CancelTest-${Date.now().toString(36)}`;
 
   // Create product
-  await page.click('[href="/products"]');
+  await page.click('.sidebar [href="/products"]');
   await page.fill('#sku', sku);
   await page.fill('#name', `CancelProd ${sku}`);
   await page.fill('#price', '100');
@@ -19,7 +19,7 @@ async function createInvoicePrerequisites(page: Parameters<typeof selectCombobox
   await expectSuccess(page, 'Product created');
 
   // Add inventory
-  await page.click('[href="/inventory"]');
+  await page.click('.sidebar [href="/inventory"]');
   // Wait for ProductCombobox to be enabled (products loaded)
   await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   await selectComboboxOption(page, 'inventory-product', sku);
@@ -180,7 +180,7 @@ test.describe('Invoice cancellation', () => {
     await expectSuccess(page, 'Invoice cancelled');
 
     // Navigate away and come back
-    await page.click('[href="/products"]');
+    await page.click('.sidebar [href="/products"]');
     await openInvoiceFeed(page);
 
     // Still hidden in default view

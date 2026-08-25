@@ -25,13 +25,41 @@
   --sidebar-bg: #0d1426;
   --sidebar-border: rgba(148, 184, 255, 0.12);
   --sidebar-text: #e6eefb;
-  --sidebar-muted: rgba(156, 173, 207, 0.55);
+  /* 0.55 over --sidebar-bg is 3.29:1 and 0.45 is 2.61:1 — both under the 4.5:1
+     WCAG AA floor for the brand tagline and the nav section headings. Same
+     hue, raised alpha: 5.3:1 and 4.6:1, with the two still a step apart. */
+  --sidebar-muted: rgba(156, 173, 207, 0.78);
   --sidebar-active-bg: rgba(87, 209, 201, 0.12);
   --sidebar-active-border: rgba(87, 209, 201, 0.25);
   --sidebar-active-text: #57d1c9;
   --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
-  --sidebar-section-label: rgba(156, 173, 207, 0.45);
+  --sidebar-section-label: rgba(156, 173, 207, 0.7);
   --sidebar-footer-bg: rgba(148, 184, 255, 0.06);
+
+  /* Aliases for a --color-* naming that a number of pages reach for inline
+     (ApiKeys, SmtpSettings, EmailHistory, Company, ProduceItems, BOMConfig,
+     KeyboardShortcuts). None of them were ever declared, so every one of those
+     sites was falling through to its hard-coded fallback — and those fallbacks
+     are light-theme values: `green`, `red`, #f4f4f5, #fef2f2, #c6f6d5. They
+     only surface on error, success and expiry states, which is why they went
+     unnoticed, but a success message rendering as pure green on near-black is
+     the design system leaking. Mapped onto the real tokens so those states
+     inherit the dark palette; the inline fallbacks then never apply. */
+  --color-text: var(--text);
+  --color-text-muted: var(--muted);
+  --color-muted-text: var(--muted);
+  --color-border: var(--line);
+  --color-primary: var(--accent);
+  --color-danger: var(--danger);
+  --color-error: var(--danger);
+  --color-success: #7ce9b0;
+  --color-success-text: #7ce9b0;
+  --color-surface-2: rgba(255, 255, 255, 0.04);
+  --color-surface-raised: rgba(255, 255, 255, 0.04);
+  --color-error-bg: rgba(255, 139, 139, 0.12);
+  --color-success-bg: rgba(34, 197, 94, 0.15);
+  --color-muted-bg: rgba(148, 184, 255, 0.1);
+  --color-focus-ring: rgba(87, 209, 201, 0.18);
 }
 
 * {
@@ -237,6 +265,13 @@ textarea {
 /* Sidebar close button — visible only on mobile */
 .sidebar__close {
   display: none;
+  /* Drawer dismiss is a thumb target and was 34x30 from padding alone. The
+     mobile rule switches it to flex, so the glyph needs centring once the box
+     is taller than the text. */
+  min-width: 40px;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: 1px solid var(--sidebar-border);
   color: var(--sidebar-text);
@@ -404,6 +439,12 @@ textarea {
 
 .page-frame {
   display: grid;
+  /* The implicit `auto` column is sized by its content's min-content, so one
+     nowrap cell — the Top-products name on the dashboard — made the column
+     391px inside a 362px content box and the whole document scrolled sideways
+     at 390px. A minmax(0, 1fr) track is capped at the frame, so an unshrinkable
+     child truncates or scrolls inside its own panel instead. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   padding: 32px clamp(20px, 4vw, 48px) 48px;
 }
@@ -452,6 +493,13 @@ textarea {
   gap: 20px;
 }
 
+/* Same reason as .page-frame: an implicit `auto` track is sized by its
+   content's minimum, which is how one unshrinkable cell used to widen the page
+   rather than scroll inside its own panel. */
+.page-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .stats-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -463,6 +511,24 @@ textarea {
 
 .content-grid--single {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* A short form beside a long, paginated list. The plain .content-grid gives the
+   wider track to the first column, which on Products meant the ~600px create
+   form held the wide half while 20 product rows were squeezed into the narrow
+   one — every row's metadata wrapped to three lines, and the form left several
+   thousand pixels of dead space beside the list. The list leads; the form takes
+   the narrow track and sticks, so it stays reachable while the list scrolls. */
+.content-grid--aside-form {
+  grid-template-columns: minmax(320px, 0.72fr) minmax(0, 1.28fr);
+}
+
+.content-grid--aside-form > :first-child {
+  position: sticky;
+  top: 20px;
+  /* Long forms must still be able to scroll past their own height. */
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
 }
 
 .two-column-grid {
@@ -479,6 +545,22 @@ textarea {
   border: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(12, 23, 40, 0.92) 0%, rgba(9, 17, 31, 0.82) 100%);
   border-radius: 24px;
+}
+
+/* A stat card that navigates. It stays visually identical at rest — the point
+   is the figure, not the affordance — and only declares itself on hover and
+   keyboard focus, so a grid of eight cards does not turn into a grid of eight
+   buttons. */
+.stat-card--link {
+  display: block;
+  cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.stat-card--link:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-2px);
+  background: linear-gradient(180deg, rgba(16, 31, 53, 0.95) 0%, rgba(11, 21, 38, 0.86) 100%);
 }
 
 .stat-card__value {
@@ -809,10 +891,21 @@ textarea {
   flex-shrink: 0;
 }
 
+/* A disabled button is usually not busy — it is waiting on input, like Apply
+   before an adjustment is typed. `wait` claimed the opposite. Draining the
+   saturation matters as much as the opacity: a list of 20 rows each carrying a
+   disabled gradient button read as a wall of solid colour competing with the
+   data, at 0.6 opacity alone. `is-busy` keeps the wait cursor for the genuine
+   in-flight case. */
 .button:disabled {
-  opacity: 0.6;
-  cursor: wait;
+  opacity: 0.45;
+  filter: saturate(0.35);
+  cursor: not-allowed;
   transform: none;
+}
+
+.button:disabled.is-busy {
+  cursor: wait;
 }
 
 .button--primary {
@@ -1246,15 +1339,29 @@ textarea {
   gap: 12px;
 }
 
-.table-row,
-.invoice-row,
-.mini-row,
 /* Inventory rows carry four cells (meta, stock, dates, adjust controls) and
-   their children already carry `flex:` values — the shared three-track
-   .table-row grid was dropping the fourth onto its own line. */
+   their children already carry `flex:` values, so they stay on flex — the
+   shared three-track .table-row grid dropped the fourth onto its own line. */
+.mini-row,
 .inventory-feed-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* .table-row and .invoice-row declare grid tracks further down. They used to
+   share the flex rule above, which silently discarded those tracks: every
+   trailing cell sat wherever the meta text happened to end, so a column of
+   pills or prices came out ragged instead of aligned. They own their own
+   display so the tracks they declare actually apply.
+
+   Inventory rows carry both classes and are excluded throughout: they have a
+   fourth cell the tracks below do not describe, so the grid drops their adjust
+   controls onto a line of their own. */
+.table-row:not(.inventory-feed-row),
+.invoice-row {
+  display: grid;
   align-items: center;
   gap: 12px;
 }
@@ -1282,6 +1389,19 @@ textarea {
   background: linear-gradient(135deg, rgba(10, 22, 40, 0.6) 0%, rgba(15, 29, 48, 0.4) 100%);
   border: 1px solid rgba(148, 184, 255, 0.12);
   gap: 18px;
+}
+
+/* Rows that are themselves the control — a button or a link wrapping the whole
+   row, rather than a div with a "View" button parked at the end. A button
+   element brings its own centring, font and colour, none of which belong on a
+   row of data. */
+button.invoice-row,
+a.invoice-row {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
 }
 
 .invoice-row:hover {
@@ -1313,29 +1433,78 @@ textarea {
   border-left-color: rgba(251, 146, 60, 0.8);
 }
 
-.table-row {
-  /* The middle track holds a currency figure, which has no break opportunity —
-     floored at min-content it takes its width from the 1.8fr meta column
-     instead of overflowing into the actions beside it. */
-  grid-template-columns: minmax(0, 1.8fr) minmax(min-content, 1fr) auto;
+/* Most rows are meta + one trailing cell (actions, or a figure). Two tracks
+   pin that cell to the right edge of every row in the list, so a column of
+   buttons lines up regardless of how long each row's name runs. */
+.table-row:not(.inventory-feed-row) {
+  grid-template-columns: minmax(0, 1.8fr) auto;
+}
+
+/* Rows that also carry a figure between the meta and the trailing cell need a
+   third track, or the figure and the actions share one. The middle track holds
+   a currency figure or a quantity pill, neither of which has a break
+   opportunity — floored at min-content it takes its width from the 1.8fr meta
+   column instead of overflowing into the actions beside it. */
+.table-row:not(.inventory-feed-row):has(> .table-row__price),
+.table-row:not(.inventory-feed-row):has(> .pill) {
+  /* Each row is its own grid, so the middle track has to be a fraction rather
+     than auto: fractions resolve identically row to row, which is what keeps
+     the figures in a column, whereas auto would size each row to its own
+     content and go ragged again. It only needs to hold a currency figure, so
+     it is kept well under the meta track — at the 1fr it used to carry it took
+     roughly a third of the row and pushed every product's metadata onto a
+     second line. */
+  grid-template-columns: minmax(0, 2.4fr) minmax(min-content, 0.6fr) auto;
 }
 
 /* Product · Qty · Price · Discount · Line total · Remove, with the description
    spanning underneath. Every cell that belongs to the row now has a track of
-   its own — the discount used to auto-place onto a second row by itself.
-   Labels differ in height ("Amount (incl. GST)" wraps where "Qty" does not),
-   so the row aligns on the bottom edge and the controls stay on one line. */
+   its own — the discount used to auto-place onto a second row by itself. */
 .line-item {
-  grid-template-columns: minmax(0, 1.5fr) 100px 150px minmax(min-content, 1fr) auto;
-  align-items: end;
+  /* The numeric tracks are minmax(0, Npx) rather than a bare Npx so they can
+     give ground when the row is short of space. A fixed track contributes its
+     full width to the grid's min-content, and that minimum propagated up
+     through .content-grid and .page-grid and widened the whole document: at an
+     820px viewport /invoices scrolled sideways by 33px. Above roughly 900px
+     there is slack, the tracks sit at their maximum, and nothing moves. */
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 100px) minmax(0, 150px) minmax(min-content, 1fr) auto;
+  align-items: stretch;
   gap: 12px 10px;
+}
+
+/* Same trade the .field-grid--align-controls rows make, for the same reason:
+   the cells carry labels of unequal height ("Qty (Pieces)" wraps in its narrow
+   track where "Price" does not, and the discount stacks its %/Flat toggle
+   under its label), so bottom-aligning the row put the five labels on five
+   different baselines. The label row takes the slack instead — every label
+   starts on one line and every control still ends on one line. */
+.line-item > .field:not(.field--full) {
+  grid-template-rows: 1fr auto;
+}
+
+.line-item > .field:not(.field--full) > label {
+  align-self: start;
+}
+
+/* Trailing cells are a single block, not a label+control stack: stretching
+   them would drag a 36px icon button up to the full height of the row. */
+.line-item > .button,
+.line-item > .line-item__price {
+  align-self: end;
+}
+
+/* Except the composer's total, which carries its own "Line total" label and so
+   splits into the same two bands as the fields beside it. */
+.line-item > .line-item__price:has(> .line-item__label) {
+  align-self: stretch;
+  grid-template-rows: 1fr auto;
 }
 
 /* Only the composer's rows carry a per-line discount. The quick-create modal
    uses .line-item with one cell fewer, so the extra track is opt-in — without
    this its line total would sit in the narrow discount column. */
 .line-item--discount {
-  grid-template-columns: minmax(0, 1.6fr) 88px 124px 128px minmax(min-content, 1fr) auto;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 88px) minmax(0, 124px) minmax(0, 128px) minmax(min-content, 1fr) auto;
 }
 
 /* Matches .field label so an unlabelled cell reads like a labelled one. */
@@ -1352,6 +1521,15 @@ textarea {
   gap: 2px;
   justify-items: end;
   text-align: right;
+}
+
+/* Figure and breakdown are one block so they sit in the control band together,
+   level with the inputs, rather than spreading across the slack the label row
+   above them gives up. */
+.line-item__price-value {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
 }
 
 .line-item__price .table-subtext {
@@ -1631,11 +1809,15 @@ textarea {
 }
 
 .line-item__price,
+/* Right-aligned so the figures form a column against the actions beside them
+   rather than starting wherever their own track does — money is read by
+   comparing magnitudes down a list, which needs a shared right edge. */
 .table-row__price,
 .invoice-row__price {
   font-weight: 800;
   font-size: 1.22rem;
   white-space: nowrap;
+  text-align: right;
 }
 
 .pill {
@@ -2579,6 +2761,14 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  /* Stacked, the form sits above the list rather than beside it — sticking it
+     would pin it over the list it is meant to sit next to. */
+  .content-grid--aside-form > :first-child {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
+
   .page-hero {
     align-items: start;
     flex-direction: column;
@@ -2995,9 +3185,16 @@ textarea {
   gap: 16px;
 }
 
+/* A flex row here made the whole document scroll sideways at 390px: the name
+   is nowrap, so the row's min-content was the untruncated name plus the figure
+   — 345px inside a 318px panel — and that minimum travelled all the way up
+   through the auto grid tracks to the page. A minmax(0, 1fr) track has a zero
+   minimum, so the name truncates as it was always meant to. Same two columns,
+   same spacing. */
 .top-products__meta {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
   gap: 12px;
   margin-bottom: 7px;
   font-size: 0.92rem;
@@ -3998,7 +4195,13 @@ textarea {
 
 /* ── The row card ─────────────────────────────────────────────────── */
 
-.ledger-card {
+/* Compound selector, not a bare `.ledger-card`: these cards are rendered as
+   `class="table-row ledger-card"`, and .table-row now carries generic tracks of
+   its own. A bare class would tie with those on specificity, so which one won
+   would come down to file order — a trap, given this block sits 2800 lines
+   below them. A component that pairs itself with .table-row and brings its own
+   tracks has to say so in the selector. */
+.table-row.ledger-card {
   position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -4330,8 +4533,9 @@ textarea {
 
 @media (max-width: 720px) {
   /* The shared `.table-row → 1fr` mobile rule would drop the avatar onto its
-     own line; the monogram column is narrow enough to keep. */
-  .ledger-card {
+     own line; the monogram column is narrow enough to keep. Compound for the
+     same reason as the desktop block above. */
+  .table-row.ledger-card {
     grid-template-columns: auto minmax(0, 1fr);
     padding: 16px;
   }
@@ -4366,5 +4570,71 @@ textarea {
 
   .ledger-card:hover {
     transform: none;
+  }
+}
+
+/* ── Keyboard focus ───────────────────────────────────────────────── */
+
+/* Only two components in this file had a :focus-visible rule; everything else
+   fell back to the user agent's #99c8ff ring, and .input/.select/.textarea set
+   `outline: none` and replaced it with a 12%-alpha teal glow that is invisible
+   on the navy panels. One accent-coloured ring for every focusable thing —
+   drawn at an offset so it reads against the page rather than against a filled
+   button. Pointer clicks are unaffected: :focus-visible only matches keyboard
+   and other non-pointer focus. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The field ring sits on the border itself; a 2px offset would put it outside
+   the box-shadow glow that already marks the focused field. */
+.input:focus-visible,
+.select:focus-visible,
+.textarea:focus-visible {
+  outline-offset: 0;
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────── */
+
+/* Page transitions (framer-motion in Layout), the drawer slide, card hover
+   lifts and the loading skeletons all ran regardless of the OS setting — the
+   block further up only covered the ledger cards. Durations are collapsed
+   rather than set to `none` so transitionend/animationend still fire and the
+   handlers that wait on them do not stall. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .button:hover,
+  .button--small:hover {
+    transform: none;
+  }
+}
+
+/* ── Touch targets ────────────────────────────────────────────────── */
+
+/* On a phone the row action icons were 36x36 and the pagination buttons 34px
+   tall — under the ~40px a thumb needs. Scoped to coarse pointers so the
+   desktop density these were tuned for is untouched. */
+@media (pointer: coarse) {
+  .button--icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .button--small {
+    min-height: 40px;
+    padding: 8px 14px;
+  }
+
+  .sidebar-toggle {
+    min-height: 40px;
   }
 }

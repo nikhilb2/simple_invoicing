@@ -117,7 +117,7 @@ async function seedInvoiceData(page: import('@playwright/test').Page) {
   const ledgerName = `FYSeriesLedger-${Date.now().toString(36)}`;
 
   // Product
-  await page.click('[href="/products"]');
+  await page.click('.sidebar [href="/products"]');
   await page.fill('#sku', sku);
   await page.fill('#name', productName);
   await page.fill('#price', '100');
@@ -126,7 +126,7 @@ async function seedInvoiceData(page: import('@playwright/test').Page) {
   await expectSuccess(page, 'Product created');
 
   // Inventory
-  await page.click('[href="/inventory"]');
+  await page.click('.sidebar [href="/inventory"]');
   await page.waitForTimeout(500);
   await selectComboboxOption(page, 'inventory-product', sku);
   await page.fill('#inventory-quantity', '100');

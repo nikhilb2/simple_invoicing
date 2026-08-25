@@ -36,7 +36,7 @@ test.describe('Sidebar', () => {
 
   // 6. Sidebar persists across page navigation
   test('sidebar stays visible when navigating between pages', async ({ authedPage: page }) => {
-    await page.click('[href="/products"]');
+    await page.click('.sidebar [href="/products"]');
     await expect(page.locator('.sidebar')).toBeVisible();
     await page.click('[href="/invoices"]');
     await expect(page.locator('.sidebar')).toBeVisible();
