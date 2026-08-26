@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, adjustInventory } from './fixtures';
 
 const LEDGER_EMAIL = 'buyer@example.com';
 const EXPECT_TIMEOUT_MS = Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '2000');
@@ -159,10 +159,7 @@ test.describe('Send Email Modal', () => {
 
       // Add inventory
       await clickNavLink(page, '/inventory');
-      await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-      await selectComboboxOption(page, 'inventory-product', sku);
-      await page.fill('#inventory-quantity', '20');
-      await page.click('button:has-text("Apply adjustment")');
+      await adjustInventory(page, sku, '20');
       await expectSuccess(page, 'Inventory updated');
 
       // Create ledger with email
@@ -248,10 +245,7 @@ test.describe('Send Email Modal', () => {
 
       // Add inventory
       await clickNavLink(page, '/inventory');
-      await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-      await selectComboboxOption(page, 'inventory-product', sku);
-      await page.fill('#inventory-quantity', '10');
-      await page.click('button:has-text("Apply adjustment")');
+      await adjustInventory(page, sku, '10');
       await expectSuccess(page, 'Inventory updated');
 
       // Create ledger with email

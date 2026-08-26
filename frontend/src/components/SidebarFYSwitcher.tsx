@@ -60,6 +60,7 @@ export default function SidebarFYSwitcher() {
         <div ref={fyDropdownRef} style={{ position: 'relative' }}>
           <button
             className="button button--ghost"
+            data-testid="fy-switcher"
             style={{ width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             onClick={() => setFyDropdownOpen((v) => !v)}
             aria-haspopup="listbox"
