@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowUpDown, FileText } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
@@ -34,20 +34,31 @@ export default function InventoryPage() {
   const [rowNotes, setRowNotes] = useState<Record<number, string>>({});
   const [submittingId, setSubmittingId] = useState<number | null>(null);
 
+  // Guards against out-of-order responses. Typing in the search box fires a
+  // fresh request while the unfiltered load may still be in flight, and on a
+  // large catalogue the broader query is the slower one — so without this the
+  // stale response lands last and silently replaces the filtered rows with
+  // everything, leaving the search box reading one thing and the list showing
+  // another. Only the newest request is allowed to write state.
+  const latestRequestRef = useRef(0);
+
   async function loadInventory() {
+    const requestId = ++latestRequestRef.current;
     try {
       setLoading(true);
       setError('');
       const res = await api.get<PaginatedInventoryOut>('/inventory/', {
         params: { search, sort_by: sortBy, sort_order: sortOrder, page, page_size: pageSize },
       });
+      if (requestId !== latestRequestRef.current) return;
       setRows(res.data.items);
       setTotal(res.data.total);
       setTotalPages(res.data.total_pages);
     } catch (err) {
+      if (requestId !== latestRequestRef.current) return;
       setError(getApiErrorMessage(err, 'Unable to load inventory'));
     } finally {
-      setLoading(false);
+      if (requestId === latestRequestRef.current) setLoading(false);
     }
   }
 
