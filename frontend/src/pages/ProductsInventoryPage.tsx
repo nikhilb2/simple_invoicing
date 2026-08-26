@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ArrowUpDown, Download, Upload, FileDown, Eye, EyeOff, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import { track } from '../lib/analytics';
@@ -7,8 +8,10 @@ import formatCurrency from '../utils/formatting';
 import PublishToMarketplaceButton from '../components/PublishToMarketplaceButton';
 import { useCanPublishToMarketplace } from '../features/marketplace/useMarketplaceSync';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
-import { fetchAvailableSerials } from '../features/serials/api';
+import { fetchAvailableSerials, scanCode } from '../features/serials/api';
 import type { Serial } from '../features/serials/types';
+import type { PaginatedProducts } from '../types/api';
+import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
 
 /* The drawer is the warranty desk: one IMEI, and where it came in and went out.
    `status: null` is what makes it a history rather than the picker's
@@ -44,6 +47,28 @@ type ImportResult = {
   updated: number;
   errors: Array<{ row: number; message: string }>;
 };
+
+/**
+ * The SKU behind a product id, for a citation that carries only the id.
+ *
+ * The products API has no by-id endpoint and the grid searches on name and
+ * SKU, so the id has to be resolved against the list. Paged at the API's
+ * maximum, which makes an ordinary catalogue exactly one request, and capped
+ * so a pathological one cannot turn a deep link into a crawl. Delete this the
+ * day `GET /products/{id}` exists.
+ */
+async function resolveProductSku(productId: number): Promise<string | null> {
+  const pageSize = 500;
+  for (let page = 1; page <= 10; page += 1) {
+    const { data } = await api.get<PaginatedProducts>('/products/', {
+      params: { page, page_size: pageSize },
+    });
+    const match = data.items.find((item) => item.id === productId);
+    if (match) return match.sku;
+    if (page >= (data.total_pages ?? 1)) break;
+  }
+  return null;
+}
 
 type EditingCell = { id: number; field: string } | null;
 
@@ -98,6 +123,16 @@ export default function ProductsInventoryPage() {
   const [serialTotal, setSerialTotal] = useState(0);
   const [serialsLoading, setSerialsLoading] = useState(false);
   const [serialsError, setSerialsError] = useState('');
+
+  /* Citation deep links: ?product_id=9 lands on that product, ?serial=ABC123
+     on the unit — which means its product's row *and* the serial drawer open
+     beneath it, filtered to the one code. Both resolve to a SKU and drive the
+     existing server-side search, so the record is found however deep in the
+     catalogue it sits. */
+  const [searchParams] = useSearchParams();
+  const deepLinkProductId = numericParam(searchParams, 'product_id');
+  const deepLinkSerial = (searchParams.get('serial') ?? '').trim();
+  const [highlightProductId, setHighlightProductId] = useState<number | null>(null);
 
   // Import modal
   const [showImportModal, setShowImportModal] = useState(false);
@@ -168,6 +203,60 @@ export default function ProductsInventoryPage() {
 
     return () => { cancelled = true; };
   }, [openSerialsFor, serialSearch]);
+
+  useEffect(() => {
+    if (deepLinkProductId === null && !deepLinkSerial) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        if (deepLinkSerial) {
+          const lookup = await scanCode(deepLinkSerial);
+          if (cancelled) return;
+          if (!lookup.found) {
+            setError(lookup.detail);
+            return;
+          }
+          const product = lookup.result.kind === 'serial'
+            ? lookup.result.serial.product
+            : lookup.result.product;
+          setSearch(product.sku);
+          setPage(1);
+          setHighlightProductId(product.id);
+          // Set alongside openSerialsFor rather than through toggleSerials,
+          // which clears the search this drawer is being opened *for*.
+          setSerials([]);
+          setSerialTotal(0);
+          setSerialsError('');
+          setSerialsLoading(true);
+          setSerialSearch(deepLinkSerial);
+          setOpenSerialsFor(product.id);
+          return;
+        }
+
+        const sku = await resolveProductSku(deepLinkProductId as number);
+        if (cancelled) return;
+        if (sku === null) {
+          setError(`Product #${deepLinkProductId} is not in this company's catalogue.`);
+          return;
+        }
+        setSearch(sku);
+        setPage(1);
+        setHighlightProductId(deepLinkProductId);
+      } catch (err) {
+        if (!cancelled) {
+          setError(getApiErrorMessage(err, 'Unable to open the linked item'));
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [deepLinkProductId, deepLinkSerial]);
+
+  useDeepLinkScroll(
+    highlightProductId === null ? null : `product-row-${highlightProductId}`,
+    !loading,
+  );
 
   function toggleSerials(productId: number) {
     const opening = openSerialsFor !== productId;
@@ -622,7 +711,13 @@ export default function ProductsInventoryPage() {
                 ) : (
                   rows.map((row) => (
                     <Fragment key={row.id}>
-                    <tr className={`inv-row ${row.status === 'inactive' ? 'inv-row--inactive' : ''}`}>
+                    <tr
+                      id={`product-row-${row.id}`}
+                      className={deepLinkClass(
+                        highlightProductId === row.id,
+                        `inv-row ${row.status === 'inactive' ? 'inv-row--inactive' : ''}`,
+                      )}
+                    >
                       <td style={{ padding: '6px 10px' }}>
                         <EditableCell {...editableCellProps} row={row} field="name" label="Name" />
                       </td>

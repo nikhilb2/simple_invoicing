@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { MotionConfig } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -8,6 +8,7 @@ import { ShortcutsProvider } from './context/ShortcutsContext';
 import api from './api/client';
 import type { CompanyProfile } from './types/api';
 import { isCompanyConfigured } from './utils/companySetup';
+import { loginPathWithNext, sanitizeNextPath } from './utils/nextPath';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ProductsPage from './pages/ProductsPage';
@@ -31,6 +32,8 @@ import BackupsPage from './pages/BackupsPage';
 import KeyboardShortcutsPage from './pages/KeyboardShortcutsPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
 import ApiKeysPage from './pages/ApiKeysPage';
+import ConnectedAppsPage from './pages/settings/ConnectedAppsPage';
+import OAuthConsentPage from './pages/oauth/OAuthConsentPage';
 import EmailHistoryPage from './pages/EmailHistoryPage';
 import MyListingsPage from './pages/marketplace/MyListingsPage';
 import MarketplaceOrdersPage from './pages/marketplace/MarketplaceOrdersPage';
@@ -48,11 +51,21 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 // connection never opens, so it isn't in the main bundle either.
 const MarketplaceBrowsePage = lazy(() => import('./pages/marketplace/MarketplaceBrowsePage'));
 
+/**
+ * Requires a session, and remembers where the visitor was going.
+ *
+ * The return path is not a nicety: an MCP client sends the user straight to
+ * /oauth/consent?request_id=…, and before this carried `?next=` they signed in
+ * and landed on the dashboard with the pending authorization request stranded.
+ * `sanitizeNextPath` on the way back is what keeps that from being an open
+ * redirect — see utils/nextPath.ts.
+ */
 function Protected({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
+  const location = useLocation();
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={loginPathWithNext(`${location.pathname}${location.search}`)} replace />;
   }
 
   return children;
@@ -60,9 +73,10 @@ function Protected({ children }: { children: React.ReactNode }) {
 
 function PublicOnly({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
+  const [searchParams] = useSearchParams();
 
   if (isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={sanitizeNextPath(searchParams.get('next'))} replace />;
   }
 
   return children;
@@ -148,6 +162,10 @@ function AppRoutes() {
           </PublicOnly>
         }
       />
+      {/* Mid-flow from an external MCP client. Deliberately outside Layout and
+          CompanyRequired: the visitor is answering one question, and a company
+          setup redirect here would strand the pending authorization request. */}
+      <Route path="/oauth/consent" element={<Protected><OAuthConsentPage /></Protected>} />
       <Route path="/" element={<Protected><CompanyRequired><Layout><DashboardPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/products" element={<Protected><CompanyRequired><Layout><ProductsPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/inventory" element={<Protected><CompanyRequired><Layout><InventoryPage /></Layout></CompanyRequired></Protected>} />
@@ -178,6 +196,8 @@ function AppRoutes() {
       <Route path="/settings/security" element={<SettingsRoute><ChangePasswordPage /></SettingsRoute>} />
       <Route path="/settings/shortcuts" element={<SettingsRoute><KeyboardShortcutsPage /></SettingsRoute>} />
       <Route path="/settings/api-keys" element={<SettingsRoute admin><ApiKeysPage /></SettingsRoute>} />
+      {/* Per-user, not admin-only: a user manages the connectors they themselves consented to. */}
+      <Route path="/settings/connected-apps" element={<SettingsRoute><ConnectedAppsPage /></SettingsRoute>} />
       <Route path="/settings/backups" element={<SettingsRoute admin><BackupsPage /></SettingsRoute>} />
 
       {/* Where those pages used to live. */}

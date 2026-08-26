@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import type { CompanyAccount, CompanyProfile, Ledger, Payment, PaymentCreate, PaymentUpdate } from '../types/api';
 import formatCurrency from '../utils/formatting';
 import { useFY } from '../context/FYContext';
+import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
 
 function defaultDateRange() {
   const today = new Date();
@@ -32,6 +33,18 @@ export default function CashBankPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  /* Citation deep link: /cash-bank?payment_id=12. The register only ever shows
+     one account over one period, so landing on the record means moving both —
+     otherwise the URL opens a page that demonstrably does not contain the
+     payment it names. */
+  const [searchParams] = useSearchParams();
+  const deepLinkPaymentId = numericParam(searchParams, 'payment_id');
+  const [highlightPaymentId, setHighlightPaymentId] = useState<number | null>(null);
+  /* Pinned from the first render rather than once the payment arrives: the
+     account and financial-year defaults below both fire on mount and would
+     otherwise win the race and move the register straight back off it. */
+  const [deepLinkPinned, setDeepLinkPinned] = useState(() => deepLinkPaymentId !== null);
+
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [entrySubmitting, setEntrySubmitting] = useState(false);
   const [editingEntry, setEditingEntry] = useState<null | {
@@ -52,10 +65,11 @@ export default function CashBankPage() {
   const activeCurrencyCode = company?.currency_code || 'USD';
 
   useEffect(() => {
+    if (deepLinkPinned) return;
     if (selectedAccountId !== '') return;
     if (accounts.length === 0) return;
     setSelectedAccountId(String(accounts[0].id));
-  }, [accounts, selectedAccountId]);
+  }, [accounts, deepLinkPinned, selectedAccountId]);
 
   async function loadData() {
     try {
@@ -86,11 +100,45 @@ export default function CashBankPage() {
   }, [period.fromDate, period.toDate]);
 
   useEffect(() => {
+    if (deepLinkPinned) return;
     setPeriod({
       fromDate: activeFY?.start_date ?? defaultDateRange().fromDate,
       toDate: activeFY?.end_date ?? defaultDateRange().toDate,
     });
-  }, [activeFY]);
+  }, [activeFY, deepLinkPinned]);
+
+  useEffect(() => {
+    if (deepLinkPaymentId === null) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { data } = await api.get<Payment>(`/payments/${deepLinkPaymentId}`);
+        if (cancelled) return;
+        const day = String(data.date).slice(0, 10);
+        setSelectedAccountId(data.account_id != null ? String(data.account_id) : '');
+        // Widened, not replaced: a citation should not silently throw away the
+        // rest of the period the register was showing.
+        setPeriod((current) => ({
+          fromDate: day < current.fromDate ? day : current.fromDate,
+          toDate: day > current.toDate ? day : current.toDate,
+        }));
+        setHighlightPaymentId(data.id);
+      } catch (err) {
+        if (cancelled) return;
+        // Hand the register back its own defaults; the page still works.
+        setDeepLinkPinned(false);
+        setError(getApiErrorMessage(err, `Unable to open payment #${deepLinkPaymentId}`));
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [deepLinkPaymentId]);
+
+  useDeepLinkScroll(
+    highlightPaymentId === null ? null : `payment-row-${highlightPaymentId}`,
+    !loading,
+  );
 
   const selectedAccount = useMemo(() => (
     selectedAccountId ? accounts.find((account) => account.id === Number(selectedAccountId)) ?? null : null
@@ -368,7 +416,11 @@ export default function CashBankPage() {
             ) : null}
             {!loading
               ? accountEntries.map((entry, idx) => (
-                  <div key={`${entry.id}-${idx}`} className="invoice-row">
+                  <div
+                    key={`${entry.id}-${idx}`}
+                    id={`payment-row-${entry.id}`}
+                    className={deepLinkClass(highlightPaymentId === entry.id, 'invoice-row')}
+                  >
                     <div className="invoice-row__meta">
                       <strong>{entry.voucherLabel} #{entry.id}</strong>
                       <span className="table-subtext">

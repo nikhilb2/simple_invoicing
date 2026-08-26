@@ -205,6 +205,34 @@ reconfigured at runtime.
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | `30` | Token expiration time | ✓ |
 | `DEBUG` | `true` | `false` | Debug mode (detailed error messages) | ✓ |
 
+### MCP Connector / OAuth Variables
+
+These configure the built-in MCP server and its OAuth 2.1 authorization server, which let
+Claude, ChatGPT and other MCP clients connect to this instance.
+
+| Variable | Development | Production | Purpose | Required |
+|----------|-------------|-----------|---------|----------|
+| `PUBLIC_API_BASE_URL` | `http://localhost:8000` | `https://<your-host>` | Public origin of this API. Doubles as the **OAuth issuer** and the base of the canonical MCP resource URI (`<base>/mcp`). | ✓ when MCP enabled |
+| `PUBLIC_APP_BASE_URL` | `http://localhost:5173` | `https://<your-host>` | Public origin of the web app. Used for the OAuth consent redirect and for `search`/`fetch` citation links. | ✓ when MCP enabled |
+| `MCP_ENABLED` | `true` | `true` | Mounts the `/mcp` endpoint and the OAuth discovery documents. | |
+| `MCP_WRITE_ENABLED` | `false` | `false` | **Kill switch.** With this off, write tools are neither listed nor callable — even for a token that was granted `invoicing:write`. Turn it on deliberately. | |
+| `MCP_DEFAULT_PROFILE` | `core` | `core` | `core` exposes a curated tool set; `all` exposes every generated tool. Clients can also request a profile in the connector URL. | |
+| `OAUTH_DCR_ENABLED` | `true` | `true` | Allows RFC 7591 dynamic client registration at `POST /api/oauth/register`. Claude and ChatGPT both rely on it. | |
+| `OAUTH_ACCESS_TOKEN_TTL_MINUTES` | `60` | `60` | Lifetime of an issued OAuth access token. | |
+| `OAUTH_REFRESH_TOKEN_TTL_DAYS` | `30` | `30` | Lifetime of a refresh token. Refresh tokens rotate on every use. | |
+
+**`PUBLIC_API_BASE_URL` must be exact.** It is published in the OAuth discovery documents
+and is what access tokens are audience-bound to, so it has to match the URL a user types
+into their MCP client, character for character — including the scheme and any port. A
+mismatch makes every token fail audience validation with a `401` that looks like a login
+loop. Both public URLs must be `https://` in production; the backend refuses to start
+otherwise while `MCP_ENABLED` is on.
+
+Deployments serve these two extra path prefixes from the backend, alongside `/api`:
+`/mcp` and `/.well-known/`. The Kubernetes ingresses and the Vite dev proxy already route
+them; any other reverse proxy in front of this app needs the same two rules, because OAuth
+discovery cannot be relocated under `/api`.
+
 ### Database Variables (Docker Compose)
 
 | Variable | Purpose |

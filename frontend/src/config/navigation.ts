@@ -12,6 +12,7 @@ import {
   FileText,
   KeyRound,
   Keyboard,
+  Plug,
   LayoutDashboard,
   LayoutList,
   Mail,
@@ -264,6 +265,15 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         icon: KeyRound,
         adminOnly: true,
         description: 'Long-lived keys for the MCP server and other integrations.',
+      },
+      {
+        // No `adminOnly`: a grant belongs to the user who consented to it, and
+        // every user needs to be able to cut off their own connectors. See the
+        // file header — this controls the link only; App.tsx guards the route.
+        to: '/settings/connected-apps',
+        label: 'Connected Apps',
+        icon: Plug,
+        description: 'Assistants and apps you have connected, and the access each one holds.',
       },
       {
         to: '/settings/backups',

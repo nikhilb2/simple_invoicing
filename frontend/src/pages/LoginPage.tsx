@@ -1,9 +1,10 @@
 import { FormEvent, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getApiErrorMessage } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { track } from '../lib/analytics';
+import { sanitizeNextPath } from '../utils/nextPath';
 import StatusToasts from '../components/StatusToasts';
 
 export default function LoginPage() {
@@ -13,6 +14,11 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // Where Protected wanted to send them. Validated, never trusted — an
+  // unchecked ?next= is an open redirect aimed at a user who has just typed
+  // their password. See utils/nextPath.ts.
+  const next = sanitizeNextPath(searchParams.get('next'));
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -21,7 +27,7 @@ export default function LoginPage() {
       setSubmitting(true);
       setError('');
       await login(email, password);
-      navigate('/');
+      navigate(next, { replace: true });
     } catch (err) {
       // The counterpart to user_logged_in: without it a spike in failed
       // sign-ins looks the same as people simply not showing up.

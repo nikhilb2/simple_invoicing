@@ -1,4 +1,4 @@
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from sqlalchemy import inspect
@@ -102,14 +102,19 @@ def get_requested_company_id(x_company_id: str | None = Header(default=None, ali
 
 
 def get_active_company(
+    request: Request = None,  # type: ignore[assignment]
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     requested_company_id: int | None = Depends(get_requested_company_id),
 ) -> CompanyProfile:
     user_state = inspect(current_user)
+    # An MCP tool call addresses a company via X-Company-Id for the duration of that call
+    # only. Without this guard a read-only tool would commit a new active_company_id and
+    # silently change which company the human sees in the web UI on their next page load.
+    ephemeral = request is not None and "X-MCP-Tool" in request.headers
 
     def _persist_active_company(company_id: int) -> None:
-        if user_state.persistent:
+        if user_state.persistent and not ephemeral:
             current_user.active_company_id = company_id
             db.commit()
             db.refresh(current_user)
