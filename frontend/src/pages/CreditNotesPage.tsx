@@ -21,6 +21,7 @@ import type {
   Product,
 } from '../types/api';
 import formatCurrency from '../utils/formatting';
+import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
 
 type SelectedLineItem = {
   invoice: Invoice;
@@ -87,6 +88,13 @@ export default function CreditNotesPage() {
   const [listTotal, setListTotal] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
   const pageSize = 20;
+
+  // Citation deep link: /credit-notes?cn_id=7. The feed searches on credit note
+  // number and not on id, so the number is fetched first and dropped into the
+  // search box — that filters the registry down to the one record, on any page
+  // and whatever the other filters were left on.
+  const deepLinkCreditNoteId = numericParam(searchParams, 'cn_id');
+  const [highlightCreditNoteId, setHighlightCreditNoteId] = useState<number | null>(null);
 
   const currencyCode = company?.currency_code || 'INR';
 
@@ -189,6 +197,35 @@ export default function CreditNotesPage() {
       cancelled = true;
     };
   }, [dateFrom, dateTo, listPage, refreshKey, search, statusFilter]);
+
+  useEffect(() => {
+    if (deepLinkCreditNoteId === null) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { data } = await api.get<CreditNote>(`/credit-notes/${deepLinkCreditNoteId}`);
+        if (cancelled) return;
+        setSearch(data.credit_note_number);
+        setStatusFilter('');
+        setDateFrom('');
+        setDateTo('');
+        setListPage(1);
+        setHighlightCreditNoteId(data.id);
+      } catch (err) {
+        if (!cancelled) {
+          setError(getApiErrorMessage(err, `Unable to open credit note #${deepLinkCreditNoteId}`));
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [deepLinkCreditNoteId]);
+
+  useDeepLinkScroll(
+    highlightCreditNoteId === null ? null : `credit-note-${highlightCreditNoteId}`,
+    !loadingCreditNotes,
+  );
 
   const filteredInvoices = useMemo(() => {
     const numericLedgerId = Number(selectedLedgerId);
@@ -742,7 +779,12 @@ export default function CreditNotesPage() {
             {creditNotes.map((creditNote) => {
               const ledger = ledgers.find((entry) => entry.id === creditNote.ledger_id);
               return (
-                <div key={creditNote.id} className="panel" style={{ padding: '16px' }}>
+                <div
+                  key={creditNote.id}
+                  id={`credit-note-${creditNote.id}`}
+                  className={deepLinkClass(highlightCreditNoteId === creditNote.id, 'panel')}
+                  style={{ padding: '16px' }}
+                >
                   <div className="panel__header">
                     <div>
                       <p className="eyebrow">{creditNoteTypeLabels[creditNote.credit_note_type]}</p>

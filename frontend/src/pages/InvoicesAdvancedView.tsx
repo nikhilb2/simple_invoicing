@@ -17,6 +17,7 @@ import { useInvoiceCancelStore } from '../store/useInvoiceCancelStore';
 import { exportInvoicesCsv, fetchCompanyProfile, fetchInvoicePage, fetchProducts } from '../features/invoices/api';
 import { invoiceQueryKeys } from '../features/invoices/queryKeys';
 import EmptyState from '../components/EmptyState';
+import { numericParam } from '../utils/deepLink';
 
 type Breakdown = {
   credit: number;
@@ -196,6 +197,36 @@ export default function InvoicesAdvancedView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const { previewInvoice, openPreview, closePreview } = useInvoiceModalStore();
+
+  // Citation deep link: /invoices-view?invoice_id=123 has to land on that
+  // invoice, not merely on the feed. Fetched by id rather than searched for,
+  // because the record may be cancelled, or in a financial year this feed is
+  // not currently showing — the filters are then widened to match so the row
+  // behind the preview is the one the citation named.
+  const deepLinkInvoiceId = numericParam(searchParams, 'invoice_id');
+
+  useEffect(() => {
+    if (deepLinkInvoiceId === null) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { data } = await api.get<Invoice>(`/invoices/${deepLinkInvoiceId}`);
+        if (cancelled) return;
+        setAllowAllFY(true);
+        setShowCancelled(true);
+        setInvoiceSearch(data.invoice_number ?? '');
+        openPreview(data);
+      } catch (err) {
+        if (!cancelled) {
+          setActionError(getApiErrorMessage(err, `Unable to open invoice #${deepLinkInvoiceId}`));
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkInvoiceId]);
   const pageSize = 20;
   const shouldUseAllFY = allowAllFY;
   const isFYReady = shouldUseAllFY || Boolean(activeFY);
