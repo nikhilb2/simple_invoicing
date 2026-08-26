@@ -18,7 +18,8 @@ import {
 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
-import type { Ledger, PaginatedLedgers } from '../types/api';
+import type { CompanyProfile, Ledger, PaginatedLedgers } from '../types/api';
+import formatCurrency from '../utils/formatting';
 import ConfirmDialog from '../components/ConfirmDialog';
 import EmptyState from '../components/EmptyState';
 
@@ -44,10 +45,20 @@ function ledgerTone(name: string): number {
   return (hash % 6) + 1;
 }
 
+/**
+ * Which side a closing balance sits on, Tally-style: a positive (debit)
+ * balance is receivable from the ledger, a negative one is payable to it.
+ * Zero reads as debit so a settled ledger doesn't flip to "Cr".
+ */
+function balanceSide(balance: number): 'debit' | 'credit' {
+  return balance < 0 ? 'credit' : 'debit';
+}
+
 export default function LedgersPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
+  const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [deletingLedgerId, setDeletingLedgerId] = useState<number | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -89,6 +100,23 @@ export default function LedgersPage() {
     void loadLedgers(page, search);
   }, [page, search]);
 
+  // Currency is only needed to render balances; a failure here leaves the
+  // default in place rather than blocking the registry.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await api.get<CompanyProfile>('/company/');
+        if (!cancelled) setCompany(res.data);
+      } catch {
+        /* keep the default currency */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   function handleDeleteLedger(ledgerId: number) {
     setPendingDeleteLedgerId(ledgerId);
     setShowDeleteDialog(true);
@@ -119,6 +147,7 @@ export default function LedgersPage() {
     }
   }
 
+  const activeCurrencyCode = company?.currency_code || 'INR';
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const rangeEnd = Math.min(page * pageSize, total);
 
@@ -315,6 +344,22 @@ export default function LedgersPage() {
 
                       <div className="ledger-card__aside">
                         <span className="ledger-card__id">#{ledger.id}</span>
+                        {ledger.balance != null ? (
+                          <div
+                            className={`ledger-card__balance ledger-card__balance--${balanceSide(ledger.balance)}`}
+                            title={`Closing balance ${formatCurrency(Math.abs(ledger.balance), activeCurrencyCode)} ${
+                              balanceSide(ledger.balance) === 'debit' ? 'debit' : 'credit'
+                            }`}
+                          >
+                            <span className="ledger-card__balance-label">Balance</span>
+                            <span className="ledger-card__balance-value">
+                              {formatCurrency(Math.abs(ledger.balance), activeCurrencyCode)}
+                              <span className="ledger-card__balance-side">
+                                {balanceSide(ledger.balance) === 'debit' ? 'Dr' : 'Cr'}
+                              </span>
+                            </span>
+                          </div>
+                        ) : null}
                         <div className="table-row__actions ledger-card__actions">
                           <button
                             type="button"

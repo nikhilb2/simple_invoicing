@@ -30,6 +30,9 @@ class LedgerOut(BaseModel):
     address: str
     gst: str = ""
     opening_balance: float | None = None
+    # Closing balance to date (debit - credit); only populated where the caller
+    # asks for it, since it costs extra aggregates.
+    balance: float | None = None
     phone_number: str
     email: str | None = None
     website: str | None = None

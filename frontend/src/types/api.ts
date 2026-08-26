@@ -103,6 +103,8 @@ export type Ledger = {
   address: string;
   gst: string;
   opening_balance: number | null;
+  /** Closing balance to date (debit - credit). Only sent by the ledger list. */
+  balance?: number | null;
   phone_number: string;
   email: string | null;
   website: string | null;
