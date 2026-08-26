@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
+import api from '../api/client';
 import type { Ledger } from '../types/api';
 
 type LedgerComboboxProps = {
@@ -25,6 +26,8 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, 
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [searching, setSearching] = useState(false);
+  const [serverResults, setServerResults] = useState<Ledger[] | null>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -35,19 +38,42 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, 
     if (l) setQuery(formatLedgerLabel(l));
   }, [value, ledgers]);
 
+  // Server results win when present. Callers hand us only the first page of
+  // ledgers, so on a large book the one being searched for is very likely not
+  // in that slice at all — filtering the prop alone would report "no match" for
+  // a ledger that plainly exists. Mirrors ProductCombobox.
   const suggestions = open
-    ? ledgers.filter((l) =>
-        searching && query.trim() !== ''
-          ? formatSearchText(l).includes(query.toLowerCase())
-          : true
-      )
+    ? serverResults !== null
+      ? serverResults
+      : searching && query.trim() !== ''
+        ? ledgers.filter((l) => formatSearchText(l).includes(query.toLowerCase()))
+        : ledgers
     : [];
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setQuery(e.target.value);
+    const val = e.target.value;
+    setQuery(val);
     setSearching(true);
     setOpen(true);
     setActiveIndex(-1);
+
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (val.trim() === '') {
+      setServerResults(null);
+      return;
+    }
+    searchTimerRef.current = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await api.get<{ items: Ledger[] }>('/ledgers/', {
+            params: { page: 1, page_size: 30, search: val.trim() },
+          });
+          setServerResults(res.data.items);
+        } catch {
+          // silently ignore search errors
+        }
+      })();
+    }, 250);
   }
 
   function handleSelect(ledger: Ledger) {

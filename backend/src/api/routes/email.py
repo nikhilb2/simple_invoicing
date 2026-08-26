@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from src.api.deps import get_active_company, require_roles
 from src.api.routes.invoices import _build_invoice_pdf
+from src.services.serial_service import SerialManager
 from src.api.routes.ledgers import _build_ledger_statement_data, _build_statement_html
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
@@ -120,7 +121,15 @@ async def send_invoice_email(
         invoice_bank_accounts = invoice_bank_accounts.filter(or_(CompanyAccount.company_id == company_id, CompanyAccount.company_id.is_(None)))
     invoice_bank_accounts = invoice_bank_accounts.all()
 
-    pdf_buf = _build_invoice_pdf(invoice, products, invoice_bank_accounts, active_company=active_company)
+    # Emailed and downloaded copies of the same invoice must agree; without this
+    # the customer's copy would silently omit the IMEIs the shop's copy prints.
+    pdf_buf = _build_invoice_pdf(
+        invoice,
+        products,
+        invoice_bank_accounts,
+        active_company=active_company,
+        serials=SerialManager(db).serials_for_invoice(invoice),
+    )
     pdf_bytes = pdf_buf.read()
 
     inv_number = invoice.invoice_number or f"#{invoice.id}"

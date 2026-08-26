@@ -30,6 +30,7 @@ from src.services.gst_tax_service import (
     money as _money,
 )
 from src.services.inventory_service import InventoryManager
+from src.services.serial_service import SerialManager
 from src.services.series import generate_next_number
 
 
@@ -80,12 +81,14 @@ class InvoiceProcessor:
     """Encapsulates invoice payload application and inventory management.
 
     Inventory operations are fully delegated to the :class:`InventoryManager`
-    instance available as ``self.inventory``.
+    instance available as ``self.inventory``; the per-unit serial / IMEI side of
+    the same operations lives on ``self.serials``.
     """
 
     def __init__(self, db: Session) -> None:
         self.db = db
         self.inventory = InventoryManager(db)
+        self.serials = SerialManager(db)
 
     # ------------------------------------------------------------------
     # Ledger helpers
@@ -142,6 +145,39 @@ class InvoiceProcessor:
         self.inventory.apply_invoice_changes(invoice, payload, company_id=company_id)
 
     # ------------------------------------------------------------------
+    # Serial helpers — delegate to SerialManager
+    # ------------------------------------------------------------------
+
+    def reverse_serials(self, invoice: Invoice) -> None:
+        """Undo the serial effect of an existing invoice's line items.
+
+        Used when cancelling an invoice.  Delegates to
+        :meth:`SerialManager.reverse_invoice_serials`.
+        """
+        self.serials.reverse_invoice_serials(invoice)
+
+    def restore_serials(self, invoice: Invoice, *, company_id: int) -> None:
+        """Re-apply the serial effect of a previously-cancelled invoice.
+
+        Used when restoring an invoice.  Delegates to
+        :meth:`SerialManager.restore_invoice_serials`.
+        """
+        self.serials.restore_invoice_serials(invoice, company_id=company_id)
+
+    def apply_serial_delta_for_update(
+        self,
+        invoice: Invoice,
+        payload: InvoiceCreate,
+        *,
+        company_id: int | None,
+    ) -> None:
+        """Apply the per-product serial set-diff when editing an invoice.
+
+        Delegates to :meth:`SerialManager.apply_invoice_changes`.
+        """
+        self.serials.apply_invoice_changes(invoice, payload, company_id=company_id)
+
+    # ------------------------------------------------------------------
     # Item validation
     # ------------------------------------------------------------------
 
@@ -194,16 +230,30 @@ class InvoiceProcessor:
                     detail=f"Quantity for {product.name} must be a whole number",
                 )
 
-            if apply_inventory_changes and product.maintain_inventory:
-                if voucher_type == "sales":
-                    self.inventory.check_availability(
-                        item.product_id,
-                        quantity_value,
-                        company_id=company_id,
-                        product_name=product.name,
-                    )
-
             validated.append((item, product, quantity_value))
+
+        # Runs once the products are resolved but before any stock is touched, so a
+        # mistyped IMEI produces a clean error rather than a rolled-back half-write.
+        # It also precedes the availability check below so that a serial-tracked
+        # line reports what is actually wrong with it — a missing or already-sold
+        # IMEI — rather than the stock shortfall that follows from it.
+        self.serials.validate_for_items(
+            validated,
+            voucher_type=voucher_type,
+            company_id=company_id,
+            invoice_id=invoice_id,
+        )
+
+        if apply_inventory_changes and voucher_type == "sales":
+            for item_schema, product, quantity_value in validated:
+                if not product.maintain_inventory:
+                    continue
+                self.inventory.check_availability(
+                    item_schema.product_id,
+                    quantity_value,
+                    company_id=company_id,
+                    product_name=product.name,
+                )
         return validated
 
     # ------------------------------------------------------------------
@@ -443,6 +493,12 @@ class InvoiceProcessor:
         # Apply inventory changes for new items
         if apply_inventory_changes:
             self.inventory.apply_new_items(
+                validated,
+                payload.voucher_type,
+                company_id=company_id,
+                invoice_id=invoice.id,
+            )
+            self.serials.apply_new_items(
                 validated,
                 payload.voucher_type,
                 company_id=company_id,

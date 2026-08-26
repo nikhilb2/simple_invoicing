@@ -6,7 +6,7 @@
  *
  * We use the far-future years 2031/2032 to avoid conflicts with real data.
  */
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, adjustInventory } from './fixtures';
 
 test.use({ timezoneId: 'Asia/Kolkata' });
 
@@ -33,7 +33,7 @@ async function ensureAndActivateFY(
   startYear: number,
   label: string,
 ) {
-  const fyButton = page.locator('button[aria-haspopup="listbox"]');
+  const fyButton = page.getByTestId('fy-switcher');
   await fyButton.click();
   const listbox = page.locator('[role="listbox"]');
   await expect(listbox).toBeVisible({ timeout: 5_000 });
@@ -128,9 +128,7 @@ async function seedInvoiceData(page: import('@playwright/test').Page) {
   // Inventory
   await clickNavLink(page, '/inventory');
   await page.waitForTimeout(500);
-  await selectComboboxOption(page, 'inventory-product', sku);
-  await page.fill('#inventory-quantity', '100');
-  await page.click('button:has-text("Apply adjustment")');
+  await adjustInventory(page, sku, '100');
   await expectSuccess(page, 'Inventory updated');
 
   // Ledger

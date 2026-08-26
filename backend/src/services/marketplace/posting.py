@@ -54,6 +54,7 @@ PERMANENT_ERRORS = {
     "payload_diverged_from_order",
     "unknown_listing",
     "no_order_items",
+    "serial_tracked_product",
 }
 
 
@@ -413,6 +414,18 @@ def _build_and_apply(
     voucher_type: str,
     products_by_line: dict[int, Product],
 ) -> Invoice:
+    # Marketplace orders post with nobody at the keyboard, so there is no one to
+    # scan the IMEIs. Posting one anyway would move stock with no serials behind
+    # it and break the invariant that a tracked product's quantity equals its
+    # in-stock serial count — so it is refused and left for a human instead.
+    for line_no in sorted(products_by_line):
+        product = products_by_line[line_no]
+        if product.track_serials:
+            raise PostingError(
+                "serial_tracked_product",
+                f"{product.name} is serial-tracked and must be invoiced manually",
+            )
+
     ledger = resolve_counterparty_ledger(db, connection, order)
     when = _order_date(order)
     fy, active_fy = _resolve_financial_year(db, connection.company_id, when)

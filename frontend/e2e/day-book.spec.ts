@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, adjustInventory, clickNavLink } from './fixtures';
 
 test.describe('Day Book', () => {
   test('displays day book heading', async ({ authedPage: page }) => {
@@ -57,19 +57,7 @@ test.describe('Day Book', () => {
     // Add inventory
     await clickNavLink(page, '/inventory');
     await page.waitForTimeout(500);
-    const productSelect = page.locator('#inventory-product');
-    const options = productSelect.locator('option');
-    const count = await options.count();
-    for (let i = 0; i < count; i++) {
-      const text = await options.nth(i).textContent();
-      if (text?.includes(sku)) {
-        const val = (await options.nth(i).getAttribute('value')) || '';
-        await productSelect.selectOption(val);
-        break;
-      }
-    }
-    await page.fill('#inventory-quantity', '100');
-    await page.click('button:has-text("Apply adjustment")');
+    await adjustInventory(page, sku, '100');
     await expectSuccess(page, 'Inventory updated');
 
     // Create ledger
@@ -112,6 +100,13 @@ test.describe('Day Book', () => {
     await page.locator('[id^="invoice-quantity-"]').first().fill('2');
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'invoice created');
+
+    // Creating an invoice pops the PDF preview, an aria-modal dialog whose
+    // overlay covers the sidebar — dismiss it before navigating by rail click.
+    const previewModal = page.locator('.modal-panel--invoice-preview');
+    await expect(previewModal).toBeVisible({ timeout: 10_000 });
+    await previewModal.locator('button:has-text("Close")').click();
+    await expect(previewModal).not.toBeVisible();
 
     // Now go to Day Book
     await clickNavLink(page, '/day-book');

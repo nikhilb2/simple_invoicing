@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, expectError, uniqueSku, selectComboboxOption, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, expectError, uniqueSku, adjustInventory, clickNavLink } from './fixtures';
 
 test.describe('Inventory Management', () => {
   // The page has been titled "Stock ledger" for a while; this test still
@@ -28,11 +28,8 @@ test.describe('Inventory Management', () => {
     await clickNavLink(page, '/inventory');
     await page.waitForTimeout(500);
 
-    // Select product and add stock
-    await selectComboboxOption(page, 'inventory-product', sku);
-
-    await page.fill('#inventory-quantity', '25');
-    await page.click('button:has-text("Apply adjustment")');
+    // Find the product's feed row and add stock inline
+    await adjustInventory(page, sku, '25');
     await expectSuccess(page, 'Inventory updated');
 
     // Verify product appears in ledger with the stocked quantity
@@ -54,15 +51,11 @@ test.describe('Inventory Management', () => {
     // Add stock
     await clickNavLink(page, '/inventory');
     await page.waitForTimeout(500);
-    await selectComboboxOption(page, 'inventory-product', sku);
-    await page.fill('#inventory-quantity', '20');
-    await page.click('button:has-text("Apply adjustment")');
+    await adjustInventory(page, sku, '20');
     await expectSuccess(page, 'Inventory updated');
 
     // Deduct some stock
-    await selectComboboxOption(page, 'inventory-product', sku);
-    await page.fill('#inventory-quantity', '-5');
-    await page.click('button:has-text("Apply adjustment")');
+    await adjustInventory(page, sku, '-5');
     await expectSuccess(page, 'Inventory updated');
   });
 
@@ -80,11 +73,8 @@ test.describe('Inventory Management', () => {
     await clickNavLink(page, '/inventory');
     await page.waitForTimeout(500);
 
-    await selectComboboxOption(page, 'inventory-product', sku);
-
     // Try to deduct stock when there is none
-    await page.fill('#inventory-quantity', '-10');
-    await page.click('button:has-text("Apply adjustment")');
+    await adjustInventory(page, sku, '-10');
     await expectError(page);
   });
 
@@ -103,9 +93,7 @@ test.describe('Inventory Management', () => {
     // Add just 3 units
     await clickNavLink(page, '/inventory');
     await page.waitForTimeout(500);
-    await selectComboboxOption(page, 'inventory-product', sku);
-    await page.fill('#inventory-quantity', '3');
-    await page.click('button:has-text("Apply adjustment")');
+    await adjustInventory(page, sku, '3');
     await expectSuccess(page, 'Inventory updated');
 
     // Should show "Low stock" and pill--low
