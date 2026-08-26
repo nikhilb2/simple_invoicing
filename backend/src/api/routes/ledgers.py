@@ -161,6 +161,74 @@ def _payment_debit_credit(payment: Payment) -> tuple[float, float]:
   return 0.0, 0.0
 
 
+def _ledger_balances(
+  db: Session,
+  ledger_ids: list[int],
+  company_id: int | None = None,
+) -> dict[int, float]:
+  """Closing balance (debit - credit) per ledger, to date.
+
+  Mirrors the debit/credit sides of `_build_ledger_statement_data` but as three
+  grouped aggregates instead of a per-ledger statement build, so a page of
+  ledgers costs a constant number of queries.
+  """
+  if not ledger_ids:
+    return {}
+
+  balances: dict[int, float] = {ledger_id: 0.0 for ledger_id in ledger_ids}
+
+  invoice_rows = (
+    _active_invoices_query(db, company_id=company_id)
+    .with_entities(
+      Invoice.ledger_id,
+      func.coalesce(func.sum(case((Invoice.voucher_type == "sales", Invoice.total_amount), else_=0)), 0),
+      func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", Invoice.total_amount), else_=0)), 0),
+    )
+    .filter(Invoice.ledger_id.in_(ledger_ids))
+    .group_by(Invoice.ledger_id)
+    .all()
+  )
+  for ledger_id, sales_total, purchase_total in invoice_rows:
+    balances[ledger_id] = balances.get(ledger_id, 0.0) + float(sales_total) - float(purchase_total)
+
+  payment_rows = (
+    _active_payments_query(db, company_id=company_id)
+    .with_entities(
+      Payment.ledger_id,
+      func.coalesce(func.sum(case((Payment.voucher_type == "payment", Payment.amount), else_=0)), 0),
+      func.coalesce(func.sum(case((Payment.voucher_type == "receipt", Payment.amount), else_=0)), 0),
+      func.coalesce(func.sum(case((Payment.voucher_type == "opening_balance", Payment.amount), else_=0)), 0),
+    )
+    .filter(Payment.ledger_id.in_(ledger_ids))
+    .group_by(Payment.ledger_id)
+    .all()
+  )
+  for ledger_id, payment_total, receipt_total, opening_total in payment_rows:
+    # An opening balance is signed: positive is a debit, negative a credit, so
+    # the plain sum already lands on the right side of the balance.
+    balances[ledger_id] = balances.get(ledger_id, 0.0) + float(payment_total) - float(receipt_total) + float(opening_total)
+
+  credit_note_rows = (
+    db.query(
+      CreditNote.ledger_id,
+      func.coalesce(func.sum(case((Invoice.voucher_type == "purchase", CreditNoteItem.line_total), else_=0)), 0),
+      func.coalesce(func.sum(case((Invoice.voucher_type != "purchase", CreditNoteItem.line_total), else_=0)), 0),
+    )
+    .join(CreditNoteItem, CreditNoteItem.credit_note_id == CreditNote.id)
+    .join(Invoice, Invoice.id == CreditNoteItem.invoice_id)
+    .filter(CreditNote.status == "active")
+    .filter(CreditNote.ledger_id.in_(ledger_ids))
+  )
+  if company_id is not None:
+    credit_note_rows = credit_note_rows.filter(
+      or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None))
+    )
+  for ledger_id, purchase_credit_total, sales_credit_total in credit_note_rows.group_by(CreditNote.ledger_id).all():
+    balances[ledger_id] = balances.get(ledger_id, 0.0) + float(purchase_credit_total) - float(sales_credit_total)
+
+  return balances
+
+
 def _build_day_book_data(
     db: Session,
     from_date: date,
@@ -502,8 +570,13 @@ def list_ledgers(
         .limit(page_size)
         .all()
     )
+    balances = _ledger_balances(db, [ledger.id for ledger in items], company_id=company_id)
+    ledgers_out = [
+        LedgerOut.model_validate(ledger).model_copy(update={"balance": balances.get(ledger.id, 0.0)})
+        for ledger in items
+    ]
     return PaginatedLedgerOut(
-        items=items,
+        items=ledgers_out,
         total=total,
         page=page,
         page_size=page_size,

@@ -4493,6 +4493,49 @@ a.invoice-row {
   gap: 10px;
 }
 
+.ledger-card__balance {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  text-align: right;
+}
+
+.ledger-card__balance-label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(156, 173, 207, 0.6);
+}
+
+.ledger-card__balance-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ledger-card__balance-side {
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+/* Debit balances are owed to us, credit balances are owed by us — the two
+   read as opposites, so they get opposite tints. */
+.ledger-card__balance--debit .ledger-card__balance-value {
+  color: #7ee2b8;
+}
+
+.ledger-card__balance--credit .ledger-card__balance-value {
+  color: #ffab8f;
+}
+
 .ledger-card__id {
   padding: 3px 9px;
   border-radius: 999px;
