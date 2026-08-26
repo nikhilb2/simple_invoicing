@@ -2,14 +2,18 @@ import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api, { getApiErrorMessage } from '../../../api/client';
 import ProductCombobox from '../../../components/ProductCombobox';
+import SerialChips from './SerialChips';
 import { useEscapeClose } from '../../../hooks/useEscapeClose';
 import { fetchProducts } from '../../../features/invoices/api';
 import { invoiceQueryKeys } from '../../../features/invoices/queryKeys';
 import { useInvoiceComposerStore } from '../../../store/useInvoiceComposerStore';
 import type { StockFormState } from '../types';
 
+/* An adjustment on a serial-tracked product names the units it moves, so this
+   form carries more than the shared shape the composer stores. */
+
 function createInitialStockForm(): StockFormState {
-  return { productId: '', adjustment: '' };
+  return { productId: '', adjustment: '', serials: [], note: '' };
 }
 
 export default function StockUpdateModal() {
@@ -40,16 +44,28 @@ export default function StockUpdateModal() {
       setStockSubmitting(true);
       setFeedbackError('');
 
-      const payload = {
-        product_id: Number(stockForm.productId),
-        quantity: Number(stockForm.adjustment),
-      };
+      const productId = Number(stockForm.productId);
+      const quantity = Number(stockForm.adjustment);
 
-      const selectedProduct = products.find((product) => product.id === payload.product_id);
+      const selectedProduct = products.find((product) => product.id === productId);
       if (selectedProduct && !selectedProduct.maintain_inventory) {
         setFeedbackError(`Inventory is disabled for ${selectedProduct.name}. Enable Maintain inventory on the product first.`);
         return;
       }
+
+      const tracked = Boolean(selectedProduct?.track_serials);
+      if (tracked && stockForm.serials.length !== Math.abs(quantity)) {
+        setFeedbackError(`${selectedProduct?.name} is serial tracked — scan ${Math.abs(quantity)} serial number${Math.abs(quantity) === 1 ? '' : 's'} for this adjustment.`);
+        return;
+      }
+
+      const payload = {
+        product_id: productId,
+        quantity,
+        ...(tracked
+          ? { serial_numbers: stockForm.serials, note: stockForm.note.trim() || undefined }
+          : {}),
+      };
 
       await api.post('/inventory/adjust', payload);
       setStockForm(createInitialStockForm());
@@ -70,6 +86,9 @@ export default function StockUpdateModal() {
   const selectedProduct = stockForm.productId
     ? products.find((product) => product.id === Number(stockForm.productId))
     : null;
+  const adjustment = Number(stockForm.adjustment);
+  const trackedUnits = selectedProduct?.track_serials && Number.isFinite(adjustment) ? Math.abs(Math.trunc(adjustment)) : 0;
+  const serialsComplete = trackedUnits === 0 || stockForm.serials.length === trackedUnits;
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="stock-modal-title">
@@ -95,7 +114,7 @@ export default function StockUpdateModal() {
               id="modal-stock-product"
               products={products}
               value={stockForm.productId}
-              onChange={(productId) => setStockForm((current) => ({ ...current, productId }))}
+              onChange={(productId) => setStockForm((current) => ({ ...current, productId, serials: [] }))}
               required
             />
           </div>
@@ -107,7 +126,12 @@ export default function StockUpdateModal() {
               type="number"
               step="1"
               value={stockForm.adjustment}
-              onChange={(event) => setStockForm((current) => ({ ...current, adjustment: event.target.value }))}
+              onChange={(event) => setStockForm((current) => ({
+                ...current,
+                adjustment: event.target.value,
+                // Units scanned for an increase are not the units of a write-off.
+                serials: Math.sign(Number(event.target.value)) === Math.sign(Number(current.adjustment)) ? current.serials : [],
+              }))}
               placeholder="e.g., +10 to add, -5 to remove"
               required
             />
@@ -115,6 +139,40 @@ export default function StockUpdateModal() {
           <div className="field-hint">
             Use positive numbers to increase stock, negative numbers (like -5) to decrease stock.
           </div>
+          {trackedUnits > 0 ? (
+            <div className="field serial-line">
+              <label className="serial-chips__label" htmlFor="modal-stock-serials-serial-input">
+                {adjustment > 0 ? "Scan the units you're adding" : "Scan the units you're writing off"}
+              </label>
+              <p
+                className={`serial-backfill__counter${serialsComplete ? ' serial-backfill__counter--complete' : ''}`}
+                aria-live="polite"
+              >
+                {stockForm.serials.length}
+                <span className="serial-backfill__counter-total">/ {trackedUnits} scanned</span>
+              </p>
+              {/* Adding registers new units; writing off can only name units the
+                  shop already holds, which is exactly the sales-side check. */}
+              <SerialChips
+                value={stockForm.serials}
+                onChange={(serials) => setStockForm((current) => ({ ...current, serials }))}
+                productId={Number(stockForm.productId) || null}
+                mode={adjustment > 0 ? 'purchase' : 'sales'}
+                idPrefix="modal-stock-serials"
+              />
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label htmlFor="modal-stock-note">Reason (optional)</label>
+                <input
+                  id="modal-stock-note"
+                  className="input"
+                  type="text"
+                  value={stockForm.note}
+                  onChange={(event) => setStockForm((current) => ({ ...current, note: event.target.value }))}
+                  placeholder={adjustment > 0 ? 'e.g. Found in back store' : 'e.g. Damaged in transit'}
+                />
+              </div>
+            </div>
+          ) : null}
 
           <div className="button-row">
             <button type="button" className="button button--ghost" onClick={closeStockUpdateModal} title="Cancel stock update" aria-label="Cancel stock update">
@@ -125,6 +183,7 @@ export default function StockUpdateModal() {
               disabled={
                 productsQuery.isLoading ||
                 stockSubmitting ||
+                !serialsComplete ||
                 (stockForm.productId
                   ? !products.find((product) => product.id === Number(stockForm.productId))?.maintain_inventory
                   : false)

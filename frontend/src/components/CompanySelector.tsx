@@ -110,6 +110,7 @@ export default function CompanySelector() {
       <div ref={companyDropdownRef} style={{ position: 'relative', marginBottom: '12px' }}>
         <button
           className="button button--ghost"
+          data-testid="company-switcher"
           style={{ width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
           onClick={() => setCompanyDropdownOpen((v) => !v)}
           aria-haspopup="listbox"

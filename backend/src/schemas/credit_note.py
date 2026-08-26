@@ -9,6 +9,9 @@ class CreditNoteItemCreate(BaseModel):
     invoice_item_id: int
     quantity: Optional[int] = Field(default=None, gt=0)
     discount_amount_inclusive: Optional[Decimal] = Field(default=None, gt=0)
+    # Which physical units are coming back — required on a return over a
+    # serial-tracked product.
+    serial_numbers: Optional[List[str]] = None
 
 
 class CreditNoteCreate(BaseModel):
@@ -41,6 +44,12 @@ class CreditNoteCreate(BaseModel):
                     raise ValueError(
                         "discount_amount_inclusive is only allowed for discount credit note items"
                     )
+
+            # Only a return moves stock, so only a return can move serials.
+            if self.credit_note_type != "return" and item.serial_numbers:
+                raise ValueError(
+                    "serial_numbers is only allowed for return credit note items"
+                )
         return self
 
 

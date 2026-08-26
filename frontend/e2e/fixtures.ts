@@ -37,6 +37,31 @@ export async function selectComboboxOption(page: Page, inputId: string, searchTe
   await option.click();
 }
 
+/**
+ * Helper: apply a stock adjustment from the /inventory stock ledger feed.
+ *
+ * The standalone product-select + quantity form this replaces was dropped in
+ * the inventory feed redesign — adjustment is now inline, per row, and the
+ * controls carry aria-labels rather than ids. The row is reached by searching,
+ * since the feed paginates and the seeded SKU need not be on the first page.
+ *
+ * Quantity is filled before the button is read: Apply stays disabled until the
+ * row has a non-empty delta, so clicking first would hit a dead control.
+ */
+export async function adjustInventory(page: Page, sku: string, quantity: string) {
+  await page.getByRole('searchbox', { name: 'Search inventory by name or SKU' }).fill(sku);
+  const row = page.locator('.inventory-feed-row', { hasText: sku }).first();
+  await expect(row).toBeVisible({ timeout: 5_000 });
+
+  const qty = row.getByRole('spinbutton');
+  await expect(qty).toBeEnabled({ timeout: 5_000 });
+  await qty.fill(quantity);
+
+  const apply = row.getByRole('button', { name: /^Apply adjustment for / });
+  await expect(apply).toBeEnabled({ timeout: 5_000 });
+  await apply.click();
+}
+
 /** Helper: wait for a success toast to appear and contain text. */
 export async function expectSuccess(page: Page, substring: string) {
   const banner = page.locator('.toast--success').filter({ hasText: substring }).last();

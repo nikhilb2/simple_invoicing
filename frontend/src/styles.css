@@ -4948,3 +4948,577 @@ a.invoice-row {
     flex-shrink: 0;
   }
 }
+
+/* ── Serial / IMEI tracking ───────────────────────────────────────── */
+
+/* The scan bar sits at the top of the line items block and is the only control
+   a shopkeeper touches while five handsets go across the counter, so it reads
+   as a piece of equipment rather than as one more field in the form. */
+.scan-bar {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(87, 209, 201, 0.28);
+  background: linear-gradient(135deg, rgba(87, 209, 201, 0.08) 0%, rgba(148, 184, 255, 0.05) 100%);
+}
+
+.scan-bar__row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.scan-bar__field {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.scan-bar__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.scan-bar__input-wrap {
+  position: relative;
+}
+
+/* Wide, tall and monospaced: a scanned code is read back digit by digit when
+   something looks wrong, and proportional digits make that harder than it is. */
+.scan-bar__input {
+  width: 100%;
+  font-family: 'Space Grotesk', ui-monospace, monospace;
+  font-size: 1.02rem;
+  letter-spacing: 0.04em;
+}
+
+.scan-bar__input[readonly] {
+  opacity: 0.75;
+}
+
+.scan-bar__spinner {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  color: var(--accent);
+  animation: restore-spin 900ms linear infinite;
+}
+
+.scan-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.scan-bar__pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(87, 209, 201, 0.4);
+  background: rgba(87, 209, 201, 0.14);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.scan-bar__pill--queue {
+  border-color: rgba(246, 214, 123, 0.4);
+  background: rgba(246, 214, 123, 0.14);
+  color: var(--warning);
+}
+
+.scan-bar__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.scan-bar__toggle[aria-pressed='true'] {
+  border-color: rgba(87, 209, 201, 0.4);
+  color: var(--accent);
+}
+
+.scan-bar__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.scan-bar__paste {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.scan-bar__paste-results {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 0.78rem;
+}
+
+.scan-bar__paste-results li {
+  display: grid;
+  grid-template-columns: auto minmax(0, max-content) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+}
+
+.scan-bar__paste-results .is-ok {
+  color: var(--color-success);
+}
+
+.scan-bar__paste-results .is-bad {
+  color: var(--danger);
+}
+
+.scan-bar__paste-code {
+  font-family: 'Space Grotesk', ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+
+.scan-bar__paste-reason {
+  color: var(--muted);
+}
+
+/* The running log of the last few scans. It is the only place a fast operator
+   can check the rhythm without stopping, so it is read top-down, newest first,
+   and announced politely rather than assertively — a scan every two seconds
+   must not interrupt a screen reader mid-sentence. */
+.scan-feedback {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scan-feedback__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.scan-feedback__item--ok {
+  color: var(--color-success);
+}
+
+.scan-feedback__item--info {
+  color: var(--warning);
+}
+
+.scan-feedback__item--error {
+  color: var(--danger);
+  background: var(--color-error-bg);
+}
+
+.scan-feedback__glyph {
+  font-weight: 800;
+}
+
+.scan-feedback__text {
+  overflow-wrap: anywhere;
+}
+
+.scan-feedback__link {
+  color: inherit;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* A misread is corrected by scanning again, so the box shakes rather than
+   raising anything the operator would have to dismiss. */
+.scan-bar--shake .scan-bar__input {
+  animation: scan-shake 380ms ease;
+}
+
+@keyframes scan-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+
+/* The line a scan landed on. Same attribute drives it wherever a line has to
+   answer "this one" — a fresh serial, or a repeat scan of one already added. */
+.line-item[data-flash='on'] {
+  animation: line-flash 1100ms ease;
+}
+
+@keyframes line-flash {
+  0% { background: rgba(87, 209, 201, 0.28); border-color: rgba(87, 209, 201, 0.55); }
+  100% { background: rgba(255, 255, 255, 0.03); border-color: rgba(148, 184, 255, 0.08); }
+}
+
+.field__lock {
+  margin-left: 6px;
+  vertical-align: -1px;
+  color: var(--muted);
+}
+
+/* ── Serial chips ─────────────────────────────────────────────────── */
+
+.serial-line {
+  display: grid;
+  gap: 6px;
+}
+
+.serial-line__message {
+  margin: 0;
+  color: var(--warning);
+  font-size: 0.78rem;
+}
+
+.serial-line__message--blocking {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.serial-chips {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px dashed rgba(148, 184, 255, 0.22);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.serial-chips__count {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.serial-chips__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One physical unit. Monospaced so two IMEIs differing in one digit look
+   different at a glance. */
+.serial-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(87, 209, 201, 0.32);
+  background: rgba(87, 209, 201, 0.1);
+  font-family: 'Space Grotesk', ui-monospace, monospace;
+  font-size: 0.78rem;
+}
+
+.serial-chip__value {
+  overflow-wrap: anywhere;
+}
+
+.serial-chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.serial-chip__remove:hover {
+  background: var(--color-error-bg);
+  color: var(--danger);
+}
+
+.serial-chips__entry {
+  display: grid;
+  gap: 4px;
+}
+
+.serial-chips__label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.serial-chips__entry-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.serial-chips__entry-row .input {
+  flex: 1 1 200px;
+  min-width: 0;
+  font-family: 'Space Grotesk', ui-monospace, monospace;
+}
+
+.serial-chips__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.78rem;
+}
+
+/* ── Serial picker ────────────────────────────────────────────────── */
+
+.serial-picker__quick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.serial-picker__quick-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.serial-picker__quick-input {
+  width: 78px;
+}
+
+.serial-picker__list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+/* Oldest first, so the top of this list is the FIFO answer and picking down
+   the list is picking correctly. */
+.serial-picker__row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) minmax(0, auto);
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.serial-picker__row.is-active {
+  border-color: rgba(87, 209, 201, 0.45);
+  background: rgba(87, 209, 201, 0.1);
+}
+
+.serial-picker__row.is-picked {
+  background: rgba(87, 209, 201, 0.16);
+}
+
+.serial-picker__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  color: var(--accent);
+}
+
+.serial-picker__number {
+  font-family: 'Space Grotesk', ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+
+.serial-picker__meta {
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-align: right;
+}
+
+.serial-picker__pages {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* ── Serial backfill sheet ────────────────────────────────────────── */
+
+/* Switching tracking on for a product that already has stock owes one serial
+   per unit already on the shelf; the counter is the whole point of the sheet. */
+.serial-backfill {
+  display: grid;
+  gap: 10px;
+}
+
+.serial-backfill__intro {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.serial-backfill__counter {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.serial-backfill__counter--complete {
+  color: var(--color-success);
+}
+
+.serial-backfill__counter-total {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.serial-backfill__paste {
+  display: grid;
+  gap: 6px;
+}
+
+.serial-backfill__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+
+/* ── Serials drawer ───────────────────────────────────────────────── */
+
+/* The per-product unit history: one row per physical thing, with where it came
+   in and where it went out. */
+.serial-drawer {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.serial-drawer__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.serial-drawer__list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.serial-drawer__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.8rem;
+}
+
+.serial-drawer__number {
+  font-family: 'Space Grotesk', ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+
+.serial-drawer__status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.serial-drawer__status--in_stock {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.serial-drawer__status--sold {
+  background: var(--color-muted-bg);
+  color: var(--muted);
+}
+
+.serial-drawer__meta {
+  color: var(--muted);
+  text-align: right;
+}
+
+@media (max-width: 720px) {
+  .scan-bar__row {
+    align-items: stretch;
+  }
+
+  .serial-picker__row,
+  .serial-drawer__row {
+    grid-template-columns: minmax(0, 1fr);
+    text-align: left;
+  }
+
+  .serial-picker__meta,
+  .serial-drawer__meta {
+    text-align: left;
+  }
+}
+
+/* The flash and the shake are feedback, not decoration: with motion reduced
+   the strip, the chips and the derived quantity still say everything. */
+@media (prefers-reduced-motion: reduce) {
+  .line-item[data-flash='on'],
+  .scan-bar--shake .scan-bar__input,
+  .scan-bar__spinner {
+    animation: none;
+  }
+
+  .line-item[data-flash='on'] {
+    border-color: rgba(87, 209, 201, 0.55);
+  }
+}

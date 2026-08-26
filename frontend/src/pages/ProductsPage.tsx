@@ -9,6 +9,8 @@ import BOMConfigModal from '../components/BOMConfigModal';
 import formatCurrency from '../utils/formatting';
 import EmptyState from '../components/EmptyState';
 import PublishToMarketplaceButton from '../components/PublishToMarketplaceButton';
+import SerialBackfillModal from '../components/SerialBackfillModal';
+import SerialChips from './invoices/components/SerialChips';
 
 const UNIT_OPTIONS = ['Pieces', 'Kg', 'g', 'm', 'l', 'Ounce'];
 const CUSTOM_UNIT_VALUE = '__custom__';
@@ -39,12 +41,20 @@ export default function ProductsPage() {
     unit: 'Pieces',
     allow_decimal: false,
     maintain_inventory: true,
+    track_serials: false,
     initial_quantity: '0',
+    /* Opening stock for a serial-tracked product is the length of this list,
+       not a number anyone types. */
+    serial_numbers: [] as string[],
     is_producable: false,
     production_cost: '',
   });
   const [bomModalProductId, setBomModalProductId] = useState<number | null>(null);
   const [bomModalProductName, setBomModalProductName] = useState('');
+  /* Switching tracking on for a product that already has stock owes one serial
+     per unit on the shelf, so that edit is finished in the backfill sheet. */
+  const [backfillPayload, setBackfillPayload] = useState<ProductCreate | null>(null);
+  const [backfillProduct, setBackfillProduct] = useState<Product | null>(null);
 
   const activeCurrencyCode = company?.currency_code || 'USD';
 
@@ -74,8 +84,19 @@ export default function ProductsPage() {
   }, [page, search]);
 
   function resetForm() {
-    setForm({ sku: '', name: '', description: '', hsn_sac: '', price: '', gst_rate: '0', unit: 'Pieces', allow_decimal: false, maintain_inventory: true, initial_quantity: '0', is_producable: false, production_cost: '' });
+    setForm({ sku: '', name: '', description: '', hsn_sac: '', price: '', gst_rate: '0', unit: 'Pieces', allow_decimal: false, maintain_inventory: true, track_serials: false, initial_quantity: '0', serial_numbers: [], is_producable: false, production_cost: '' });
     setEditingProductId(null);
+  }
+
+  /** Serial tracking rules out fractional units and cannot run without stock. */
+  function setTrackSerials(checked: boolean) {
+    setForm((current) => ({
+      ...current,
+      track_serials: checked,
+      allow_decimal: checked ? false : current.allow_decimal,
+      maintain_inventory: checked ? true : current.maintain_inventory,
+      serial_numbers: checked ? current.serial_numbers : [],
+    }));
   }
 
   function startEditProduct(product: Product) {
@@ -92,7 +113,9 @@ export default function ProductsPage() {
       unit: product.unit || 'Pieces',
       allow_decimal: product.allow_decimal,
       maintain_inventory: product.maintain_inventory,
+      track_serials: product.track_serials,
       initial_quantity: '0',
+      serial_numbers: [],
       is_producable: product.is_producable,
       production_cost: product.production_cost != null ? String(product.production_cost) : '',
     });
@@ -101,25 +124,44 @@ export default function ProductsPage() {
   async function handleSubmitProduct(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    const openingQuantity = form.track_serials ? form.serial_numbers.length : Number(form.initial_quantity);
+
+    const payload: ProductCreate = {
+      sku: form.sku.trim(),
+      name: form.name.trim(),
+      description: form.description.trim(),
+      hsn_sac: form.hsn_sac.trim(),
+      price: Number(form.price),
+      gst_rate: Number(form.gst_rate),
+      unit: form.unit.trim() || 'Pieces',
+      allow_decimal: form.allow_decimal,
+      maintain_inventory: form.maintain_inventory,
+      track_serials: form.track_serials,
+      is_producable: form.is_producable,
+      production_cost: form.production_cost !== '' ? Number(form.production_cost) : null,
+      ...(editingProductId
+        ? {}
+        : {
+            initial_quantity: openingQuantity,
+            ...(form.track_serials ? { serial_numbers: form.serial_numbers } : {}),
+          }),
+    };
+
+    const editedProduct = editingProductId ? products.find((product) => product.id === editingProductId) : undefined;
+    if (editedProduct && form.track_serials && !editedProduct.track_serials) {
+      // The units already on the shelf need serials before the flag can be
+      // saved, and both halves travel in the sheet's single PUT.
+      setError('');
+      setSuccess('');
+      setBackfillPayload(payload);
+      setBackfillProduct(editedProduct);
+      return;
+    }
+
     try {
       setSubmitting(true);
       setError('');
       setSuccess('');
-
-      const payload: ProductCreate = {
-        sku: form.sku.trim(),
-        name: form.name.trim(),
-        description: form.description.trim(),
-        hsn_sac: form.hsn_sac.trim(),
-        price: Number(form.price),
-        gst_rate: Number(form.gst_rate),
-        unit: form.unit.trim() || 'Pieces',
-        allow_decimal: form.allow_decimal,
-        maintain_inventory: form.maintain_inventory,
-        is_producable: form.is_producable,
-        production_cost: form.production_cost !== '' ? Number(form.production_cost) : null,
-        ...(editingProductId ? {} : { initial_quantity: Number(form.initial_quantity) }),
-      };
 
       if (editingProductId) {
         await api.put<Product>(`/products/${editingProductId}`, payload);
@@ -129,8 +171,9 @@ export default function ProductsPage() {
         track('product_created', {
           gst_rate: payload.gst_rate,
           maintain_inventory: payload.maintain_inventory,
+          track_serials: payload.track_serials,
           is_producable: payload.is_producable,
-          has_opening_stock: Number(form.initial_quantity) > 0,
+          has_opening_stock: openingQuantity > 0,
           source: 'products_page',
         });
         setSuccess('Product created successfully.');
@@ -313,12 +356,15 @@ export default function ProductsPage() {
                     id="maintain-inventory"
                     type="checkbox"
                     checked={form.maintain_inventory}
+                    disabled={form.track_serials}
                     onChange={(event) => setForm((current) => ({ ...current, maintain_inventory: event.target.checked }))}
                   />
                   Maintain inventory for this product
                 </label>
                 <span className="field-hint">
-                  Turn this off for service-style items such as service charges.
+                  {form.track_serials
+                    ? 'Always on while serial numbers are tracked — every serial is a unit of stock.'
+                    : 'Turn this off for service-style items such as service charges.'}
                 </span>
               </div>
               <div className="field field--full" style={{ marginBottom: 0 }}>
@@ -327,12 +373,29 @@ export default function ProductsPage() {
                     id="allow-decimal"
                     type="checkbox"
                     checked={form.allow_decimal}
+                    disabled={form.track_serials}
                     onChange={(event) => setForm((current) => ({ ...current, allow_decimal: event.target.checked }))}
                   />
                   Allow decimal quantity
                 </label>
                 <span className="field-hint">
-                  Turn this on for units like Kg, l, m and other fractional stock.
+                  {form.track_serials
+                    ? 'Not available while serial numbers are tracked — half a serial number does not exist.'
+                    : 'Turn this on for units like Kg, l, m and other fractional stock.'}
+                </span>
+              </div>
+              <div className="field field--full" style={{ marginBottom: 0 }}>
+                <label htmlFor="track-serials" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 0 }}>
+                  <input
+                    id="track-serials"
+                    type="checkbox"
+                    checked={form.track_serials}
+                    onChange={(event) => setTrackSerials(event.target.checked)}
+                  />
+                  Track serial numbers / IMEI
+                </label>
+                <span className="field-hint">
+                  Each unit gets its own IMEI or serial number — for phones, appliances, anything with a warranty.
                 </span>
               </div>
               <div className="field field--full" style={{ marginBottom: 0 }}>
@@ -389,7 +452,26 @@ export default function ProductsPage() {
                   )}
                 </div>
               ) : null}
-              {!editingProductId && form.maintain_inventory ? (
+              {!editingProductId && form.maintain_inventory && form.track_serials ? (
+                <div className="field field--full serial-line">
+                  <label className="serial-chips__label" htmlFor="product-opening-serial-input">
+                    Opening stock — one serial per unit
+                  </label>
+                  {/* No product exists yet, so the chips can only check that a
+                      serial is not already registered somewhere else. */}
+                  <SerialChips
+                    value={form.serial_numbers}
+                    onChange={(next) => setForm((current) => ({ ...current, serial_numbers: next }))}
+                    productId={null}
+                    mode="purchase"
+                    idPrefix="product-opening"
+                  />
+                  <span className="field-hint">
+                    Opening stock is however many serials you add — {form.serial_numbers.length} so far. Leave it empty to start at zero.
+                  </span>
+                </div>
+              ) : null}
+              {!editingProductId && form.maintain_inventory && !form.track_serials ? (
                 <div className="field">
                   <label htmlFor="initial-quantity">Initial stock quantity</label>
                   <input
@@ -462,6 +544,7 @@ export default function ProductsPage() {
                       <span className="table-subtext">
                         {product.sku}
                         {product.maintain_inventory ? ' • Tracked' : ' • Untracked'}
+                        {product.track_serials ? ' • Serialised' : ''}
                         {` • Unit ${product.unit}`}
                         {product.allow_decimal ? ' • Decimal qty' : ' • Whole qty'}
                         {product.hsn_sac ? ` • HSN/SAC ${product.hsn_sac}` : ''}
@@ -553,6 +636,22 @@ export default function ProductsPage() {
           danger={true}
           onConfirm={() => void confirmDeleteProduct()}
           onCancel={cancelDeleteProduct}
+        />
+      ) : null}
+      {backfillPayload !== null && backfillProduct !== null ? (
+        <SerialBackfillModal
+          productId={backfillProduct.id}
+          productName={backfillProduct.name}
+          productSku={backfillProduct.sku}
+          payload={backfillPayload}
+          onSaved={() => {
+            setBackfillPayload(null);
+            setBackfillProduct(null);
+            setSuccess('Product updated. Serial tracking is on.');
+            resetForm();
+            void loadProducts();
+          }}
+          onCancel={() => { setBackfillPayload(null); setBackfillProduct(null); }}
         />
       ) : null}
       {bomModalProductId !== null ? (

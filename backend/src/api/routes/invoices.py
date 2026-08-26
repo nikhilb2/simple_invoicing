@@ -26,6 +26,7 @@ from src.services.pdf_templates import (
     _copy_label,
 )
 from src.services.invoice_processor import InvoiceProcessor
+from src.services.serial_service import SerialManager
 from src.services.series import generate_next_number
 
 router = APIRouter()
@@ -49,6 +50,19 @@ def _enrich_items_with_product_names(invoices: list[Invoice], db: Session, activ
         for item in (inv.items or []):
             prod = product_map.get(item.product_id)
             setattr(item, "product_name", prod.name if prod else None)
+
+
+def _enrich_items_with_serials(invoices: list[Invoice], db: Session) -> None:
+    """Attach serial_numbers to each InvoiceItem across all given invoices.
+
+    One query for the whole page: the serials of every invoice are fetched
+    together and bucketed per invoice and product.
+    """
+    serials_by_invoice = SerialManager(db).serials_for_invoices(invoices)
+    for inv in invoices:
+        by_product = serials_by_invoice.get(inv.id, {})
+        for item in (inv.items or []):
+            setattr(item, "serial_numbers", by_product.get(item.product_id, []))
 
 
 def _to_invoice_out(
@@ -113,6 +127,7 @@ def create_invoice(
 
         summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
         _enrich_items_with_product_names([invoice], db, active_company.id)
+        _enrich_items_with_serials([invoice], db)
         result = _to_invoice_out(invoice, payment_summary=summary)
         result.warnings = warnings
         return result
@@ -234,6 +249,7 @@ def list_invoices(
 
       payment_summaries = build_invoice_payment_summaries(db, invoices)
       _enrich_items_with_product_names(invoices, db, active_company.id)
+      _enrich_items_with_serials(invoices, db)
       items = [_to_invoice_out(invoice, payment_summary=payment_summaries.get(invoice.id)) for invoice in invoices]
 
       visible_page_total = sum((Decimal(str(item.total_amount or 0)) for item in items), Decimal("0"))
@@ -395,6 +411,7 @@ def list_due_invoices(
         page_end = page_start + page_size
         paged_invoices = outstanding_invoices[page_start:page_end]
         _enrich_items_with_product_names(paged_invoices, db, active_company.id)
+        _enrich_items_with_serials(paged_invoices, db)
         items = [_to_invoice_out(invoice, payment_summary=payment_summaries.get(invoice.id)) for invoice in paged_invoices]
 
         total_listed = sum((Decimal(str(invoice.total_amount or 0)) for invoice in outstanding_invoices), Decimal("0"))
@@ -440,6 +457,7 @@ def get_invoice(
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
     _enrich_items_with_product_names([invoice], db, active_company.id)
+    _enrich_items_with_serials([invoice], db)
     summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
     return _to_invoice_out(invoice, payment_summary=summary)
 
@@ -471,6 +489,23 @@ def update_invoice(
         active_fy = get_active_fy(db, company_id=active_company.id)
 
         processor = InvoiceProcessor(db)
+        # Validate before either delta touches stock. apply_payload validates
+        # again later, but by then the inventory delta has already run and a
+        # serial-tracked line would report the stock shortfall that follows
+        # from a missing IMEI rather than the missing IMEI itself. Reads only,
+        # so running it twice costs nothing.
+        processor.validate_items(
+            payload.items,
+            active_company.id,
+            payload.voucher_type,
+            apply_inventory_changes=False,
+            invoice_id=invoice.id,
+        )
+        processor.apply_serial_delta_for_update(
+            invoice,
+            payload,
+            company_id=active_company.id,
+        )
         processor.apply_inventory_delta_for_update(
             invoice,
             payload,
@@ -499,6 +534,7 @@ def update_invoice(
 
         summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
         _enrich_items_with_product_names([invoice], db, active_company.id)
+        _enrich_items_with_serials([invoice], db)
         result = _to_invoice_out(invoice, payment_summary=summary)
         result.warnings = warnings
         return result
@@ -515,17 +551,17 @@ def update_invoice(
 
 
 
-def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], active_company: CompanyProfile | None = None) -> BytesIO:
+def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None) -> BytesIO:
     show_sku = active_company.show_sku_on_pdf if active_company else True
-    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku)
+    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku, serials=serials)
     pdf_bytes = weasyprint.HTML(string=html).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
 
 
-def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, active_company: CompanyProfile | None = None) -> BytesIO:
+def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None) -> BytesIO:
     show_sku = active_company.show_sku_on_pdf if active_company else True
-    html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies, show_sku=show_sku)
+    html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies, show_sku=show_sku, serials=serials)
     pdf_bytes = weasyprint.HTML(string=html).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
@@ -569,7 +605,11 @@ def download_invoice_pdf(
       .all()
     )
 
-    pdf_buffer = _build_multi_copy_invoice_pdf(invoice, products, invoice_bank_accounts, copies, active_company=active_company)
+    serials = SerialManager(db).serials_for_invoice(invoice)
+
+    pdf_buffer = _build_multi_copy_invoice_pdf(
+        invoice, products, invoice_bank_accounts, copies, active_company=active_company, serials=serials
+    )
     filename = f"invoice_{invoice.invoice_number or invoice.id}.pdf"
 
     return StreamingResponse(
@@ -600,6 +640,9 @@ def cancel_invoice(
 
     try:
         processor = InvoiceProcessor(db)
+        # Serials first: cancelling a purchase whose units are already sold is
+        # refused, and that message is more useful than a stock shortfall.
+        processor.reverse_serials(invoice)
         processor.reverse_inventory(invoice)
         invoice.status = "cancelled"
         db.commit()
@@ -634,6 +677,7 @@ def restore_invoice(
 
     try:
         processor = InvoiceProcessor(db)
+        processor.restore_serials(invoice, company_id=active_company.id)
         processor.restore_inventory(invoice, company_id=active_company.id)
         invoice.status = "active"
         db.commit()
@@ -732,7 +776,9 @@ def duplicate_invoice(
             company_id=active_company.id,
         )
 
-        # Copy line items
+        # Copy line items. Serials are deliberately NOT copied — every unit is
+        # unique, so the duplicate starts empty and blocks submit until the
+        # shopkeeper scans the handsets actually going out on it.
         for item in (original.items or []):
             new_item = InvoiceItem(
                 invoice_id=new_invoice.id,

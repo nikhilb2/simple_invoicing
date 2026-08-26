@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, adjustInventory } from './fixtures';
 
 test.describe('Ledger Statement', () => {
   test('shows period statement for a ledger', async ({ authedPage: page }) => {
@@ -55,10 +55,7 @@ test.describe('Ledger Statement', () => {
 
     // 2. Add inventory
     await clickNavLink(page, '/inventory');
-    await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-    await selectComboboxOption(page, 'inventory-product', sku);
-    await page.fill('#inventory-quantity', '100');
-    await page.click('button:has-text("Apply adjustment")');
+    await adjustInventory(page, sku, '100');
     await expectSuccess(page, 'Inventory updated');
 
     // 3. Create ledger via create page

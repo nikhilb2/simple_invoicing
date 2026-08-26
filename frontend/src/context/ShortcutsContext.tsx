@@ -51,6 +51,27 @@ const useShortcutsStore = create<ShortcutsStore>((set, get) => ({
   },
 }));
 
+/**
+ * Whether the keystroke is someone typing rather than reaching for a shortcut.
+ *
+ * The listener is on `window`, so it sees every keystroke in the app including
+ * the ones going into an invoice line. A combo carrying Ctrl/Alt/Meta is still
+ * honoured there — Ctrl+S from inside a field is the whole point of Ctrl+S —
+ * but a bare key is indistinguishable from typing, and a user who remaps an
+ * action onto one would otherwise fire it on every matching character.
+ */
+function isTypingTarget(e: KeyboardEvent): boolean {
+  if (e.ctrlKey || e.altKey || e.metaKey) {
+    return false;
+  }
+  const target = e.target as HTMLElement | null;
+  if (!target) {
+    return false;
+  }
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+}
+
 function normalizeCombo(e: KeyboardEvent): string {
   const parts: string[] = [];
   if (e.ctrlKey) parts.push('Ctrl');
@@ -74,6 +95,7 @@ export function ShortcutsProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isTypingTarget(e)) return;
       const { shortcutsMap, handlers } = useShortcutsStore.getState();
       const combo = normalizeCombo(e);
       const action = (Object.keys(shortcutsMap) as ActionKey[]).find(

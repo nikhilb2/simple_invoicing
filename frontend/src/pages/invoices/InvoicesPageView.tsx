@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Boxes, Plus, Trash2 } from 'lucide-react';
+import { Boxes, Lock, Plus, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../../api/client';
 import { track } from '../../lib/analytics';
 import type { CompanyAccount, CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerAddress, Payment, PaymentCreate, Product } from '../../types/api';
 import InvoicePreview from '../../components/InvoicePreview';
+import ScanBar, { type ScanOutcome, type ScanResolution } from '../../components/ScanBar';
 import StatusToasts from '../../components/StatusToasts';
 import ProductCombobox from '../../components/ProductCombobox';
 import LedgerCombobox from '../../components/LedgerCombobox';
@@ -14,11 +15,14 @@ import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../../utils/invoi
 import { createDueDateFormState, formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../../utils/invoiceDueDate.ts';
 import { readInvoiceComposerPrefs, updateInvoiceComposerPrefs } from '../../utils/invoiceComposerPrefs.ts';
 import { useFY } from '../../context/FYContext';
+import { useShortcuts } from '../../context/ShortcutsContext';
 import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses } from '../../features/invoices/api';
 import { invoiceQueryKeys } from '../../features/invoices/queryKeys';
 import { useInvoiceComposerStore } from '../../store/useInvoiceComposerStore';
 import LedgerQuickCreateModal from './components/LedgerQuickCreateModal';
 import ProductQuickCreateModal from './components/ProductQuickCreateModal';
+import SerialChips from './components/SerialChips';
+import SerialPickerModal from './components/SerialPickerModal';
 import StockUpdateModal from './components/StockUpdateModal';
 import ReceiptModal from '../../components/ReceiptModal';
 import { createItem, type InvoiceFormItem } from './types';
@@ -61,6 +65,12 @@ export default function InvoicesPage() {
   const [dueDateDays, setDueDateDays] = useState(initialPrefs.dueDateDays);
   const [items, setItems] = useState<InvoiceFormItem[]>([createItem(1)]);
   const [nextItemId, setNextItemId] = useState(2);
+  const [flashItemId, setFlashItemId] = useState<number | null>(null);
+  const [pickerItemId, setPickerItemId] = useState<number | null>(null);
+  /** Tracked lines a submit attempt found empty, so the block is stated where
+   *  the fix is rather than in a toast at the top of the page. */
+  const [serialBlockIds, setSerialBlockIds] = useState<number[]>([]);
+  const [scanTargetItemId, setScanTargetItemId] = useState<number | null>(null);
   const [editingInvoiceId, setEditingInvoiceId] = useState<number | null>(null);
   /** Everything that is not needed to write an ordinary invoice lives behind
    *  this. It opens itself when a value inside it is actually in use — editing
@@ -82,6 +92,22 @@ export default function InvoicesPage() {
   const invoiceSearch = '';
   const invoicePageSize = 20;
   const financialYearId = activeFY?.id;
+  const { registerAction } = useShortcuts();
+
+  /* A scanner fires codes faster than React repaints, and each one has to see
+     the lines the one before it produced — otherwise the second handset of a
+     burst opens a second line for a product that already has one. These refs
+     are the synchronous copy the scan handlers read; every render re-syncs them
+     so an edit made with the mouse is never lost. */
+  const itemsRef = useRef(items);
+  const nextItemIdRef = useRef(nextItemId);
+  const scanTargetRef = useRef<number | null>(scanTargetItemId);
+  const scanInputRef = useRef<HTMLInputElement>(null);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    itemsRef.current = items;
+    nextItemIdRef.current = nextItemId;
+  });
 
   const composerQuery = useQuery({
     queryKey: invoiceQueryKeys.composer(invoicePage, invoicePageSize, invoiceSearch, showCancelled, financialYearId),
@@ -126,6 +152,15 @@ export default function InvoicesPage() {
     };
   }, []);
 
+  /* A real handler, registered where the box lives — note that create_invoice
+     and save_invoice are declared in shortcutDefaults with no handler anywhere,
+     so those two combos do nothing today. */
+  useEffect(() => registerAction('focus_scan', () => scanInputRef.current?.focus()), [registerAction]);
+
+  useEffect(() => () => {
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+  }, []);
+
   useEffect(() => {
     if (!composerQuery.data) {
       return;
@@ -145,6 +180,8 @@ export default function InvoicesPage() {
           ...item,
           productId: item.productId || String(defaultProduct?.id ?? ''),
           unit_price: item.unit_price || String(defaultProduct?.price ?? ''),
+          // Filled by the composer, so a scan may still take this line over.
+          autoFilled: item.productId ? item.autoFilled : true,
         };
       })
     );
@@ -200,7 +237,9 @@ export default function InvoicesPage() {
 
   const totalAmount = items.reduce((sum, item) => {
     const product = products.find((entry) => entry.id === Number(item.productId));
-    const quantity = Number(item.quantity);
+    /* A tracked line is worth exactly as many units as it has serials — there
+       is no state in which the two can disagree. */
+    const quantity = product?.track_serials ? item.serials.length : Number(item.quantity);
     const unitPrice = item.unit_price ? Number(item.unit_price) : (product?.price || 0);
     const gstRate = product?.gst_rate || 0;
 
@@ -296,7 +335,233 @@ export default function InvoicesPage() {
   }
 
   function updateItem(id: number, key: 'productId' | 'quantity' | 'unit_price' | 'description' | 'discount_type' | 'discount_value', value: string) {
-    setItems((current) => current.map((item) => (item.id === id ? { ...item, [key]: value } : item)));
+    setItems((current) => current.map((item) => (item.id === id ? { ...item, [key]: value, autoFilled: false } : item)));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Scanning
+  // ---------------------------------------------------------------------------
+
+  function findProduct(productId: number) {
+    return products.find((product) => product.id === productId);
+  }
+
+  function isTrackedLine(item: InvoiceFormItem) {
+    return Boolean(findProduct(Number(item.productId))?.track_serials);
+  }
+
+  function lineQuantity(item: InvoiceFormItem) {
+    return isTrackedLine(item) ? item.serials.length : Number(item.quantity);
+  }
+
+  /** Writes to the ref first so the next queued scan reads the new lines. */
+  function commitItems(next: InvoiceFormItem[]) {
+    itemsRef.current = next;
+    setItems(next);
+  }
+
+  function takeItemId() {
+    const id = nextItemIdRef.current;
+    nextItemIdRef.current = id + 1;
+    setNextItemId(id + 1);
+    return id;
+  }
+
+  function setScanTarget(itemId: number) {
+    scanTargetRef.current = itemId;
+    setScanTargetItemId(itemId);
+  }
+
+  function clearSerialBlock(itemId: number) {
+    setSerialBlockIds((current) => current.filter((entry) => entry !== itemId));
+  }
+
+  /* The line the scan landed on lights up, because the operator is looking at
+     the handset in their hand, not at the screen. Dropping the attribute for a
+     frame is what lets the same line flash twice in a row — an animation does
+     not restart while its selector keeps matching. */
+  function flashLine(itemId: number) {
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    setFlashItemId(null);
+    window.requestAnimationFrame(() => setFlashItemId(itemId));
+    flashTimerRef.current = setTimeout(() => setFlashItemId(null), 1200);
+  }
+
+  /* A serial can name a product that is not in the composer's catalogue page —
+     it loads 500 products, a long catalogue has more. Adopting it keeps the
+     combobox label, the tax rate and the line total correct. */
+  function adoptProduct(product: Product) {
+    setProducts((current) => (current.some((entry) => entry.id === product.id) ? current : [...current, product]));
+  }
+
+  function findLineWithSerial(serialNumber: string) {
+    const wanted = serialNumber.trim().toUpperCase();
+    return itemsRef.current.findIndex((item) => item.serials.some((entry) => entry.trim().toUpperCase() === wanted));
+  }
+
+  /**
+   * The line a scanned product belongs on: an existing line for it, else the
+   * composer's own seeded line if nobody has touched it, else a new one. Taking
+   * the seeded line over is what stops a five-phone invoice starting with a
+   * stray line of whatever product happened to be first in the catalogue.
+   */
+  function lineForProduct(product: Product): { item: InvoiceFormItem; index: number; created: boolean } {
+    const current = itemsRef.current;
+    const existingIndex = current.findIndex((item) => Number(item.productId) === product.id);
+    if (existingIndex >= 0) {
+      return { item: current[existingIndex], index: existingIndex, created: false };
+    }
+
+    const spareIndex = current.findIndex((item) => item.autoFilled && item.serials.length === 0);
+    if (spareIndex >= 0) {
+      const spare: InvoiceFormItem = {
+        ...current[spareIndex],
+        productId: String(product.id),
+        unit_price: String(product.price),
+        quantity: '1',
+        serials: [],
+        autoFilled: false,
+      };
+      const next = [...current];
+      next[spareIndex] = spare;
+      commitItems(next);
+      return { item: spare, index: spareIndex, created: true };
+    }
+
+    const fresh: InvoiceFormItem = {
+      ...createItem(takeItemId(), String(product.id), String(product.price)),
+      autoFilled: false,
+    };
+    commitItems([...current, fresh]);
+    return { item: fresh, index: current.length, created: true };
+  }
+
+  function serialTail(serialNumber: string) {
+    return serialNumber.length > 4 ? `…${serialNumber.slice(-4)}` : serialNumber;
+  }
+
+  function attachSerial(item: InvoiceFormItem, index: number, product: Product, serialNumber: string): ScanOutcome {
+    const serials = [...item.serials, serialNumber];
+    commitItems(itemsRef.current.map((entry) => (entry.id === item.id ? { ...entry, serials, autoFilled: false } : entry)));
+    setScanTarget(item.id);
+    clearSerialBlock(item.id);
+    flashLine(item.id);
+    return {
+      status: 'ok',
+      message: `${product.name} · ${serialTail(serialNumber)} → Line ${index + 1} (qty ${serials.length})`,
+    };
+  }
+
+  function addProductUnit(product: Product): ScanOutcome {
+    const { item, index, created } = lineForProduct(product);
+    const quantity = created ? item.quantity : String(Number(item.quantity || '0') + 1);
+    commitItems(itemsRef.current.map((entry) => (entry.id === item.id ? { ...entry, quantity, autoFilled: false } : entry)));
+    flashLine(item.id);
+    return { status: 'ok', message: `${product.name} → Line ${index + 1} (qty ${quantity})` };
+  }
+
+  /** Purchase mode registers into a line, so it needs one: the last tracked
+   *  line a scan touched, or the only tracked line there is. */
+  function resolveScanTarget() {
+    const tracked = itemsRef.current
+      .map((item, index) => ({ item, index }))
+      .filter((entry) => isTrackedLine(entry.item));
+    return tracked.find((entry) => entry.item.id === scanTargetRef.current) ?? tracked[tracked.length - 1] ?? null;
+  }
+
+  function handleScanResolution(resolution: ScanResolution): ScanOutcome {
+    const purchase = voucherType === 'purchase';
+
+    if (resolution.kind === 'product') {
+      adoptProduct(resolution.product);
+      if (!resolution.product.track_serials) {
+        track('serial_scan', { mode: purchase ? 'purchase' : 'sales', kind: 'product' });
+        return addProductUnit(resolution.product);
+      }
+      // A tracked product's own barcode cannot add a unit — a unit is a serial.
+      const { item, index } = lineForProduct(resolution.product);
+      setScanTarget(item.id);
+      flashLine(item.id);
+      return { status: 'info', message: `Line ${index + 1} · ${resolution.product.name} — scan each serial now.` };
+    }
+
+    if (resolution.kind === 'serial') {
+      const serial = resolution.serial;
+      const onLine = findLineWithSerial(serial.serial_number);
+      if (onLine >= 0) {
+        flashLine(itemsRef.current[onLine].id);
+        return { status: 'info', message: `Already added to line ${onLine + 1}.` };
+      }
+
+      if (purchase) {
+        track('serial_scan_failed', { mode: 'purchase', reason: 'already_registered' });
+        const arrival = serial.purchase_invoice
+          ? ` on ${serial.purchase_invoice.invoice_number ?? `#${serial.purchase_invoice.id}`}`
+          : '';
+        return { status: 'error', message: `Already registered to ${serial.product.name}${arrival}.` };
+      }
+
+      if (serial.status === 'sold') {
+        track('serial_scan_failed', { mode: 'sales', reason: 'sold' });
+        const ref = serial.sales_invoice;
+        if (!ref) {
+          return { status: 'error', message: 'This serial has already been sold.' };
+        }
+        const label = ref.invoice_number ?? `#${ref.id}`;
+        return {
+          status: 'error',
+          message: `Already sold on ${label} (${formatInvoiceDateLabel(ref.invoice_date)})`,
+          link: { to: `/invoices-view?search=${encodeURIComponent(label)}`, label: 'Open invoice' },
+        };
+      }
+
+      adoptProduct(serial.product);
+      const product = findProduct(serial.product_id) ?? serial.product;
+      const { item, index } = lineForProduct(product);
+      track('serial_scan', { mode: 'sales', kind: 'serial' });
+      return attachSerial(item, index, product, serial.serial_number);
+    }
+
+    if (!purchase) {
+      track('serial_scan_failed', { mode: 'sales', reason: 'unknown_code' });
+      return { status: 'error', message: resolution.detail };
+    }
+
+    // Purchase: a code nobody has registered is exactly what should be arriving.
+    const onLine = findLineWithSerial(resolution.code);
+    if (onLine >= 0) {
+      flashLine(itemsRef.current[onLine].id);
+      return { status: 'info', message: `Already added to line ${onLine + 1}.` };
+    }
+
+    const target = resolveScanTarget();
+    if (!target) {
+      track('serial_scan_failed', { mode: 'purchase', reason: 'no_target_line' });
+      /* Nothing to register into, so the caret goes where the fix is. The scan
+         bar leaves it alone from here — it only reclaims focus when nothing
+         else holds it. */
+      const firstItem = itemsRef.current[0];
+      if (firstItem) {
+        document.getElementById(`invoice-product-${firstItem.id}`)?.focus();
+      }
+      return { status: 'error', message: 'Add a serial-tracked product line first — or scan its product barcode.' };
+    }
+
+    const product = findProduct(Number(target.item.productId));
+    if (!product) {
+      return { status: 'error', message: `Choose a product on line ${target.index + 1} first.` };
+    }
+
+    track('serial_scan', { mode: 'purchase', kind: 'registered' });
+    return attachSerial(target.item, target.index, product, resolution.code);
+  }
+
+  function setLineSerials(itemId: number, serials: string[]) {
+    commitItems(itemsRef.current.map((item) => (item.id === itemId ? { ...item, serials, autoFilled: false } : item)));
+    if (serials.length > 0) {
+      setScanTarget(itemId);
+      clearSerialBlock(itemId);
+    }
   }
 
   function resetInvoiceForm() {
@@ -320,8 +585,13 @@ export default function InvoicesPage() {
     setSelectedPaymentAccountId('');
     setPaymentAmount('');
     const defaultProduct = products[0];
-    setItems([createItem(1, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))]);
+    itemsRef.current = [createItem(1, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))];
+    setItems(itemsRef.current);
     setNextItemId(2);
+    setSerialBlockIds([]);
+    setScanTargetItemId(null);
+    scanTargetRef.current = null;
+    setPickerItemId(null);
     setInvoiceDate(new Date().toISOString().slice(0, 10));
     setDueDateMode(prefs.dueDateMode);
     setDueDate('');
@@ -368,8 +638,11 @@ export default function InvoicesPage() {
       description: line.description ?? '',
       discount_type: (line.discount_type || '') as '' | 'percentage' | 'net',
       discount_value: line.discount_value != null ? String(line.discount_value) : '',
+      serials: line.serial_numbers ?? [],
+      autoFilled: false,
     }));
 
+    itemsRef.current = nextItems;
     setItems(nextItems);
     setNextItemId(nextItems.length + 1);
     // Restore shipping address state from the invoice being edited
@@ -422,8 +695,14 @@ export default function InvoicesPage() {
       description: line.description ?? '',
       discount_type: (line.discount_type || '') as '' | 'percentage' | 'net',
       discount_value: line.discount_value != null ? String(line.discount_value) : '',
+      /* Serials are physical units, and the copy is not those units. The
+         duplicate arrives with none, and cannot be saved until they are
+         scanned off the handsets actually going out. */
+      serials: [],
+      autoFilled: false,
     }));
 
+    itemsRef.current = nextItems;
     setItems(nextItems);
     setNextItemId(nextItems.length + 1);
     // Restore shipping address state from the invoice being duplicated
@@ -490,6 +769,17 @@ export default function InvoicesPage() {
       return;
     }
 
+    /* A tracked line with no serials is not an incomplete form, it is an
+       invoice for units nobody has identified. The block is stated on the line
+       itself — a toast at the top of a six-line invoice does not say which. */
+    const missingSerials = items.filter((item) => isTrackedLine(item) && item.serials.length === 0);
+    if (missingSerials.length > 0) {
+      setSerialBlockIds(missingSerials.map((item) => item.id));
+      flashLine(missingSerials[0].id);
+      scanInputRef.current?.focus();
+      return;
+    }
+
     try {
       setSubmitting(true);
       setError('');
@@ -515,11 +805,12 @@ export default function InvoicesPage() {
         } : {}),
         items: items.map((item) => ({
           product_id: Number(item.productId),
-          quantity: Number(item.quantity),
+          quantity: lineQuantity(item),
           unit_price: item.unit_price ? Number(item.unit_price) : undefined,
           description: item.description || undefined,
           discount_type: item.discount_type || null,
           discount_value: item.discount_value ? Number(item.discount_value) : null,
+          serial_numbers: item.serials.length > 0 ? item.serials : undefined,
         })),
       };
 
@@ -549,6 +840,7 @@ export default function InvoicesPage() {
           total_tax_amount: res.data.total_tax_amount,
           tax_inclusive: taxInclusive,
           has_invoice_discount: Boolean(payload.discount_value),
+          serial_line_count: payload.items.filter((line) => (line.serial_numbers?.length ?? 0) > 0).length,
           outside_active_fy: Boolean(res.data.warnings?.includes('invoice_date_outside_fy')),
           source: 'invoices_page',
         });
@@ -572,6 +864,15 @@ export default function InvoicesPage() {
       setSubmitting(false);
     }
   }
+
+  const trackedEntries = items
+    .map((item, index) => ({ item, index }))
+    .filter((entry) => isTrackedLine(entry.item));
+  const scanTargetEntry =
+    trackedEntries.find((entry) => entry.item.id === scanTargetItemId) ?? trackedEntries[trackedEntries.length - 1] ?? null;
+  const hasTrackedProducts = products.some((product) => product.track_serials);
+  const pickerItem = pickerItemId !== null ? items.find((item) => item.id === pickerItemId) ?? null : null;
+  const pickerProduct = pickerItem ? findProduct(Number(pickerItem.productId)) : undefined;
 
   return (
     <div className="page-grid">
@@ -1057,25 +1358,46 @@ export default function InvoicesPage() {
                     </button>
                   </div>
                 </div>
+                {hasTrackedProducts ? (
+                  <ScanBar
+                    mode={voucherType === 'purchase' ? 'purchase' : 'sales'}
+                    onResolve={handleScanResolution}
+                    target={
+                      scanTargetEntry
+                        ? {
+                            lineNumber: scanTargetEntry.index + 1,
+                            productName: findProduct(Number(scanTargetEntry.item.productId))?.name ?? 'this line',
+                          }
+                        : null
+                    }
+                    inputRef={scanInputRef}
+                  />
+                ) : null}
                 {items.map((item, index) => {
                   const selectedProduct = products.find((product) => product.id === Number(item.productId));
                   const selectedUnit = selectedProduct?.unit || 'Pieces';
                   const allowDecimalQuantity = Boolean(selectedProduct?.allow_decimal);
+                  const tracked = Boolean(selectedProduct?.track_serials);
+                  const quantityValue = tracked ? String(item.serials.length) : item.quantity;
                   const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
                   const gstRate = selectedProduct?.gst_rate || 0;
                   let lineTotal: number;
                   let taxAmount: number;
                   if (taxInclusive) {
-                    lineTotal = unitPrice * Number(item.quantity || 0);
+                    lineTotal = unitPrice * Number(quantityValue || 0);
                     taxAmount = lineTotal - lineTotal / (1 + gstRate / 100);
                   } else {
-                    const taxableAmount = unitPrice * Number(item.quantity || 0);
+                    const taxableAmount = unitPrice * Number(quantityValue || 0);
                     taxAmount = taxableAmount * gstRate / 100;
                     lineTotal = taxableAmount + taxAmount;
                   }
 
                   return (
-                    <div key={item.id} className="line-item line-item--discount">
+                    <div
+                      key={item.id}
+                      className="line-item line-item--discount"
+                      data-flash={flashItemId === item.id ? 'on' : undefined}
+                    >
                       <div className="field">
                         <label htmlFor={`invoice-product-${item.id}`}>Line {index + 1}</label>
                         <ProductCombobox
@@ -1091,14 +1413,19 @@ export default function InvoicesPage() {
                       </div>
 
                       <div className="field">
-                        <label htmlFor={`invoice-quantity-${item.id}`}>Qty ({selectedUnit})</label>
+                        <label htmlFor={`invoice-quantity-${item.id}`}>
+                          Qty ({selectedUnit})
+                          {tracked ? <Lock size={11} className="field__lock" aria-hidden="true" /> : null}
+                        </label>
                         <input
                           id={`invoice-quantity-${item.id}`}
                           className="input"
                           type="number"
                           min={allowDecimalQuantity ? '0.001' : '1'}
                           step={allowDecimalQuantity ? '0.001' : '1'}
-                          value={item.quantity}
+                          value={quantityValue}
+                          disabled={tracked}
+                          title={tracked ? 'Quantity follows the serial numbers' : undefined}
                           onChange={(event) => updateItem(item.id, 'quantity', event.target.value)}
                           required
                         />
@@ -1176,6 +1503,26 @@ export default function InvoicesPage() {
                       >
                         <Trash2 size={15} />
                       </button>
+                      {tracked ? (
+                        <div className="field field--full serial-line">
+                          <SerialChips
+                            value={item.serials}
+                            onChange={(next) => setLineSerials(item.id, next)}
+                            productId={Number(item.productId) || null}
+                            mode={voucherType === 'purchase' ? 'purchase' : 'sales'}
+                            idPrefix={`invoice-line-${item.id}`}
+                            onPickFromStock={voucherType === 'sales' ? () => setPickerItemId(item.id) : undefined}
+                          />
+                          {item.serials.length === 0 ? (
+                            <p
+                              className={`serial-line__message${serialBlockIds.includes(item.id) ? ' serial-line__message--blocking' : ''}`}
+                              role={serialBlockIds.includes(item.id) ? 'alert' : undefined}
+                            >
+                              This product is serial tracked — scan or add at least one serial before saving.
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
                       <div className="field field--full">
                         <label htmlFor={`invoice-description-${item.id}`}>Description (optional)</label>
                         {/* One row, resizable: an optional note used to open at two rows and
@@ -1186,7 +1533,7 @@ export default function InvoicesPage() {
                           rows={1}
                           value={item.description}
                           onChange={(event) => updateItem(item.id, 'description', event.target.value)}
-                          placeholder="Serial number, batch code, or item notes"
+                          placeholder={tracked ? 'Condition, box number, or item notes' : 'Serial number, batch code, or item notes'}
                         />
                       </div>
                     </div>
@@ -1238,6 +1585,19 @@ export default function InvoicesPage() {
       <ProductQuickCreateModal />
 
       <StockUpdateModal />
+
+      {pickerItem && pickerProduct ? (
+        <SerialPickerModal
+          productId={pickerProduct.id}
+          productName={pickerProduct.name}
+          selected={pickerItem.serials}
+          onCancel={() => setPickerItemId(null)}
+          onConfirm={(serials) => {
+            setLineSerials(pickerItem.id, serials);
+            setPickerItemId(null);
+          }}
+        />
+      ) : null}
 
       {showReceiptModal && selectedLedgerId ? (
         <ReceiptModal

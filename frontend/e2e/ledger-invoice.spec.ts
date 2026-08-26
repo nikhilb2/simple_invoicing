@@ -1,10 +1,36 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, adjustInventory, clickNavLink } from './fixtures';
 
 async function setStatementRangeToCurrentMonth(page: import('@playwright/test').Page) {
   const today = new Date();
   const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
   await page.locator('#statement-from').fill(startOfMonth.toISOString().split('T')[0]);
   await page.locator('#statement-to').fill(today.toISOString().split('T')[0]);
+}
+
+/**
+ * Creating an invoice closes the create dialog and opens the PDF preview dialog.
+ * Both are `.modal-overlay` role=dialog nodes, so locators must be scoped by
+ * their aria-labelledby to tell them apart.
+ */
+function previewModal(page: import('@playwright/test').Page) {
+  return page.locator('.modal-overlay[aria-labelledby="invoice-preview-title"]');
+}
+
+async function closePreview(page: import('@playwright/test').Page) {
+  await previewModal(page).locator('button:has-text("Close")').click();
+  await expect(previewModal(page)).not.toBeVisible({ timeout: 5_000 });
+}
+
+/**
+ * The preview title reads "PDF invoice <number>". The statement rows are keyed by
+ * that same reference number (the row never prints the words "sales"/"purchase"),
+ * so we carry the number over to identify the entry we just created.
+ */
+async function readPreviewInvoiceNumber(page: import('@playwright/test').Page) {
+  const title = (await previewModal(page).locator('#invoice-preview-title').innerText()).trim();
+  const invoiceNumber = title.replace(/^PDF invoice\s*/i, '').trim();
+  expect(invoiceNumber, 'created invoice should have a reference number').not.toBe('');
+  return invoiceNumber;
 }
 
 test.describe('Create Invoice from Ledger View', () => {
@@ -27,10 +53,8 @@ test.describe('Create Invoice from Ledger View', () => {
 
     // 2. Add inventory
     await clickNavLink(page, '/inventory');
-    await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-    await selectComboboxOption(page, 'inventory-product', sku);
-    await page.fill('#inventory-quantity', '100');
-    await page.click('button:has-text("Apply adjustment")');
+    await page.waitForTimeout(500);
+    await adjustInventory(page, sku, '100');
     await expectSuccess(page, 'Inventory updated');
 
     // 3. Create ledger
@@ -62,7 +86,7 @@ test.describe('Create Invoice from Ledger View', () => {
     // Open the Create Invoice modal
     await page.click('[aria-label="More ledger actions"]');
     await page.click('[role="menuitem"][aria-label="Create Invoice"]');
-    const modal = page.locator('.modal-overlay');
+    const modal = page.locator('.modal-overlay[aria-labelledby="create-invoice-modal-title"]');
     await expect(modal).toBeVisible({ timeout: 5_000 });
 
     // Verify modal title
@@ -84,14 +108,23 @@ test.describe('Create Invoice from Ledger View', () => {
 
     // Submit
     await modal.locator('button:has-text("Create invoice")').click();
+    await expect(page.locator('.toast--success')).toBeVisible({ timeout: 10_000 });
     await expect(modal).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
-    // Refresh statement context and verify entry appears.
-    await page.reload();
+    // The app closes the create dialog and opens the PDF preview for the new invoice.
+    await expect(previewModal(page)).toBeVisible({ timeout: 10_000 });
+    await expect(previewModal(page).locator('#invoice-preview-title')).toContainText('PDF invoice');
+    const invoiceNumber = await readPreviewInvoiceNumber(page);
+
+    // Close the preview; the ledger view refreshes its statement in place.
+    // (Do not reload: on a fresh load the FY context resets the statement range
+    // back to the active financial year and clobbers the range set below.)
+    await closePreview(page);
     await setStatementRangeToCurrentMonth(page);
     await page.waitForTimeout(1_000);
-    const salesEntry = page.locator('.invoice-row').filter({ hasText: /sales/i });
+    const salesEntry = page.locator('.invoice-row').filter({ hasText: invoiceNumber });
     await expect(salesEntry.first()).toBeVisible({ timeout: 10_000 });
+    // A sales invoice debits the party ledger.
     await expect(salesEntry.first()).toContainText('Dr');
   });
 
@@ -101,7 +134,7 @@ test.describe('Create Invoice from Ledger View', () => {
     // Open the Create Invoice modal
     await page.click('[aria-label="More ledger actions"]');
     await page.click('[role="menuitem"][aria-label="Create Invoice"]');
-    const modal = page.locator('.modal-overlay');
+    const modal = page.locator('.modal-overlay[aria-labelledby="create-invoice-modal-title"]');
     await expect(modal).toBeVisible({ timeout: 5_000 });
 
     // Switch to purchase
@@ -115,14 +148,21 @@ test.describe('Create Invoice from Ledger View', () => {
 
     // Submit
     await modal.locator('button:has-text("Create invoice")').click();
+    await expect(page.locator('.toast--success')).toBeVisible({ timeout: 10_000 });
     await expect(modal).not.toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
-    // Refresh statement context and verify purchase entry appears as Credit.
-    await page.reload();
+    // The app closes the create dialog and opens the PDF preview for the new invoice.
+    await expect(previewModal(page)).toBeVisible({ timeout: 10_000 });
+    await expect(previewModal(page).locator('#invoice-preview-title')).toContainText('PDF invoice');
+    const invoiceNumber = await readPreviewInvoiceNumber(page);
+
+    // Close the preview; the ledger view refreshes its statement in place.
+    await closePreview(page);
     await setStatementRangeToCurrentMonth(page);
     await page.waitForTimeout(1_000);
-    const purchaseEntry = page.locator('.invoice-row').filter({ hasText: /purchase/i });
+    const purchaseEntry = page.locator('.invoice-row').filter({ hasText: invoiceNumber });
     await expect(purchaseEntry.first()).toBeVisible({ timeout: 10_000 });
+    // A purchase invoice credits the party ledger.
     await expect(purchaseEntry.first()).toContainText('Cr');
   });
 
@@ -131,7 +171,7 @@ test.describe('Create Invoice from Ledger View', () => {
 
     await page.click('[aria-label="More ledger actions"]');
     await page.click('[role="menuitem"][aria-label="Create Invoice"]');
-    const modal = page.locator('.modal-overlay');
+    const modal = page.locator('.modal-overlay[aria-labelledby="create-invoice-modal-title"]');
     await expect(modal).toBeVisible({ timeout: 5_000 });
 
     // Click cancel

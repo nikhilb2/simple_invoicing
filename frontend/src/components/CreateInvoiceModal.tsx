@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Lock } from 'lucide-react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import { track } from '../lib/analytics';
@@ -9,6 +10,7 @@ import { formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../uti
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../utils/invoiceTax';
 import ProductCombobox from './ProductCombobox';
 import LedgerCombobox from './LedgerCombobox';
+import SerialChips from '../pages/invoices/components/SerialChips';
 
 type ModalInvoiceFormItem = {
   id: number;
@@ -18,10 +20,12 @@ type ModalInvoiceFormItem = {
   description: string;
   discount_type: string;
   discount_value: string;
+  /** Serial / IMEI numbers on this line. Empty for products that are fungible. */
+  serials: string[];
 };
 
 function createItem(id: number, productId = '', unitPrice = ''): ModalInvoiceFormItem {
-  return { id, productId, quantity: '1', unit_price: unitPrice, description: '', discount_type: '', discount_value: '' };
+  return { id, productId, quantity: '1', unit_price: unitPrice, description: '', discount_type: '', discount_value: '', serials: [] };
 }
 
 type CreateInvoiceModalProps = {
@@ -95,7 +99,7 @@ export default function CreateInvoiceModal({
 
   const totalAmount = items.reduce((sum, item) => {
     const product = products.find((p) => p.id === Number(item.productId));
-    const quantity = Number(item.quantity);
+    const quantity = product?.track_serials ? item.serials.length : Number(item.quantity);
     const unitPrice = item.unit_price ? Number(item.unit_price) : (product?.price || 0);
     const gstRate = product?.gst_rate || 0;
     if (!product || Number.isNaN(quantity)) return sum;
@@ -141,9 +145,19 @@ export default function CreateInvoiceModal({
   }
 
   function updateItem(id: number, key: 'productId' | 'quantity' | 'unit_price' | 'description' | 'discount_type' | 'discount_value', value: string) {
-    setItems((c) => c.map((i) => (i.id === id ? { ...i, [key]: value } : i)));
+    // Serials belong to the product that was on the line, not to its successor.
+    setItems((c) => c.map((i) => (i.id === id ? { ...i, [key]: value, ...(key === 'productId' ? { serials: [] } : {}) } : i)));
   }
 
+  function setLineSerials(id: number, serials: string[]) {
+    setItems((c) => c.map((i) => (i.id === id ? { ...i, serials } : i)));
+  }
+
+  /* A tracked line with no serials is worth nothing and the backend refuses it,
+     so it blocks the save the way a missing ledger does. */
+  const hasEmptyTrackedLine = items.some(
+    (item) => products.find((p) => p.id === Number(item.productId))?.track_serials && item.serials.length === 0,
+  );
   const isDateOutsideFY =
     activeFY !== null &&
     invoiceDate !== '' &&
@@ -168,14 +182,18 @@ export default function CreateInvoiceModal({
         due_date: resolvedDueDate ?? invoiceDate,
         reference_notes: voucherType === 'sales' ? (referenceNotes.trim() || null) : null,
         tax_inclusive: taxInclusive,
-        items: items.map((item) => ({
-          product_id: Number(item.productId),
-          quantity: Number(item.quantity),
-          unit_price: item.unit_price ? Number(item.unit_price) : undefined,
-          description: item.description || undefined,
-          discount_type: (item.discount_type || null) as 'percentage' | 'net' | null,
-          discount_value: item.discount_value ? Number(item.discount_value) : null,
-        })),
+        items: items.map((item) => {
+          const product = products.find((p) => p.id === Number(item.productId));
+          return {
+            product_id: Number(item.productId),
+            quantity: product?.track_serials ? item.serials.length : Number(item.quantity),
+            unit_price: item.unit_price ? Number(item.unit_price) : undefined,
+            description: item.description || undefined,
+            discount_type: (item.discount_type || null) as 'percentage' | 'net' | null,
+            discount_value: item.discount_value ? Number(item.discount_value) : null,
+            serial_numbers: item.serials.length > 0 ? item.serials : undefined,
+          };
+        }),
       };
       const res = await api.post<Invoice>('/invoices/', payload);
       track('invoice_created', {
@@ -351,12 +369,14 @@ export default function CreateInvoiceModal({
                 const selectedProduct = products.find((p) => p.id === Number(item.productId));
                 const selectedUnit = selectedProduct?.unit || 'Pieces';
                 const allowDecimalQuantity = Boolean(selectedProduct?.allow_decimal);
+                const tracked = Boolean(selectedProduct?.track_serials);
+                const quantityValue = tracked ? String(item.serials.length) : item.quantity;
                 const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
                 const gstRate = selectedProduct?.gst_rate || 0;
                 let lineTotal: number;
                 let taxAmount: number;
                 if (taxInclusive) {
-                  let baseLineTotal = unitPrice * Number(item.quantity || 0);
+                  let baseLineTotal = unitPrice * Number(quantityValue || 0);
                   let baseTaxableAmount = baseLineTotal / (1 + gstRate / 100);
                   // Apply item-level discount
                   if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
@@ -375,7 +395,7 @@ export default function CreateInvoiceModal({
                     taxAmount = lineTotal - baseTaxableAmount;
                   }
                 } else {
-                  const baseTaxableAmount = unitPrice * Number(item.quantity || 0);
+                  const baseTaxableAmount = unitPrice * Number(quantityValue || 0);
                   // Apply item-level discount
                   if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
                     const discVal = Number(item.discount_value);
@@ -411,14 +431,19 @@ export default function CreateInvoiceModal({
                     </div>
 
                     <div className="field">
-                      <label htmlFor={`modal-inv-qty-${item.id}`}>Qty ({selectedUnit})</label>
+                      <label htmlFor={`modal-inv-qty-${item.id}`}>
+                        Qty ({selectedUnit})
+                        {tracked ? <Lock size={11} className="field__lock" aria-hidden="true" /> : null}
+                      </label>
                       <input
                         id={`modal-inv-qty-${item.id}`}
                         className="input"
                         type="number"
                         min={allowDecimalQuantity ? '0.001' : '1'}
                         step={allowDecimalQuantity ? '0.001' : '1'}
-                        value={item.quantity}
+                        value={quantityValue}
+                        disabled={tracked}
+                        title={tracked ? 'Quantity follows the serial numbers' : undefined}
                         onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
                         required
                       />
@@ -450,6 +475,22 @@ export default function CreateInvoiceModal({
                       </div>
                     </div>
                     <button type="button" className="button button--danger" onClick={() => removeItem(item.id)} title={`Remove line item ${index + 1}`} aria-label={`Remove line item ${index + 1}`}>Remove</button>
+                      {tracked ? (
+                        <div className="field field--full serial-line">
+                          <SerialChips
+                            value={item.serials}
+                            onChange={(serials) => setLineSerials(item.id, serials)}
+                            productId={Number(item.productId) || null}
+                            mode={voucherType === 'purchase' ? 'purchase' : 'sales'}
+                            idPrefix={`modal-inv-line-${item.id}`}
+                          />
+                          {item.serials.length === 0 ? (
+                            <p className="serial-line__message">
+                              This product is serial tracked — add at least one serial before saving.
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
                       <div className="field field--full">
                         <label htmlFor={`modal-inv-description-${item.id}`}>Description (optional)</label>
                         <textarea
@@ -471,7 +512,7 @@ export default function CreateInvoiceModal({
                 Add line item
               </button>
               <button type="button" className="button button--secondary" onClick={onClose} title="Cancel invoice creation" aria-label="Cancel invoice creation">Cancel</button>
-              <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId} title="Create invoice" aria-label="Create invoice">
+              <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId || hasEmptyTrackedLine} title="Create invoice" aria-label="Create invoice">
                 {submitting ? 'Creating invoice...' : 'Create invoice'}
               </button>
             </div>

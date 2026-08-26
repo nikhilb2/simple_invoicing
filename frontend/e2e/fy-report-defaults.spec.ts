@@ -13,7 +13,7 @@ const FY_END_DATE = '2032-03-31';
  * Ensure the test FY exists and is the active FY.
  */
 async function activateTestFY(page: import('@playwright/test').Page) {
-  const fyButton = page.locator('button[aria-haspopup="listbox"]');
+  const fyButton = page.getByTestId('fy-switcher');
   await fyButton.click();
   const listbox = page.locator('[role="listbox"]');
   await expect(listbox).toBeVisible({ timeout: 5_000 });
@@ -73,7 +73,7 @@ test.describe('FY Defaults — Day Book', () => {
     await expect(page.locator('#day-book-to')).toHaveValue(FY_END_DATE);
 
     // Switch to a different FY (2030-31) — create it if needed
-    const fyButton = page.locator('button[aria-haspopup="listbox"]');
+    const fyButton = page.getByTestId('fy-switcher');
     await fyButton.click();
     const listbox = page.locator('[role="listbox"]');
     await expect(listbox).toBeVisible({ timeout: 5_000 });
@@ -163,7 +163,7 @@ test.describe('FY Defaults — Ledger Statement', () => {
     await expect(page.locator('#statement-from')).toHaveValue(FY_START_DATE);
 
     // Switch to 2030-31
-    const fyButton = page.locator('button[aria-haspopup="listbox"]');
+    const fyButton = page.getByTestId('fy-switcher');
     await fyButton.click();
     const listbox = page.locator('[role="listbox"]');
     await expect(listbox).toBeVisible({ timeout: 5_000 });

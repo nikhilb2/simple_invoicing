@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowUpDown, FileText } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import { track } from '../lib/analytics';
 import StatusToasts from '../components/StatusToasts';
 import PublishToMarketplaceButton from '../components/PublishToMarketplaceButton';
+import SerialChips from './invoices/components/SerialChips';
 import type { InventoryAdjust, InventoryRow, PaginatedInventoryOut } from '../types/api';
+
+/* A tracked product's adjustment names the units it moves, and why. */
 
 type SortBy = 'name' | 'quantity' | 'date_added' | 'last_sold';
 type SortOrder = 'asc' | 'desc';
@@ -25,22 +28,37 @@ export default function InventoryPage() {
   const pageSize = 20;
   // Per-row adjustment state: productId -> delta string
   const [adjusting, setAdjusting] = useState<Record<number, string>>({});
+  // Per-row serials for tracked products: productId -> the units being moved
+  const [rowSerials, setRowSerials] = useState<Record<number, string[]>>({});
+  // Why the units moved, kept against the serial rows for later lookups
+  const [rowNotes, setRowNotes] = useState<Record<number, string>>({});
   const [submittingId, setSubmittingId] = useState<number | null>(null);
 
+  // Guards against out-of-order responses. Typing in the search box fires a
+  // fresh request while the unfiltered load may still be in flight, and on a
+  // large catalogue the broader query is the slower one — so without this the
+  // stale response lands last and silently replaces the filtered rows with
+  // everything, leaving the search box reading one thing and the list showing
+  // another. Only the newest request is allowed to write state.
+  const latestRequestRef = useRef(0);
+
   async function loadInventory() {
+    const requestId = ++latestRequestRef.current;
     try {
       setLoading(true);
       setError('');
       const res = await api.get<PaginatedInventoryOut>('/inventory/', {
         params: { search, sort_by: sortBy, sort_order: sortOrder, page, page_size: pageSize },
       });
+      if (requestId !== latestRequestRef.current) return;
       setRows(res.data.items);
       setTotal(res.data.total);
       setTotalPages(res.data.total_pages);
     } catch (err) {
+      if (requestId !== latestRequestRef.current) return;
       setError(getApiErrorMessage(err, 'Unable to load inventory'));
     } finally {
-      setLoading(false);
+      if (requestId === latestRequestRef.current) setLoading(false);
     }
   }
 
@@ -60,7 +78,17 @@ export default function InventoryPage() {
   }
 
   function setRowDelta(productId: number, value: string) {
+    // Units scanned for an increase are not the units of a write-off.
+    if (Math.sign(Number(value)) !== Math.sign(Number(adjusting[productId] ?? '0'))) {
+      setRowSerials((prev) => ({ ...prev, [productId]: [] }));
+    }
     setAdjusting((prev) => ({ ...prev, [productId]: value }));
+  }
+
+  function unitsRequired(row: InventoryRow) {
+    if (!row.track_serials) return 0;
+    const delta = Number(adjusting[row.product_id] ?? '0');
+    return Number.isFinite(delta) ? Math.abs(Math.trunc(delta)) : 0;
   }
 
   async function applyAdjustment(productId: number) {
@@ -73,11 +101,23 @@ export default function InventoryPage() {
     const delta = Number(adjusting[productId] ?? '0');
     if (delta === 0) return;
 
+    const serials = rowSerials[productId] ?? [];
+    if (row?.track_serials && serials.length !== Math.abs(delta)) {
+      setError(`${row.product_name} is serial tracked — scan ${Math.abs(delta)} serial number${Math.abs(delta) === 1 ? '' : 's'} for this adjustment.`);
+      return;
+    }
+
     try {
       setSubmittingId(productId);
       setError('');
       setSuccess('');
-      const payload: InventoryAdjust = { product_id: productId, quantity: delta };
+      const payload: InventoryAdjust = {
+        product_id: productId,
+        quantity: delta,
+        ...(row?.track_serials
+          ? { serial_numbers: serials, note: (rowNotes[productId] ?? '').trim() || undefined }
+          : {}),
+      };
       await api.post('/inventory/adjust', payload);
       track('inventory_adjusted', {
         product_id: productId,
@@ -85,6 +125,8 @@ export default function InventoryPage() {
         source: 'inventory_page',
       });
       setAdjusting((prev) => ({ ...prev, [productId]: '' }));
+      setRowSerials((prev) => ({ ...prev, [productId]: [] }));
+      setRowNotes((prev) => ({ ...prev, [productId]: '' }));
       setSuccess('Inventory updated.');
       await loadInventory();
     } catch (err) {
@@ -170,7 +212,8 @@ export default function InventoryPage() {
                     <div className="table-row__meta" style={{ flex: '1 1 180px' }}>
                       <strong>{row.product_name}</strong>
                       <span className="table-subtext">
-                        {row.sku} • {row.maintain_inventory ? 'Tracked' : 'Untracked'} • Unit {row.unit}
+                        {row.sku} • {row.maintain_inventory ? 'Tracked' : 'Untracked'}
+                        {row.track_serials ? ' • Serialised' : ''} • Unit {row.unit}
                       </span>
                     </div>
 
@@ -207,7 +250,12 @@ export default function InventoryPage() {
                         type="button"
                         className={`button button--secondary${submittingId === row.product_id ? ' is-busy' : ''}`}
                         onClick={() => void applyAdjustment(row.product_id)}
-                        disabled={submittingId === row.product_id || !adjusting[row.product_id] || !row.maintain_inventory}
+                        disabled={
+                          submittingId === row.product_id ||
+                          !adjusting[row.product_id] ||
+                          !row.maintain_inventory ||
+                          (unitsRequired(row) > 0 && (rowSerials[row.product_id] ?? []).length !== unitsRequired(row))
+                        }
                         title={`Apply adjustment for ${row.product_name}`}
                         aria-label={`Apply adjustment for ${row.product_name}`}
                         style={{ whiteSpace: 'nowrap' }}
@@ -231,6 +279,42 @@ export default function InventoryPage() {
                         variant="small"
                       />
                     </div>
+
+                    {/* A tracked adjustment cannot be applied from the number
+                        alone — the units themselves have to be named. */}
+                    {unitsRequired(row) > 0 ? (
+                      <div className="serial-line" style={{ flex: '1 1 100%' }}>
+                        <label className="serial-chips__label" htmlFor={`inventory-serials-${row.product_id}-serial-input`}>
+                          {Number(adjusting[row.product_id]) > 0
+                            ? `Scan the units you're adding to ${row.product_name}`
+                            : `Scan the units you're writing off from ${row.product_name}`}
+                        </label>
+                        <p
+                          className={`serial-backfill__counter${(rowSerials[row.product_id] ?? []).length === unitsRequired(row) ? ' serial-backfill__counter--complete' : ''}`}
+                          aria-live="polite"
+                        >
+                          {(rowSerials[row.product_id] ?? []).length}
+                          <span className="serial-backfill__counter-total">/ {unitsRequired(row)} scanned</span>
+                        </p>
+                        <SerialChips
+                          value={rowSerials[row.product_id] ?? []}
+                          onChange={(serials) => setRowSerials((prev) => ({ ...prev, [row.product_id]: serials }))}
+                          productId={row.product_id}
+                          mode={Number(adjusting[row.product_id]) > 0 ? 'purchase' : 'sales'}
+                          disabled={submittingId === row.product_id}
+                          idPrefix={`inventory-serials-${row.product_id}`}
+                        />
+                        <input
+                          className="input"
+                          type="text"
+                          value={rowNotes[row.product_id] ?? ''}
+                          onChange={(e) => setRowNotes((prev) => ({ ...prev, [row.product_id]: e.target.value }))}
+                          placeholder={Number(adjusting[row.product_id]) > 0 ? 'Reason (optional) — e.g. Found in back store' : 'Reason (optional) — e.g. Damaged in transit'}
+                          aria-label={`Reason for adjusting ${row.product_name}`}
+                          disabled={submittingId === row.product_id}
+                        />
+                      </div>
+                    ) : null}
                   </div>
                 ))
               : null}
