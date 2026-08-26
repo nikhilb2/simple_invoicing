@@ -17,6 +17,7 @@ class Product(Base):
     unit = Column(String, nullable=False, default="Pieces")
     allow_decimal = Column(Boolean, nullable=False, default=False)
     maintain_inventory = Column(Boolean, nullable=False, default=True)
+    track_serials = Column(Boolean, nullable=False, default=False)
     is_producable = Column(Boolean, nullable=False, default=False)
     production_cost = Column(Numeric(12, 2), nullable=True)
     reorder_level = Column(Numeric(10, 2), nullable=False, default=0)

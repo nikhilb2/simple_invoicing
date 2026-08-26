@@ -19,6 +19,9 @@ export type InvoiceComposerPrefs = {
   dueDateMode: DueDateMode;
   dueDateDays: string;
   invoiceDiscountType: 'percentage' | 'net';
+  /* Whether the scan bar beeps. A habit of the counter it is used at — a noisy
+     shop wants it, a quiet showroom does not — not a fact about an invoice. */
+  scanBeep: boolean;
 };
 
 export const DEFAULT_INVOICE_COMPOSER_PREFS: InvoiceComposerPrefs = {
@@ -28,6 +31,7 @@ export const DEFAULT_INVOICE_COMPOSER_PREFS: InvoiceComposerPrefs = {
   dueDateMode: 'none',
   dueDateDays: '',
   invoiceDiscountType: 'percentage',
+  scanBeep: true,
 };
 
 function isDueDateMode(value: unknown): value is DueDateMode {
@@ -58,6 +62,7 @@ export function readInvoiceComposerPrefs(): InvoiceComposerPrefs {
           ? stored.dueDateDays
           : defaults.dueDateDays,
       invoiceDiscountType: stored.invoiceDiscountType === 'net' ? 'net' : defaults.invoiceDiscountType,
+      scanBeep: typeof stored.scanBeep === 'boolean' ? stored.scanBeep : defaults.scanBeep,
     };
   } catch {
     // Malformed JSON, or localStorage unavailable in a privacy mode.

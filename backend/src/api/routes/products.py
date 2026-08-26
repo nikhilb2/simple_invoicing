@@ -24,12 +24,17 @@ from src.schemas.product import (
     ProductWithInventoryUpdate,
 )
 from src.api.deps import get_active_company, get_current_user, require_roles
+from src.services.serial_service import SerialManager
 
 router = APIRouter()
 
 
 def _is_whole_number(value: float) -> bool:
     return Decimal(str(value)) == Decimal(str(value)).to_integral_value()
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}{'' if count == 1 else 's'}"
 
 
 @router.post("", response_model=ProductOut, include_in_schema=False)
@@ -48,6 +53,37 @@ def create_product(
     if existing:
         raise HTTPException(status_code=400, detail="Product with this SKU already exists")
 
+    serial_codes = SerialManager.normalize_codes(payload.serial_numbers)
+    allow_decimal = payload.allow_decimal
+    if payload.track_serials:
+        if not payload.maintain_inventory:
+            raise HTTPException(
+                status_code=400,
+                detail="Serial-tracked products must maintain inventory",
+            )
+        # A unit is a unit: half an IMEI does not exist.
+        allow_decimal = False
+        if not _is_whole_number(payload.initial_quantity):
+            raise HTTPException(
+                status_code=400,
+                detail="Initial quantity must be a whole number for a serial-tracked product",
+            )
+        opening = int(Decimal(str(payload.initial_quantity)).to_integral_value())
+        if len(serial_codes) != opening:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{payload.name.strip()} opens with {_plural(opening, 'unit')} — "
+                    f"provide {_plural(opening, 'serial number')} "
+                    f"({len(serial_codes)} provided)"
+                ),
+            )
+    elif serial_codes:
+        raise HTTPException(
+            status_code=400,
+            detail="Serial numbers are only allowed on a serial-tracked product",
+        )
+
     product = Product(
         company_id=active_company.id,
         sku=sku,
@@ -58,11 +94,12 @@ def create_product(
         purchase_price=payload.purchase_price,
         gst_rate=payload.gst_rate,
         unit=payload.unit,
-        allow_decimal=payload.allow_decimal,
+        allow_decimal=allow_decimal,
         maintain_inventory=payload.maintain_inventory,
         is_producable=payload.is_producable,
         production_cost=payload.production_cost,
         reorder_level=payload.reorder_level,
+        track_serials=payload.track_serials,
     )
     db.add(product)
     db.flush()  # get product.id before committing
@@ -73,7 +110,7 @@ def create_product(
             detail="Initial quantity is only allowed when maintain inventory is enabled",
         )
 
-    if not payload.allow_decimal and not _is_whole_number(payload.initial_quantity):
+    if not allow_decimal and not _is_whole_number(payload.initial_quantity):
         raise HTTPException(status_code=400, detail="Initial quantity must be a whole number for this product")
 
     if payload.maintain_inventory:
@@ -83,6 +120,14 @@ def create_product(
             quantity=payload.initial_quantity,
         )
         db.add(inventory)
+
+    if serial_codes:
+        SerialManager(db).register_stock(
+            serial_codes,
+            product_id=product.id,
+            company_id=active_company.id,
+            note="Opening stock",
+        )
 
     db.commit()
     db.refresh(product)
@@ -169,9 +214,30 @@ def update_product(
                 detail="Cannot disable decimal quantity while inventory has fractional stock",
             )
 
-    product.allow_decimal = payload.allow_decimal
+    was_tracking_serials = bool(product.track_serials)
+    serial_codes = SerialManager.normalize_codes(payload.serial_numbers)
+    if payload.track_serials and not payload.maintain_inventory:
+        raise HTTPException(
+            status_code=400,
+            detail="Serial-tracked products must maintain inventory",
+        )
+    if serial_codes and (not payload.track_serials or was_tracking_serials):
+        # The only serials this endpoint accepts are the backfill that turns
+        # tracking on; afterwards units arrive on purchases and adjustments.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{product.name} is already serial-tracked — add serial numbers "
+                "on a purchase entry or a stock adjustment"
+                if was_tracking_serials
+                else "Serial numbers are only allowed on a serial-tracked product"
+            ),
+        )
+
+    product.allow_decimal = payload.allow_decimal and not payload.track_serials
     was_tracking_inventory = bool(product.maintain_inventory)
     product.maintain_inventory = payload.maintain_inventory
+    product.track_serials = payload.track_serials
 
     if not was_tracking_inventory and payload.maintain_inventory:
         inventory = db.query(Inventory).filter(
@@ -181,9 +247,61 @@ def update_product(
         if not inventory:
             db.add(Inventory(company_id=active_company.id, product_id=product_id, quantity=0))
 
+    if payload.track_serials and not was_tracking_serials:
+        _backfill_serials(db, product, serial_codes, company_id=active_company.id)
+
     db.commit()
     db.refresh(product)
     return product
+
+
+def _backfill_serials(
+    db: Session,
+    product: Product,
+    codes: list[str],
+    *,
+    company_id: int,
+) -> None:
+    """Give every unit already in stock a serial as tracking is switched on.
+
+    Flag and units are written in the same request on purpose: a product left
+    tracked with fewer serials than stock breaks the invariant the whole feature
+    rests on, and there is no second round-trip to repair it in.
+    """
+    inventory = db.query(Inventory).filter(
+        Inventory.product_id == product.id,
+        Inventory.company_id == company_id,
+    ).first()
+    stock = Decimal(str(inventory.quantity or 0)) if inventory else Decimal("0")
+    if stock != stock.to_integral_value():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{product.name} has fractional stock ({stock}) — it cannot be "
+                "serial-tracked until that is adjusted to a whole number"
+            ),
+        )
+
+    # Turning tracking off leaves the rows behind for history, so a product
+    # switched back on already has some of its units covered.
+    on_hand = int(stock)
+    already = SerialManager(db).count_in_stock(product.id, company_id=company_id)
+    missing = max(on_hand - already, 0)
+    if len(codes) != missing:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{product.name} has {_plural(on_hand, 'unit')} in stock — provide "
+                f"{_plural(missing, 'serial number')} to enable serial tracking"
+            ),
+        )
+
+    SerialManager(db).register_stock(
+        codes,
+        product_id=product.id,
+        company_id=company_id,
+        note="Backfilled when serial tracking was enabled",
+    )
 
 
 @router.delete("/{product_id}")
@@ -299,6 +417,7 @@ def list_products_with_inventory(
                 "status": "active" if product.maintain_inventory else "inactive",
                 "unit": product.unit,
                 "gst_rate": float(product.gst_rate),
+                "track_serials": bool(product.track_serials),
             }
         )
 
@@ -378,6 +497,17 @@ def update_product_with_inventory(
             )
             .first()
         )
+        # Setting stock outright would leave a tracked product with a quantity
+        # no set of serials backs. It has to move through /inventory/adjust.
+        current = Decimal(str(inventory.quantity or 0)) if inventory else Decimal("0")
+        if product.track_serials and Decimal(str(payload.current_stock)) != current:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{product.name} is serial-tracked — adjust its stock with "
+                    "serial numbers instead of editing the quantity"
+                ),
+            )
         if inventory:
             inventory.quantity = Decimal(str(payload.current_stock))
         else:
@@ -416,6 +546,7 @@ def update_product_with_inventory(
         "status": "active" if product.maintain_inventory else "inactive",
         "unit": product.unit,
         "gst_rate": float(product.gst_rate),
+        "track_serials": bool(product.track_serials),
     }
 
 
@@ -595,7 +726,14 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
                 )
                 .first()
             )
-            if inv:
+            # Same reason as the with-inventory update: a CSV cannot carry the
+            # serials that a tracked product's stock has to be backed by.
+            if existing.track_serials:
+                errors.append({
+                    "row": row_num,
+                    "message": f"Stock for {sku} was left as-is — it is serial-tracked",
+                })
+            elif inv:
                 inv.quantity = Decimal(str(stock))
             elif existing.maintain_inventory:
                 db.add(Inventory(company_id=active_company.id, product_id=existing.id, quantity=Decimal(str(stock))))

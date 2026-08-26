@@ -19,6 +19,17 @@ from .builders import (
 )
 
 
+def _build_item_serials_html(numbers: list[str] | None) -> str:
+    """Render the per-unit serials of a line as a muted sub-line.
+
+    Joined with ", " so a line carrying ten IMEIs wraps inside the product
+    column instead of running off the page.
+    """
+    if not numbers:
+        return ""
+    return f"<br><span class=\"muted-text\" style=\"overflow-wrap: anywhere;\">IMEI/SN: {_e(', '.join(numbers))}</span>"
+
+
 def _extract_pan_from_gstin(gstin: str | None) -> str | None:
     """Extract PAN from a 15-character GSTIN."""
     normalized = (gstin or "").strip().upper()
@@ -34,7 +45,11 @@ def _is_interstate_supply(company_gst: str | None, ledger_gst: str | None) -> bo
     return company_gst[:2] != ledger_gst[:2]
 
 
-def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> str:
+def _build_purchase_invoice_html(
+    invoice: Invoice,
+    products: list[Product],
+    serials: dict[int, list[str]] | None = None,
+) -> str:
     """Generate HTML for a purchase invoice (supplier at top-left, your company top-right,
     no bank details in footer, optional supplier ref row)."""
     currency = invoice.company_currency_code or "USD"
@@ -45,6 +60,7 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
     table_colgroup = _build_pdf_table_colgroup(interstate_supply)
 
     product_map = {p.id: p for p in products}
+    serials_map = serials or {}
     tax_inclusive = bool(invoice.tax_inclusive)
 
     item_rows = ""
@@ -60,11 +76,12 @@ def _build_purchase_invoice_html(invoice: Invoice, products: list[Product]) -> s
         unit = _e(_pdf_display_unit(getattr(prod, "unit", None) if prod else None))
         quantity_display = _pdf_display_quantity(item.quantity, getattr(prod, "allow_decimal", None) if prod else None)
         tax_row_cells = _build_pdf_tax_row_cells(item, currency, interstate_supply)
+        item_serials_html = _build_item_serials_html(serials_map.get(item.product_id))
 
         item_rows += f"""
         <tr>
           <td>{idx}</td>
-          <td>{product_cell_html}</td>
+          <td>{product_cell_html}{item_serials_html}</td>
           <td>{sku}</td>
           <td>{hsn}</td>
           <td class="right">{quantity_display}</td>

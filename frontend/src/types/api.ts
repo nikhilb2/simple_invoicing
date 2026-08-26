@@ -15,6 +15,10 @@ export type Product = {
   unit: string;
   allow_decimal: boolean;
   maintain_inventory: boolean;
+  /* Each unit of this product is a physical thing with an identity — a handset
+     with an IMEI — so its lines carry serial numbers and derive their quantity
+     from them. */
+  track_serials: boolean;
   is_producable: boolean;
   production_cost: number | null;
   created_at: string | null;
@@ -33,6 +37,11 @@ export type ProductCreate = {
   is_producable: boolean;
   production_cost?: number | null;
   initial_quantity?: number;
+  track_serials?: boolean;
+  /* Initial serials on create, and the backfill when the flag is switched on
+     for a product that already has stock. Flag and serials travel together so
+     the two can never diverge. */
+  serial_numbers?: string[];
 };
 
 export type InventoryRow = {
@@ -43,6 +52,7 @@ export type InventoryRow = {
   allow_decimal: boolean;
   price: number;
   maintain_inventory: boolean;
+  track_serials?: boolean;
   quantity: number;
   date_added: string | null;
   last_sold_at: string | null;
@@ -51,6 +61,10 @@ export type InventoryRow = {
 export type InventoryAdjust = {
   product_id: number;
   quantity: number;
+  /* Required for a serial-tracked product, with one entry per unit: a positive
+     adjustment registers these serials, a negative one writes them off. */
+  serial_numbers?: string[];
+  note?: string;
 };
 
 export type PaginatedInventoryOut = {
@@ -348,6 +362,7 @@ export type InvoiceItem = {
   description?: string | null;
   discount_type?: string | null;
   discount_value?: number | null;
+  serial_numbers?: string[];
 };
 
 export type InvoiceItemInput = {
@@ -357,6 +372,7 @@ export type InvoiceItemInput = {
   description?: string;
   discount_type?: 'percentage' | 'net' | null;
   discount_value?: number | null;
+  serial_numbers?: string[];
 };
 
 export type CreditNoteItem = {

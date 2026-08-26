@@ -20,6 +20,10 @@ class ProductCreate(BaseModel):
     production_cost: Optional[float] = None
     reorder_level: float = 0
     initial_quantity: float = 0
+    track_serials: bool = False
+    # Opening serials on create, backfill on enable — one field, one round-trip,
+    # so the flag and the units behind it can never be saved apart.
+    serial_numbers: Optional[list[str]] = None
 
     @field_validator("hsn_sac")
     @classmethod
@@ -50,6 +54,7 @@ class ProductOut(BaseModel):
     is_producable: bool
     production_cost: Optional[float]
     reorder_level: float = 0
+    track_serials: bool = False
     created_at: Optional[datetime] = None
 
     class Config:
@@ -71,6 +76,7 @@ class ProductWithInventoryOut(BaseModel):
     is_producable: bool
     production_cost: Optional[float] = None
     reorder_level: float = 0
+    track_serials: bool = False
     created_at: Optional[datetime] = None
     current_stock: float = 0
     status: str = "active"
