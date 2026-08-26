@@ -17,6 +17,9 @@ class InvoiceItemCreate(BaseModel):
     # the two legally-linked invoices would disagree on tax. None = use the product.
     gst_rate: float | None = None
     hsn_sac: str | None = None
+    # One code per unit on a serial-tracked product; the count must equal
+    # quantity. None / [] on any other product.
+    serial_numbers: list[str] | None = None
 
 
 class InvoiceCreate(BaseModel):
@@ -53,6 +56,7 @@ class InvoiceItemOut(BaseModel):
     description: str | None = None
     discount_type: str | None = None
     discount_value: float | None = None
+    serial_numbers: list[str] = Field(default_factory=list)
 
     class Config:
         from_attributes = True

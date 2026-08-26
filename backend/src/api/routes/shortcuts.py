@@ -22,6 +22,7 @@ DEFAULTS: dict[str, str] = {
     "go_products":    "Alt+P",
     "go_inventory":   "Alt+V",
     "go_day_book":    "Alt+D",
+    "focus_scan":     "Alt+S",
 }
 
 router = APIRouter()

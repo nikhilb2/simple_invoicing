@@ -1,11 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
-import { ArrowUpDown, Download, Upload, FileDown, Eye, EyeOff, Check, X } from 'lucide-react';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import { ArrowUpDown, Download, Upload, FileDown, Eye, EyeOff, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import { track } from '../lib/analytics';
 import StatusToasts from '../components/StatusToasts';
 import formatCurrency from '../utils/formatting';
 import PublishToMarketplaceButton from '../components/PublishToMarketplaceButton';
 import { useCanPublishToMarketplace } from '../features/marketplace/useMarketplaceSync';
+import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
+import { fetchAvailableSerials } from '../features/serials/api';
+import type { Serial } from '../features/serials/types';
+
+/* The drawer is the warranty desk: one IMEI, and where it came in and went out.
+   `status: null` is what makes it a history rather than the picker's
+   sellable-units view. */
+const SERIAL_PAGE_SIZE = 100;
 
 type ProductInvRow = {
   id: number;
@@ -20,6 +28,7 @@ type ProductInvRow = {
   status: string;
   unit: string;
   gst_rate: number;
+  track_serials?: boolean;
 };
 
 type PaginatedProductsInv = {
@@ -48,6 +57,9 @@ type EditableCellProps = {
   savingCell: string | null;
   inputRef: React.RefObject<HTMLInputElement>;
   isNumeric?: boolean;
+  /** A cell the backend will refuse to change, shown read-only with the reason. */
+  locked?: boolean;
+  lockedTitle?: string;
   onStartEdit: (row: ProductInvRow, field: string) => void;
   onEditValueChange: (value: string) => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
@@ -78,6 +90,14 @@ export default function ProductsInventoryPage() {
   const [editValue, setEditValue] = useState('');
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Serials drawer: one open row at a time, with its own search
+  const [openSerialsFor, setOpenSerialsFor] = useState<number | null>(null);
+  const [serialSearch, setSerialSearch] = useState('');
+  const [serials, setSerials] = useState<Serial[]>([]);
+  const [serialTotal, setSerialTotal] = useState(0);
+  const [serialsLoading, setSerialsLoading] = useState(false);
+  const [serialsError, setSerialsError] = useState('');
 
   // Import modal
   const [showImportModal, setShowImportModal] = useState(false);
@@ -119,6 +139,47 @@ export default function ProductsInventoryPage() {
   useEffect(() => {
     void loadData();
   }, [search, statusFilter, sortBy, sortOrder, page]);
+
+  useEffect(() => {
+    if (openSerialsFor === null) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        setSerialsLoading(true);
+        setSerialsError('');
+        const page = await fetchAvailableSerials({
+          productId: openSerialsFor,
+          search: serialSearch.trim(),
+          status: null,
+          page: 1,
+          pageSize: SERIAL_PAGE_SIZE,
+        });
+        if (cancelled) return;
+        setSerials(page.items);
+        setSerialTotal(page.total);
+      } catch (err) {
+        if (cancelled) return;
+        setSerialsError(getApiErrorMessage(err, 'Unable to load serial numbers'));
+      } finally {
+        if (!cancelled) setSerialsLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [openSerialsFor, serialSearch]);
+
+  function toggleSerials(productId: number) {
+    const opening = openSerialsFor !== productId;
+    setSerialSearch('');
+    setSerials([]);
+    setSerialTotal(0);
+    setSerialsError('');
+    // Claimed before the fetch starts, so an opening drawer never flashes the
+    // "nothing recorded" line at a product that has plenty.
+    setSerialsLoading(opening);
+    setOpenSerialsFor(opening ? productId : null);
+  }
 
   // Focus input on edit
   useEffect(() => {
@@ -415,6 +476,10 @@ export default function ProductsInventoryPage() {
     );
   }
 
+  // The Units column only earns its width once something is serial tracked.
+  const hasTrackedRows = rows.some((row) => row.track_serials);
+  const columnCount = (canPublish ? 13 : 12) + (hasTrackedRows ? 1 : 0);
+
   const editableCellProps = {
     currencyCode,
     editingCell,
@@ -533,6 +598,9 @@ export default function ProductsInventoryPage() {
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>HSN</th>
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>Unit</th>
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>Description</th>
+                  {hasTrackedRows && (
+                    <th style={{ padding: '8px 10px', textAlign: 'center' }}>Units</th>
+                  )}
                   {canPublish && (
                     <th style={{ padding: '8px 10px', textAlign: 'center' }}>Marketplace</th>
                   )}
@@ -541,19 +609,20 @@ export default function ProductsInventoryPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={canPublish ? 13 : 12} style={{ padding: 24, textAlign: 'center' }}>
+                    <td colSpan={columnCount} style={{ padding: 24, textAlign: 'center' }}>
                       Loading products…
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={canPublish ? 13 : 12} style={{ padding: 24, textAlign: 'center' }}>
+                    <td colSpan={columnCount} style={{ padding: 24, textAlign: 'center' }}>
                       No products match your search.
                     </td>
                   </tr>
                 ) : (
                   rows.map((row) => (
-                    <tr key={row.id} className={`inv-row ${row.status === 'inactive' ? 'inv-row--inactive' : ''}`}>
+                    <Fragment key={row.id}>
+                    <tr className={`inv-row ${row.status === 'inactive' ? 'inv-row--inactive' : ''}`}>
                       <td style={{ padding: '6px 10px' }}>
                         <EditableCell {...editableCellProps} row={row} field="name" label="Name" />
                       </td>
@@ -570,7 +639,15 @@ export default function ProductsInventoryPage() {
                         <EditableCell {...editableCellProps} row={row} field="purchase_price" label="Purchase Price" isNumeric />
                       </td>
                       <td style={{ padding: '6px 10px', textAlign: 'right' }}>
-                        <EditableCell {...editableCellProps} row={row} field="current_stock" label="Stock" isNumeric />
+                        <EditableCell
+                          {...editableCellProps}
+                          row={row}
+                          field="current_stock"
+                          label="Stock"
+                          isNumeric
+                          locked={Boolean(row.track_serials)}
+                          lockedTitle="Stock follows the serial numbers — move units on a purchase entry or a stock adjustment."
+                        />
                       </td>
                       <td style={{ padding: '6px 10px', textAlign: 'right' }}>
                         <EditableCell {...editableCellProps} row={row} field="reorder_level" label="Reorder" isNumeric />
@@ -602,6 +679,27 @@ export default function ProductsInventoryPage() {
                       <td style={{ padding: '6px 10px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         <EditableCell {...editableCellProps} row={row} field="description" label="Description" />
                       </td>
+                      {hasTrackedRows && (
+                        <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                          {row.track_serials ? (
+                            <button
+                              type="button"
+                              className="button button--ghost button--small"
+                              onClick={() => toggleSerials(row.id)}
+                              aria-expanded={openSerialsFor === row.id}
+                              aria-controls={`serial-drawer-${row.id}`}
+                              title={`Show the serial numbers for ${row.name}`}
+                            >
+                              {openSerialsFor === row.id
+                                ? <ChevronDown size={14} aria-hidden="true" />
+                                : <ChevronRight size={14} aria-hidden="true" />}
+                              Serials
+                            </button>
+                          ) : (
+                            <span style={{ opacity: 0.3 }}>—</span>
+                          )}
+                        </td>
+                      )}
                       {canPublish && (
                         <td style={{ padding: '6px 10px', textAlign: 'center' }}>
                           <PublishToMarketplaceButton
@@ -612,6 +710,57 @@ export default function ProductsInventoryPage() {
                         </td>
                       )}
                     </tr>
+                    {openSerialsFor === row.id ? (
+                      <tr className="inv-row">
+                        <td colSpan={columnCount} style={{ padding: '0 10px 10px' }}>
+                          <div className="serial-drawer" id={`serial-drawer-${row.id}`}>
+                            <div className="serial-drawer__toolbar">
+                              <input
+                                className="input"
+                                type="search"
+                                value={serialSearch}
+                                onChange={(e) => setSerialSearch(e.target.value)}
+                                placeholder="Search an IMEI or serial…"
+                                aria-label={`Search serial numbers for ${row.name}`}
+                                style={{ maxWidth: 280 }}
+                              />
+                              <span className="muted-text">
+                                {serialsLoading ? 'Loading…' : `${serialTotal} unit${serialTotal === 1 ? '' : 's'}`}
+                              </span>
+                            </div>
+                            {serialsError ? (
+                              <p className="serial-backfill__error" role="alert">{serialsError}</p>
+                            ) : null}
+                            {!serialsLoading && !serialsError && serials.length === 0 ? (
+                              <p className="serial-backfill__intro">
+                                {serialSearch.trim()
+                                  ? 'No unit matches that search.'
+                                  : 'No serial numbers recorded for this product yet.'}
+                              </p>
+                            ) : null}
+                            {serials.length > 0 ? (
+                              <ul className="serial-drawer__list">
+                                {serials.map((serial) => (
+                                  <li key={serial.id} className="serial-drawer__row">
+                                    <span className="serial-drawer__number">{serial.serial_number}</span>
+                                    <span className={`serial-drawer__status serial-drawer__status--${serial.status}`}>
+                                      {serial.status === 'in_stock' ? 'In stock' : 'Sold'}
+                                    </span>
+                                    <span className="serial-drawer__meta">{describeSerialMovement(serial)}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
+                            {serialTotal > serials.length ? (
+                              <p className="serial-backfill__intro">
+                                Showing the first {serials.length} of {serialTotal} — search to narrow it down.
+                              </p>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                    </Fragment>
                   ))
                 )}
               </tbody>
@@ -710,6 +859,17 @@ export default function ProductsInventoryPage() {
   );
 }
 
+/** Where a unit came in and where it went out — the warranty question. */
+function describeSerialMovement(serial: Serial): string {
+  const label = (ref: { invoice_number: string | null; id: number; invoice_date: string }) =>
+    `${ref.invoice_number ?? `#${ref.id}`} · ${formatInvoiceDateLabel(ref.invoice_date)}`;
+
+  const movements: string[] = [];
+  if (serial.purchase_invoice) movements.push(`In ${label(serial.purchase_invoice)}`);
+  if (serial.sales_invoice) movements.push(`Out ${label(serial.sales_invoice)}`);
+  return movements.length > 0 ? movements.join(' · ') : 'Added without an invoice';
+}
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -729,13 +889,15 @@ function EditableCell({
   savingCell,
   inputRef,
   isNumeric,
+  locked,
+  lockedTitle,
   onStartEdit,
   onEditValueChange,
   onKeyDown,
   onSave,
   onCancel,
 }: EditableCellProps) {
-  const isEditing = editingCell?.id === row.id && editingCell?.field === field;
+  const isEditing = editingCell?.id === row.id && editingCell?.field === field && !locked;
   const cellKey = `${row.id}-${field}`;
 
   if (isEditing) {
@@ -785,6 +947,14 @@ function EditableCell({
     display = `${row.gst_rate}%`;
   } else {
     display = String((row as unknown as Record<string, unknown>)[field] ?? '');
+  }
+
+  if (locked) {
+    return (
+      <span title={lockedTitle} style={{ display: 'block', minHeight: 24, opacity: 0.75 }}>
+        {display || <span style={{ opacity: 0.3 }}>-</span>}
+      </span>
+    );
   }
 
   return (

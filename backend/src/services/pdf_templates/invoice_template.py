@@ -18,7 +18,12 @@ from .builders import (
     _pdf_display_unit,
     _pdf_unit_price,
 )
-from .purchase_template import _build_purchase_invoice_html, _is_interstate_supply, _extract_pan_from_gstin
+from .purchase_template import (
+    _build_item_serials_html,
+    _build_purchase_invoice_html,
+    _is_interstate_supply,
+    _extract_pan_from_gstin,
+)
 
 
 def _copy_label(n: int) -> str:
@@ -30,13 +35,13 @@ def _copy_label(n: int) -> str:
     return f"{n}{suffix} Copy"
 
 
-def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount] | None = None, copy_label: str = "Original", show_sku: bool = True) -> str:
+def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount] | None = None, copy_label: str = "Original", show_sku: bool = True, serials: dict[int, list[str]] | None = None) -> str:
     """Generate HTML for a sales invoice."""
     if invoice_bank_accounts is None:
         invoice_bank_accounts = []
     
     if invoice.voucher_type == "purchase":
-        return _build_purchase_invoice_html(invoice, products)
+        return _build_purchase_invoice_html(invoice, products, serials)
 
     currency = invoice.company_currency_code or "USD"
     voucher_label = "Sales" if invoice.voucher_type == "sales" else "Purchase"
@@ -47,6 +52,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     table_colgroup = _build_pdf_table_colgroup(interstate_supply, show_sku=show_sku)
 
     product_map = {p.id: p for p in products}
+    serials_map = serials or {}
     tax_inclusive = bool(invoice.tax_inclusive)
 
     # Build line item rows
@@ -73,11 +79,13 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
             else:
                 item_discount_html = f"<br><span class=\"muted-text\">Disc: {_fmt_currency(raw_item_discount, currency)} off</span>"
 
+        item_serials_html = _build_item_serials_html(serials_map.get(item.product_id))
+
         if show_sku:
             item_rows += f"""
         <tr>
           <td>{idx}</td>
-          <td>{product_cell_html}{item_discount_html}</td>
+          <td>{product_cell_html}{item_discount_html}{item_serials_html}</td>
           <td>{sku}</td>
           <td>{hsn}</td>
           <td class="right">{quantity_display}</td>
@@ -90,7 +98,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
             item_rows += f"""
         <tr>
           <td>{idx}</td>
-          <td>{product_cell_html}{item_discount_html}</td>
+          <td>{product_cell_html}{item_discount_html}{item_serials_html}</td>
           <td>{hsn}</td>
           <td class="right">{quantity_display}</td>
           <td>{unit}</td>
@@ -542,17 +550,17 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     return html
 
 
-def _build_multi_copy_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, show_sku: bool = True) -> str:
+def _build_multi_copy_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, show_sku: bool = True, serials: dict[int, list[str]] | None = None) -> str:
     """Generate HTML for multiple copies of an invoice in a single document."""
     if invoice.voucher_type == "purchase":
-        return _build_purchase_invoice_html(invoice, products)
+        return _build_purchase_invoice_html(invoice, products, serials)
     if copies == 1:
-        return _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku)
+        return _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku, serials=serials)
 
     pages = []
     first_html: str | None = None
     for i in range(1, copies + 1):
-        full_html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(i), show_sku=show_sku)
+        full_html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(i), show_sku=show_sku, serials=serials)
         if i == 1:
             first_html = full_html
         body_open_end = full_html.index('<body>') + len('<body>')

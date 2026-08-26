@@ -15,6 +15,7 @@ from src.schemas.inventory import InventoryAdjust, InventoryOut, PaginatedInvent
 from src.schemas.bom import ProduceRequest, ProductionTransactionOut, PaginatedProductionTransactionOut
 from src.api.deps import get_active_company, get_current_user, require_roles
 from src.services import bom_service
+from src.services.serial_service import SerialManager
 
 router = APIRouter()
 
@@ -41,6 +42,30 @@ def adjust_inventory(
     if not product.allow_decimal and not _is_whole_number(payload.quantity):
         raise HTTPException(status_code=400, detail="Quantity must be a whole number for this product")
 
+    serials = SerialManager(db)
+    codes = SerialManager.normalize_codes(payload.serial_numbers)
+    if product.track_serials:
+        if not _is_whole_number(payload.quantity):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{product.name} is serial-tracked, so the adjustment must be a whole number",
+            )
+        units = abs(int(Decimal(str(payload.quantity)).to_integral_value()))
+        if len(codes) != units:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{product.name} is serial-tracked — provide {units} serial "
+                    f"number{'' if units == 1 else 's'} for this adjustment "
+                    f"({len(codes)} provided)"
+                ),
+            )
+    elif codes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{product.name} is not serial-tracked — remove the serial numbers",
+        )
+
     inventory = db.query(Inventory).filter(
         Inventory.product_id == payload.product_id,
         Inventory.company_id == active_company.id,
@@ -52,6 +77,22 @@ def adjust_inventory(
     inventory.quantity = Decimal(str(inventory.quantity or 0)) + Decimal(str(payload.quantity))
     if Decimal(str(inventory.quantity or 0)) < 0:
         raise HTTPException(status_code=400, detail="Inventory cannot be negative")
+
+    if codes:
+        if payload.quantity > 0:
+            serials.register_stock(
+                codes,
+                product_id=product.id,
+                company_id=active_company.id,
+                note=payload.note,
+            )
+        else:
+            serials.void_stock(
+                codes,
+                product_id=product.id,
+                company_id=active_company.id,
+                note=payload.note,
+            )
 
     db.commit()
     return {"message": "Inventory updated"}
@@ -130,6 +171,7 @@ def list_inventory(
             allow_decimal=bool(product.allow_decimal),
             price=float(product.price),
             maintain_inventory=bool(product.maintain_inventory),
+            track_serials=bool(product.track_serials),
             quantity=float(quantity),
             date_added=product.created_at,
             last_sold_at=last_sold_at,

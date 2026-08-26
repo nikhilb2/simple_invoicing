@@ -12,8 +12,20 @@ from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
 from src.schemas.credit_note import CreditNoteCreate, CreditNoteOut
 from src.services.financial_year import get_active_fy, get_fy_for_date
+from src.services.serial_service import SerialManager
 from src.services.series import generate_next_number
 from src.services.gst_tax_service import money as _money, is_interstate_supply as _is_interstate
+
+
+def _return_note(credit_note_number: str) -> str:
+    """The mark a return stamps on each unit it takes back.
+
+    ``cancel_credit_note`` deletes the credit note row, so the serials it moved
+    have to carry their own link back to it — this is what lets one of several
+    returns against the same invoice be cancelled without disturbing the units
+    the others brought in.
+    """
+    return f"Returned on credit note {credit_note_number}"
 
 
 def _change_inventory_quantity(
@@ -277,13 +289,41 @@ def create_credit_note(
         db.add(CreditNoteItem(credit_note_id=cn.id, company_id=company_id, **item_data))
 
     if payload.credit_note_type == "return":
-        for item_data in built_items:
+        serials = SerialManager(db)
+        # built_items is appended one-per-payload item, in order.
+        for cn_item, item_data in zip(payload.items, built_items):
             product_query = db.query(Product).filter(Product.id == item_data["product_id"])
             if company_id is not None:
                 product_query = product_query.filter(or_(Product.company_id == company_id, Product.company_id.is_(None)))
             product = product_query.first()
             if not product:
                 raise HTTPException(status_code=404, detail=f"Product {item_data['product_id']} not found")
+
+            codes = SerialManager.normalize_codes(cn_item.serial_numbers)
+            if getattr(product, "track_serials", False):
+                if len(codes) != item_data["quantity"]:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"{product.name} is serial-tracked — provide "
+                            f"{item_data['quantity']} serial "
+                            f"number{'' if item_data['quantity'] == 1 else 's'} "
+                            f"for this return ({len(codes)} provided)"
+                        ),
+                    )
+                serials.apply_credit_note_return(
+                    codes,
+                    product_id=product.id,
+                    company_id=company_id,
+                    invoice_id=item_data["invoice_id"],
+                    note=_return_note(cn_number),
+                )
+            elif codes:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{product.name} is not serial-tracked — remove the serial numbers",
+                )
+
             if not getattr(product, "maintain_inventory", True):
                 continue
 
@@ -327,6 +367,7 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
     snapshot.invoice_ids = [ref.invoice_id for ref in cn.invoice_refs]
 
     if was_active and cn.credit_note_type == "return":
+        serials = SerialManager(db)
         for item in cn.items:
             if item.product_id and item.quantity:
                 product_query = db.query(Product).filter(Product.id == item.product_id)
@@ -335,6 +376,16 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
                 product = product_query.first()
                 if not product:
                     raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
+
+                if getattr(product, "track_serials", False):
+                    serials.reverse_credit_note_return(
+                        product_id=product.id,
+                        company_id=company_id,
+                        invoice_id=item.invoice_id,
+                        note=_return_note(cn.credit_note_number),
+                        quantity=int(item.quantity),
+                    )
+
                 if not getattr(product, "maintain_inventory", True):
                     continue
 
