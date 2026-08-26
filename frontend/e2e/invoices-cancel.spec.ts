@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, adjustInventory } from './fixtures';
 
 /**
  * Helper: create a product (with stock) + ledger, navigate to /invoices, and
@@ -20,11 +20,7 @@ async function createInvoicePrerequisites(page: Parameters<typeof selectCombobox
 
   // Add inventory
   await clickNavLink(page, '/inventory');
-  // Wait for ProductCombobox to be enabled (products loaded)
-  await expect(page.locator('#inventory-product')).not.toBeDisabled({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-  await selectComboboxOption(page, 'inventory-product', sku);
-  await page.fill('#inventory-quantity', '50');
-  await page.click('button:has-text("Apply adjustment")');
+  await adjustInventory(page, sku, '50');
   await expectSuccess(page, 'Inventory updated');
 
   // Create ledger

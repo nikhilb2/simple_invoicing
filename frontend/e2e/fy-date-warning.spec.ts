@@ -15,7 +15,7 @@ const DATE_OUTSIDE_FY_AFTER = '2032-06-01';  // after FY end
  * Creates it if missing, then clicks it in the nav switcher to activate it.
  */
 async function activateTestFY(page: import('@playwright/test').Page) {
-  const fyButton = page.locator('button[aria-haspopup="listbox"]');
+  const fyButton = page.getByTestId('fy-switcher');
   await fyButton.click();
   const listbox = page.locator('[role="listbox"]');
   await expect(listbox).toBeVisible({ timeout: 5_000 });
