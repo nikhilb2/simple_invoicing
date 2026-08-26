@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     PUBLIC_API_BASE_URL: str = "http://localhost:8000"
     # Public origin of the web app: OAuth consent redirect + search/fetch citation links.
     PUBLIC_APP_BASE_URL: str = "http://localhost:5173"
+    # Auto-disabled in production if the public URLs below are not configured --
+    # see disable_mcp_without_public_urls.
     MCP_ENABLED: bool = True
     # Kill switch: with this off, write tools are neither listed nor callable, even for
     # a token that was granted invoicing:write.
@@ -58,15 +60,34 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def validate_public_urls_in_production(self):
-        if self.ENVIRONMENT == "production" and self.MCP_ENABLED:
-            for name in ("PUBLIC_API_BASE_URL", "PUBLIC_APP_BASE_URL"):
-                value = getattr(self, name)
-                if not value.startswith("https://"):
-                    raise ValueError(
-                        f"{name} must be an https:// URL in production when MCP_ENABLED "
-                        f"(OAuth discovery and token audience binding depend on it)"
-                    )
+    def disable_mcp_without_public_urls(self):
+        """Turn MCP off rather than refusing to boot when it is misconfigured.
+
+        MCP is an optional add-on. An earlier version of this raised here, which
+        meant every existing production deployment crash-looped the moment it took
+        an image containing this feature, because the two new variables were not in
+        its secret yet. Taking a working invoicing app offline over an unconfigured
+        optional feature is the wrong trade: degrade instead, and say so loudly.
+
+        The https requirement is real, not cosmetic -- OAuth discovery documents
+        publish these URLs and access tokens are audience-bound to them -- so MCP
+        stays off until they are set, but the rest of the app serves normally.
+        """
+        if not self.MCP_ENABLED or self.ENVIRONMENT != "production":
+            return self
+
+        bad = [
+            name
+            for name in ("PUBLIC_API_BASE_URL", "PUBLIC_APP_BASE_URL")
+            if not getattr(self, name).startswith("https://")
+        ]
+        if bad:
+            object.__setattr__(self, "MCP_ENABLED", False)
+            print(
+                "⚠️  MCP disabled: " + " and ".join(bad) + " must be set to the "
+                "public https:// origin(s) of this deployment. The app is running "
+                "normally; MCP and OAuth endpoints are not mounted."
+            )
         return self
 
     class Config:

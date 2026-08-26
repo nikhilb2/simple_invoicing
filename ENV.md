@@ -221,6 +221,11 @@ Claude, ChatGPT and other MCP clients connect to this instance.
 | `OAUTH_ACCESS_TOKEN_TTL_MINUTES` | `60` | `60` | Lifetime of an issued OAuth access token. | |
 | `OAUTH_REFRESH_TOKEN_TTL_DAYS` | `30` | `30` | Lifetime of a refresh token. Refresh tokens rotate on every use. | |
 
+**If the two public URLs are not set to `https://` origins in production, MCP and its
+OAuth endpoints are automatically disabled** and the app logs a warning on startup and
+serves normally. Upgrading an existing deployment to an MCP-capable image therefore never
+takes it offline — you opt in by setting these two variables.
+
 **`PUBLIC_API_BASE_URL` must be exact.** It is published in the OAuth discovery documents
 and is what access tokens are audience-bound to, so it has to match the URL a user types
 into their MCP client, character for character — including the scheme and any port. A

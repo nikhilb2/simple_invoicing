@@ -9,6 +9,7 @@ from sqlalchemy import text
 from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes
 from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes, bom as bom_routes, email_logs as email_logs_routes, api_keys as api_keys_routes, dashboard as dashboard_routes, analytics as analytics_routes, marketplace as marketplace_routes, serials as serials_routes, oauth as oauth_routes, well_known as well_known_routes
 from src.mcp_server import register_mcp
+from src.core.config import settings
 from src.db.base import Base
 from src.db.session import engine
 # Import all models to register them with declarative_base
@@ -115,12 +116,17 @@ app.include_router(dashboard_routes.router, prefix="/api/dashboard", tags=["dash
 app.include_router(analytics_routes.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(marketplace_routes.router, prefix="/api/marketplace", tags=["marketplace"])
 app.include_router(serials_routes.router, prefix="/api/serials", tags=["serials"])
-app.include_router(oauth_routes.router, prefix="/api/oauth", tags=["oauth"])
-# OAuth discovery documents must be served from the ORIGIN ROOT, not under /api:
-# RFC 8414 / RFC 9728 anchor them at /.well-known/*, and a client that cannot find
-# them there never learns where the authorization server is. Deployments route the
-# /.well-known prefix to this service alongside /api.
-app.include_router(well_known_routes.router)
+# The OAuth server exists to authorize MCP clients, so it is mounted only when MCP
+# is on. Serving discovery documents while MCP is disabled would advertise an
+# authorization server at whatever PUBLIC_API_BASE_URL happens to default to and
+# send clients somewhere useless.
+if settings.MCP_ENABLED:
+    app.include_router(oauth_routes.router, prefix="/api/oauth", tags=["oauth"])
+    # Discovery documents must be served from the ORIGIN ROOT, not under /api:
+    # RFC 8414 / RFC 9728 anchor them at /.well-known/*, and a client that cannot
+    # find them there never learns where the authorization server is. Deployments
+    # route the /.well-known prefix to this service alongside /api.
+    app.include_router(well_known_routes.router)
 
 # MCP endpoint at /mcp, /mcp/, /api/mcp, /api/mcp/. Registered with add_route rather
 # than mount: mount 307s a bare /mcp to /mcp/ and several MCP clients drop the POST
