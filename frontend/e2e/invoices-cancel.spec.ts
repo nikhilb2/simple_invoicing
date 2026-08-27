@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, adjustInventory } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory } from './fixtures';
 
 /**
  * Helper: create a product (with stock) + ledger, navigate to /invoices, and
@@ -10,18 +10,11 @@ async function createInvoicePrerequisites(page: Parameters<typeof selectCombobox
   const ledgerName = `CancelTest-${Date.now().toString(36)}`;
 
   // Create product
-  await clickNavLink(page, '/products');
-  await page.fill('#sku', sku);
-  await page.fill('#name', `CancelProd ${sku}`);
-  await page.fill('#price', '100');
-  await page.fill('#gst-rate', '18');
-  await page.click('button:has-text("Create product")');
-  await expectSuccess(page, 'Product created');
+  await clickNavLink(page, '/catalogue');
+  await createProduct(page, { sku, name: `CancelProd ${sku}`, price: '100', gstRate: '18' });
 
-  // Add inventory
-  await clickNavLink(page, '/inventory');
+  // Add inventory — same page now, through the stock adjustment modal
   await adjustInventory(page, sku, '50');
-  await expectSuccess(page, 'Inventory updated');
 
   // Create ledger
   await clickNavLink(page, '/ledgers');
@@ -176,7 +169,7 @@ test.describe('Invoice cancellation', () => {
     await expectSuccess(page, 'Invoice cancelled');
 
     // Navigate away and come back
-    await clickNavLink(page, '/products');
+    await clickNavLink(page, '/catalogue');
     await openInvoiceFeed(page);
 
     // Still hidden in default view

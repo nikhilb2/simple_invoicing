@@ -108,6 +108,7 @@ payments_update	PUT	/api/payments/{payment_id}
 products_create	POST	/api/products/
 products_delete	DELETE	/api/products/{product_id}
 products_export_csv	GET	/api/products/export-csv
+products_get	GET	/api/products/{product_id}
 products_list	GET	/api/products/
 products_list_with_inventory	GET	/api/products/with-inventory
 products_update	PUT	/api/products/{product_id}

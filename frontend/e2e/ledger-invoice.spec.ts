@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, adjustInventory, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, createProduct, adjustInventory, clickNavLink } from './fixtures';
 
 async function setStatementRangeToCurrentMonth(page: import('@playwright/test').Page) {
   const today = new Date();
@@ -43,19 +43,11 @@ test.describe('Create Invoice from Ledger View', () => {
     const ledgerName = `LI-Ledger-${Date.now().toString(36)}`;
 
     // 1. Create product
-    await clickNavLink(page, '/products');
-    await page.fill('#sku', sku);
-    await page.fill('#name', productName);
-    await page.fill('#price', '500');
-    await page.fill('#gst-rate', '18');
-    await page.click('button:has-text("Create product")');
-    await expectSuccess(page, 'Product created');
+    await clickNavLink(page, '/catalogue');
+    await createProduct(page, { sku, name: productName, price: '500', gstRate: '18' });
 
-    // 2. Add inventory
-    await clickNavLink(page, '/inventory');
-    await page.waitForTimeout(500);
+    // 2. Add inventory — same page now, through the stock adjustment modal
     await adjustInventory(page, sku, '100');
-    await expectSuccess(page, 'Inventory updated');
 
     // 3. Create ledger
     await clickNavLink(page, '/ledgers');

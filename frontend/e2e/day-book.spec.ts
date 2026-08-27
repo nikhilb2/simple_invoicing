@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, adjustInventory, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, createProduct, adjustInventory, clickNavLink } from './fixtures';
 
 test.describe('Day Book', () => {
   test('displays day book heading', async ({ authedPage: page }) => {
@@ -46,19 +46,11 @@ test.describe('Day Book', () => {
     const ledgerName = `DB-Ledger-${Date.now().toString(36)}`;
 
     // Create product
-    await clickNavLink(page, '/products');
-    await page.fill('#sku', sku);
-    await page.fill('#name', `DayBook Prod ${sku}`);
-    await page.fill('#price', '200');
-    await page.fill('#gst-rate', '18');
-    await page.click('button:has-text("Create product")');
-    await expectSuccess(page, 'Product created');
+    await clickNavLink(page, '/catalogue');
+    await createProduct(page, { sku, name: `DayBook Prod ${sku}`, price: '200', gstRate: '18' });
 
-    // Add inventory
-    await clickNavLink(page, '/inventory');
-    await page.waitForTimeout(500);
+    // Add inventory — same page now, through the stock adjustment modal
     await adjustInventory(page, sku, '100');
-    await expectSuccess(page, 'Inventory updated');
 
     // Create ledger
     await clickNavLink(page, '/ledgers');

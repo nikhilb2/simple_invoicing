@@ -1,8 +1,7 @@
 export const ACTION_KEYS = [
   'create_invoice', 'save_invoice', 'open_search', 'open_reports',
   'new_customer', 'go_invoices', 'go_ledgers', 'go_products',
-  'go_inventory', 'go_products_inventory', 'go_day_book', 'go_tax_ledger',
-  'focus_scan',
+  'go_day_book', 'go_tax_ledger', 'focus_scan',
 ] as const;
 
 export type ActionKey = typeof ACTION_KEYS[number];
@@ -16,8 +15,6 @@ export const DEFAULT_SHORTCUTS: Record<ActionKey, string> = {
   go_invoices:    'Alt+I',
   go_ledgers:     'Alt+L',
   go_products:    'Alt+P',
-  go_inventory:   'Alt+V',
-  go_products_inventory: 'Alt+M',
   go_day_book:    'Alt+D',
   go_tax_ledger:  'Alt+T',
   focus_scan:     'Alt+S',
@@ -31,9 +28,7 @@ export const ACTION_LABELS: Record<ActionKey, string> = {
   new_customer:   'New Customer',
   go_invoices:    'Go to Invoices',
   go_ledgers:     'Go to Ledgers',
-  go_products:    'Go to Products',
-  go_inventory:   'Go to Inventory',
-  go_products_inventory: 'Go to Products & Inventory',
+  go_products:    'Go to Products & Stock',
   go_day_book:    'Go to Day Book',
   go_tax_ledger:  'Go to Tax Ledger',
   focus_scan:     'Focus scan box',

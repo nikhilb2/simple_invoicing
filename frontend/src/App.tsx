@@ -11,9 +11,7 @@ import { isCompanyConfigured } from './utils/companySetup';
 import { loginPathWithNext, sanitizeNextPath } from './utils/nextPath';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
-import ProductsPage from './pages/ProductsPage';
-import InventoryPage from './pages/InventoryPage';
-import ProductsInventoryPage from './pages/ProductsInventoryPage';
+import CataloguePage from './pages/CataloguePage';
 import ProduceItemsPage from './pages/ProduceItemsPage';
 import InvoicesPage from './pages/InvoicesPage';
 import InvoiceDuesPage from './pages/InvoiceDuesPage';
@@ -167,9 +165,13 @@ function AppRoutes() {
           setup redirect here would strand the pending authorization request. */}
       <Route path="/oauth/consent" element={<Protected><OAuthConsentPage /></Protected>} />
       <Route path="/" element={<Protected><CompanyRequired><Layout><DashboardPage /></Layout></CompanyRequired></Protected>} />
-      <Route path="/products" element={<Protected><CompanyRequired><Layout><ProductsPage /></Layout></CompanyRequired></Protected>} />
-      <Route path="/inventory" element={<Protected><CompanyRequired><Layout><InventoryPage /></Layout></CompanyRequired></Protected>} />
-      <Route path="/products-inventory" element={<Protected><CompanyRequired><Layout><ProductsInventoryPage /></Layout></CompanyRequired></Protected>} />
+      <Route path="/catalogue" element={<Protected><CompanyRequired><Layout><CataloguePage /></Layout></CompanyRequired></Protected>} />
+      {/* The three pages the catalogue replaces. /products-inventory is the
+          target every MCP product and serial citation already points at, so the
+          redirect has to carry ?product_id= / ?serial= across with it. */}
+      <Route path="/products" element={<LegacyRedirect to="/catalogue" />} />
+      <Route path="/inventory" element={<LegacyRedirect to="/catalogue" />} />
+      <Route path="/products-inventory" element={<LegacyRedirect to="/catalogue" />} />
       <Route path="/produce-items" element={<Protected><CompanyRequired><Layout><ProduceItemsPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/ledgers" element={<Protected><CompanyRequired><Layout><LedgersPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/ledgers/new" element={<Protected><CompanyRequired><Layout><LedgerCreatePage /></Layout></CompanyRequired></Protected>} />

@@ -340,36 +340,13 @@ def delete_product(
 # Merged Products + Inventory endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("/with-inventory", response_model=dict)
-def list_products_with_inventory(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=500),
-    search: str = Query(""),
-    status_filter: str = Query("", alias="status"),
-    sort_by: str = Query("name"),
-    sort_order: str = Query("asc"),
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
-    active_company: CompanyProfile = Depends(get_active_company),
-):
-    """Returns products joined with their inventory data for the unified grid."""
-    quantity_expr = func.coalesce(Inventory.quantity, 0)
+def _apply_catalogue_filters(query, quantity_expr, search: str, status_filter: str, low_stock: bool):
+    """Filters shared by the catalogue grid and its CSV export.
 
-    query = (
-        db.query(
-            Product,
-            quantity_expr.label("current_stock"),
-        )
-        .outerjoin(
-            Inventory,
-            and_(
-                Inventory.product_id == Product.id,
-                Inventory.company_id == active_company.id,
-            ),
-        )
-        .filter(Product.company_id == active_company.id)
-    )
-
+    The export is the grid the user is looking at, saved to a file — if the two
+    ever filtered differently a filtered export would quietly hand back rows
+    that were not on screen.
+    """
     if search.strip():
         term = f"%{search.strip()}%"
         query = query.filter(
@@ -381,6 +358,67 @@ def list_products_with_inventory(
     elif status_filter == "inactive":
         query = query.filter(Product.maintain_inventory == False)
 
+    if low_stock:
+        # A reorder level of 0 means no restock threshold was ever set, so those
+        # products are not "low" — without this every zero-stock row would be.
+        query = query.filter(
+            Product.reorder_level > 0,
+            quantity_expr <= Product.reorder_level,
+        )
+
+    return query
+
+
+@router.get("/with-inventory", response_model=dict)
+def list_products_with_inventory(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
+    search: str = Query(""),
+    status_filter: str = Query("", alias="status"),
+    low_stock: bool = Query(False),
+    sort_by: str = Query("name"),
+    sort_order: str = Query("asc"),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Returns products joined with their inventory data for the unified grid."""
+    # Subquery: last invoice_date per product (non-cancelled invoices)
+    last_sold_subq = (
+        db.query(
+            InvoiceItem.product_id,
+            func.max(Invoice.invoice_date).label("last_sold_at"),
+        )
+        .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
+        .filter(
+            Invoice.status != "cancelled",
+            Invoice.company_id == active_company.id,
+        )
+        .group_by(InvoiceItem.product_id)
+        .subquery()
+    )
+
+    quantity_expr = func.coalesce(Inventory.quantity, 0)
+
+    query = (
+        db.query(
+            Product,
+            quantity_expr.label("current_stock"),
+            last_sold_subq.c.last_sold_at,
+        )
+        .outerjoin(
+            Inventory,
+            and_(
+                Inventory.product_id == Product.id,
+                Inventory.company_id == active_company.id,
+            ),
+        )
+        .outerjoin(last_sold_subq, last_sold_subq.c.product_id == Product.id)
+        .filter(Product.company_id == active_company.id)
+    )
+
+    query = _apply_catalogue_filters(query, quantity_expr, search, status_filter, low_stock)
+
     total = query.count()
 
     if sort_by == "name":
@@ -391,6 +429,16 @@ def list_products_with_inventory(
         order_col = Product.price
     elif sort_by == "stock":
         order_col = quantity_expr
+    elif sort_by == "purchase_price":
+        order_col = Product.purchase_price
+    elif sort_by == "reorder_level":
+        order_col = Product.reorder_level
+    elif sort_by == "gst_rate":
+        order_col = Product.gst_rate
+    elif sort_by == "date_added":
+        order_col = Product.created_at
+    elif sort_by == "last_sold":
+        order_col = last_sold_subq.c.last_sold_at
     else:
         order_col = Product.name
 
@@ -402,7 +450,7 @@ def list_products_with_inventory(
     rows = query.offset((page - 1) * page_size).limit(page_size).all()
 
     items = []
-    for product, current_stock in rows:
+    for product, current_stock, last_sold_at in rows:
         items.append(
             {
                 "id": product.id,
@@ -418,6 +466,12 @@ def list_products_with_inventory(
                 "unit": product.unit,
                 "gst_rate": float(product.gst_rate),
                 "track_serials": bool(product.track_serials),
+                "maintain_inventory": bool(product.maintain_inventory),
+                "allow_decimal": bool(product.allow_decimal),
+                "is_producable": bool(product.is_producable),
+                "production_cost": float(product.production_cost) if product.production_cost is not None else None,
+                "date_added": product.created_at,
+                "last_sold_at": last_sold_at,
             }
         )
 
@@ -556,13 +610,16 @@ def update_product_with_inventory(
 
 @router.get("/export-csv")
 def export_products_csv(
+    search: str = Query(""),
+    status_filter: str = Query("", alias="status"),
+    low_stock: bool = Query(False),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
-    """Export all products with inventory as CSV."""
+    """Export the products with inventory the current filters select as CSV."""
     quantity_expr = func.coalesce(Inventory.quantity, 0)
-    rows = (
+    query = (
         db.query(
             Product,
             quantity_expr.label("current_stock"),
@@ -575,9 +632,11 @@ def export_products_csv(
             ),
         )
         .filter(Product.company_id == active_company.id)
-        .order_by(Product.name.asc())
-        .all()
     )
+
+    query = _apply_catalogue_filters(query, quantity_expr, search, status_filter, low_stock)
+
+    rows = query.order_by(Product.name.asc()).all()
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -762,3 +821,24 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
 
     db.commit()
     return {"created": created, "updated": updated, "errors": errors}
+
+
+# Declared last on purpose: a path parameter this greedy would otherwise shadow
+# the literal routes above it, and `/products/with-inventory` would arrive here
+# as a product id.
+@router.get("/{product_id}", response_model=ProductOut)
+def get_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """One product by id, for deep links that name a record rather than a search."""
+    product = (
+        db.query(Product)
+        .filter(Product.id == product_id, Product.company_id == active_company.id)
+        .first()
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
+    return product

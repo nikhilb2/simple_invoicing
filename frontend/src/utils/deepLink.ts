@@ -7,7 +7,7 @@ import { useEffect } from 'react';
  * this app has list pages rather than detail routes for invoices, credit notes,
  * products, serials and payments. So each of those pages honours one parameter
  * — /invoices-view?invoice_id=, /credit-notes?cn_id=,
- * /products-inventory?product_id=|serial=, /cash-bank?payment_id= — by moving
+ * /catalogue?product_id=|serial=, /cash-bank?payment_id= — by moving
  * its own filters onto the record and flagging the row.
  *
  * A deep-linked id is user-supplied and may name a record that was deleted, or
