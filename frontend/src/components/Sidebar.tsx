@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronsLeft, ChevronRight, LogOut } from 'lucide-react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
+import BrandMark from './BrandMark';
 import SidebarFYSwitcher from './SidebarFYSwitcher';
 import { SETTINGS_ENTRY, sectionIdForPath, visiblePrimaryNav, type NavLeaf } from '../config/navigation';
 import { useAuth } from '../context/AuthContext';
@@ -64,7 +65,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           ✕
         </button>
         <Link to="/" className="sidebar__brand" onClick={() => onClose?.()}>
-          <span>⚡</span>
+          <BrandMark size={28} />
           <div>
             <span className="sidebar__brand-name">Simple Invoicing</span>
             <span className="sidebar__brand-tagline">Stock &amp; billing</span>
