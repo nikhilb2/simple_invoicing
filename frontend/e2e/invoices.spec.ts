@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory } from './fixtures';
 
 test.describe('Invoices', () => {
   async function openInvoiceFeed(page: import('@playwright/test').Page) {
@@ -31,23 +31,11 @@ test.describe('Invoices', () => {
     const ledgerName = `Inv-Ledger-${Date.now().toString(36)}`;
 
     // 1. Create product
-    await clickNavLink(page, '/products');
-    await page.fill('#sku', sku);
-    await page.fill('#name', productName);
-    await page.fill('#price', '100');
-    await page.fill('#gst-rate', '18');
-    await page.click('button:has-text("Create product")');
-    await expectSuccess(page, 'Product created');
+    await clickNavLink(page, '/catalogue');
+    await createProduct(page, { sku, name: productName, price: '100', gstRate: '18' });
 
-    // 2. Add inventory
-    await clickNavLink(page, '/inventory');
-    await page.waitForTimeout(500);
-    await page.getByRole('searchbox', { name: 'Search inventory by name or SKU' }).fill(sku);
-    const inventoryRow = page.locator('.inventory-feed-row', { hasText: sku }).first();
-    await expect(inventoryRow).toBeVisible();
-    await inventoryRow.getByLabel(new RegExp(`Adjust quantity for .*${sku}`)).fill('50');
-    await inventoryRow.getByRole('button', { name: /Apply adjustment for/i }).click();
-    await expectSuccess(page, 'Inventory updated');
+    // 2. Add inventory — same page now, through the stock adjustment modal
+    await adjustInventory(page, sku, '50');
 
     // 3. Create ledger
     await clickNavLink(page, '/ledgers');

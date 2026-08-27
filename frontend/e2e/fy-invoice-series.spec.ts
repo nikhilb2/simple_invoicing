@@ -6,7 +6,7 @@
  *
  * We use the far-future years 2031/2032 to avoid conflicts with real data.
  */
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, adjustInventory } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory } from './fixtures';
 
 test.use({ timezoneId: 'Asia/Kolkata' });
 
@@ -117,19 +117,11 @@ async function seedInvoiceData(page: import('@playwright/test').Page) {
   const ledgerName = `FYSeriesLedger-${Date.now().toString(36)}`;
 
   // Product
-  await clickNavLink(page, '/products');
-  await page.fill('#sku', sku);
-  await page.fill('#name', productName);
-  await page.fill('#price', '100');
-  await page.fill('#gst-rate', '18');
-  await page.click('button:has-text("Create product")');
-  await expectSuccess(page, 'Product created');
+  await clickNavLink(page, '/catalogue');
+  await createProduct(page, { sku, name: productName, price: '100', gstRate: '18' });
 
-  // Inventory
-  await clickNavLink(page, '/inventory');
-  await page.waitForTimeout(500);
+  // Inventory — same page now, through the stock adjustment modal
   await adjustInventory(page, sku, '100');
-  await expectSuccess(page, 'Inventory updated');
 
   // Ledger
   await clickNavLink(page, '/ledgers');

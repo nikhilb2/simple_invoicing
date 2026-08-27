@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, adjustInventory } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory } from './fixtures';
 
 const LEDGER_EMAIL = 'buyer@example.com';
 const EXPECT_TIMEOUT_MS = Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '2000');
@@ -149,18 +149,11 @@ test.describe('Send Email Modal', () => {
       const ledgerName = `EmailInvLedger-${Date.now().toString(36)}`;
 
       // Create product
-      await clickNavLink(page, '/products');
-      await page.fill('#sku', sku);
-      await page.fill('#name', productName);
-      await page.fill('#price', '500');
-      await page.fill('#gst-rate', '18');
-      await page.click('button:has-text("Create product")');
-      await expectSuccess(page, 'Product created');
+      await clickNavLink(page, '/catalogue');
+      await createProduct(page, { sku, name: productName, price: '500', gstRate: '18' });
 
-      // Add inventory
-      await clickNavLink(page, '/inventory');
+      // Add inventory — same page now, through the stock adjustment modal
       await adjustInventory(page, sku, '20');
-      await expectSuccess(page, 'Inventory updated');
 
       // Create ledger with email
       await clickNavLink(page, '/ledgers');
@@ -235,18 +228,11 @@ test.describe('Send Email Modal', () => {
       const ledgerName = `EmailStmtLedger-${Date.now().toString(36)}`;
 
       // Create product
-      await clickNavLink(page, '/products');
-      await page.fill('#sku', sku);
-      await page.fill('#name', `StmtProd-${sku}`);
-      await page.fill('#price', '100');
-      await page.fill('#gst-rate', '18');
-      await page.click('button:has-text("Create product")');
-      await expectSuccess(page, 'Product created');
+      await clickNavLink(page, '/catalogue');
+      await createProduct(page, { sku, name: `StmtProd-${sku}`, price: '100', gstRate: '18' });
 
-      // Add inventory
-      await clickNavLink(page, '/inventory');
+      // Add inventory — same page now, through the stock adjustment modal
       await adjustInventory(page, sku, '10');
-      await expectSuccess(page, 'Inventory updated');
 
       // Create ledger with email
       await clickNavLink(page, '/ledgers');

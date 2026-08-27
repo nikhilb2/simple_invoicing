@@ -28,8 +28,8 @@ from src.mcp_server.schema import (
 )
 
 # Measured against the real spec on 2026-08-26.
-EXPECTED_OPERATIONS = 144  # 143 tagged + GET /api/health
-EXPECTED_TOOLS = 130  # generated only; `search` and `fetch` are added on top
+EXPECTED_OPERATIONS = 145  # 144 tagged + GET /api/health
+EXPECTED_TOOLS = 131  # generated only; `search` and `fetch` are added on top
 EXPECTED_EXCLUDED = 13
 EXPECTED_MULTIPART_SKIPPED = 1
 

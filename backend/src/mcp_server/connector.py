@@ -42,10 +42,10 @@ logger = logging.getLogger(__name__)
 DEEP_LINKS: dict[str, str] = {
     "invoice": "/invoices-view?invoice_id={id}",
     "ledger": "/ledgers/{id}",
-    "product": "/products-inventory?product_id={id}",
+    "product": "/catalogue?product_id={id}",
     "credit_note": "/credit-notes?cn_id={id}",
     "payment": "/cash-bank?payment_id={id}",
-    "serial": "/products-inventory?serial={id}",
+    "serial": "/catalogue?serial={id}",
 }
 
 

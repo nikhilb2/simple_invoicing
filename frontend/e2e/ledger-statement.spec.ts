@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, adjustInventory } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory } from './fixtures';
 
 test.describe('Ledger Statement', () => {
   test('shows period statement for a ledger', async ({ authedPage: page }) => {
@@ -45,18 +45,11 @@ test.describe('Ledger Statement', () => {
     const ledgerName = `LSLedger-${Date.now().toString(36)}`;
 
     // 1. Create product
-    await clickNavLink(page, '/products');
-    await page.fill('#sku', sku);
-    await page.fill('#name', productName);
-    await page.fill('#price', '200');
-    await page.fill('#gst-rate', '18');
-    await page.click('button:has-text("Create product")');
-    await expectSuccess(page, 'Product created');
+    await clickNavLink(page, '/catalogue');
+    await createProduct(page, { sku, name: productName, price: '200', gstRate: '18' });
 
-    // 2. Add inventory
-    await clickNavLink(page, '/inventory');
+    // 2. Add inventory — same page now, through the stock adjustment modal
     await adjustInventory(page, sku, '100');
-    await expectSuccess(page, 'Inventory updated');
 
     // 3. Create ledger via create page
     await clickNavLink(page, '/ledgers');

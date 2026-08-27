@@ -42,11 +42,10 @@ test.describe('Dashboard', () => {
 
     // The leaves are only in the DOM while their section is open, so each one
     // has to be disclosed before it can be asserted. Scoped to the sidebar and
-    // exact: the dashboard's stat cards are links too, and the sidebar itself
-    // carries a "Products & Inventory" entry — a substring match on "Products"
-    // or "Inventory" hits several of them.
+    // exact: the dashboard's stat cards are links too, so a substring match on
+    // "Products" would hit several of them.
     const sections: [string, string[]][] = [
-      ['catalogue', ['Products', 'Inventory']],
+      ['catalogue', ['Products & Stock', 'Produce Items']],
       ['reports', ['Day Book']],
       ['sales', ['Invoices']],
     ];

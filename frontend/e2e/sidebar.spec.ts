@@ -54,7 +54,7 @@ test.describe('Sidebar', () => {
 
   // 6. Sidebar persists across page navigation
   test('sidebar stays visible when navigating between pages', async ({ authedPage: page }) => {
-    await clickNavLink(page, '/products');
+    await clickNavLink(page, '/catalogue');
     await expect(page.locator('.sidebar')).toBeVisible();
     await clickNavLink(page, '/invoices');
     await expect(page.locator('.sidebar')).toBeVisible();
@@ -130,8 +130,13 @@ test.describe('Sidebar sections', () => {
     await catalogue.click();
     await expect(catalogue).toHaveAttribute('aria-expanded', 'true');
     await expect(
-      page.locator('#nav-section-catalogue a.sidebar__link--child[href="/products"]'),
+      page.locator('#nav-section-catalogue a.sidebar__link--child[href="/catalogue"]'),
     ).toBeVisible();
+    // Products, Inventory and Products & Inventory collapsed into one entry,
+    // so the section is down to two children.
+    await expect(
+      page.locator('#nav-section-catalogue a.sidebar__link--child'),
+    ).toHaveCount(2);
 
     await catalogue.click();
     await expect(catalogue).toHaveAttribute('aria-expanded', 'false');

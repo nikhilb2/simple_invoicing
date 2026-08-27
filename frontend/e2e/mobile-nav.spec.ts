@@ -23,9 +23,10 @@ test.describe('Mobile nav drawer', () => {
 
   // The drawer shows the same two-level rail as the desktop sidebar, so what
   // is visible on open is the *top level*: two plain links, four section
-  // toggles and the settings footer link. Leaf pages like Products live inside
-  // a section and only appear once it is expanded (asserted below); Company
-  // isn't in the rail at all any more — it moved behind Settings.
+  // toggles and the settings footer link. Leaf pages like Products & Stock
+  // live inside a section and only appear once it is expanded (asserted
+  // below); Company isn't in the rail at all any more — it moved behind
+  // Settings.
   test('drawer contains every top-level nav row', async ({ authedPage: page }) => {
     await page.click('.sidebar-toggle');
     const sidebar = page.locator('.sidebar');
@@ -47,13 +48,16 @@ test.describe('Mobile nav drawer', () => {
     authedPage: page,
   }) => {
     await page.click('.sidebar-toggle');
-    await expect(page.locator('.sidebar').getByText('Products')).toHaveCount(0);
+    await expect(page.locator('.sidebar').getByText('Products & Stock')).toHaveCount(0);
 
     await openSidebarSection(page, 'catalogue');
     const sidebar = page.locator('.sidebar');
-    for (const label of ['Products', 'Inventory', 'Produce Items']) {
+    // Two children, not four: Products, Inventory and Products & Inventory
+    // were three views of one record and are now one entry.
+    for (const label of ['Products & Stock', 'Produce Items']) {
       await expect(sidebar.getByText(label, { exact: true })).toBeVisible();
     }
+    await expect(sidebar.locator('#nav-section-catalogue a.sidebar__link--child')).toHaveCount(2);
   });
 
   test('navigates and closes sidebar when a nav link is tapped', async ({
@@ -61,11 +65,11 @@ test.describe('Mobile nav drawer', () => {
   }) => {
     await page.click('.sidebar-toggle');
     await expect(page.locator('.sidebar')).toHaveClass(/sidebar--open/);
-    // Products sits under the catalogue section, so the tap has to disclose it
-    // first — clickNavLink does that, and the leaf link closes the drawer.
-    await clickNavLink(page, '/products');
+    // Products & Stock sits under the catalogue section, so the tap has to
+    // disclose it first — clickNavLink does that, and the leaf closes the drawer.
+    await clickNavLink(page, '/catalogue');
     await expect(page.locator('.sidebar')).not.toHaveClass(/sidebar--open/);
-    await expect(page.locator('h1')).toContainText('Catalog intake', {
+    await expect(page.locator('h1')).toContainText('Products & stock', {
       timeout: 5_000,
     });
   });

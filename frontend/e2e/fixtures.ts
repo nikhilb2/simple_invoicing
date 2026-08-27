@@ -38,28 +38,101 @@ export async function selectComboboxOption(page: Page, inputId: string, searchTe
 }
 
 /**
- * Helper: apply a stock adjustment from the /inventory stock ledger feed.
+ * Helper: create a product through the Catalogue's "New product" modal.
  *
- * The standalone product-select + quantity form this replaces was dropped in
- * the inventory feed redesign — adjustment is now inline, per row, and the
- * controls carry aria-labels rather than ids. The row is reached by searching,
- * since the feed paginates and the seeded SKU need not be on the first page.
- *
- * Quantity is filled before the button is read: Apply stays disabled until the
- * row has a non-empty delta, so clicking first would hit a dead control.
+ * The permanently-visible form the old Products page carried is gone: the
+ * fields only exist while `ProductFormModal` is open and their ids are now
+ * prefixed (`#product-sku`, not `#sku`). Assumes the page is already showing
+ * /catalogue.
  */
-export async function adjustInventory(page: Page, sku: string, quantity: string) {
-  await page.getByRole('searchbox', { name: 'Search inventory by name or SKU' }).fill(sku);
-  const row = page.locator('.inventory-feed-row', { hasText: sku }).first();
+export type NewProduct = {
+  sku: string;
+  name: string;
+  price: string;
+  gstRate?: string;
+  purchasePrice?: string;
+  reorderLevel?: string;
+  /** Opening stock. After creation, stock only moves through an adjustment. */
+  openingQuantity?: string;
+  description?: string;
+  hsnSac?: string;
+};
+
+export async function createProduct(page: Page, product: NewProduct) {
+  await page.getByRole('button', { name: 'New product' }).click();
+
+  const modal = page.getByRole('dialog', { name: 'Add a product' });
+  await expect(modal).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+
+  await modal.locator('#product-sku').fill(product.sku);
+  await modal.locator('#product-name').fill(product.name);
+  await modal.locator('#product-price').fill(product.price);
+  if (product.gstRate !== undefined) await modal.locator('#product-gst').fill(product.gstRate);
+  if (product.purchasePrice !== undefined) {
+    await modal.locator('#product-purchase-price').fill(product.purchasePrice);
+  }
+  if (product.reorderLevel !== undefined) {
+    await modal.locator('#product-reorder').fill(product.reorderLevel);
+  }
+  if (product.openingQuantity !== undefined) {
+    await modal.locator('#product-initial-qty').fill(product.openingQuantity);
+  }
+  if (product.description !== undefined) {
+    await modal.locator('#product-description').fill(product.description);
+  }
+  if (product.hsnSac !== undefined) await modal.locator('#product-hsn').fill(product.hsnSac);
+
+  await modal.getByRole('button', { name: 'Create product' }).click();
+
+  // The modal closing is the signal the POST landed; the toast names the row.
+  await expectSuccess(page, `${product.name} created.`);
+  await expect(modal).toBeHidden({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+}
+
+/** The catalogue's search box, which drives `?q=` and so the visible rows. */
+export function catalogueSearch(page: Page) {
+  return page.getByRole('searchbox', { name: 'Search the catalogue' });
+}
+
+/**
+ * Helper: the catalogue row carrying a SKU or product name, as rendered.
+ *
+ * Rows are real `<tr class="catalogue-row">` now rather than `.table-row`
+ * divs. A row being quick-edited holds its SKU in an input, where `hasText`
+ * cannot see it — reach that one through `.catalogue-row--editing` instead.
+ */
+export function catalogueRow(page: Page, text: string) {
+  return page.locator('tr.catalogue-row', { hasText: text }).first();
+}
+
+/**
+ * Helper: move a product's stock from the Catalogue.
+ *
+ * Stock is no longer an editable cell anywhere in the app — the quantity is a
+ * button that opens `StockAdjustModal`, which posts a signed delta to
+ * /inventory/adjust so the movement is on the record. A removal will not
+ * submit without a reason, so one is always supplied for a negative delta.
+ *
+ * Assumes the page is already showing /catalogue.
+ */
+export async function adjustInventory(page: Page, sku: string, quantity: string, reason = 'E2E stock adjustment') {
+  await catalogueSearch(page).fill(sku);
+  const row = catalogueRow(page, sku);
   await expect(row).toBeVisible({ timeout: 5_000 });
 
-  const qty = row.getByRole('spinbutton');
-  await expect(qty).toBeEnabled({ timeout: 5_000 });
-  await qty.fill(quantity);
+  // The stock button's accessible name is the quantity it is showing, so its
+  // title is what identifies it — hence getByTitle rather than getByRole.
+  await row.getByTitle(/^Adjust stock for /).click();
 
-  const apply = row.getByRole('button', { name: /^Apply adjustment for / });
+  const modal = page.getByRole('dialog', { name: 'Adjust stock' });
+  await expect(modal).toBeVisible({ timeout: 5_000 });
+  await modal.locator('#stock-adjust-delta').fill(quantity);
+  if (Number(quantity) < 0) await modal.locator('#stock-adjust-reason').fill(reason);
+
+  const apply = modal.getByRole('button', { name: /^Apply stock adjustment for / });
   await expect(apply).toBeEnabled({ timeout: 5_000 });
   await apply.click();
+  await expect(modal).toBeHidden({ timeout: 5_000 });
 }
 
 /** Helper: wait for a success toast to appear and contain text. */
@@ -111,9 +184,7 @@ const NAV_SECTION_BY_HREF: Record<string, string> = {
   '/invoice-dues': 'sales',
   '/credit-notes': 'sales',
   '/cash-bank': 'sales',
-  '/products': 'catalogue',
-  '/inventory': 'catalogue',
-  '/products-inventory': 'catalogue',
+  '/catalogue': 'catalogue',
   '/produce-items': 'catalogue',
   '/analytics': 'reports',
   '/day-book': 'reports',

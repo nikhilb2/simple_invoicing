@@ -18,7 +18,6 @@ import {
   Mail,
   MailCheck,
   Package,
-  PackageSearch,
   Percent,
   ReceiptText,
   Settings,
@@ -133,14 +132,10 @@ export const PRIMARY_NAV: NavEntry[] = [
     label: 'Catalogue',
     icon: Boxes,
     children: [
-      { to: '/products', label: 'Products', icon: Package, shortcutAction: 'go_products' },
-      { to: '/inventory', label: 'Inventory', icon: Boxes, shortcutAction: 'go_inventory' },
-      {
-        to: '/products-inventory',
-        label: 'Products & Inventory',
-        icon: PackageSearch,
-        shortcutAction: 'go_products_inventory',
-      },
+      /* One entry, not three. Products, Inventory and Products & Inventory were
+         three views of one record — stock is a column on a product — so the
+         sidebar made "where do I change a price?" a guess. */
+      { to: '/catalogue', label: 'Products & Stock', icon: Package, shortcutAction: 'go_products' },
       { to: '/produce-items', label: 'Produce Items', icon: Factory },
     ],
   },

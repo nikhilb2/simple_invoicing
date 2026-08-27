@@ -5681,3 +5681,714 @@ a.invoice-row {
     box-shadow: 0 0 0 2px rgba(87, 209, 201, 0.55);
   }
 }
+
+/* ── Catalogue: stock adjustment modal ──────────────────────────────────────
+   Stock only ever changes through StockAdjustModal, so this block is what that
+   one dialog needs beyond the shared .modal-panel / .field / .button classes:
+   the product header, the live "142 → 139" preview, and the inline errors that
+   keep a failed adjustment inside the dialog instead of dropping it into a
+   page-level toast. Tokens only — the app is dark-only and has no light mode
+   for a hard-coded colour to fall back to. */
+
+.stock-adjust__summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Takes the slack so the quantity pill keeps its size on a narrow panel. */
+.stock-adjust__identity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.stock-adjust__name {
+  font-size: 1rem;
+  /* SKUs and long product names are unbreakable tokens; without this they push
+     the pill out of the row. */
+  overflow-wrap: anywhere;
+}
+
+.stock-adjust__sku {
+  color: var(--muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.stock-adjust__on-hand {
+  margin: 6px 0 16px;
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+/* The consequence of the typed delta, shown before it is applied. */
+.stock-adjust__preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.stock-adjust__preview-from {
+  color: var(--muted);
+}
+
+.stock-adjust__preview-to {
+  font-size: 1.1rem;
+}
+
+.stock-adjust__preview-delta {
+  color: var(--color-success);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.stock-adjust__preview-delta--down {
+  color: var(--warning);
+}
+
+/* Blocking messages stay beside the input that caused them, so the user is not
+   sent hunting for a toast to find out why the button is disabled. */
+.stock-adjust__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.stock-adjust__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 16px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* ── Catalogue CSV import ───────────────────────────────────────────────────
+   The import dialog's own furniture: the accepted-header list, the per-row
+   error log, and the result chips. Everything else in the dialog reuses
+   .modal-panel / .field / .button, so this block stays deliberately small. */
+.catalogue-import__body {
+  display: grid;
+  gap: 18px;
+  margin: 16px 0;
+}
+
+/* Matches `.field label` so the header list reads as a labelled field even
+   though its label sits above a list rather than an input. */
+.catalogue-import__label {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.catalogue-import__headers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.catalogue-import__header-chip {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px 8px;
+  background: var(--color-surface-2);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.catalogue-import__header-chip code {
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+}
+
+/* The two columns without which a row cannot be matched or created. */
+.catalogue-import__header-chip--required {
+  border-color: var(--line-strong);
+}
+
+.catalogue-import__header-chip--required code {
+  color: var(--accent);
+}
+
+.catalogue-import__header-alt {
+  color: var(--muted);
+}
+
+.catalogue-import__result {
+  display: grid;
+  gap: 12px;
+  /* Focused programmatically when a result replaces the picker, so the ring
+     must not read as a click target. */
+  outline: none;
+}
+
+.catalogue-import__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* A long error log scrolls inside the dialog rather than pushing the action
+   bar off the bottom of the panel. */
+.catalogue-import__errors {
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--color-surface-2);
+}
+
+.catalogue-import__error {
+  display: flex;
+  gap: 10px;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.catalogue-import__error-row {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+}
+
+.catalogue-import__alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--color-error-bg);
+  color: var(--danger);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.catalogue-import__alert > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* ══ Catalogue ═══════════════════════════════════════════════════════════
+   The unified Products & Stock page. Replaces the three list treatments that
+   Products, Inventory and Products & Inventory each invented for themselves:
+   two header-less flex feeds and one raw table styled entirely from inline
+   `style={{}}` props (57 of them in one file).
+
+   A real table, so every column has a name and figures line up down the page.
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* ── Toolbar ─────────────────────────────────────────────────────────── */
+/* Generalized from .ledger-toolbar. Every list page had reinvented this; the
+   catalogue uses the shared shape so search, count and pagination bracket the
+   list the same way here as on Ledgers. */
+.catalogue-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Search reads as one control: the magnifier and the clear affordance are
+   overlaid on the field rather than stacked beside it. */
+.catalogue-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 300px;
+  min-width: 0;
+}
+
+.catalogue-search__icon {
+  position: absolute;
+  left: 15px;
+  color: rgba(156, 173, 207, 0.75);
+  pointer-events: none;
+}
+
+.catalogue-search__input {
+  width: 100%;
+  padding-left: 42px;
+  padding-right: 40px;
+}
+
+.catalogue-search__clear {
+  position: absolute;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.catalogue-search__clear:hover {
+  color: var(--text);
+  background: var(--color-surface-raised);
+}
+
+.catalogue-toolbar__count {
+  margin: 0 0 0 auto;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.catalogue-toolbar__count strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* The low-stock count in the hero doubles as the filter for it. */
+.catalogue-low-chip {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+/* .tab-bar is inline-flex, but a grid child stretches by default, so the pill
+   ran the full width of the panel instead of hugging its three tabs. */
+.catalogue-panel > .tab-bar {
+  justify-self: start;
+}
+
+/* ── The table ───────────────────────────────────────────────────────── */
+/* The scroller lives on the wrapper, never on the page: a table wide enough to
+   need it must not push the whole layout sideways. */
+.catalogue-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(8, 16, 29, 0.5);
+}
+
+/* `separate`, not `collapse`: a collapsed table drops the borders of sticky
+   cells, and both the header row and the first column stick here. */
+.catalogue-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.9rem;
+}
+
+.catalogue-table th,
+.catalogue-table td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.catalogue-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg-soft);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* The product column stays put while the rest scrolls: without it, scrolling
+   right to reach a figure loses the name of the row you are reading. */
+.catalogue-table th:first-child,
+.catalogue-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--bg-card-strong);
+  min-width: 220px;
+}
+
+.catalogue-table thead th:first-child {
+  z-index: 4;
+  background: var(--bg-soft);
+}
+
+.catalogue-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.catalogue-table__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.catalogue-table__figure {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.catalogue-table__locked {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.catalogue-table__skeleton {
+  display: block;
+  height: 16px;
+  width: 100%;
+}
+
+/* ── Rows ────────────────────────────────────────────────────────────── */
+.catalogue-row {
+  transition: background 160ms ease;
+}
+
+.catalogue-row:hover td {
+  background: rgba(148, 184, 255, 0.05);
+}
+
+.catalogue-row:hover td:first-child {
+  background: #10203a;
+}
+
+/* An inactive product used to be indistinguishable from an active one — the
+   only signal was the state of an icon you had to hover to read. */
+.catalogue-row--inactive td {
+  opacity: 0.55;
+}
+
+.catalogue-row--editing td {
+  background: rgba(87, 209, 201, 0.06);
+}
+
+.catalogue-row--editing td:first-child {
+  background: #0e2733;
+}
+
+.catalogue-row__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.catalogue-row__error {
+  margin: 6px 0 0;
+  color: var(--danger);
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.catalogue-cell__product {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.catalogue-cell__name {
+  font-weight: 700;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.catalogue-cell__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.catalogue-sku {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+/* ── Sortable headers ────────────────────────────────────────────────── */
+/* The sort control belongs on the column it sorts. The old Inventory page put
+   it in a detached "Sort:" button strip above a list whose columns had no
+   headers at all. */
+.catalogue-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.catalogue-sort:hover {
+  color: var(--text);
+}
+
+.catalogue-sort svg {
+  opacity: 0.45;
+  flex-shrink: 0;
+}
+
+.catalogue-sort--active {
+  color: var(--accent);
+}
+
+.catalogue-sort--active svg {
+  opacity: 1;
+}
+
+/* ── The stock cell ──────────────────────────────────────────────────── */
+/* Stock is the one figure that opens a flow rather than an input, so it has to
+   look pressable. Editing it inline would bypass the reason note and the serial
+   scan that make a stock movement auditable. */
+.catalogue-stock {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--color-surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.catalogue-stock:hover {
+  border-color: var(--line-strong);
+  background: rgba(148, 184, 255, 0.12);
+}
+
+.catalogue-stock__value {
+  font-weight: 800;
+}
+
+.catalogue-stock__unit {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.catalogue-stock--low {
+  border-color: rgba(246, 214, 123, 0.45);
+  background: rgba(246, 214, 123, 0.12);
+}
+
+.catalogue-stock--low .catalogue-stock__value {
+  color: var(--warning);
+}
+
+/* The reorder level finally does something: it was a column of numbers nothing
+   ever compared stock against. */
+.catalogue-stock__flag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--warning);
+  color: #2c2103;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ── Row editing ─────────────────────────────────────────────────────── */
+/* A compact input so a row in edit mode keeps the height of a row at rest —
+   the old per-cell editor swapped a span for a taller control and the whole
+   table shifted under the pointer. */
+.input--grid {
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  min-height: 34px;
+  width: 100%;
+}
+
+.catalogue-edit-pair {
+  display: grid;
+  gap: 6px;
+  min-width: 200px;
+}
+
+.catalogue-edit-pair__sku {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+}
+
+/* ── Forms shared by the catalogue dialogs ───────────────────────────── */
+.form-error {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 139, 139, 0.35);
+  border-radius: 14px;
+  background: var(--color-error-bg);
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+/* These two carry more than a confirmation's worth of content. */
+.modal-panel--product-form {
+  max-width: min(760px, 100%);
+}
+
+.modal-panel--serial-history {
+  max-width: min(640px, 100%);
+  display: grid;
+  gap: 16px;
+}
+
+/* The meta line and two buttons do not reliably fit one row at 560px, and when
+   they wrapped the submit button landed BELOW cancel — which reads as cancel
+   being the primary action. Giving the note its own row keeps the pair together
+   and in order at every width. */
+.modal-panel--stock-adjust .form-action-bar__meta {
+  flex: 1 1 100%;
+  margin-right: 0;
+}
+
+.modal-panel--stock-adjust .form-action-bar {
+  justify-content: flex-end;
+}
+
+/* ── Serial history ──────────────────────────────────────────────────── */
+.serial-history__list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.serial-history__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--color-surface-raised);
+}
+
+.serial-history__number {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+/* In and Out are separate facts about a unit, not one run-on string joined by
+   middle dots the way the old drawer printed them. */
+.serial-history__movement {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 0 auto;
+}
+
+.serial-history__movement > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.serial-history__movement dt {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.serial-history__movement dd {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.serial-history__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+/* Below the wide breakpoint the secondary figures fold away rather than forcing
+   a scroll for every glance. They stay reachable by widening or by opening the
+   row's own editor. */
+@media (max-width: 1100px) {
+  .catalogue-table__col--secondary {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .catalogue-table th,
+  .catalogue-table td {
+    padding: 10px;
+  }
+
+  .catalogue-table th:first-child,
+  .catalogue-table td:first-child {
+    min-width: 160px;
+  }
+
+  /* The global mobile rule stacks every .button-row into a full-width column.
+     Three short export actions read better as a wrapping row, the same opt-out
+     the invoice filters take. */
+  .catalogue-panel > .panel__header > .button-row {
+    width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .catalogue-toolbar__count {
+    margin-left: 0;
+  }
+
+  .serial-history__movement {
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .catalogue-row,
+  .catalogue-stock,
+  .catalogue-search__clear,
+  .catalogue-sort {
+    transition: none;
+  }
+}
