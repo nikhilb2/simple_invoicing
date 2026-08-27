@@ -3287,23 +3287,57 @@ a.invoice-row {
   flex-direction: column;
 }
 
+/* The rail handle. It sits on the sidebar's own right edge — the edge it
+   moves — so the control is where the result is. Resting state is a bare
+   glyph rather than a boxed button: nothing in the header outranks the
+   brand until you reach for it. */
 .sidebar__collapse {
   display: none;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
   background: none;
-  border: 1px solid var(--sidebar-border);
+  border: 1px solid transparent;
   color: var(--sidebar-muted);
   cursor: pointer;
-  padding: 6px;
-  border-radius: 8px;
+  padding: 0;
+  border-radius: 9px;
   line-height: 1;
-  transition: 180ms ease;
   align-items: center;
   justify-content: center;
+  transition: background 180ms ease, color 180ms ease, border-color 180ms ease,
+    transform 180ms ease;
 }
 
 .sidebar__collapse:hover {
   background: var(--sidebar-hover-bg);
+  border-color: var(--sidebar-border);
   color: var(--sidebar-text);
+}
+
+.sidebar__collapse:active {
+  transform: scale(0.9);
+}
+
+/* One chevron, two states. The overshoot on the turn is what sells it as the
+   panel swinging shut rather than an icon quietly being swapped. */
+.sidebar__collapse svg {
+  transition: transform 320ms cubic-bezier(0.34, 1.32, 0.64, 1);
+}
+
+.sidebar__collapse--collapsed svg {
+  transform: rotate(180deg);
+}
+
+/* A 2px lean towards where the rail is about to go. Local -X after the
+   rotation is screen +X, so the collapsed chevron leans right — outwards,
+   the direction it would reopen. */
+.sidebar__collapse:hover svg {
+  transform: translateX(-2px);
+}
+
+.sidebar__collapse--collapsed:hover svg {
+  transform: rotate(180deg) translateX(-2px);
 }
 
 .sidebar__fy {
@@ -3320,8 +3354,19 @@ a.invoice-row {
 @media (min-width: 768px) {
   .sidebar__collapse {
     display: flex;
-    margin-top: 12px;
-    align-self: flex-start;
+  }
+
+  /* Brand left, handle hard against the right edge, both on one optical
+     line — no stray row of its own under the logo. */
+  .sidebar__header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .sidebar__brand {
+    min-width: 0;
   }
 
   .app-shell,
@@ -3366,6 +3411,13 @@ a.invoice-row {
 
   .app-shell--rail .sidebar__brand {
     justify-content: center;
+  }
+
+  /* 68px has no room for a row, so the handle stacks under the mark and
+     both centre on the rail's axis. */
+  .app-shell--rail .sidebar__header {
+    flex-direction: column;
+    gap: 10px;
   }
 
   .app-shell--rail .sidebar__collapse {
@@ -6459,5 +6511,16 @@ a.invoice-row {
   .catalogue-search__clear,
   .catalogue-sort {
     transition: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar__collapse,
+  .sidebar__collapse svg {
+    transition: none;
+  }
+
+  .sidebar__collapse:active {
+    transform: none;
   }
 }

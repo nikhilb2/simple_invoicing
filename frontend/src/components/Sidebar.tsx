@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronRight, LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ChevronsLeft, ChevronRight, LogOut } from 'lucide-react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import SidebarFYSwitcher from './SidebarFYSwitcher';
 import { SETTINGS_ENTRY, sectionIdForPath, visiblePrimaryNav, type NavLeaf } from '../config/navigation';
@@ -71,13 +71,17 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           </div>
         </Link>
         <button
-          className="sidebar__collapse"
+          type="button"
+          className={`sidebar__collapse${collapsed ? ' sidebar__collapse--collapsed' : ''}`}
           onClick={toggleCollapsed}
           aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
           aria-expanded={!collapsed}
           aria-controls="sidebar-nav"
+          title={collapsed ? 'Expand navigation' : 'Collapse navigation'}
         >
-          {collapsed ? <PanelLeftOpen size={18} aria-hidden="true" /> : <PanelLeftClose size={18} aria-hidden="true" />}
+          {/* One chevron that rotates rather than two icons that swap: the
+              turn is what tells you which way the rail is about to move. */}
+          <ChevronsLeft size={18} aria-hidden="true" />
         </button>
       </div>
 
