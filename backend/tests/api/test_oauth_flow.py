@@ -24,6 +24,8 @@ from src.models.oauth import OAuthAuthorizationCode, OAuthClient, OAuthToken
 from src.models.user import User, UserRole
 from src.services.oauth import clients as clients_service
 from src.services.oauth.tokens import (
+    RESOURCE_SCOPES,
+    SCOPE_OFFLINE,
     hash_token,
     mint_token,
     now_utc,
@@ -173,9 +175,13 @@ def request_id_from_location(location: str) -> str:
     return parse_qs(urlparse(location).query)["request_id"][0]
 
 
-def full_flow(client, user, company, *, scope=FULL_SCOPE, redirect_uri=DEFAULT_REDIRECT):
+def full_flow(
+    client, user, company, *, scope=FULL_SCOPE, redirect_uri=DEFAULT_REDIRECT, **registration_overrides
+):
     """register -> authorize -> consent -> code -> token. Returns (client_id, verifier, token_body)."""
-    registration = register_client(client, redirect_uris=[redirect_uri]).json()
+    registration = register_client(
+        client, redirect_uris=[redirect_uri], **registration_overrides
+    ).json()
     client_id = registration["client_id"]
     verifier, challenge = make_pkce()
 
@@ -371,7 +377,9 @@ def test_admin_scope_is_not_granted_to_non_admin(client, db_session, admin_user,
         .filter(OAuthAuthorizationCode.code_hash == hash_token(code))
         .first()
     )
-    assert parse_scope(stored.scope) == ["invoicing:read"]
+    granted = parse_scope(stored.scope)
+    assert "invoicing:admin" not in granted
+    assert "invoicing:read" in granted
 
 
 # --------------------------------------------------------------------------
@@ -631,10 +639,49 @@ def test_client_secret_basic_is_accepted(client, admin_user):
     assert response.status_code == 200, response.text
 
 
-def test_no_refresh_token_without_offline_access(client, admin_user):
+def test_no_refresh_token_when_the_client_did_not_register_for_one(client, admin_user):
+    """offline_access follows the registered grant types, not the ?scope= param."""
     user, company = admin_user
-    _, _, token, _ = full_flow(client, user, company, scope="invoicing:read")
+    _, _, token, _ = full_flow(
+        client,
+        user,
+        company,
+        scope="invoicing:read offline_access",
+        grant_types=["authorization_code"],
+    )
     assert "refresh_token" not in token
+    assert SCOPE_OFFLINE not in parse_scope(token["scope"])
+
+
+def test_refresh_token_is_issued_even_when_the_client_never_asks_for_offline_access(
+    client, db_session, admin_user
+):
+    """The ChatGPT case.
+
+    A connector that discovers its scopes the way the spec prescribes reads them
+    off the protected-resource metadata, which never advertises offline_access.
+    It must still come away able to stay connected, or the grant dies with its
+    first access token — and disappears from Settings -> Connected apps.
+    """
+    user, company = admin_user
+    client_id, _, token, _ = full_flow(
+        client, user, company, scope=" ".join(RESOURCE_SCOPES)
+    )
+
+    assert token["refresh_token"]
+    assert SCOPE_OFFLINE in parse_scope(token["scope"])
+
+    listing = client.get("/api/oauth/grants", headers=auth_headers(user)).json()
+    assert [grant["client_id"] for grant in listing] == [client_id]
+
+    # The symptom: an hour on, the access token is dead. The refresh token is
+    # what keeps the connection — and this listing — alive.
+    for row in db_session.query(OAuthToken).filter(OAuthToken.token_type == "access").all():
+        row.expires_at = now_utc() - timedelta(minutes=1)
+    db_session.commit()
+
+    later = client.get("/api/oauth/grants", headers=auth_headers(user)).json()
+    assert [grant["client_id"] for grant in later] == [client_id]
 
 
 # --------------------------------------------------------------------------

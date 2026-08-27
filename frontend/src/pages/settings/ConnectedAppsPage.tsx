@@ -26,7 +26,18 @@ function formatMoment(value: string | null | undefined, fallback: string): strin
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-/** Scope chips, labelled in plain language with the raw scope on hover. */
+/**
+ * Scope chips, labelled in plain language with the raw scope on hover.
+ *
+ * The `invoicing:` prefix is the same on every chip and carries nothing, so it
+ * is dropped. offline_access has no prefix to drop and reads as machinery next
+ * to "read" and "write", so it gets a plain-English name of its own — it is on
+ * every grant from a client that can refresh.
+ */
+const CHIP_LABELS: Record<string, string> = {
+  offline_access: 'stay connected',
+};
+
 function ScopeChips({ scopes }: { scopes: string[] }) {
   if (scopes.length === 0) {
     return <span className="muted-text">No scopes</span>;
@@ -35,7 +46,7 @@ function ScopeChips({ scopes }: { scopes: string[] }) {
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
       {scopes.map((scope) => (
         <span key={scope} className="status-chip status-chip--breakable" title={SCOPE_LABELS[scope] ?? scope}>
-          {scope.replace(/^invoicing:/, '')}
+          {CHIP_LABELS[scope] ?? scope.replace(/^invoicing:/, '')}
         </span>
       ))}
     </div>
