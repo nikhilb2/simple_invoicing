@@ -243,7 +243,7 @@ def authorize(request: Request, db: Session = Depends(get_db)):
     requested_scopes = parse_scope(params.get("scope"))
     client_scopes = parse_scope(client.scope) or list(SUPPORTED_SCOPES)
     if not requested_scopes:
-        requested_scopes = [s for s in client_scopes if s != SCOPE_OFFLINE]
+        requested_scopes = list(client_scopes)
     unknown = [s for s in requested_scopes if s not in SUPPORTED_SCOPES]
     if unknown:
         return _redirect_error(
@@ -257,6 +257,22 @@ def authorize(request: Request, db: Session = Depends(get_db)):
             f"Scope not permitted for this client: {' '.join(not_registered)}",
             state,
         )
+
+    # offline_access follows the client's registered grant types, not whatever
+    # it happened to put in ?scope=. A connector that discovers scopes the way
+    # the spec tells it to reads them off the protected-resource metadata, and
+    # that document deliberately does not advertise offline_access (RFC 9728:
+    # it is an authorization-server concern). ChatGPT does exactly this, and
+    # without the scope it was handed a 60-minute access token and no way to
+    # renew it: the connection died an hour later and vanished from Settings ->
+    # Connected apps, which lists live credentials. Registering the
+    # refresh_token grant type is the client saying it means to stay connected,
+    # so honour that here — before consent, so the user sees the scope on the
+    # screen and actually approves it, rather than silently at the token
+    # endpoint.
+    requested_scopes = [s for s in requested_scopes if s != SCOPE_OFFLINE]
+    if "refresh_token" in (client.grant_types or "").split():
+        requested_scopes.append(SCOPE_OFFLINE)
 
     resource = params.get("resource")
     if resource is not None and resource != settings.MCP_RESOURCE_URI:
