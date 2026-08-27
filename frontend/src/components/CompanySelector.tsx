@@ -131,7 +131,7 @@ export default function CompanySelector() {
               top: 'calc(100% + 4px)',
               background: 'var(--bg-card-strong)',
               border: '1px solid var(--line-strong)',
-              borderRadius: '0.5rem',
+              borderRadius: '0.75rem',
               boxShadow: '0 4px 24px rgba(0,0,0,0.45)',
               zIndex: 100,
               overflow: 'hidden',
@@ -159,7 +159,7 @@ export default function CompanySelector() {
                   background: 'none',
                   border: 'none',
                   cursor: companySwitchingId === null ? 'pointer' : 'wait',
-                  fontWeight: company.is_active ? 700 : 400,
+                  fontWeight: company.is_active ? 700 : 500,
                   fontSize: '0.875rem',
                   color: 'inherit',
                 }}

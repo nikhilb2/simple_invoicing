@@ -759,8 +759,12 @@ textarea {
   border: 1px solid rgba(148, 184, 255, 0.14);
   background: rgba(7, 13, 24, 0.82);
   color: var(--text);
-  border-radius: 16px;
-  padding: 13px 14px;
+  border-radius: 12px;
+  /* Matches .button — see the control scale note there. */
+  min-height: 38px;
+  padding: 8px 13px;
+  font-size: 0.9rem;
+  line-height: 1.35;
   outline: none;
   transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
@@ -773,7 +777,7 @@ textarea {
 }
 
 .textarea {
-  min-height: 110px;
+  min-height: 96px;
   resize: vertical;
 }
 
@@ -872,9 +876,16 @@ textarea {
   line-height: 1.2;
   white-space: nowrap;
   border: 0;
-  border-radius: 16px;
-  padding: 12px 18px;
-  font-weight: 800;
+  border-radius: 12px;
+  /* The control scale. .button, .input, .select and .textarea all land on the
+     same 38px box so a button sitting beside a field or a search box lines up
+     without per-site height overrides. Body text is 16px; a control's label is
+     a step below it at 14px, and 700 carries the emphasis 800 was doing with
+     size. */
+  min-height: 38px;
+  padding: 9px 16px;
+  font-size: 0.875rem;
+  font-weight: 700;
   cursor: pointer;
   transition: transform 160ms ease, opacity 160ms ease, background 160ms ease;
 }
@@ -929,10 +940,11 @@ textarea {
 
 .button--small {
   gap: 6px;
-  padding: 8px 12px;
-  font-size: 0.85rem;
+  min-height: 30px;
+  padding: 5px 11px;
+  font-size: 0.8125rem;
   font-weight: 700;
-  border-radius: 12px;
+  border-radius: 9px;
 }
 
 .button--small:hover {
@@ -941,10 +953,11 @@ textarea {
 
 /* Icon-only square button */
 .button--icon {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
+  min-height: 0;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 9px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -955,6 +968,7 @@ textarea {
    full .button padding and inflated every sortable column's minimum width. */
 .inventory-sort-btn {
   gap: 4px;
+  min-height: 0;
   padding: 4px 6px;
   font-size: 0.78rem;
   border-radius: 8px;
@@ -970,20 +984,20 @@ textarea {
 .split-button {
   display: inline-flex;
   align-items: stretch;
-  border-radius: 16px;
+  border-radius: 12px;
 }
 
 .split-button__main {
-  border-radius: 16px 0 0 16px !important;
+  border-radius: 12px 0 0 12px !important;
   gap: 6px;
   display: inline-flex;
   align-items: center;
 }
 
 .split-button__caret {
-  border-radius: 0 16px 16px 0 !important;
+  border-radius: 0 12px 12px 0 !important;
   border-left: 1px solid rgba(5, 45, 42, 0.25) !important;
-  width: 34px;
+  width: 30px;
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -2308,13 +2322,13 @@ a.invoice-row {
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 12px;
   background: rgba(7, 13, 24, 0.55);
   flex-shrink: 0;
 }
 
 .invoice-feed-view__view-tabs .button {
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
 .invoice-feed-view__view-tabs .button--ghost {
@@ -3543,7 +3557,7 @@ a.invoice-row {
 }
 
 .tab-bar .button {
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
 .tab-bar .button--ghost {
@@ -4305,14 +4319,14 @@ a.invoice-row {
 
 .ledger-search__icon {
   position: absolute;
-  left: 15px;
+  left: 13px;
   color: rgba(156, 173, 207, 0.75);
   pointer-events: none;
 }
 
 .ledger-search__input {
-  padding-left: 42px;
-  padding-right: 40px;
+  padding-left: 38px;
+  padding-right: 36px;
 }
 
 /* WebKit draws its own cancel glyph on type=search; ours is themed and sits in
@@ -4830,6 +4844,10 @@ a.invoice-row {
    tall — under the ~40px a thumb needs. Scoped to coarse pointers so the
    desktop density these were tuned for is untouched. */
 @media (pointer: coarse) {
+  .button {
+    min-height: 42px;
+  }
+
   .button--icon {
     width: 40px;
     height: 40px;
