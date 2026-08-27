@@ -1067,6 +1067,35 @@ textarea {
   color: #bcfff9;
 }
 
+/* The app-level stack (update prompts from Layout) sits in the opposite corner
+   from the per-page `.toast-stack`, which every page pins to the top right. */
+.toast-stack--app {
+  top: auto;
+  bottom: 24px;
+}
+
+.toast--update {
+  border-color: rgba(148, 184, 255, 0.32);
+  color: #dbe7ff;
+}
+
+.toast__action {
+  justify-self: start;
+  margin-top: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 184, 255, 0.32);
+  background: rgba(148, 184, 255, 0.14);
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.toast__action:hover {
+  background: rgba(148, 184, 255, 0.22);
+}
+
 .toast__content {
   display: grid;
   gap: 4px;
