@@ -8,6 +8,7 @@ import { useMarketplaceSync } from '../features/marketplace/useMarketplaceSync';
 import { useSidebarStore } from '../store/useSidebarStore';
 import Sidebar from './Sidebar';
 import InvoiceCancelDialog from './InvoiceCancelDialog';
+import UpdateAvailableToast from './UpdateAvailableToast';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -78,6 +79,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </motion.main>
       </div>
       <InvoiceCancelDialog />
+      <UpdateAvailableToast />
     </div>
   );
 }
