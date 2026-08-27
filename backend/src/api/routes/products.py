@@ -14,6 +14,7 @@ from src.models.company import CompanyProfile
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
+from src.models.product_serial import ProductSerial
 from src.models.user import User, UserRole
 from src.schemas.product import (
     ImportCSVResult,
@@ -340,7 +341,16 @@ def delete_product(
 # Merged Products + Inventory endpoints
 # ---------------------------------------------------------------------------
 
-def _apply_catalogue_filters(query, quantity_expr, search: str, status_filter: str, low_stock: bool):
+def _apply_catalogue_filters(
+    query,
+    quantity_expr,
+    search: str,
+    status_filter: str,
+    low_stock: bool,
+    serial_filter: str,
+    db: Session,
+    company_id: int,
+):
     """Filters shared by the catalogue grid and its CSV export.
 
     The export is the grid the user is looking at, saved to a file — if the two
@@ -348,10 +358,50 @@ def _apply_catalogue_filters(query, quantity_expr, search: str, status_filter: s
     that were not on screen.
     """
     if search.strip():
-        term = f"%{search.strip()}%"
-        query = query.filter(
-            or_(Product.name.ilike(term), Product.sku.ilike(term))
+        cleaned = search.strip()
+        term = f"%{cleaned}%"
+        # A pasted IMEI names a unit, not a product, so the search also reaches
+        # into the serial register and returns the product that unit belongs to
+        # — the catalogue-side counterpart of the invoice list's serial search.
+        #
+        # Upper-cased on both sides rather than leaning on ilike's collation,
+        # because ``ux_product_serials_company_number`` is an index on
+        # ``upper(serial_number)``.  Contains-match, since an operator reading
+        # the sticker on a handset usually types only its last few digits.
+        #
+        # Sold and void rows are matched too: "which product is this unit?" is
+        # asked most often about a handset that has already left the shelf.
+        serial_term = f"%{cleaned.upper()}%"
+        serial_subq = (
+            db.query(ProductSerial.product_id)
+            .filter(
+                # Tenancy: the serial rows themselves are scoped, not merely the
+                # products they point at — a serial belonging to another company
+                # must never name a product here.
+                ProductSerial.company_id == company_id,
+                func.upper(ProductSerial.serial_number).like(serial_term),
+            )
+            # ``scalar_subquery`` rather than ``subquery``: IN() over a plain
+            # Subquery is coerced with a SAWarning on SQLAlchemy 2.
+            .scalar_subquery()
         )
+        query = query.filter(
+            or_(
+                Product.name.ilike(term),
+                Product.sku.ilike(term),
+                Product.id.in_(serial_subq),
+            )
+        )
+
+    # Tri-state rather than a boolean flag: `serials=untracked` is a question
+    # operators actually ask (which lines still need serials backfilled), and a
+    # boolean cannot say it — `serials=false` reads as "filter off", not as
+    # "only the untracked ones".  Unknown values fall through as "all", the way
+    # `status` already behaves.
+    if serial_filter == "tracked":
+        query = query.filter(Product.track_serials == True)
+    elif serial_filter == "untracked":
+        query = query.filter(Product.track_serials == False)
 
     if status_filter == "active":
         query = query.filter(Product.maintain_inventory == True)
@@ -376,6 +426,7 @@ def list_products_with_inventory(
     search: str = Query(""),
     status_filter: str = Query("", alias="status"),
     low_stock: bool = Query(False),
+    serial_filter: str = Query("", alias="serials"),
     sort_by: str = Query("name"),
     sort_order: str = Query("asc"),
     db: Session = Depends(get_db),
@@ -417,7 +468,9 @@ def list_products_with_inventory(
         .filter(Product.company_id == active_company.id)
     )
 
-    query = _apply_catalogue_filters(query, quantity_expr, search, status_filter, low_stock)
+    query = _apply_catalogue_filters(
+        query, quantity_expr, search, status_filter, low_stock, serial_filter, db, active_company.id
+    )
 
     total = query.count()
 
@@ -613,6 +666,7 @@ def export_products_csv(
     search: str = Query(""),
     status_filter: str = Query("", alias="status"),
     low_stock: bool = Query(False),
+    serial_filter: str = Query("", alias="serials"),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -634,7 +688,9 @@ def export_products_csv(
         .filter(Product.company_id == active_company.id)
     )
 
-    query = _apply_catalogue_filters(query, quantity_expr, search, status_filter, low_stock)
+    query = _apply_catalogue_filters(
+        query, quantity_expr, search, status_filter, low_stock, serial_filter, db, active_company.id
+    )
 
     rows = query.order_by(Product.name.asc()).all()
 

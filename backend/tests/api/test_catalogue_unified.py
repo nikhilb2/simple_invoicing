@@ -7,8 +7,11 @@ from datetime import datetime
 
 from fastapi.testclient import TestClient
 
+from sqlalchemy import func
+
 from src.models.company import CompanyProfile
 from src.models.product import Product
+from src.models.product_serial import STATUS_SOLD, ProductSerial
 
 
 def _create_product(client: TestClient, sku: str, name: str, **overrides) -> dict:
@@ -385,6 +388,123 @@ class TestExportCsvFilters:
         params = {"search": "Export", "status": "active", "low_stock": True}
         listed = _catalogue(client, **params)
         exported = [row["Item Code"] for row in self._export(client, **params)]
+        assert exported == _skus(listed)
+        assert len(exported) == listed["total"]
+
+
+class TestSerialFilters:
+    """`serials=` on the grid and the export, plus searching by serial number."""
+
+    def _serialised(self, client, sku: str, name: str, codes: list[str], **overrides) -> dict:
+        return _create_product(
+            client,
+            sku,
+            name,
+            track_serials=True,
+            serial_numbers=codes,
+            initial_quantity=len(codes),
+            **overrides,
+        )
+
+    def _seed(self, client):
+        self._serialised(client, "CAT-SER-1", "Serial Handset", ["IMEI-AAA-111", "IMEI-AAA-222"])
+        self._serialised(client, "CAT-SER-2", "Serial Router", ["IMEI-BBB-333"])
+        _create_product(client, "CAT-SER-3", "Plain Cable", initial_quantity=10)
+
+    def test_tracked_returns_only_serial_tracked_products(self, client):
+        self._seed(client)
+
+        payload = _catalogue(client, search="CAT-SER", serials="tracked")
+        assert sorted(_skus(payload)) == ["CAT-SER-1", "CAT-SER-2"]
+        assert payload["total"] == 2
+
+    def test_untracked_returns_only_the_rest(self, client):
+        self._seed(client)
+
+        payload = _catalogue(client, search="CAT-SER", serials="untracked")
+        assert _skus(payload) == ["CAT-SER-3"]
+        assert payload["total"] == 1
+
+    def test_filter_defaults_to_all(self, client):
+        self._seed(client)
+
+        assert _catalogue(client, search="CAT-SER")["total"] == 3
+        # An unrecognised value falls through as "all", the way `status` does,
+        # so a hand-edited URL degrades to the unfiltered list rather than to
+        # an empty one.
+        assert _catalogue(client, search="CAT-SER", serials="nonsense")["total"] == 3
+
+    def test_composes_with_the_other_filters(self, client):
+        self._serialised(client, "CAT-SER-LOW", "Serial Low", ["IMEI-LOW-1"], reorder_level=5.0)
+        self._serialised(client, "CAT-SER-OK", "Serial Ok", ["IMEI-OK-1"], reorder_level=0.0)
+        _create_product(client, "CAT-SER-PLAIN-LOW", "Plain Low", reorder_level=5.0, initial_quantity=1)
+
+        payload = _catalogue(client, serials="tracked", low_stock=True)
+        assert _skus(payload) == ["CAT-SER-LOW"]
+
+    def test_search_finds_the_product_a_serial_belongs_to(self, client):
+        self._seed(client)
+
+        payload = _catalogue(client, search="IMEI-BBB-333")
+        assert _skus(payload) == ["CAT-SER-2"]
+
+    def test_search_matches_a_serial_case_insensitively_and_partially(self, client):
+        self._seed(client)
+
+        # Lower case, and only the tail of the code — what an operator types
+        # when reading the sticker on the unit rather than the box.
+        payload = _catalogue(client, search="aaa-222")
+        assert _skus(payload) == ["CAT-SER-1"]
+
+    def test_search_still_finds_a_unit_that_has_left_the_shelf(self, client, db_session):
+        self._seed(client)
+        serial = (
+            db_session.query(ProductSerial)
+            .filter(func.upper(ProductSerial.serial_number) == "IMEI-BBB-333")
+            .one()
+        )
+        serial.status = STATUS_SOLD
+        db_session.commit()
+
+        # Tracing a handset a customer walked back in with is exactly the case
+        # where the unit is no longer in stock.
+        assert _skus(_catalogue(client, search="IMEI-BBB-333")) == ["CAT-SER-2"]
+
+    def test_search_by_serial_does_not_reach_across_companies(self, client, db_session):
+        # Seed the default company first: it is created lazily, so building the
+        # second one up front would make *it* company 1 and the active one.
+        self._serialised(client, "CAT-SER-MINE", "My Handset", ["IMEI-MINE-1"])
+        other_id = _other_company(db_session)
+        headers = {"X-Company-Id": str(other_id)}
+        self._serialised(client, "CAT-SER-THEIRS", "Their Handset", ["IMEI-THEIRS-1"], headers=headers)
+
+        # Their serial must not name their product from inside my catalogue...
+        assert _catalogue(client, search="IMEI-THEIRS-1")["total"] == 0
+        # ...nor mine from inside theirs, and my own lookup still works, so the
+        # empty result is scoping rather than a broken join.
+        res = client.get(
+            "/api/products/with-inventory", params={"search": "IMEI-MINE-1"}, headers=headers
+        )
+        assert res.status_code == 200, res.text
+        assert res.json()["total"] == 0
+        assert _skus(_catalogue(client, search="IMEI-MINE-1")) == ["CAT-SER-MINE"]
+
+    def test_export_honours_the_serial_filter(self, client):
+        self._seed(client)
+
+        res = client.get("/api/products/export-csv", params={"search": "CAT-SER", "serials": "tracked"})
+        assert res.status_code == 200, res.text
+        codes = [row["Item Code"] for row in csv.DictReader(io.StringIO(res.text))]
+        assert sorted(codes) == ["CAT-SER-1", "CAT-SER-2"]
+
+    def test_export_matches_the_rows_on_screen(self, client):
+        self._seed(client)
+
+        params = {"search": "CAT-SER", "serials": "untracked"}
+        listed = _catalogue(client, **params)
+        res = client.get("/api/products/export-csv", params=params)
+        assert res.status_code == 200, res.text
+        exported = [row["Item Code"] for row in csv.DictReader(io.StringIO(res.text))]
         assert exported == _skus(listed)
         assert len(exported) == listed["total"]
 

@@ -11,7 +11,10 @@ import formatCurrency from '../../utils/formatting';
 import { formatQuantity, isLowStock } from './types';
 import type { CatalogueFilters, CatalogueRow, PaginatedCatalogue, SortKey } from './types';
 
-export type ExportFilters = Pick<CatalogueFilters, 'search' | 'status' | 'lowStock' | 'sortBy' | 'sortOrder'>;
+export type ExportFilters = Pick<
+  CatalogueFilters,
+  'search' | 'status' | 'lowStock' | 'serials' | 'sortBy' | 'sortOrder'
+>;
 
 /** The list endpoint's maximum `page_size`; the report pages at it. */
 const PAGE_SIZE = 500;
@@ -53,14 +56,19 @@ function escapeHtml(text: string): string {
  *
  * `sort_by`/`sort_order` are accepted by the list endpoint only — the CSV
  * endpoint always sorts by name — so callers pass `withSort` accordingly.
+ *
+ * Exported so a test can assert every filter reaches the wire: a filter the
+ * grid applies and this omits produces an export that silently disagrees with
+ * the screen it was launched from.
  */
-function toQueryParams(filters: ExportFilters, withSort: boolean): Record<string, unknown> {
+export function toQueryParams(filters: ExportFilters, withSort: boolean): Record<string, unknown> {
   return cleanParams({
     search: filters.search.trim(),
     status: filters.status,
     // Only sent when on: `low_stock=false` is the server default anyway, and
     // omitting it keeps the request URL readable in the network log.
     low_stock: filters.lowStock ? true : undefined,
+    serials: filters.serials,
     sort_by: withSort ? filters.sortBy : undefined,
     sort_order: withSort ? filters.sortOrder : undefined,
   });
@@ -74,6 +82,8 @@ function describeFilters(filters: ExportFilters): string {
   if (filters.status === 'active') parts.push('active items only');
   if (filters.status === 'inactive') parts.push('inactive items only');
   if (filters.lowStock) parts.push('low stock only');
+  if (filters.serials === 'tracked') parts.push('serial-tracked items only');
+  if (filters.serials === 'untracked') parts.push('items without serial tracking');
   if (parts.length === 0) parts.push('all items, no filters applied');
   parts.push(`sorted by ${SORT_LABELS[filters.sortBy]} (${filters.sortOrder === 'asc' ? 'ascending' : 'descending'})`);
   return parts.join(' · ');

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, Download, LayoutGrid, SlidersHorizontal, Table as TableIcon, X } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -17,7 +17,7 @@ import { useInvoiceCancelStore } from '../store/useInvoiceCancelStore';
 import { exportInvoicesCsv, fetchCompanyProfile, fetchInvoicePage, fetchProducts } from '../features/invoices/api';
 import { invoiceQueryKeys } from '../features/invoices/queryKeys';
 import EmptyState from '../components/EmptyState';
-import { numericParam } from '../utils/deepLink';
+import { numericParam, textParam } from '../utils/deepLink';
 
 type Breakdown = {
   credit: number;
@@ -153,7 +153,11 @@ export default function InvoicesAdvancedView() {
 
   function handleResetFilters() {
     resetFilters();
-    setSearchParams({});
+    // Both halves, or Reset only half-works: the store holds the search text
+    // and the URL holds the copy that survives a refresh, and a deep link left
+    // in the address bar would re-apply itself on the next reload. `replace`
+    // keeps the cleared feed from becoming a separate Back-button step.
+    setSearchParams({}, { replace: true });
   }
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -181,6 +185,7 @@ export default function InvoicesAdvancedView() {
     setDateFrom,
     setDateTo,
     setDateRange,
+    applySearchDeepLink,
     resetFilters,
   } = useInvoiceFeedViewStore();
 
@@ -196,6 +201,59 @@ export default function InvoicesAdvancedView() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Sync ?search= from URL into store on mount.
+  //
+  // InvoicesPageView builds /invoices-view?search=<invoice number> behind its
+  // "Open invoice" link, so this param is a real in-app navigation, not just a
+  // hand-typed URL — and until now nothing read it, which is why following that
+  // link showed whatever the feed had been filtered to last instead of the
+  // invoice it named. `applySearchDeepLink` deliberately overwrites the store
+  // rather than deferring to it, and widens FY/cancelled the way the
+  // ?invoice_id= link below does; see the store for why.
+  //
+  // Ref-guarded rather than relying on the empty dep array alone: the two-way
+  // sync below rewrites `searchParams` as the user types, and a mount-only
+  // effect that ever re-ran would replace what they were typing with the value
+  // they arrived with.
+  const searchDeepLinkApplied = useRef(false);
+  useEffect(() => {
+    if (searchDeepLinkApplied.current) return;
+    searchDeepLinkApplied.current = true;
+    const urlSearch = textParam(searchParams, 'search');
+    if (urlSearch !== null) {
+      applySearchDeepLink(urlSearch);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // …and reflect the search box back into the URL, so a feed the user has
+  // filtered down is shareable and survives a refresh — the same contract the
+  // inbound link already assumed. `replace` because pushing would put one
+  // history entry per keystroke between the user and the Back button, and
+  // debounced for the same reason (the box itself is undebounced; the query
+  // refetches per keystroke already, but rewriting history that fast is worse).
+  // Other params are preserved so this cannot clobber ?product_id/?invoice_id.
+  const urlSearch = searchParams.get('search') ?? '';
+  useEffect(() => {
+    // Nothing to do when the URL already agrees — which is the case right after
+    // the mount sync above, and after every write this effect makes. Comparing
+    // first is what keeps the write→re-render→effect cycle from repeating.
+    if (urlSearch === invoiceSearch) return undefined;
+    const timer = setTimeout(() => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        if (invoiceSearch) {
+          next.set('search', invoiceSearch);
+        } else {
+          next.delete('search');
+        }
+        return next;
+      }, { replace: true });
+    }, 350);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceSearch, urlSearch]);
   const { previewInvoice, openPreview, closePreview } = useInvoiceModalStore();
 
   // Citation deep link: /invoices-view?invoice_id=123 has to land on that
@@ -382,9 +440,15 @@ export default function InvoicesAdvancedView() {
 
         {/* Toolbar: search + primary actions */}
         <div className="invoice-feed-view__toolbar">
+          {/* Nobody pastes an IMEI into a box labelled "party or product", so the
+              placeholder names the fields the backend actually matches; the
+              full list lives in the hint under the toolbar, out of the flex row
+              so it cannot shove the action buttons off the input's baseline. */}
           <input
             type="text"
-            placeholder="Search by party or product..."
+            placeholder="Search invoice no., ledger, product or IMEI…"
+            aria-label="Search invoices"
+            aria-describedby="invoice-feed-search-hint"
             value={invoiceSearch}
             onChange={(e) => setInvoiceSearch(e.target.value)}
             className="input invoice-feed-view__search"
@@ -427,6 +491,11 @@ export default function InvoicesAdvancedView() {
             </button>
           </div>
         </div>
+
+        <p className="invoice-feed-view__search-hint" id="invoice-feed-search-hint">
+          Matches invoice number, ledger, product and serial/IMEI. Use Filters to
+          also search item descriptions.
+        </p>
 
         {filtersOpen && (
         <div className="invoice-feed-view__advanced">
@@ -530,7 +599,13 @@ export default function InvoicesAdvancedView() {
               title="Clear product filter"
               onClick={() => {
                 setProductId(null);
-                setSearchParams({});
+                // Only this badge's own param: ?search= belongs to the search
+                // box, which this button does not clear.
+                setSearchParams((prev) => {
+                  const next = new URLSearchParams(prev);
+                  next.delete('product_id');
+                  return next;
+                }, { replace: true });
               }}
             >
               <X size={14} />
@@ -558,9 +633,21 @@ export default function InvoicesAdvancedView() {
         {loading ? (
           <EmptyState message="Loading invoices..." />
         ) : invoices.length === 0 ? (
-          <EmptyState 
-            message={invoiceSearch ? "No invoices match your search." : "No invoices registered yet. Create your first invoice to get started."} 
-            action={!invoiceSearch ? { label: 'Create First Invoice', onClick: () => navigate('/invoices') } : undefined}
+          <EmptyState
+            message={
+              invoiceSearch
+                // The moment the searchable fields matter most: repeat them
+                // here, quote the term back so a typo is visible, and offer the
+                // way out, since an empty result is as often a stale filter as
+                // it is a genuinely absent invoice.
+                ? `No invoices match “${invoiceSearch}”. Search covers invoice number, ledger, product and serial/IMEI — check the term, or clear the filters.`
+                : 'No invoices registered yet. Create your first invoice to get started.'
+            }
+            action={
+              invoiceSearch
+                ? { label: 'Reset filters', onClick: handleResetFilters }
+                : { label: 'Create First Invoice', onClick: () => navigate('/invoices') }
+            }
           />
         ) : viewType === 'card' ? (
           <div className="invoice-feed-view__card-list">

@@ -320,7 +320,9 @@ export default function CatalogueTable({
                             <span className="status-chip status-chip--paused">Not stocked</span>
                           ) : null}
                           {row.track_serials ? (
-                            <span className="status-chip">Serialised</span>
+                            <span className="status-chip" title="Stock is tracked per unit">
+                              Serialised
+                            </span>
                           ) : null}
                           {row.is_producable ? (
                             <span className="status-chip">Made in-house</span>

@@ -15,6 +15,7 @@ from src.models.company_account import CompanyAccount
 from src.models.company import CompanyProfile
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
+from src.models.product_serial import ProductSerial
 from src.models.user import User
 from src.schemas.invoice import InvoiceCreate, InvoiceOut, PaginatedInvoiceOut
 from src.api.deps import get_active_company, get_current_user
@@ -166,7 +167,8 @@ def _apply_invoice_filters(
     if date_to is not None:
         query = query.filter(func.date(Invoice.invoice_date) <= date_to)
     if search.strip():
-        term = f"%{search.strip()}%"
+        cleaned = search.strip()
+        term = f"%{cleaned}%"
         product_match = Product.name.ilike(term)
         if include_description:
             product_match = or_(product_match, InvoiceItem.description.ilike(term))
@@ -179,10 +181,50 @@ def _apply_invoice_filters(
             )
             .subquery()
         )
+        # Serials are stored exactly as the operator typed them but are compared
+        # case-insensitively everywhere else (the unique index is on
+        # ``upper(serial_number)``), so both sides are upper-cased here too
+        # instead of leaning on ilike's collation.
+        #
+        # Contains-match rather than exact or prefix: an operator reading a
+        # handset's box types the whole IMEI, but one reading the sticker on the
+        # unit usually types only its last few digits, and both have to land on
+        # the same invoice.  A leading wildcard cannot seek in
+        # ``ux_product_serials_company_number``, but ``company_id`` is that
+        # index's leading column, so Postgres still narrows to this company's
+        # rows and matches the pattern from the index rather than the heap.
+        #
+        # Void rows are deliberately included: a unit whose purchase was later
+        # cancelled must still lead back to the voucher it arrived on, which is
+        # exactly the trace an operator is doing when they type an IMEI.
+        serial_term = f"%{cleaned.upper()}%"
+        serial_matches = db.query(ProductSerial).filter(
+            # Tenancy: the serial rows themselves are scoped, not just the
+            # invoices they point at — a serial must never be able to name an
+            # invoice belonging to another company.
+            ProductSerial.company_id == active_company.id,
+            func.upper(ProductSerial.serial_number).like(serial_term),
+        )
+        # scalar_subquery() rather than subquery(): these feed IN() directly,
+        # and a plain Subquery is coerced with a SAWarning on every call.
+        serial_purchase_subq = serial_matches.with_entities(
+            ProductSerial.purchase_invoice_id
+        ).scalar_subquery()
+        serial_sales_subq = serial_matches.with_entities(
+            ProductSerial.sales_invoice_id
+        ).scalar_subquery()
         query = query.filter(
             or_(
                 Invoice.ledger_name.ilike(term),
+                # Our own document number, plus the counterparty's number as
+                # recorded on a purchase — an operator typing "the invoice
+                # number" means whichever of the two is printed on the paper in
+                # front of them.
+                Invoice.invoice_number.ilike(term),
+                Invoice.supplier_invoice_number.ilike(term),
                 Invoice.id.in_(product_match_subq),
+                Invoice.id.in_(serial_purchase_subq),
+                Invoice.id.in_(serial_sales_subq),
             )
         )
     if product_id is not None:

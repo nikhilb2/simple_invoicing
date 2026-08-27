@@ -52,11 +52,26 @@ export type SortKey =
 
 export type SortOrder = 'asc' | 'desc';
 
+/**
+ * The serial-tracking filter, as the API names it (`?serials=`).
+ *
+ * Tri-state rather than a boolean flag: "which products still need serials
+ * backfilled?" is as real a question as "which are serialised?", and a boolean
+ * can only ask one of them — `serials=false` reads as the filter being off.
+ */
+export type SerialFilter = '' | 'tracked' | 'untracked';
+
+/** Narrows a raw URL value; anything else falls back to the unfiltered list. */
+export function isSerialFilter(value: string | null): value is Exclude<SerialFilter, ''> {
+  return value === 'tracked' || value === 'untracked';
+}
+
 /** The list filters. Mirrored into the URL so a view survives a refresh. */
 export type CatalogueFilters = {
   search: string;
   status: '' | 'active' | 'inactive';
   lowStock: boolean;
+  serials: SerialFilter;
   sortBy: SortKey;
   sortOrder: SortOrder;
   page: number;
