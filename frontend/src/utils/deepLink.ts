@@ -32,6 +32,22 @@ export function numericParam(params: URLSearchParams, key: string): number | nul
 }
 
 /**
+ * A trimmed free-text query param, or null when it is absent or blank.
+ *
+ * `URLSearchParams.get` already percent-decodes, so an `encodeURIComponent`-ed
+ * label — `INV%2F2026%2F160`, a ledger name with a space — arrives as the text
+ * that was linked to, and must not be decoded a second time. The trim is what
+ * stops `?search=` and `?search=%20` from being applied as a filter on
+ * whitespace, which returns nothing and looks like the page is broken.
+ */
+export function textParam(params: URLSearchParams, key: string): string | null {
+  const raw = params.get(key);
+  if (raw === null) return null;
+  const trimmed = raw.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+/**
  * Scrolls the flagged row into view once the list that contains it has
  * rendered. Deferred a frame because `ready` flips in the same commit that
  * paints the rows, so the element does not exist yet when the effect runs.

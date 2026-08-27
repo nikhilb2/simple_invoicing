@@ -2247,6 +2247,17 @@ a.invoice-row {
   min-width: 0;
 }
 
+/* Names what the search box matches. Its own grid row under the toolbar rather
+   than a child of that flex row, so it never drags the action buttons out of
+   line with the input. */
+.invoice-feed-view__search-hint {
+  margin: -4px 0 0;
+  padding-left: 2px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
 .invoice-feed-view__toolbar-actions {
   display: flex;
   flex-wrap: wrap;
@@ -5957,6 +5968,35 @@ a.invoice-row {
 .catalogue-search__clear:hover {
   color: var(--text);
   background: var(--color-surface-raised);
+}
+
+/* The serial filter sits beside search, not among the view tabs: it composes
+   with them — "low stock AND serial-tracked" is a real question — and a second
+   segmented control next to the first would read as a second set of views. */
+.catalogue-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.catalogue-filter__label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.catalogue-filter__select {
+  width: auto;
+  padding: 11px 12px;
+  font-size: 0.9rem;
+}
+
+/* An applied filter has to read as *applied* without opening it, since it is
+   the reason rows are missing from the list below. */
+.catalogue-filter__select--on {
+  border-color: rgba(87, 209, 201, 0.55);
+  color: var(--accent);
 }
 
 .catalogue-toolbar__count {

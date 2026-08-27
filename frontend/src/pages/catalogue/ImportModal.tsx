@@ -95,7 +95,14 @@ export default function ImportModal({ onClose, onImported }: ImportModalProps) {
       setDownloadingTemplate(true);
       setError('');
       // The export is the template: same headers, same order, real rows to edit.
-      await exportCatalogueCsv({ search: '', status: '', lowStock: false, sortBy: 'name', sortOrder: 'asc' });
+      await exportCatalogueCsv({
+        search: '',
+        status: '',
+        lowStock: false,
+        serials: '',
+        sortBy: 'name',
+        sortOrder: 'asc',
+      });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to download the template.'));
     } finally {

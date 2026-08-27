@@ -20,8 +20,15 @@ import StockAdjustModal from './catalogue/StockAdjustModal';
 import SerialHistoryDrawer from './catalogue/SerialHistoryDrawer';
 import ImportModal from './catalogue/ImportModal';
 import { exportCatalogueCsv, exportCataloguePdf } from './catalogue/exports';
-import { isLowStock, rowEditFrom } from './catalogue/types';
-import type { CatalogueRow, PaginatedCatalogue, RowEdit, SortKey, SortOrder } from './catalogue/types';
+import { isLowStock, isSerialFilter, rowEditFrom } from './catalogue/types';
+import type {
+  CatalogueRow,
+  PaginatedCatalogue,
+  RowEdit,
+  SerialFilter,
+  SortKey,
+  SortOrder,
+} from './catalogue/types';
 
 /**
  * The catalogue.
@@ -57,6 +64,12 @@ export default function CataloguePage() {
   // refresh or a browser Back silently reset the view you had built.
   const view: ViewId = isViewId(searchParams.get('view')) ? (searchParams.get('view') as ViewId) : 'all';
   const search = searchParams.get('q') ?? '';
+  // Serial tracking is orthogonal to the views above — "low stock" and
+  // "serial-tracked" is a question worth asking — so it is its own param
+  // rather than a fourth tab.
+  const serials: SerialFilter = isSerialFilter(searchParams.get('serials'))
+    ? (searchParams.get('serials') as SerialFilter)
+    : '';
   const sortBy = (searchParams.get('sort') as SortKey) || 'name';
   const sortOrder: SortOrder = searchParams.get('dir') === 'desc' ? 'desc' : 'asc';
   const page = Math.max(1, Number(searchParams.get('page') ?? '1') || 1);
@@ -117,6 +130,7 @@ export default function CataloguePage() {
           search: debouncedSearch,
           status: statusFilter,
           low_stock: lowStock,
+          serials,
           sort_by: sortBy,
           sort_order: sortOrder,
         },
@@ -138,7 +152,7 @@ export default function CataloguePage() {
     } finally {
       if (latestRequest.current === requestId) setLoading(false);
     }
-  }, [page, debouncedSearch, statusFilter, lowStock, sortBy, sortOrder]);
+  }, [page, debouncedSearch, statusFilter, lowStock, serials, sortBy, sortOrder]);
 
   useEffect(() => {
     void loadData();
@@ -170,6 +184,10 @@ export default function CataloguePage() {
 
   function changeSearch(value: string) {
     setParams({ q: value || null, page: null });
+  }
+
+  function changeSerials(value: SerialFilter) {
+    setParams({ serials: value || null, page: null });
   }
 
   function handleSort(key: SortKey) {
@@ -205,14 +223,16 @@ export default function CataloguePage() {
           // citation lands on the record rather than somewhere on page 7.
           setHighlightId(product.id);
           setDeepLinkSerials({ productId: product.id, serial: deepLinkSerial });
-          setParams({ q: product.sku, view: null, page: null, serial: null });
+          // `serials` clears too: a link that names one unit must not land on
+          // a list still filtered to the other kind of product.
+          setParams({ q: product.sku, view: null, serials: null, page: null, serial: null });
           return;
         }
 
         if (deepLinkProductId !== null) {
           const response = await api.get<Product>(`/products/${deepLinkProductId}`);
           setHighlightId(response.data.id);
-          setParams({ q: response.data.sku, view: null, page: null, product_id: null });
+          setParams({ q: response.data.sku, view: null, serials: null, page: null, product_id: null });
         }
       } catch (err) {
         setError(
@@ -321,7 +341,14 @@ export default function CataloguePage() {
   }
 
   async function runExport(kind: 'csv' | 'pdf') {
-    const filters = { search, status: statusFilter as '' | 'active' | 'inactive', lowStock, sortBy, sortOrder };
+    const filters = {
+      search,
+      status: statusFilter as '' | 'active' | 'inactive',
+      lowStock,
+      serials,
+      sortBy,
+      sortOrder,
+    };
     try {
       setExporting(kind);
       if (kind === 'csv') {
@@ -340,7 +367,16 @@ export default function CataloguePage() {
 
   const rangeStart = (page - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(page * PAGE_SIZE, total);
-  const filtersActive = Boolean(search) || view !== 'all';
+  const filtersActive = Boolean(search) || view !== 'all' || serials !== '';
+
+  /* A filtered-to-nothing list has to name the filter that emptied it —
+     "No products match this view" reads as an empty catalogue. */
+  const emptyMessage =
+    serials === 'tracked'
+      ? 'No serial-tracked products match this view.'
+      : serials === 'untracked'
+        ? 'No products without serial tracking match this view.'
+        : 'No products match this view.';
 
   return (
     <div className="page-grid">
@@ -439,7 +475,7 @@ export default function CataloguePage() {
                 id="catalogue-search"
                 className="input catalogue-search__input"
                 type="search"
-                placeholder="Search by name or SKU..."
+                placeholder="Search by name, SKU or serial..."
                 value={search}
                 onChange={(e) => changeSearch(e.target.value)}
               />
@@ -455,6 +491,21 @@ export default function CataloguePage() {
                 </button>
               ) : null}
             </div>
+            <label className="catalogue-filter">
+              <span className="catalogue-filter__label">Serials</span>
+              {/* A select, not a second tab bar: three more segmented buttons
+                  beside the view tabs would read as three more views, and a
+                  native select carries its own keyboard behaviour and label. */}
+              <select
+                className={`select catalogue-filter__select${serials ? ' catalogue-filter__select--on' : ''}`}
+                value={serials}
+                onChange={(e) => changeSerials(e.target.value as SerialFilter)}
+              >
+                <option value="">All products</option>
+                <option value="tracked">Serial-tracked</option>
+                <option value="untracked">Not serial-tracked</option>
+              </select>
+            </label>
             {!loading && total > 0 ? (
               <p className="catalogue-toolbar__count">
                 Showing{' '}
@@ -481,10 +532,10 @@ export default function CataloguePage() {
 
           {!loading && !loadFailed && rows.length === 0 && filtersActive ? (
             <EmptyState
-              message="No products match this view."
+              message={emptyMessage}
               action={{
                 label: 'Clear filters',
-                onClick: () => setParams({ q: null, view: null, page: null }),
+                onClick: () => setParams({ q: null, view: null, serials: null, page: null }),
               }}
             />
           ) : null}

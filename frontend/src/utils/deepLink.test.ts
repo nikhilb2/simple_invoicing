@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deepLinkClass, numericParam } from './deepLink';
+import { deepLinkClass, numericParam, textParam } from './deepLink';
 
 const params = (query: string) => new URLSearchParams(query);
 
@@ -22,6 +22,33 @@ describe('numericParam', () => {
 
   it('rejects a numeric string with a path appended', () => {
     expect(numericParam(params('product_id=12%2F..%2F..'), 'product_id')).toBeNull();
+  });
+});
+
+describe('textParam', () => {
+  it('reads the decoded value of an encodeURIComponent-ed label', () => {
+    // This is exactly the link InvoicesPageView builds behind "Open invoice".
+    const label = 'INV-2026-27-160';
+    expect(textParam(params(`search=${encodeURIComponent(label)}`), 'search')).toBe(label);
+  });
+
+  it('decodes once, not twice', () => {
+    // A ledger name with a slash or a space must survive intact; decoding the
+    // already-decoded value again would corrupt or crash on it.
+    expect(textParam(params('search=INV%2F2026%2F160'), 'search')).toBe('INV/2026/160');
+    expect(textParam(params('search=Acme%20Traders%20%26%20Co'), 'search')).toBe('Acme Traders & Co');
+    expect(textParam(params('search=100%25%20cotton'), 'search')).toBe('100% cotton');
+  });
+
+  it('treats absent, empty and whitespace-only params as no deep link', () => {
+    // `?search=` must leave the feed alone rather than filter on '' or ' '.
+    expect(textParam(params('product_id=4'), 'search')).toBeNull();
+    expect(textParam(params('search='), 'search')).toBeNull();
+    expect(textParam(params('search=%20%20'), 'search')).toBeNull();
+  });
+
+  it('trims padding around a real term', () => {
+    expect(textParam(params('search=%20INV-1%20'), 'search')).toBe('INV-1');
   });
 });
 
