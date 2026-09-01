@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { getApiErrorMessage } from '../../api/client';
+import ModalCloseButton from '../../components/ModalCloseButton';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import { fetchAvailableSerials } from '../../features/serials/api';
@@ -105,15 +106,7 @@ export default function SerialHistoryDrawer({
               {row.name}
             </h2>
           </div>
-          <button
-            type="button"
-            className="button button--ghost button--icon"
-            onClick={onClose}
-            title="Close"
-            aria-label="Close serial numbers"
-          >
-            <X size={16} aria-hidden="true" />
-          </button>
+          <ModalCloseButton onClick={onClose} label="Close serial numbers" />
         </div>
 
         <div className="catalogue-search">

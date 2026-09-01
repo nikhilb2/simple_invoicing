@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, FileText, FilePlus, Mail, Pencil, ReceiptText, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
@@ -10,8 +10,10 @@ import StatusToasts from '../components/StatusToasts';
 import CreateInvoiceModal from '../components/CreateInvoiceModal';
 import SendEmailModal from '../components/SendEmailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import ModalCloseButton from '../components/ModalCloseButton';
 import formatCurrency from '../utils/formatting';
 import { useFY } from '../context/FYContext';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 import { fetchOutstandingInvoices, fetchLedgerAddresses, createLedgerAddress, updateLedgerAddress, deleteLedgerAddress } from '../features/invoices/api';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import EmptyState from '../components/EmptyState';
@@ -129,6 +131,13 @@ export default function LedgerViewPage() {
   const [showActionsDropdown, setShowActionsDropdown] = useState(false);
   const actionsDropdownRef = useRef<HTMLDivElement>(null);
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+
+  // Both payment dialogs are long enough to scroll; Escape is the way out that
+  // does not depend on where the user has scrolled to.
+  useEscapeClose(useCallback(() => {
+    setShowPaymentForm(false);
+    setEditingPayment(null);
+  }, []));
   const [editPaymentForm, setEditPaymentForm] = useState<PaymentUpdate>(() => createDefaultEditPaymentForm());
   const [editOutstandingInvoices, setEditOutstandingInvoices] = useState<OutstandingInvoice[]>([]);
   const [loadingEditOutstandingInvoices, setLoadingEditOutstandingInvoices] = useState(false);
@@ -1019,7 +1028,7 @@ export default function LedgerViewPage() {
             <div className="panel stack">
               <div className="panel__header">
                 <h2 className="nav-panel__title">Record Receipt / Payment</h2>
-                <button type="button" className="button button--ghost" onClick={() => setShowPaymentForm(false)} title="Close payment dialog" aria-label="Close payment dialog">✕</button>
+                <ModalCloseButton onClick={() => setShowPaymentForm(false)} label="Close payment dialog" />
               </div>
               <form onSubmit={(e) => void handleSubmitPayment(e)} className="stack">
                 <div className="field">
@@ -1191,7 +1200,7 @@ export default function LedgerViewPage() {
             <div className="panel stack">
               <div className="panel__header">
                 <h2 className="nav-panel__title">Edit Payment #{editingPayment.id}</h2>
-                <button type="button" className="button button--ghost" onClick={() => setEditingPayment(null)} title="Close" aria-label="Close">✕</button>
+                <ModalCloseButton onClick={() => setEditingPayment(null)} label="Close edit payment" />
               </div>
               <form onSubmit={(e) => void handleUpdatePayment(e)} className="stack">
                 <div className="field">

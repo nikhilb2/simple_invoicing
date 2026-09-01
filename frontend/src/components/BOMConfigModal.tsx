@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
+import ModalCloseButton from './ModalCloseButton';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { getApiErrorMessage } from '../api/client';
 import type { BOMComponent, Product } from '../types/api';
@@ -142,15 +143,7 @@ export default function BOMConfigModal({ productId, productName, onClose }: BOMC
             <p className="eyebrow">Bill of Materials</p>
             <h2 id="bom-modal-title" className="nav-panel__title">{productName}</h2>
           </div>
-          <button
-            type="button"
-            className="button button--ghost"
-            onClick={onClose}
-            title="Close modal"
-            aria-label="Close BOM modal"
-          >
-            ✕
-          </button>
+          <ModalCloseButton onClick={onClose} label="Close bill of materials" />
         </div>
 
         {error ? <p className="error-message" role="alert">{error}</p> : null}

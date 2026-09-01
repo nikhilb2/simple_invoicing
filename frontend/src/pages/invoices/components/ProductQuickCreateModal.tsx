@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import ModalCloseButton from '../../../components/ModalCloseButton';
 import { useQueryClient } from '@tanstack/react-query';
 import api, { getApiErrorMessage } from '../../../api/client';
 import { useEscapeClose } from '../../../hooks/useEscapeClose';
@@ -75,6 +76,7 @@ export default function ProductQuickCreateModal() {
             <p className="eyebrow">Quick add</p>
             <h2 id="product-modal-title" className="nav-panel__title">Create product</h2>
           </div>
+          <ModalCloseButton onClick={closeProductCreateModal} label="Close create product" />
         </div>
 
         <form className="stack" onSubmit={handleSubmit}>

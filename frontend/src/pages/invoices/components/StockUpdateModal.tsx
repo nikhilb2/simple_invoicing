@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import ModalCloseButton from '../../../components/ModalCloseButton';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api, { getApiErrorMessage } from '../../../api/client';
 import ProductCombobox from '../../../components/ProductCombobox';
@@ -98,6 +99,7 @@ export default function StockUpdateModal() {
             <p className="eyebrow">Inventory</p>
             <h2 id="stock-modal-title" className="nav-panel__title">Update stock</h2>
           </div>
+          <ModalCloseButton onClick={closeStockUpdateModal} label="Close update stock" />
         </div>
 
         <form className="stack" onSubmit={handleSubmit}>

@@ -1,8 +1,9 @@
 import { useCallback, useState } from 'react';
 import type { FormEvent } from 'react';
-import { ArrowRight, PackageX, X } from 'lucide-react';
+import { ArrowRight, PackageX } from 'lucide-react';
 import api, { getApiErrorMessage } from '../../api/client';
 import { track } from '../../lib/analytics';
+import ModalCloseButton from '../../components/ModalCloseButton';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import SerialChips from '../invoices/components/SerialChips';
 import type { InventoryAdjust } from '../../types/api';
@@ -180,16 +181,7 @@ export default function StockAdjustModal({ row, onCancel, onAdjusted }: StockAdj
       <div className="modal-panel modal-panel--stock-adjust" onClick={(event) => event.stopPropagation()}>
         <div className="panel__header">
           <h2 id={TITLE_ID} className="nav-panel__title">Adjust stock</h2>
-          <button
-            type="button"
-            className="button button--ghost button--small"
-            onClick={dismiss}
-            disabled={submitting}
-            title="Close"
-            aria-label="Close stock adjustment"
-          >
-            <X size={16} aria-hidden="true" />
-          </button>
+          <ModalCloseButton onClick={dismiss} label="Close stock adjustment" disabled={submitting} />
         </div>
 
         <div className="stock-adjust__summary">

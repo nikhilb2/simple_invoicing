@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Check } from 'lucide-react';
+import ModalCloseButton from '../../../components/ModalCloseButton';
 import { getApiErrorMessage } from '../../../api/client';
 import { fetchAvailableSerials } from '../../../features/serials/api';
 import { serialQueryKeys } from '../../../features/serials/queryKeys';
@@ -100,7 +101,10 @@ export default function SerialPickerModal({
             <p className="eyebrow">In stock</p>
             <h2 id="serial-picker-title" className="nav-panel__title">Pick serials — {productName}</h2>
           </div>
-          <div className="status-chip">{picked.length} selected</div>
+          <div className="button-row">
+            <div className="status-chip">{picked.length} selected</div>
+            <ModalCloseButton onClick={onCancel} label="Close serial picker" />
+          </div>
         </div>
 
         <div className="stack">

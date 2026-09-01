@@ -19,6 +19,10 @@
   --danger: #ff8b8b;
   --warning: #f6d67b;
   --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+  /* Matches the top of the .modal-panel gradient, but fully opaque: the pinned
+     dialog header has form fields sliding underneath it, and at 0.98 alpha
+     their text ghosts through. */
+  --bg-modal-header: #0b1422;
 
   /* Sidebar tokens */
   --sidebar-width: 240px;
@@ -2002,6 +2006,40 @@ a.invoice-row {
   overflow-y: auto;
   background: linear-gradient(180deg, rgba(11, 20, 34, 0.98) 0%, rgba(9, 17, 31, 0.96) 100%);
   box-shadow: var(--shadow);
+}
+
+/* A handful of dialogs wrap their body in a nested .panel — a frame inside a
+   frame, indenting the content twice. Strip the inner frame so its header sits
+   at the same inset as every other modal's and can pin the same way below. */
+.modal-panel > .panel {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+/* Long forms — create ledger, create product, record receipt — scroll inside
+   the panel, and the only way out used to be the Cancel button at the very
+   bottom. Pinning the header keeps its close button reachable from anywhere in
+   the form. The negative margins pull the bar out to the panel's padding edge
+   so content scrolls under something opaque, not past a floating strip, and the
+   negative `top` parks the panel's own top padding off-screen when pinned. */
+.modal-panel > .panel__header,
+.modal-panel > .panel > .panel__header {
+  position: sticky;
+  top: -22px;
+  z-index: 2;
+  margin: -22px -22px 20px;
+  padding: 22px 22px 14px;
+  border-radius: 23px 23px 0 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-modal-header);
+}
+
+/* The wrapper is a .stack grid, so its 16px gap already separates the header
+   from the body — the extra bottom margin would double the gap. */
+.modal-panel > .panel > .panel__header {
+  margin-bottom: 0;
 }
 
 .modal-panel--invoice-preview {

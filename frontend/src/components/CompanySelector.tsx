@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import api, { getApiErrorMessage } from '../api/client';
+import ModalCloseButton from './ModalCloseButton';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 import type {
   CompanyCreationCapOut,
   CompanyListItem,
@@ -16,6 +18,8 @@ export default function CompanySelector() {
   const [companySwitchingId, setCompanySwitchingId] = useState<number | null>(null);
   const [companyError, setCompanyError] = useState('');
   const [newCompanyModalOpen, setNewCompanyModalOpen] = useState(false);
+
+  useEscapeClose(useCallback(() => setNewCompanyModalOpen(false), []));
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newCompanySubmitting, setNewCompanySubmitting] = useState(false);
   const [newCompanyError, setNewCompanyError] = useState('');
@@ -230,7 +234,10 @@ export default function CompanySelector() {
               transition={{ duration: 0.2 }}
               style={{ maxWidth: '28rem' }}
             >
-              <h2 style={{ marginBottom: '1.25rem', fontSize: '1.125rem', fontWeight: 700 }}>New Company</h2>
+              <div className="panel__header">
+                <h2 className="nav-panel__title">New Company</h2>
+                <ModalCloseButton onClick={() => setNewCompanyModalOpen(false)} label="Close new company" />
+              </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.875rem', fontWeight: 500 }}>
                   Company name

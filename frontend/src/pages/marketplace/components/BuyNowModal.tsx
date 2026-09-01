@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import ModalCloseButton from '../../../components/ModalCloseButton';
 import { useEscapeClose } from '../../../hooks/useEscapeClose';
 import {
   computeOrderTotals,
@@ -56,6 +57,7 @@ export default function BuyNowModal({
             <p className="eyebrow">Buy now</p>
             <h2 id="marketplace-buy-title" className="nav-panel__title">{listing.title}</h2>
           </div>
+          <ModalCloseButton onClick={onClose} label="Close buy now" />
         </div>
 
         <div className="marketplace-buy__seller">

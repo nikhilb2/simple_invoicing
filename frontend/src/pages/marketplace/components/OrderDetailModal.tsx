@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import ModalCloseButton from '../../../components/ModalCloseButton';
 import { useEscapeClose } from '../../../hooks/useEscapeClose';
 import { formatMoney, formatQuantity } from '../../../features/marketplace/decimal';
 import type { MarketplaceOrder } from '../../../features/marketplace/types';
@@ -30,7 +31,10 @@ export default function OrderDetailModal({
             <p className="eyebrow">{order.side === 'sell' ? 'Selling' : 'Buying'}</p>
             <h2 id="marketplace-order-title" className="nav-panel__title">{order.remote_order_id}</h2>
           </div>
-          <span className={`status-chip status-chip--${order.state}`}>{order.state}</span>
+          <div className="button-row">
+            <span className={`status-chip status-chip--${order.state}`}>{order.state}</span>
+            <ModalCloseButton onClick={onClose} label="Close order detail" />
+          </div>
         </div>
 
         <div className="marketplace-buy__seller">

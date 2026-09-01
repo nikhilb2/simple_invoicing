@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Lock } from 'lucide-react';
+import ModalCloseButton from './ModalCloseButton';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import { track } from '../lib/analytics';
@@ -234,7 +235,7 @@ export default function CreateInvoiceModal({
           </div>
           <div className="button-row">
             <div className="status-chip">Total {formatCurrency(totalAmount, currencyCode)}</div>
-            <button type="button" className="button button--ghost" onClick={onClose} title="Close invoice dialog" aria-label="Close invoice dialog">✕</button>
+            <ModalCloseButton onClick={onClose} label="Close create invoice" />
           </div>
         </div>
 

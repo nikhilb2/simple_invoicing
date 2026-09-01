@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Store } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from './StatusToasts';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 import ListingFormModal, {
   type ListingFormValues,
 } from '../pages/marketplace/components/ListingFormModal';
@@ -69,6 +70,8 @@ export default function PublishToMarketplaceButton({
 
   const [open, setOpen] = useState(false);
   const [formError, setFormError] = useState('');
+
+  useEscapeClose(useCallback(() => { setOpen(false); setFormError(''); }, []));
   const [success, setSuccess] = useState('');
 
   // Shares MyListingsPage's cache entry, so this costs one request per page

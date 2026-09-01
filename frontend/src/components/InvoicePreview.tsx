@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import { track } from '../lib/analytics';
@@ -21,7 +21,11 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
   const [previewFailed, setPreviewFailed] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
-  useEscapeClose(onClose);
+  // The email modal stacked on top closes itself on Escape; without this guard
+  // the same keypress tears down the preview behind it as well.
+  useEscapeClose(useCallback(() => {
+    if (!showEmailModal) onClose();
+  }, [showEmailModal, onClose]));
 
   useEffect(() => {
     let isMounted = true;
