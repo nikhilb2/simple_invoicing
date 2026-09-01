@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { AnimatePresence, motion } from 'framer-motion';
 import CompanySelector from './CompanySelector';
+import ModalCloseButton from './ModalCloseButton';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 import { useAuth } from '../context/AuthContext';
 import { useFY } from '../context/FYContext';
 
@@ -35,6 +37,8 @@ export default function SidebarFYSwitcher() {
 
   const [fyDropdownOpen, setFyDropdownOpen] = useState(false);
   const [newFYModalOpen, setNewFYModalOpen] = useState(false);
+
+  useEscapeClose(useCallback(() => setNewFYModalOpen(false), []));
   const [newFYStartYear, setNewFYStartYear] = useState('');
   const [newFYError, setNewFYError] = useState('');
   const [newFYSubmitting, setNewFYSubmitting] = useState(false);
@@ -170,7 +174,10 @@ export default function SidebarFYSwitcher() {
               transition={{ duration: 0.2 }}
               style={{ maxWidth: '28rem' }}
             >
-              <h2 style={{ marginBottom: '1.25rem', fontSize: '1.125rem', fontWeight: 700 }}>New Financial Year</h2>
+              <div className="panel__header">
+                <h2 className="nav-panel__title">New Financial Year</h2>
+                <ModalCloseButton onClick={() => setNewFYModalOpen(false)} label="Close new financial year" />
+              </div>
               <form
                 onSubmit={async (e) => {
                   e.preventDefault();

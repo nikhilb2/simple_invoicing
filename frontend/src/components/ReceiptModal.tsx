@@ -6,7 +6,9 @@ import { fetchOutstandingInvoices } from '../features/invoices/api';
 import formatCurrency from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate';
 import EmptyState from './EmptyState';
+import ModalCloseButton from './ModalCloseButton';
 import { useFY } from '../context/FYContext';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 
 interface ReceiptModalProps {
   ledgerId: number;
@@ -69,6 +71,8 @@ export default function ReceiptModal({
   onError,
 }: ReceiptModalProps) {
   const { activeFY } = useFY();
+
+  useEscapeClose(onClose);
 
   const [form, setForm] = useState<PaymentCreate>({
     ledger_id: ledgerId,
@@ -174,7 +178,7 @@ export default function ReceiptModal({
               <p className="eyebrow">Receipt</p>
               <h2 className="nav-panel__title">Record Receipt — {ledgerName}</h2>
             </div>
-            <button type="button" className="button button--ghost" onClick={onClose} title="Close" aria-label="Close">✕</button>
+            <ModalCloseButton onClick={onClose} label="Close record receipt" />
           </div>
           <form onSubmit={(e) => void handleSubmit(e)} className="stack">
             <div className="field">

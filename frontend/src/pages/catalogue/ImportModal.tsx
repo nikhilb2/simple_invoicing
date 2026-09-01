@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CircleCheck, FileDown, FileSpreadsheet, TriangleAlert, Upload } from 'lucide-react';
 import api, { getApiErrorMessage } from '../../api/client';
+import ModalCloseButton from '../../components/ModalCloseButton';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { track } from '../../lib/analytics';
 import { exportCatalogueCsv } from './exports';
@@ -165,6 +166,7 @@ export default function ImportModal({ onClose, onImported }: ImportModalProps) {
       <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
         <div className="panel__header">
           <h2 id={TITLE_ID} className="nav-panel__title">Import catalogue from CSV</h2>
+          <ModalCloseButton onClick={requestClose} label="Close CSV import" />
         </div>
 
         <div className="catalogue-import__body">

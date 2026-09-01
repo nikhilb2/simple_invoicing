@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ProductCombobox from '../../../components/ProductCombobox';
+import ModalCloseButton from '../../../components/ModalCloseButton';
 import { useEscapeClose } from '../../../hooks/useEscapeClose';
 import {
   canonicalAskingPrice,
@@ -184,6 +185,7 @@ export default function ListingFormModal({
               {listing ? listing.title : lockedProduct?.name ?? 'New marketplace listing'}
             </h2>
           </div>
+          <ModalCloseButton onClick={onClose} label="Close listing form" />
         </div>
 
         <form

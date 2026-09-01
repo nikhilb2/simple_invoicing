@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import ModalCloseButton from '../../../components/ModalCloseButton';
 import { useEscapeClose } from '../../../hooks/useEscapeClose';
 import type { MarketplaceOrder, RejectOrderPayload } from '../../../features/marketplace/types';
 
@@ -42,6 +43,7 @@ export default function RejectOrderModal({ order, submitting, error, onClose, on
             <p className="eyebrow">Reject order</p>
             <h2 id="marketplace-reject-title" className="nav-panel__title">{order.remote_order_id}</h2>
           </div>
+          <ModalCloseButton onClick={onClose} label="Close reject order" />
         </div>
 
         <form

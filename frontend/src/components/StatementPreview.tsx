@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, Ledger, LedgerStatement } from '../types/api';
 import formatCurrency from '../utils/formatting';
 import SendEmailModal from './SendEmailModal';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 
 type StatementPreviewProps = {
   ledger: Ledger;
@@ -15,6 +16,12 @@ type StatementPreviewProps = {
 
 export default function StatementPreview({ ledger, statement, company, currencyCode, onClose, onError }: StatementPreviewProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
+
+  // The email modal stacked on top closes itself on Escape; without this guard
+  // the same keypress tears down the preview behind it as well.
+  useEscapeClose(useCallback(() => {
+    if (!showEmailModal) onClose();
+  }, [showEmailModal, onClose]));
   const companyDetails = [
     company?.gst ? `GST: ${company.gst}` : '',
     company?.phone_number ? `Phone: ${company.phone_number}` : '',

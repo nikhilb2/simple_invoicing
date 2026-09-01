@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
+import ModalCloseButton from '../components/ModalCloseButton';
 import StatusToasts from '../components/StatusToasts';
 import type { CompanyAccount, CompanyProfile, Ledger, Payment, PaymentCreate, PaymentUpdate } from '../types/api';
 import formatCurrency from '../utils/formatting';
 import { useFY } from '../context/FYContext';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
 
 function defaultDateRange() {
@@ -46,6 +48,8 @@ export default function CashBankPage() {
   const [deepLinkPinned, setDeepLinkPinned] = useState(() => deepLinkPaymentId !== null);
 
   const [showEntryModal, setShowEntryModal] = useState(false);
+
+  useEscapeClose(useCallback(() => setShowEntryModal(false), []));
   const [entrySubmitting, setEntrySubmitting] = useState(false);
   const [editingEntry, setEditingEntry] = useState<null | {
     id: number;
@@ -467,15 +471,7 @@ export default function CashBankPage() {
             <div className="panel stack">
               <div className="panel__header">
                 <h2 className="nav-panel__title">{editingEntry ? 'Edit entry' : 'Add debit / credit entry'}</h2>
-                <button
-                  type="button"
-                  className="button button--ghost"
-                  onClick={() => setShowEntryModal(false)}
-                  title="Close entry dialog"
-                  aria-label="Close entry dialog"
-                >
-                  ✕
-                </button>
+                <ModalCloseButton onClick={() => setShowEntryModal(false)} label="Close entry dialog" />
               </div>
 
               <form onSubmit={(event) => void handleSubmitEntry(event)} className="stack">

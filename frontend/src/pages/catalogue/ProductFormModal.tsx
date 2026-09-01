@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../../api/client';
 import { track } from '../../lib/analytics';
+import ModalCloseButton from '../../components/ModalCloseButton';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import type { Product, ProductCreate } from '../../types/api';
 import SerialChips from '../invoices/components/SerialChips';
@@ -272,6 +273,7 @@ export default function ProductFormModal({
               {isEdit ? `Editing ${row?.name}` : 'Add a product'}
             </h2>
           </div>
+          <ModalCloseButton onClick={onCancel} label="Close product form" />
         </div>
 
         <form className="stack" onSubmit={handleSubmit}>

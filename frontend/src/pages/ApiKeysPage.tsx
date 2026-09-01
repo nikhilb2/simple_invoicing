@@ -5,6 +5,7 @@ import type { ApiKey, ApiKeyCreate, ApiKeyCreateResponse } from '../types/api';
 import StatusToasts from '../components/StatusToasts';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import ModalCloseButton from '../components/ModalCloseButton';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -82,6 +83,7 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
             <p className="eyebrow">New API key</p>
             <h2 id="create-api-key-title" className="nav-panel__title">Create API key</h2>
           </div>
+          <ModalCloseButton onClick={onClose} label="Close create API key" />
         </div>
 
         <form className="stack" onSubmit={handleSubmit} style={{ marginTop: '16px' }}>
@@ -166,6 +168,7 @@ function RevealModal({ rawKey, name, onClose }: RevealModalProps) {
             <p className="eyebrow">API key created</p>
             <h2 id="reveal-key-title" className="nav-panel__title">Copy your key now</h2>
           </div>
+          <ModalCloseButton onClick={onClose} label="Close API key" />
         </div>
 
         <p style={{ margin: '16px 0 8px', fontSize: '0.875rem', opacity: 0.75 }}>

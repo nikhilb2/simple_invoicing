@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ModalCloseButton from './ModalCloseButton';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import { track } from '../lib/analytics';
@@ -115,15 +116,7 @@ export default function SendEmailModal({
             <p className="eyebrow">Compose email</p>
             <h2 id="send-email-title" className="nav-panel__title">{getTitle()}</h2>
           </div>
-          <button
-            type="button"
-            className="button button--ghost"
-            onClick={onClose}
-            title="Close modal"
-            aria-label="Close modal"
-          >
-            ✕
-          </button>
+          <ModalCloseButton onClick={onClose} label="Close compose email" />
         </div>
 
         <form onSubmit={handleSubmit} className="stack">

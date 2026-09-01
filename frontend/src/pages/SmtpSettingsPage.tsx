@@ -5,6 +5,7 @@ import type { SmtpConfig, SmtpConfigCreate, SmtpConfigUpdate } from '../types/ap
 import StatusToasts from '../components/StatusToasts';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import ModalCloseButton from '../components/ModalCloseButton';
 
 // ---------------------------------------------------------------------------
 // Test email modal
@@ -49,6 +50,7 @@ function TestEmailModal({ config, onClose }: TestEmailModalProps) {
             <p className="eyebrow">Test connection</p>
             <h2 id="test-email-title" className="nav-panel__title">Send test email</h2>
           </div>
+          <ModalCloseButton onClick={onClose} label="Close send test email" />
         </div>
         <p style={{ margin: '12px 0 4px', fontSize: '0.875rem', opacity: 0.7 }}>
           Using: <strong>{config.name}</strong> ({config.host}:{config.port})
@@ -189,6 +191,7 @@ function SmtpFormModal({ editing, onClose, onSaved, onError }: SmtpFormModalProp
             <p className="eyebrow">{editing ? 'Edit config' : 'Add config'}</p>
             <h2 id="smtp-form-title" className="nav-panel__title">{title}</h2>
           </div>
+          <ModalCloseButton onClick={onClose} label="Close SMTP config" />
         </div>
 
         <form className="stack" onSubmit={handleSubmit} style={{ marginTop: '16px' }}>

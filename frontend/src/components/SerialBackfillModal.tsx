@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import ModalCloseButton from './ModalCloseButton';
 import SerialChips from '../pages/invoices/components/SerialChips';
 import { fetchAvailableSerials } from '../features/serials/api';
 import type { ProductCreate } from '../types/api';
@@ -139,6 +140,7 @@ export default function SerialBackfillModal({
             <p className="eyebrow">Serial tracking</p>
             <h2 id="serial-backfill-title" className="nav-panel__title">Enter the serials already in stock</h2>
           </div>
+          <ModalCloseButton onClick={onCancel} label="Close serial entry" />
         </div>
 
         <div className="serial-backfill">

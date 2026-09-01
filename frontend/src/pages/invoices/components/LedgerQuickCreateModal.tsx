@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import ModalCloseButton from '../../../components/ModalCloseButton';
 import { useQueryClient } from '@tanstack/react-query';
 import api, { getApiErrorMessage } from '../../../api/client';
 import type { LedgerCreate } from '../../../types/api';
@@ -94,6 +95,7 @@ export default function LedgerQuickCreateModal() {
             <p className="eyebrow">Quick add</p>
             <h2 id="ledger-modal-title" className="nav-panel__title">Create ledger</h2>
           </div>
+          <ModalCloseButton onClick={closeLedgerCreateModal} label="Close create ledger" />
         </div>
 
         <form className="stack" onSubmit={handleSubmit}>
