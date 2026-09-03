@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Download, ExternalLink, Printer, Share2 } from 'lucide-react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import ShareModal from './ShareModal';
+import PreviewToolbar from './PreviewToolbar';
 
 type PaymentReceiptPreviewProps = {
   paymentId: number;
@@ -23,6 +25,7 @@ export default function PaymentReceiptPreview({
   onError,
 }: PaymentReceiptPreviewProps) {
   const [showShareModal, setShowShareModal] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
@@ -32,8 +35,9 @@ export default function PaymentReceiptPreview({
   // The share modal stacked on top closes itself on Escape; without this guard
   // the same keypress tears down the preview behind it as well.
   useEscapeClose(useCallback(() => {
+    if (menuOpen) { setMenuOpen(false); return; }
     if (!showShareModal) onClose();
-  }, [showShareModal, onClose]));
+  }, [menuOpen, showShareModal, onClose]));
 
   useEffect(() => {
     let isMounted = true;
@@ -110,51 +114,44 @@ export default function PaymentReceiptPreview({
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="receipt-preview-title">
       <div className="modal-panel modal-panel--invoice-preview">
-        <div className="panel__header no-print">
-          <div>
-            <p className="eyebrow">Receipt preview</p>
-            <h2 id="receipt-preview-title" className="nav-panel__title">PDF receipt {label}</h2>
-          </div>
-          <div className="button-row">
-            <button
-              type="button"
-              className="button button--secondary"
-              onClick={handlePrintPdf}
-              disabled={!pdfUrl || loadingPdf || previewFailed}
-              title="Print receipt"
-              aria-label="Print receipt"
-            >
-              Print
-            </button>
-            <button
-              type="button"
-              className="button button--primary"
-              title="Download receipt PDF"
-              aria-label="Download receipt PDF"
-              onClick={handleDownloadPdf}
-            >
-              Download PDF
-            </button>
-            <button
-              type="button"
-              className="button button--secondary"
-              onClick={() => setShowShareModal(true)}
-              title="Share receipt link"
-              aria-label="Share receipt"
-            >
-              Share
-            </button>
-            <button
-              type="button"
-              className="button button--ghost"
-              onClick={onClose}
-              title="Close receipt preview"
-              aria-label="Close receipt preview"
-            >
-              Close
-            </button>
-          </div>
-        </div>
+        <PreviewToolbar
+          eyebrow="Receipt preview"
+          titleId="receipt-preview-title"
+          title={`Receipt ${label}`}
+          primary={{
+            label: 'Share',
+            icon: <Share2 size={16} aria-hidden="true" />,
+            onClick: () => setShowShareModal(true),
+            title: 'Share a link to this receipt',
+          }}
+          secondary={[
+            {
+              label: 'Print',
+              icon: <Printer size={16} aria-hidden="true" />,
+              onClick: handlePrintPdf,
+              disabled: !pdfUrl || loadingPdf || previewFailed,
+              title: 'Print receipt',
+            },
+            {
+              label: 'Download',
+              icon: <Download size={16} aria-hidden="true" />,
+              onClick: handleDownloadPdf,
+              title: 'Download receipt PDF',
+            },
+          ]}
+          menu={[
+            {
+              label: 'Open in new tab',
+              icon: <ExternalLink size={16} aria-hidden="true" />,
+              onClick: handleOpenInNewTab,
+              disabled: !pdfUrl,
+            },
+          ]}
+          menuOpen={menuOpen}
+          onMenuOpenChange={setMenuOpen}
+          onClose={onClose}
+          closeLabel="Close receipt preview"
+        />
 
         <div className="invoice-pdf-viewer" aria-live="polite">
           {loadingPdf ? <p className="muted-text">Loading PDF preview...</p> : null}

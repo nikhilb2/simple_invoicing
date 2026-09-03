@@ -6631,3 +6631,119 @@ a.invoice-row {
     align-items: stretch;
   }
 }
+
+/* ── Document preview header ──────────────────────────────────────────────
+   Invoice, receipt and statement previews share one header (PreviewToolbar).
+   Each used to carry five or six equally loud buttons plus a raw number input;
+   the hierarchy here is the fix — one filled action, quiet siblings, the rare
+   ones folded into "…", and close pulled out to the corner. */
+.preview-header {
+  align-items: flex-start;
+}
+
+.preview-header__title {
+  min-width: 0;
+}
+
+.preview-header__meta {
+  margin: 6px 0 0;
+}
+
+/* Close sits apart from the actions: it dismisses the dialog, it does not act
+   on the document, and grouping it with the actions is what made "Close" read
+   as a sixth peer of Print and Download. */
+.preview-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.preview-toolbar {
+  gap: 8px;
+}
+
+/* The overflow trigger should read as the quietest thing in the row. */
+.preview-toolbar .action-dropdown .button--icon {
+  border-radius: 999px;
+}
+
+/* ── Copies stepper (invoice preview menu) ─────────────────────────────── */
+.copies-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 14px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.copies-stepper__label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.copies-stepper__control {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.copies-stepper__step {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.copies-stepper__step:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.copies-stepper__step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.copies-stepper__value {
+  min-width: 22px;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* Menu items are buttons too, so they need the same disabled treatment the
+   row buttons get — without it a disabled Print in the menu still looks live. */
+.action-dropdown__item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.action-dropdown__item:disabled:hover {
+  background: transparent;
+}
+
+@media (max-width: 640px) {
+  /* Labels are the first thing to go when the row cannot fit; the icons and
+     the tooltips carry the meaning, and Share keeps its label as the primary. */
+  .preview-header__actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

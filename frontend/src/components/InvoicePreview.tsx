@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Download, Mail, Printer, Share2 } from 'lucide-react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import { track } from '../lib/analytics';
@@ -7,6 +8,8 @@ import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import formatCurrency from '../utils/formatting';
 import SendEmailModal from './SendEmailModal';
 import ShareModal from './ShareModal';
+import PreviewToolbar from './PreviewToolbar';
+import CopiesStepper from './CopiesStepper';
 
 type InvoicePreviewProps = {
   invoice: Invoice;
@@ -17,6 +20,7 @@ type InvoicePreviewProps = {
 export default function InvoicePreview({ invoice, onClose, onError }: InvoicePreviewProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [copies, setCopies] = useState(1);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(true);
@@ -27,8 +31,11 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
   // The email and share modals stacked on top close themselves on Escape;
   // without this guard the same keypress tears down the preview behind them.
   useEscapeClose(useCallback(() => {
+    // Escape closes the open menu first, then the preview -- otherwise opening
+    // the menu and hitting Escape would dismiss the whole dialog underneath it.
+    if (menuOpen) { setMenuOpen(false); return; }
     if (!showEmailModal && !showShareModal) onClose();
-  }, [showEmailModal, showShareModal, onClose]));
+  }, [menuOpen, showEmailModal, showShareModal, onClose]));
 
   useEffect(() => {
     let isMounted = true;
@@ -115,91 +122,50 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="invoice-preview-title">
       <div className="modal-panel modal-panel--invoice-preview">
-        <div className="panel__header no-print">
-          <div>
-            <p className="eyebrow">Invoice preview</p>
-            <h2 id="invoice-preview-title" className="nav-panel__title">PDF invoice {invoice.invoice_number || `#${invoice.id}`}</h2>
-            <p className="muted-text" style={{ margin: '6px 0 0' }}>
-              Invoice date: {formatInvoiceDateLabel(invoice.invoice_date)}
-              {invoice.due_date ? ` · Due date: ${formatInvoiceDateLabel(invoice.due_date)}` : ' · No due date'}
-            </p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151', whiteSpace: 'nowrap', fontWeight: '500' }}>
-              Copies
-              <input
-                type="number"
-                min={1}
-                max={10}
-                value={copies}
-                onChange={(e) => {
-                  const newValue = e.target.value;
-                  if (newValue === '') {
-                    // Allow empty input while typing
-                    setCopies(0);
-                  } else {
-                    const parsed = parseInt(newValue, 10);
-                    if (!isNaN(parsed)) {
-                      setCopies(Math.min(10, Math.max(1, parsed)));
-                    }
-                  }
-                }}
-                onBlur={() => {
-                  // Set to 1 if empty when leaving the input
-                  if (copies === 0) {
-                    setCopies(1);
-                  }
-                }}
-                style={{ 
-                  width: '70px', 
-                  padding: '6px 8px', 
-                  border: '1px solid #d1d5db', 
-                  borderRadius: '6px', 
-                  fontSize: '13px', 
-                  textAlign: 'center',
-                  fontWeight: '500',
-                  transition: 'border-color 0.2s',
-                  color: '#d1d5db',
-                }}
-              />
-            </label>
-            <div className="button-row">
-            <button type="button" className="button button--secondary" onClick={handlePrintPdf} disabled={!pdfUrl || loadingPdf || previewFailed} title="Print invoice" aria-label="Print invoice">
-              Print
-            </button>
-            <button
-              type="button"
-              className="button button--primary"
-              title="Download invoice PDF"
-              aria-label="Download invoice PDF"
-              onClick={handleDownloadPdf}
-            >
-              Download PDF
-            </button>
-            <button
-              type="button"
-              className="button button--primary"
-              onClick={() => setShowEmailModal(true)}
-              title="Email invoice"
-              aria-label="Email invoice"
-            >
-              Email Invoice
-            </button>
-            <button
-              type="button"
-              className="button button--secondary"
-              onClick={() => setShowShareModal(true)}
-              title="Share invoice link"
-              aria-label="Share invoice"
-            >
-              Share
-            </button>
-            <button type="button" className="button button--ghost" onClick={onClose} title="Close invoice preview" aria-label="Close invoice preview">
-              Close
-            </button>
-            </div>
-          </div>
-        </div>
+        <PreviewToolbar
+          eyebrow="Invoice preview"
+          titleId="invoice-preview-title"
+          title={`${documentNoun} ${invoice.invoice_number || `#${invoice.id}`}`}
+          meta={
+            <>
+              {formatInvoiceDateLabel(invoice.invoice_date)}
+              {invoice.due_date ? ` · Due ${formatInvoiceDateLabel(invoice.due_date)}` : ' · No due date'}
+            </>
+          }
+          primary={{
+            label: 'Share',
+            icon: <Share2 size={16} aria-hidden="true" />,
+            onClick: () => setShowShareModal(true),
+            title: 'Share a link to this invoice',
+          }}
+          secondary={[
+            {
+              label: 'Print',
+              icon: <Printer size={16} aria-hidden="true" />,
+              onClick: handlePrintPdf,
+              disabled: !pdfUrl || loadingPdf || previewFailed,
+              title: 'Print invoice',
+            },
+            {
+              label: 'Download',
+              icon: <Download size={16} aria-hidden="true" />,
+              onClick: handleDownloadPdf,
+              title: 'Download invoice PDF',
+            },
+          ]}
+          menuExtra={<CopiesStepper value={copies} onChange={setCopies} />}
+          menu={[
+            {
+              label: 'Email invoice',
+              icon: <Mail size={16} aria-hidden="true" />,
+              onClick: () => setShowEmailModal(true),
+            },
+          ]}
+          menuOpen={menuOpen}
+          onMenuOpenChange={setMenuOpen}
+          onClose={onClose}
+          closeLabel="Close invoice preview"
+        />
 
         <div className="invoice-pdf-viewer" aria-live="polite">
           {loadingPdf ? <p className="muted-text">Loading PDF preview...</p> : null}
