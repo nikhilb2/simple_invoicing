@@ -1,9 +1,11 @@
 import { useCallback, useState } from 'react';
+import { Download, Mail, Printer, Share2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, Ledger, LedgerStatement } from '../types/api';
 import formatCurrency from '../utils/formatting';
 import SendEmailModal from './SendEmailModal';
 import ShareModal from './ShareModal';
+import PreviewToolbar from './PreviewToolbar';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 
 type StatementPreviewProps = {
@@ -18,12 +20,15 @@ type StatementPreviewProps = {
 export default function StatementPreview({ ledger, statement, company, currencyCode, onClose, onError }: StatementPreviewProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // The email and share modals stacked on top close themselves on Escape;
   // without this guard the same keypress tears down the preview behind them.
+  // The overflow menu is the same story one level down.
   useEscapeClose(useCallback(() => {
+    if (menuOpen) { setMenuOpen(false); return; }
     if (!showEmailModal && !showShareModal) onClose();
-  }, [showEmailModal, showShareModal, onClose]));
+  }, [menuOpen, showEmailModal, showShareModal, onClose]));
   const companyDetails = [
     company?.gst ? `GST: ${company.gst}` : '',
     company?.phone_number ? `Phone: ${company.phone_number}` : '',
@@ -40,67 +45,63 @@ export default function StatementPreview({ ledger, statement, company, currencyC
     ledger.email || '',
   ].filter(Boolean).join(' · ');
 
+  const handleDownloadPdf = async () => {
+    try {
+      const response = await api.get(`/ledgers/${ledger.id}/statement/pdf`, {
+        params: { from_date: statement.from_date, to_date: statement.to_date },
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(response.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `statement_${ledger.name.replace(/\s+/g, '_').slice(0, 30)}_${statement.from_date}_${statement.to_date}.pdf`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      onError?.(getApiErrorMessage(err, 'Unable to download PDF'));
+    }
+  };
+
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="statement-preview-title">
       <div className="modal-panel modal-panel--invoice-preview">
-        <div className="panel__header no-print">
-          <div>
-            <p className="eyebrow">Statement preview</p>
-            <h2 id="statement-preview-title" className="nav-panel__title">
-              {ledger.name} — {statement.from_date} to {statement.to_date}
-            </h2>
-          </div>
-          <div className="button-row">
-            <button type="button" className="button button--secondary" onClick={() => window.print()} title="Print statement" aria-label="Print statement">
-              Print
-            </button>
-            <button
-              type="button"
-              className="button button--primary"
-              title="Download statement PDF"
-              aria-label="Download statement PDF"
-              onClick={async () => {
-                try {
-                  const response = await api.get(`/ledgers/${ledger.id}/statement/pdf`, {
-                    params: { from_date: statement.from_date, to_date: statement.to_date },
-                    responseType: 'blob',
-                  });
-                  const url = window.URL.createObjectURL(response.data as Blob);
-                  const link = document.createElement('a');
-                  link.href = url;
-                  link.download = `statement_${ledger.name.replace(/\s+/g, '_').slice(0, 30)}_${statement.from_date}_${statement.to_date}.pdf`;
-                  link.click();
-                  window.URL.revokeObjectURL(url);
-                } catch (err) {
-                  onError?.(getApiErrorMessage(err, 'Unable to download PDF'));
-                }
-              }}
-            >
-              Download PDF
-            </button>
-            <button
-              type="button"
-              className="button button--primary"
-              onClick={() => setShowEmailModal(true)}
-              title="Email statement"
-              aria-label="Email statement"
-            >
-              Email Statement
-            </button>
-            <button
-              type="button"
-              className="button button--secondary"
-              onClick={() => setShowShareModal(true)}
-              title="Share statement link"
-              aria-label="Share statement"
-            >
-              Share
-            </button>
-            <button type="button" className="button button--ghost" onClick={onClose} title="Close statement preview" aria-label="Close statement preview">
-              Close
-            </button>
-          </div>
-        </div>
+        <PreviewToolbar
+          eyebrow="Statement preview"
+          titleId="statement-preview-title"
+          title={ledger.name}
+          meta={`${statement.from_date} to ${statement.to_date}`}
+          primary={{
+            label: 'Share',
+            icon: <Share2 size={16} aria-hidden="true" />,
+            onClick: () => setShowShareModal(true),
+            title: 'Share a link to this statement',
+          }}
+          secondary={[
+            {
+              label: 'Print',
+              icon: <Printer size={16} aria-hidden="true" />,
+              onClick: () => window.print(),
+              title: 'Print statement',
+            },
+            {
+              label: 'Download',
+              icon: <Download size={16} aria-hidden="true" />,
+              onClick: handleDownloadPdf,
+              title: 'Download statement PDF',
+            },
+          ]}
+          menu={[
+            {
+              label: 'Email statement',
+              icon: <Mail size={16} aria-hidden="true" />,
+              onClick: () => setShowEmailModal(true),
+            },
+          ]}
+          menuOpen={menuOpen}
+          onMenuOpenChange={setMenuOpen}
+          onClose={onClose}
+          closeLabel="Close statement preview"
+        />
 
         <article className="invoice-print-root invoice-sheet">
           <header className="invoice-sheet__header">
