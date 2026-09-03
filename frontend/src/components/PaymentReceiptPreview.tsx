@@ -1,10 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
+import ShareModal from './ShareModal';
 
 type PaymentReceiptPreviewProps = {
   paymentId: number;
   paymentNumber?: string | null;
+  /** The customer's phone as stored — free text, and often absent. */
+  ledgerPhone?: string | null;
+  /** Named in the WhatsApp message so the customer knows who sent it. */
+  companyName?: string | null;
   onClose: () => void;
   onError?: (message: string) => void;
 };
@@ -12,16 +17,23 @@ type PaymentReceiptPreviewProps = {
 export default function PaymentReceiptPreview({
   paymentId,
   paymentNumber,
+  ledgerPhone,
+  companyName,
   onClose,
   onError,
 }: PaymentReceiptPreviewProps) {
+  const [showShareModal, setShowShareModal] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
   const [previewFailed, setPreviewFailed] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
-  useEscapeClose(onClose);
+  // The share modal stacked on top closes itself on Escape; without this guard
+  // the same keypress tears down the preview behind it as well.
+  useEscapeClose(useCallback(() => {
+    if (!showShareModal) onClose();
+  }, [showShareModal, onClose]));
 
   useEffect(() => {
     let isMounted = true;
@@ -125,6 +137,15 @@ export default function PaymentReceiptPreview({
             </button>
             <button
               type="button"
+              className="button button--secondary"
+              onClick={() => setShowShareModal(true)}
+              title="Share receipt link"
+              aria-label="Share receipt"
+            >
+              Share
+            </button>
+            <button
+              type="button"
               className="button button--ghost"
               onClick={onClose}
               title="Close receipt preview"
@@ -166,6 +187,17 @@ export default function PaymentReceiptPreview({
           ) : null}
         </div>
       </div>
+
+      {showShareModal ? (
+        <ShareModal
+          resourceType="payment"
+          resourceId={paymentId}
+          label={`Receipt ${label}`}
+          messageLead={`Receipt ${label}${companyName ? ` from ${companyName}` : ''}`}
+          phone={ledgerPhone}
+          onClose={() => setShowShareModal(false)}
+        />
+      ) : null}
     </div>
   );
 }

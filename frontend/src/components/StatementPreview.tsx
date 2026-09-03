@@ -3,6 +3,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, Ledger, LedgerStatement } from '../types/api';
 import formatCurrency from '../utils/formatting';
 import SendEmailModal from './SendEmailModal';
+import ShareModal from './ShareModal';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 
 type StatementPreviewProps = {
@@ -16,12 +17,13 @@ type StatementPreviewProps = {
 
 export default function StatementPreview({ ledger, statement, company, currencyCode, onClose, onError }: StatementPreviewProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
-  // The email modal stacked on top closes itself on Escape; without this guard
-  // the same keypress tears down the preview behind it as well.
+  // The email and share modals stacked on top close themselves on Escape;
+  // without this guard the same keypress tears down the preview behind them.
   useEscapeClose(useCallback(() => {
-    if (!showEmailModal) onClose();
-  }, [showEmailModal, onClose]));
+    if (!showEmailModal && !showShareModal) onClose();
+  }, [showEmailModal, showShareModal, onClose]));
   const companyDetails = [
     company?.gst ? `GST: ${company.gst}` : '',
     company?.phone_number ? `Phone: ${company.phone_number}` : '',
@@ -84,6 +86,15 @@ export default function StatementPreview({ ledger, statement, company, currencyC
               aria-label="Email statement"
             >
               Email Statement
+            </button>
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={() => setShowShareModal(true)}
+              title="Share statement link"
+              aria-label="Share statement"
+            >
+              Share
             </button>
             <button type="button" className="button button--ghost" onClick={onClose} title="Close statement preview" aria-label="Close statement preview">
               Close
@@ -204,6 +215,21 @@ export default function StatementPreview({ ledger, statement, company, currencyC
             // Could show success toast here if needed
           }}
           onError={(message) => onError?.(message)}
+        />
+      )}
+
+      {showShareModal && (
+        <ShareModal
+          resourceType="ledger_statement"
+          /* The ledger id, not a statement id — a statement is a view over a
+             period, and the period is what scopes the link. */
+          resourceId={ledger.id}
+          fromDate={statement.from_date}
+          toDate={statement.to_date}
+          label={`Statement — ${statement.from_date} to ${statement.to_date}`}
+          messageLead={`Account statement${company?.name ? ` from ${company.name}` : ''} (${statement.from_date} to ${statement.to_date}) — closing balance ${formatCurrency(statement.closing_balance, currencyCode)}`}
+          phone={ledger.phone_number}
+          onClose={() => setShowShareModal(false)}
         />
       )}
     </div>

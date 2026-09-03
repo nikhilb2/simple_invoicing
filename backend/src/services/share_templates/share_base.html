@@ -1,0 +1,337 @@
+{#
+  Public share page skeleton.
+
+  Rendered with autoescape ON: every value on this page (company name, party name,
+  document number) is user-supplied and is now being served to strangers.
+
+  No external fonts, no CDN, no JavaScript, no external images. The recipient is
+  usually opening this from inside WhatsApp on a phone with two bars of signal,
+  and the response CSP sets `script-src 'none'` and `img-src 'self' data:` —
+  anything needing JS or a third-party asset does not work here. Every visual
+  effect below is therefore plain CSS: gradients, not image files.
+
+  Two voices share this page on purpose. The top is the BUSINESS's document, so it
+  is light, quiet and neutral — their customer is reading it. The bottom is Simple
+  Invoicings talking, so it takes the brand's own dark/lime/pink treatment. The
+  hard visual break between them is what stops the promotion reading as if the
+  business wrote it.
+#}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>{{ page_title }}</title>
+{% block social %}{% endblock %}
+<style>
+  :root {
+    /* Document half — warm neutrals, tuned to sit beside the brand's #FCFBF8 */
+    --bg: #f5f3ef;
+    --bg-tint: #ece9e2;
+    --card: #ffffff;
+    --ink: #14120f;
+    --ink-soft: #4a463f;
+    --muted: #7c766b;
+    --line: #e7e3da;
+    --line-soft: #f0ece4;
+    --btn: #14120f;
+    --btn-ink: #fcfbf8;
+    --shadow: 0 1px 2px rgba(20,18,15,.05), 0 8px 24px -12px rgba(20,18,15,.18);
+
+    /* Brand palette, sampled from the marketing site. */
+    --brand-black: #0f0c0a;
+    --brand-panel: #181311;
+    --brand-ink: #fcfbf8;
+    --brand-muted: #c0bcaf;
+    --lime: #9ceb0a;
+    --pink: #f924a4;
+    --yellow: #ffcc33;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #100e0c;
+      --bg-tint: #171412;
+      --card: #1a1715;
+      --ink: #f4f1ea;
+      --ink-soft: #cdc7bb;
+      --muted: #948d80;
+      --line: #2a2622;
+      --line-soft: #221e1b;
+      --btn: #fcfbf8;
+      --btn-ink: #14120f;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(80rem 40rem at 50% -12rem, var(--bg-tint), transparent 70%),
+      var(--bg);
+    color: var(--ink);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+                 Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 660px; margin: 0 auto; padding: 20px 16px 40px; }
+
+  /* ── Sender identity ─────────────────────────────────────────────── */
+  .brand { display: flex; align-items: center; gap: 12px; padding: 6px 4px 18px; }
+  .brand img { max-height: 40px; max-width: 132px; object-fit: contain; display: block; }
+  .brand .company {
+    font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
+    color: var(--ink-soft); word-break: break-word;
+  }
+
+  /* ── Document summary card ───────────────────────────────────────── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 26px 24px 24px;
+    box-shadow: var(--shadow);
+  }
+  .doc-kicker {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 11px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 12px;
+  }
+  .doc-kicker .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--lime); box-shadow: 0 0 0 3px rgba(156,235,10,.18);
+  }
+  .doc-title {
+    font-size: 25px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.2;
+    margin: 0 0 20px; word-break: break-word;
+  }
+  .rows { margin: 0 0 20px; }
+  .row {
+    display: flex; justify-content: space-between; gap: 16px;
+    padding: 11px 0; border-bottom: 1px solid var(--line-soft);
+  }
+  .row:first-child { border-top: 1px solid var(--line-soft); }
+  .row .k { color: var(--muted); font-size: 14px; white-space: nowrap; }
+  .row .v { font-size: 14px; font-weight: 550; text-align: right; word-break: break-word; }
+
+  .amount { padding: 4px 0 2px; }
+  .amount .k {
+    color: var(--muted); font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .09em;
+  }
+  .amount .v {
+    font-size: 40px; font-weight: 750; letter-spacing: -0.035em; line-height: 1.1;
+    margin-top: 4px; word-break: break-word; font-variant-numeric: tabular-nums;
+  }
+
+  .btn {
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    width: 100%; margin-top: 22px; padding: 16px 18px;
+    background: var(--btn); color: var(--btn-ink);
+    text-align: center; text-decoration: none;
+    font-size: 16px; font-weight: 650; letter-spacing: -0.01em;
+    border-radius: 999px;
+  }
+  .btn svg { flex: none; }
+  .hint {
+    margin: 12px 2px 0; font-size: 12.5px; color: var(--muted); text-align: center;
+    word-break: break-all;
+  }
+
+  /* ── Desktop-only inline document ────────────────────────────────── */
+  .preview { display: none; }
+  @media (min-width: 900px) {
+    /* Breaks out wider than the 660px reading column: the document is a full
+       page of tabular data and reads badly squeezed into a phone-width card.
+       The wrap is centred, so a symmetric negative margin keeps it centred too. */
+    .preview {
+      display: block; margin-top: 22px;
+      width: calc(100% + 180px); margin-left: -90px;
+      background: var(--card); border: 1px solid var(--line);
+      border-radius: 20px; overflow: hidden; box-shadow: var(--shadow);
+    }
+    .preview .bar {
+      padding: 12px 20px; border-bottom: 1px solid var(--line-soft);
+      font-size: 11px; font-weight: 600; letter-spacing: .09em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    /* The document template lays out edge-to-edge, so without this inset its
+       right-aligned totals sit flush against the card border. */
+    .preview .frame { padding: 10px; background: #fff; }
+    .preview iframe {
+      display: block; width: 100%; height: 920px; border: 0; background: #fff;
+    }
+  }
+
+  .notice { text-align: center; padding: 44px 22px; }
+  .notice h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 10px; }
+  .notice p { margin: 0; color: var(--muted); font-size: 15px; }
+
+  /* ── Promo surface ───────────────────────────────────────────────────
+     Not an ad slot: the product's own brand surface, lifted from its marketing
+     site — warm near-black, a lime glow top-left, a magenta glow bottom-right,
+     a faint grid, and the lime→pink gradient the wordmark uses. It stays dark
+     in both colour schemes because it is a brand asset, not page chrome.
+     (Kept free of the brand name on purpose: everything inside <style> is
+     served to every visitor, so a name here would survive the promo being
+     switched off and make "is it really gone?" untestable.) */
+  .promo {
+    position: relative; overflow: hidden; isolation: isolate;
+    margin-top: 30px; padding: 30px 26px 26px;
+    border-radius: 24px;
+    background:
+      radial-gradient(34rem 20rem at -10% -20%, rgba(156,235,10,.30), transparent 62%),
+      radial-gradient(30rem 22rem at 115% 118%, rgba(249,36,164,.30), transparent 62%),
+      var(--brand-black);
+    color: var(--brand-ink);
+    border: 1px solid rgba(252,251,248,.10);
+  }
+  /* Faint grid, matching the marketing site's backdrop. Behind the content. */
+  .promo::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(252,251,248,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(252,251,248,.05) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(28rem 20rem at 50% 0%, #000 35%, transparent 78%);
+    -webkit-mask-image: radial-gradient(28rem 20rem at 50% 0%, #000 35%, transparent 78%);
+  }
+
+  .promo-id { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+  .promo-mark { flex: none; display: block; border-radius: 9px; }
+  .promo-id .name {
+    font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: var(--brand-ink);
+  }
+
+  .promo h2 {
+    font-size: 27px; font-weight: 780; letter-spacing: -0.035em; line-height: 1.14;
+    margin: 0 0 10px;
+    /* Fallback first: if background-clip:text is unsupported the text is still
+       readable warm-white rather than invisible. */
+    color: var(--brand-ink);
+    background-image: linear-gradient(96deg, var(--lime) 4%, #eaf7c0 38%, var(--pink) 96%);
+    -webkit-background-clip: text; background-clip: text;
+  }
+  @supports ((-webkit-background-clip: text) or (background-clip: text)) {
+    .promo h2 { -webkit-text-fill-color: transparent; }
+  }
+  .promo .sub {
+    margin: 0 0 18px; font-size: 15px; line-height: 1.5; color: var(--brand-muted);
+    max-width: 34rem;
+  }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 22px; padding: 0; list-style: none; }
+  .chips li {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 13px 7px 10px; border-radius: 999px;
+    font-size: 12.5px; font-weight: 550; color: var(--brand-ink);
+    background: rgba(252,251,248,.06);
+    border: 1px solid rgba(252,251,248,.12);
+  }
+  .chips svg { flex: none; color: var(--lime); }
+
+  .promo-cta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .cta-primary {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 14px 22px; border-radius: 999px;
+    font-size: 15px; font-weight: 700; letter-spacing: -0.01em;
+    color: var(--brand-black); text-decoration: none;
+    background: linear-gradient(96deg, var(--lime) 0%, #d7f25c 42%, var(--pink) 100%);
+    box-shadow: 0 10px 30px -12px rgba(156,235,10,.55);
+  }
+  .cta-secondary {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 13px 20px; border-radius: 999px;
+    font-size: 15px; font-weight: 600; color: var(--brand-ink); text-decoration: none;
+    background: rgba(252,251,248,.07);
+    border: 1px solid rgba(252,251,248,.16);
+  }
+  .cta-secondary svg { color: var(--lime); }
+  .promo-foot {
+    margin: 16px 0 0; font-size: 12.5px; color: rgba(192,188,175,.75);
+  }
+  .promo-foot a { color: var(--brand-muted); text-decoration: underline; text-underline-offset: 3px; }
+
+  @media (max-width: 400px) {
+    .promo { padding: 26px 20px 22px; }
+    .promo h2 { font-size: 24px; }
+    .cta-primary, .cta-secondary { width: 100%; justify-content: center; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+{% block content %}{% endblock %}
+
+{% if ad.enabled %}
+  <section class="promo" aria-label="About Simple Invoicings">
+    <div class="promo-id">
+      {# Inline SVG, not an <img>: the CSP forbids third-party images and this
+         costs no extra request on a two-bar connection. #}
+      <svg class="promo-mark" width="30" height="30" viewBox="0 0 32 32" role="img" aria-label="Simple Invoicings">
+        <defs>
+          <linearGradient id="siMark" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#ffcc33"/>
+            <stop offset="100%" stop-color="#9ceb0a"/>
+          </linearGradient>
+        </defs>
+        <rect width="32" height="32" rx="9" fill="url(#siMark)"/>
+        <path d="M11 8.5h7.2L23 13.2V23a1.6 1.6 0 0 1-1.6 1.6H11A1.6 1.6 0 0 1 9.4 23V10.1A1.6 1.6 0 0 1 11 8.5Z" fill="#0f0c0a" opacity=".92"/>
+        <path d="M12.7 17.4l2.1 2.1 4.3-4.6" fill="none" stroke="#9ceb0a" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="name">{{ ad.brand_name }}</span>
+    </div>
+
+    <h2>{{ ad.headline }}</h2>
+    <p class="sub">{{ ad.tagline }}</p>
+
+    {% if ad.chips %}
+    <ul class="chips">
+      {% for chip in ad.chips %}
+      <li>
+        <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M3.4 8.4l3 3 6.2-6.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>{{ chip }}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    <div class="promo-cta">
+      {# noreferrer matters here: without it the browser would hand the full share
+         URL — token included — to the destination in the Referer header. #}
+      {% if ad.whatsapp_url %}
+        <a class="cta-primary" href="{{ ad.whatsapp_url }}" rel="noopener noreferrer nofollow" target="_blank">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-2.9.8.8-2.8-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.740-1.7-.8-.2-.1-.4-.1-.6.1-.2.2-.6.8-.8 1-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.3.1-.2 0-.4 0-.5s-.6-1.4-.8-1.9c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3A2.9 2.9 0 0 0 6.8 12a5 5 0 0 0 1 2.6 11.5 11.5 0 0 0 4.4 3.9c1.6.6 2.2.7 3 .6a2.6 2.6 0 0 0 1.7-1.2 2.1 2.1 0 0 0 .1-1.2c0-.1-.2-.2-.5-.3Z"/>
+          </svg>{{ ad.cta_label }}
+        </a>
+      {% elif ad.website %}
+        <a class="cta-primary" href="{{ ad.website }}" rel="noopener noreferrer nofollow" target="_blank">{{ ad.cta_label }}</a>
+      {% endif %}
+
+      {% if ad.phone %}
+        <a class="cta-secondary" href="tel:{{ ad.phone_href }}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.4 2.1L8.1 9.6a16 16 0 0 0 6 6l1.2-1.2a2 2 0 0 1 2.1-.4c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2Z"/>
+          </svg>{{ ad.phone }}
+        </a>
+      {% endif %}
+    </div>
+
+    {% if ad.website %}
+      <p class="promo-foot">
+        {{ ad.footnote }} —
+        <a href="{{ ad.website }}" rel="noopener noreferrer nofollow" target="_blank">{{ ad.website_label }}</a>
+      </p>
+    {% endif %}
+  </section>
+{% endif %}
+</div>
+</body>
+</html>

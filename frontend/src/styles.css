@@ -6580,3 +6580,54 @@ a.invoice-row {
     transform: none;
   }
 }
+
+/* ── Share link dialog ──────────────────────────────────────────────────────
+   ShareModal is otherwise built from the shared .modal-panel / .field / .button
+   classes; this block is only the three things it needs beyond them: the
+   read-only URL sitting flush against its Copy button, the revoked-link notice,
+   and a danger colour for the inline errors that keep a failed create or revoke
+   inside the dialog instead of dropping it into a page-level toast. */
+
+.share-link__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Takes the slack so the Copy button keeps its label on a narrow panel. */
+.share-link__url {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* A token is one unbreakable string; without this it widens the flex row
+     instead of scrolling inside the field. */
+  text-overflow: ellipsis;
+}
+
+.share-link__revoked {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(255, 139, 139, 0.32);
+  border-radius: 18px;
+  background: var(--color-error-bg);
+}
+
+.share-link__revoked-title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.share-link__error {
+  margin: 0;
+  color: var(--danger);
+}
+
+@media (max-width: 720px) {
+  /* The Copy button drops below a full-width URL rather than squeezing it to a
+     few characters — the link is the thing being read here. */
+  .share-link__row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

@@ -1,13 +1,10 @@
 from datetime import datetime
 from html import escape
-from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
-
-import weasyprint
 
 from src.api.deps import get_active_company, get_current_user, require_roles
 from src.db.session import get_db
@@ -19,7 +16,8 @@ from src.models.user import User, UserRole
 from src.schemas.payment import PaymentCreate, PaymentOut, PaymentUpdate
 from src.services.series import generate_next_number
 from src.services.financial_year import get_active_fy, get_fy_for_date
-from src.services.invoice_payments import build_invoice_payment_summaries, sync_payment_allocations
+from src.services.invoice_payments import sync_payment_allocations
+from src.services.share_documents import get_payment as get_shared_payment, render_receipt_pdf
 
 router = APIRouter()
 
@@ -698,39 +696,15 @@ def download_payment_pdf(
     _: User = Depends(get_current_user),
   active_company: CompanyProfile = Depends(get_active_company),
 ):
-    company_id = getattr(active_company, "id", None)
-    payment_filters = [Payment.id == payment_id, Payment.status == "active"]
-    if company_id is not None:
-      payment_filters.append(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
-    payment = (
-        db.query(Payment)
-      .options(
-        joinedload(Payment.ledger),
-        joinedload(Payment.account),
-        joinedload(Payment.invoice_allocations).joinedload(PaymentInvoiceAllocation.invoice),
-      )
-        .filter(*payment_filters)
-        .first()
-    )
+    # The rendering itself lives in src/services/share_documents so that the owner's
+    # copy and the copy a customer downloads from a public share link are
+    # byte-for-byte the same document. Do not inline it back here.
+    company_id = active_company.id
+    payment = get_shared_payment(db, company_id, payment_id)
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
 
-    company = db.query(CompanyProfile).filter(CompanyProfile.id == company_id).first() if company_id is not None else db.query(CompanyProfile).first()
-
-    allocations_by_invoice_id = {
-      allocation.invoice.id: allocation.invoice
-      for allocation in payment.invoice_allocations
-      if allocation.invoice is not None
-    }
-    invoice_summaries = build_invoice_payment_summaries(db, list(allocations_by_invoice_id.values()))
-    allocation_status_by_invoice_id = {
-      invoice_id: summary.payment_status
-      for invoice_id, summary in invoice_summaries.items()
-    }
-
-    html = _build_receipt_html(payment, company, allocation_status_by_invoice_id)
-    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
-    buf = BytesIO(pdf_bytes)
+    buf = render_receipt_pdf(db, company_id, payment_id)
 
     filename = f"receipt_{payment.payment_number or payment_id}.pdf"
     return StreamingResponse(

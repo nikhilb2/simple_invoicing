@@ -48,6 +48,29 @@ class Settings(BaseSettings):
     OAUTH_ACCESS_TOKEN_TTL_MINUTES: int = 60
     OAUTH_REFRESH_TOKEN_TTL_DAYS: int = 30
 
+    # --- Public share links ---
+    # Every one of these has a default: an existing deployment takes an image with
+    # this feature and keeps working without touching its secret.
+    SHARE_LINKS_ENABLED: bool = True
+    SHARE_AD_ENABLED: bool = True
+    SHARE_AD_BRAND_NAME: str = "Simple Invoicings"
+    # Deliberately contextual: the reader has just looked at a clean invoice, so
+    # the pitch is that document, not a generic feature list.
+    SHARE_AD_HEADLINE: str = "Invoices this clean, in two minutes."
+    SHARE_AD_TAGLINE: str = (
+        "GST-ready invoicing, inventory and ledgers \u2014 built for small "
+        "businesses and freelancers."
+    )
+    SHARE_AD_WEBSITE: str = "https://simpleinvoicings.com"
+    # Comma-separated trust chips; blank hides the row.
+    SHARE_AD_CHIPS: str = "1 month free,No credit card,GST-ready"
+    SHARE_AD_CTA_LABEL: str = "Chat on WhatsApp"
+    SHARE_AD_FOOTNOTE: str = "Try free for 1 month"
+    # Both published on simpleinvoicings.com. Each line renders only when set,
+    # so blanking either one degrades cleanly rather than leaving dead UI.
+    SHARE_AD_PHONE: str = "+91 98710 52105"
+    SHARE_AD_WHATSAPP: str = "919871052105"
+
     @property
     def MCP_RESOURCE_URI(self) -> str:
         """Canonical RFC 8707 resource identifier for the MCP endpoint."""
