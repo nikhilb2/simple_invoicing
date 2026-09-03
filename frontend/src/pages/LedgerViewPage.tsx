@@ -154,9 +154,15 @@ export default function LedgerViewPage() {
   const [showAddressForm, setShowAddressForm] = useState(false);
   const [submittingAddress, setSubmittingAddress] = useState(false);
 
+  // Reset the create form on every close, not just after a successful save.
+  // The voucher type is otherwise sticky: an abandoned "Payment" entry becomes
+  // the default for the next receipt, which then books to the wrong side.
   useEffect(() => {
-    if (!showPaymentForm) setAllocationCreateSearch('');
-  }, [showPaymentForm]);
+    if (showPaymentForm) return;
+    setAllocationCreateSearch('');
+    setPaymentForm(createDefaultPaymentForm(ledgerId));
+    setOutstandingInvoices([]);
+  }, [showPaymentForm, ledgerId]);
 
   useEffect(() => {
     if (!editingPayment) setAllocationEditSearch('');
@@ -510,8 +516,6 @@ export default function LedgerViewPage() {
       setError('');
       const res = await api.post<Payment>('/payments/', paymentForm);
       setShowPaymentForm(false);
-      setPaymentForm(createDefaultPaymentForm(ledgerId));
-      setOutstandingInvoices([]);
       // Refresh statement
       setRefreshKey((k) => k + 1);
       if (res.data.warnings?.includes('invoice_date_outside_fy') && activeFY) {

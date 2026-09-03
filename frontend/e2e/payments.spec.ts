@@ -102,6 +102,45 @@ test.describe('Payments (Receipt / Payment)', () => {
     await expect(paymentEntry.first()).toContainText('Dr');
   });
 
+  test('voucher type resets to receipt after the dialog is closed without saving', async ({ authedPage: page }) => {
+    // Regression: the create form used to be reset only after a successful save,
+    // so an abandoned "Payment" entry left the type sticky and the next receipt
+    // was silently booked to the wrong side of the ledger.
+    const ledgerName = `StickyLedger-${Date.now().toString(36)}`;
+    await clickNavLink(page, '/ledgers');
+    await page.click('button:has-text("Create ledger")');
+    await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+    await page.fill('#ledger-name', ledgerName);
+    await page.fill('#ledger-address', '5 Sticky Lane');
+    await page.fill('#ledger-gst', uniqueGstin());
+    await page.fill('#ledger-phone', '+91 9999999999');
+    await page.click('button:has-text("Create ledger")');
+    await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+    await expectSuccess(page, 'Ledger created');
+
+    await page.fill('#ledger-search', ledgerName);
+    await page.waitForTimeout(500);
+    const row = page.locator('.table-row', { hasText: ledgerName });
+    await expect(row).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+    await row.locator('[aria-label^="View ledger"]').click();
+    await expect(page.locator('h1')).toContainText(ledgerName, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+
+    // Switch the type to Payment, then abandon the dialog without saving.
+    await page.click('button:has-text("Record Receipt / Payment")');
+    const modal = page.locator('.modal-overlay');
+    await expect(modal).toBeVisible({ timeout: 5_000 });
+    await modal.locator('#pay-type').selectOption('payment');
+    await modal.locator('#pay-amount').fill('4200');
+    await modal.locator('[aria-label="Close payment dialog"]').click();
+    await expect(modal).not.toBeVisible({ timeout: 5_000 });
+
+    // Reopening must start from a clean receipt, not the abandoned selection.
+    await page.click('button:has-text("Record Receipt / Payment")');
+    await expect(modal).toBeVisible({ timeout: 5_000 });
+    await expect(modal.locator('#pay-type')).toHaveValue('receipt');
+    await expect(modal.locator('#pay-amount')).toHaveValue('0');
+  });
+
   test('payment form validates amount greater than zero', async ({ authedPage: page }) => {
     // 1. Create a ledger
     const ledgerName = `ValLedger-${Date.now().toString(36)}`;
