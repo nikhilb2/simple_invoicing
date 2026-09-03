@@ -233,10 +233,46 @@ mismatch makes every token fail audience validation with a `401` that looks like
 loop. Both public URLs must be `https://` in production; the backend refuses to start
 otherwise while `MCP_ENABLED` is on.
 
-Deployments serve these two extra path prefixes from the backend, alongside `/api`:
-`/mcp` and `/.well-known/`. The Kubernetes ingresses and the Vite dev proxy already route
-them; any other reverse proxy in front of this app needs the same two rules, because OAuth
-discovery cannot be relocated under `/api`.
+Deployments serve these extra path prefixes from the backend, alongside `/api`:
+`/mcp`, `/.well-known/` and `/s/` (see *Public Share Link Variables* below). The Kubernetes
+ingresses and the Vite dev proxy already route them; any other reverse proxy in front of
+this app needs the same rules, because OAuth discovery cannot be relocated under `/api`.
+
+### Public Share Link Variables
+
+These control the public, unauthenticated share pages at `https://<tenant-host>/s/<token>` —
+the URL an owner pastes into WhatsApp so a customer can view an invoice, statement or
+receipt and download its PDF without an account.
+
+**Every variable here has a default.** An existing deployment can take an image containing
+this feature without touching its secret and the feature simply works.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SHARE_LINKS_ENABLED` | `true` | Master switch. With this off, `POST /api/share/` returns `403` and every `/s/<token>` URL returns the same uniform `404` an unknown token gets. Existing rows are left alone, so turning it back on restores every live link. |
+| `SHARE_AD_ENABLED` | `true` | Renders the Simple Invoicing advertisement at the bottom of the public page. Set to `false` for a white-label deployment. The ad is **never** stamped into the PDF under any setting. |
+| `SHARE_AD_BRAND_NAME` | `Simple Invoicings` | Wordmark shown beside the brand mark. |
+| `SHARE_AD_HEADLINE` | `Invoices this clean, in two minutes.` | Headline, rendered in the lime→pink brand gradient. Deliberately contextual: the reader has just looked at a clean invoice. |
+| `SHARE_AD_TAGLINE` | `GST-ready invoicing, inventory and ledgers — built for small businesses and freelancers.` | Supporting line under the headline. |
+| `SHARE_AD_CHIPS` | `1 month free,No credit card,GST-ready` | Comma-separated trust chips. Blank hides the row. |
+| `SHARE_AD_CTA_LABEL` | `Chat on WhatsApp` | Label on the primary gradient button. |
+| `SHARE_AD_FOOTNOTE` | `Try free for 1 month` | Small line above the website link. |
+| `SHARE_AD_WEBSITE` | `https://simpleinvoicings.com` | Link target for the ad. Rendered with `rel="noopener noreferrer nofollow"`, and every public response sends `Referrer-Policy: no-referrer`, so the share token is never handed to this site in a `Referer` header. |
+| `SHARE_AD_PHONE` | `+91 98710 52105` | Sales number, rendered as a `tel:` button. Published on simpleinvoicings.com. Blank removes the button rather than leaving an empty `tel:`. |
+| `SHARE_AD_WHATSAPP` | `919871052105` | Digits for the `https://wa.me/<n>` primary CTA. Blank falls back to making the website the primary CTA. |
+
+**`/s/` must be routed to the backend.** The share URL is deliberately short so it survives
+being typed and forwarded, which means the ingress has to send `/s/` to this service rather
+than to the SPA. If it does not, `/s/<token>` falls through to the frontend's catch-all and
+the recipient — who has no account — lands on a login screen. As a hedge, the same routes
+are also mounted under `/api/s/<token>`, which every tenant already routes; the page builds
+its own links from the request path, so both forms work end to end.
+
+**The share URL origin does not come from `PUBLIC_APP_BASE_URL` unless that is an `https://`
+origin.** It defaults to `http://localhost:5173` and several tenants never set it, so
+trusting it blindly would paste a localhost URL into a customer's chat. When it is not an
+https origin the backend derives the origin from the request the owner's own browser made
+(`X-Forwarded-Proto` and `Host`).
 
 ### Database Variables (Docker Compose)
 

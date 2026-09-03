@@ -16,6 +16,7 @@ from src.models.production_transaction import ProductionTransaction
 from src.models.email_log import EmailLog
 from src.models.company_term import CompanyTerm
 from src.models.api_key import ApiKey
+from src.models.share_link import ShareLink
 from src.models.oauth import (
     OAuthAuthRequest,
     OAuthAuthorizationCode,

@@ -62,6 +62,15 @@ export default defineConfig({
         target: process.env.API_PROXY_TARGET || 'http://localhost:8000',
         changeOrigin: true,
       },
+      // The public share page. Same trailing-slash anchoring as '^/api/' and for
+      // the same reason: a bare '^/s' would also claim the app's own /settings
+      // and /serials routes, so opening either in dev would return the
+      // backend's JSON 404 instead of the page. In production the k8s ingress
+      // routes this same prefix.
+      '^/s/': {
+        target: process.env.API_PROXY_TARGET || 'http://localhost:8000',
+        changeOrigin: true,
+      },
       '^/\\.well-known/': {
         target: process.env.API_PROXY_TARGET || 'http://localhost:8000',
         changeOrigin: true,

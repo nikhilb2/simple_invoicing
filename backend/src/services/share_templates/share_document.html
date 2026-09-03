@@ -1,0 +1,60 @@
+{% extends "share_base.html" %}
+
+{% block social %}
+{# These tags are the whole reason this page is server-rendered. WhatsApp fetches
+   the URL once, reads them, and draws the preview card the recipient actually
+   sees in the chat — long before anybody taps anything. #}
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="{{ og.site_name }}">
+<meta property="og:title" content="{{ og.title }}">
+<meta property="og:description" content="{{ og.description }}">
+<meta property="og:url" content="{{ og.url }}">
+{% if og.image %}<meta property="og:image" content="{{ og.image }}">
+<meta property="og:image:alt" content="{{ og.site_name }}">{% endif %}
+<meta name="twitter:card" content="{{ 'summary' if og.image else 'summary' }}">
+<meta name="twitter:title" content="{{ og.title }}">
+<meta name="twitter:description" content="{{ og.description }}">
+{% if og.image %}<meta name="twitter:image" content="{{ og.image }}">{% endif %}
+<meta name="description" content="{{ og.description }}">
+{% endblock %}
+
+{% block content %}
+<header class="brand">
+  {% if logo_url %}<img src="{{ logo_url }}" alt="{{ summary.company_name }}">{% endif %}
+  <span class="company">{{ summary.company_name }}</span>
+</header>
+
+<main class="card">
+  {# Tells the reader what this page is. They arrived from a link in a chat and
+     the first question is "is this a real document from a real business". #}
+  <p class="doc-kicker"><span class="dot"></span>Shared document</p>
+
+  <h1 class="doc-title">{{ summary.title }}</h1>
+
+  <div class="rows">
+    {% if summary.party_name %}
+    <div class="row"><span class="k">{{ party_label }}</span><span class="v">{{ summary.party_name }}</span></div>
+    {% endif %}
+    {% if summary.date_label %}
+    <div class="row"><span class="k">{{ date_label_caption }}</span><span class="v">{{ summary.date_label }}</span></div>
+    {% endif %}
+  </div>
+
+  <div class="amount">
+    <div class="k">{{ amount_caption }}</div>
+    <div class="v">{{ summary.amount_label }}</div>
+  </div>
+
+  <a class="btn" href="{{ download_url }}">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M4 17.5V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1.5"/>
+    </svg>Download PDF
+  </a>
+  <p class="hint">{{ summary.pdf_filename }}</p>
+</main>
+
+<section class="preview">
+  <div class="bar">Full document</div>
+  <div class="frame"><iframe src="{{ document_url }}" title="{{ summary.title }}" loading="lazy"></iframe></div>
+</section>
+{% endblock %}

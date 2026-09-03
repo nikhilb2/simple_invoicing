@@ -918,3 +918,27 @@ export type DashboardMetrics = {
     top_products: DashboardTopProduct[];
   };
 };
+
+/** What a public share link can point at. */
+export type ShareResourceType = 'invoice' | 'ledger_statement' | 'payment';
+
+/**
+ * A public, tokenised URL for one document, handed to a customer over WhatsApp.
+ *
+ * `resource_id` is the invoice id, the *ledger* id for a statement, or the
+ * payment id. `from_date`/`to_date` are only ever set for `ledger_statement` —
+ * a statement without its period is not the same document.
+ */
+export type ShareLink = {
+  id: number;
+  token: string;
+  /** Absolute, ready to paste. Built by the backend, not assembled here. */
+  url: string;
+  resource_type: ShareResourceType;
+  resource_id: number;
+  from_date: string | null;
+  to_date: string | null;
+  view_count: number;
+  last_viewed_at: string | null;
+  created_at: string;
+};

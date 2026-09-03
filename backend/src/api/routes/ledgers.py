@@ -27,8 +27,11 @@ from src.schemas.ledger_address import LedgerAddressCreate, LedgerAddressOut, Le
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
 from src.services.financial_year import get_active_fy
 from src.services.invoice_payments import auto_allocate_outstanding_invoices, build_invoice_payment_summaries, get_outstanding_invoices_for_ledger
-from src.services.pdf_templates import _build_day_book_html, _build_statement_html
+# _build_statement_html is re-exported for src.api.routes.email, which imports it
+# from here; the statement PDF itself is now rendered by src.services.share_documents.
+from src.services.pdf_templates import _build_day_book_html, _build_statement_html  # noqa: F401
 from src.services.pdf_templates.builders import _e
+from src.services.share_documents import get_ledger as get_shared_ledger, render_statement_pdf
 from src.core.validation import GSTIN_REGEX, HSN_SAC_REGEX
 
 router = APIRouter()
@@ -1139,37 +1142,18 @@ def download_ledger_statement_pdf(
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
-    company_id = getattr(active_company, "id", None)
+    # The rendering itself lives in src/services/share_documents so that the owner's
+    # copy and the copy a customer downloads from a public share link are
+    # byte-for-byte the same document. Do not inline it back here.
+    company_id = active_company.id
     if from_date > to_date:
         raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
 
-    ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
-    if company_id is not None:
-        ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
-    ledger = ledger_query.first()
+    ledger = get_shared_ledger(db, company_id, ledger_id)
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
 
-    company = active_company if company_id is not None else db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
-    currency = company.currency_code if company and company.currency_code else "INR"
-
-    statement_data = _build_ledger_statement_data(db, ledger, from_date, to_date, company_id=company_id)
-
-    html = _build_statement_html(
-        ledger=ledger,
-        company=company,
-        from_date=from_date,
-        to_date=to_date,
-        opening_balance=statement_data.opening_balance,
-        period_debit=statement_data.period_debit,
-        period_credit=statement_data.period_credit,
-        closing_balance=statement_data.closing_balance,
-        entries=statement_data.entries,
-        currency=currency,
-    )
-
-    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
-    buf = BytesIO(pdf_bytes)
+    buf = render_statement_pdf(db, company_id, ledger_id, from_date, to_date)
     safe_name = ledger.name.replace(" ", "_").replace("/", "_")[:30]
     filename = f"statement_{safe_name}_{from_date}_{to_date}.pdf"
 

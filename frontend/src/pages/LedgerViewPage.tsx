@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, FileText, FilePlus, Mail, Pencil, ReceiptText, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, FileText, FilePlus, Mail, Pencil, ReceiptText, Share2, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyAccount, CompanyProfile, Invoice, Ledger, LedgerAddress, LedgerStatement, OutstandingInvoice, Payment, PaymentCreate, PaymentInvoiceAllocation, PaymentUpdate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
 import PaymentReceiptPreview from '../components/PaymentReceiptPreview';
 import StatementPreview from '../components/StatementPreview';
+import ShareModal from '../components/ShareModal';
 import StatusToasts from '../components/StatusToasts';
 import CreateInvoiceModal from '../components/CreateInvoiceModal';
 import SendEmailModal from '../components/SendEmailModal';
@@ -126,6 +127,7 @@ export default function LedgerViewPage() {
   const [loadingOutstandingInvoices, setLoadingOutstandingInvoices] = useState(false);
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [showStatementPreview, setShowStatementPreview] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showActionsDropdown, setShowActionsDropdown] = useState(false);
@@ -699,6 +701,16 @@ export default function LedgerViewPage() {
                     <FileText size={16} />
                     Create Credit Note
                   </button>
+                  <button
+                    type="button"
+                    className="action-dropdown__item"
+                    role="menuitem"
+                    aria-label="Share Statement"
+                    onClick={() => { setShowActionsDropdown(false); setShowShareModal(true); }}
+                  >
+                    <Share2 size={16} />
+                    Share Statement
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -1026,6 +1038,21 @@ export default function LedgerViewPage() {
         />
       ) : null}
 
+      {showShareModal ? (
+        <ShareModal
+          resourceType="ledger_statement"
+          /* The ledger id, and the period currently on screen: a statement link
+             without its dates is a different document. */
+          resourceId={ledger.id}
+          fromDate={period.fromDate}
+          toDate={period.toDate}
+          label={`Statement — ${period.fromDate} to ${period.toDate}`}
+          messageLead={`Account statement${company?.name ? ` from ${company.name}` : ''} (${period.fromDate} to ${period.toDate})${statement ? ` — closing balance ${formatCurrency(statement.closing_balance, activeCurrencyCode)}` : ''}`}
+          phone={ledger.phone_number}
+          onClose={() => setShowShareModal(false)}
+        />
+      ) : null}
+
       {showPaymentForm ? (
         <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setShowPaymentForm(false)}>
           <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
@@ -1162,6 +1189,8 @@ export default function LedgerViewPage() {
         <PaymentReceiptPreview
           paymentId={previewReceiptId}
           paymentNumber={previewReceiptNumber}
+          ledgerPhone={ledger.phone_number}
+          companyName={company?.name}
           onClose={() => { setPreviewReceiptId(null); setPreviewReceiptNumber(null); }}
           onError={(msg) => setError(msg)}
         />

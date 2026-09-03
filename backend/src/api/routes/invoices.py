@@ -28,6 +28,7 @@ from src.services.pdf_templates import (
 )
 from src.services.invoice_processor import InvoiceProcessor
 from src.services.serial_service import SerialManager
+from src.services.share_documents import get_invoice as get_shared_invoice, render_invoice_pdf
 from src.services.series import generate_next_number
 
 router = APIRouter()
@@ -617,41 +618,14 @@ def download_invoice_pdf(
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
-    invoice = (
-        db.query(Invoice)
-        .options(joinedload(Invoice.items), joinedload(Invoice.ledger))
-        .filter(Invoice.id == invoice_id, Invoice.company_id == active_company.id)
-        .first()
-    )
+    # The rendering itself lives in src/services/share_documents so that the
+    # owner's copy and the copy a customer downloads from a public share link are
+    # byte-for-byte the same document. Do not inline it back here.
+    invoice = get_shared_invoice(db, active_company.id, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
 
-    product_ids = [item.product_id for item in (invoice.items or [])]
-    products = (
-      db.query(Product)
-      .filter(Product.id.in_(product_ids), Product.company_id == active_company.id)
-      .all()
-      if product_ids
-      else []
-    )
-
-    invoice_bank_accounts = (
-      db.query(CompanyAccount)
-      .filter(
-        CompanyAccount.is_active.is_(True),
-        CompanyAccount.account_type == "bank",
-        CompanyAccount.display_on_invoice.is_(True),
-        CompanyAccount.company_id == active_company.id,
-      )
-      .order_by(CompanyAccount.display_name.asc(), CompanyAccount.id.asc())
-      .all()
-    )
-
-    serials = SerialManager(db).serials_for_invoice(invoice)
-
-    pdf_buffer = _build_multi_copy_invoice_pdf(
-        invoice, products, invoice_bank_accounts, copies, active_company=active_company, serials=serials
-    )
+    pdf_buffer = render_invoice_pdf(db, active_company.id, invoice_id, copies=copies)
     filename = f"invoice_{invoice.invoice_number or invoice.id}.pdf"
 
     return StreamingResponse(

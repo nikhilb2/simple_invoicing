@@ -4,7 +4,9 @@ import api, { getApiErrorMessage } from '../api/client';
 import { track } from '../lib/analytics';
 import type { Invoice } from '../types/api';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
+import formatCurrency from '../utils/formatting';
 import SendEmailModal from './SendEmailModal';
+import ShareModal from './ShareModal';
 
 type InvoicePreviewProps = {
   invoice: Invoice;
@@ -14,6 +16,7 @@ type InvoicePreviewProps = {
 
 export default function InvoicePreview({ invoice, onClose, onError }: InvoicePreviewProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [copies, setCopies] = useState(1);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(true);
@@ -21,11 +24,11 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
   const [previewFailed, setPreviewFailed] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
-  // The email modal stacked on top closes itself on Escape; without this guard
-  // the same keypress tears down the preview behind it as well.
+  // The email and share modals stacked on top close themselves on Escape;
+  // without this guard the same keypress tears down the preview behind them.
   useEscapeClose(useCallback(() => {
-    if (!showEmailModal) onClose();
-  }, [showEmailModal, onClose]));
+    if (!showEmailModal && !showShareModal) onClose();
+  }, [showEmailModal, showShareModal, onClose]));
 
   useEffect(() => {
     let isMounted = true;
@@ -104,6 +107,11 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
     window.open(pdfUrl, '_blank', 'noopener,noreferrer');
   };
 
+  const invoiceLabel = invoice.invoice_number || `#${invoice.id}`;
+  // The backend reads voucher_type off the invoice, so one share button covers
+  // both books — only the wording the customer reads has to change.
+  const documentNoun = invoice.voucher_type === 'purchase' ? 'Purchase invoice' : 'Invoice';
+
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="invoice-preview-title">
       <div className="modal-panel modal-panel--invoice-preview">
@@ -177,6 +185,15 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
             >
               Email Invoice
             </button>
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={() => setShowShareModal(true)}
+              title="Share invoice link"
+              aria-label="Share invoice"
+            >
+              Share
+            </button>
             <button type="button" className="button button--ghost" onClick={onClose} title="Close invoice preview" aria-label="Close invoice preview">
               Close
             </button>
@@ -228,6 +245,17 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
             // Could show success toast here if needed
           }}
           onError={(message) => onError?.(message)}
+        />
+      )}
+
+      {showShareModal && (
+        <ShareModal
+          resourceType="invoice"
+          resourceId={invoice.id}
+          label={`${documentNoun} ${invoiceLabel}`}
+          messageLead={`${documentNoun} ${invoiceLabel}${invoice.company_name ? ` from ${invoice.company_name}` : ''} — ${formatCurrency(invoice.total_amount, invoice.company_currency_code || 'INR')}`}
+          phone={invoice.ledger_phone}
+          onClose={() => setShowShareModal(false)}
         />
       )}
     </div>

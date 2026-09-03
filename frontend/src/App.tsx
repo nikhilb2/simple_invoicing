@@ -1,5 +1,5 @@
-import { Suspense, lazy } from 'react';
-import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
+import { Suspense, lazy, useEffect } from 'react';
+import { Navigate, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { MotionConfig } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -143,6 +143,37 @@ function SettingsRoute({
   return <Protected>{node}</Protected>;
 }
 
+/**
+ * A safety net for the public share page, which the backend serves at
+ * /s/<token> — reachable only once this namespace's ingress routes that prefix.
+ * If an ingress lags, is reverted, or is missed for one tenant, /s/<token>
+ * falls through to this SPA, and the `*` catch-all below would answer a
+ * customer's invoice link with a login screen. Bouncing to /api/s/<token>
+ * instead lands them on the same page through a prefix the ingress has always
+ * routed; the backend registers the public router under both.
+ *
+ * window.location, not <Navigate>: the target is a server-rendered page, not a
+ * route this bundle knows how to draw.
+ */
+function PublicShareRedirect() {
+  const { token } = useParams();
+  // Anything that is not plainly a token gets the ordinary catch-all treatment
+  // rather than a redirect to /api/s/undefined.
+  const isToken = Boolean(token) && /^[A-Za-z0-9._~-]{1,200}$/.test(token as string);
+
+  useEffect(() => {
+    if (isToken) {
+      window.location.replace(`/api/s/${token}`);
+    }
+  }, [isToken, token]);
+
+  if (!isToken) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <p className="empty-state">Opening…</p>;
+}
+
 /** A moved route. Keeps the query string so ?setup=required survives the hop. */
 function LegacyRedirect({ to }: { to: string }) {
   const { search, hash } = useLocation();
@@ -206,6 +237,10 @@ function AppRoutes() {
       {Object.entries(LEGACY_REDIRECTS).map(([from, to]) => (
         <Route key={from} path={from} element={<LegacyRedirect to={to} />} />
       ))}
+
+      {/* Outside Protected/CompanyRequired/Layout on purpose: the visitor is a
+          customer with a link, not a user of this app. */}
+      <Route path="/s/:token" element={<PublicShareRedirect />} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

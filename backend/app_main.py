@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes
-from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes, bom as bom_routes, email_logs as email_logs_routes, api_keys as api_keys_routes, dashboard as dashboard_routes, analytics as analytics_routes, marketplace as marketplace_routes, serials as serials_routes, oauth as oauth_routes, well_known as well_known_routes
+from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes, bom as bom_routes, email_logs as email_logs_routes, api_keys as api_keys_routes, dashboard as dashboard_routes, analytics as analytics_routes, marketplace as marketplace_routes, serials as serials_routes, oauth as oauth_routes, well_known as well_known_routes, share as share_routes, public_share as public_share_routes
 from src.mcp_server import register_mcp
 from src.core.config import settings
 from src.db.base import Base
@@ -116,6 +116,19 @@ app.include_router(dashboard_routes.router, prefix="/api/dashboard", tags=["dash
 app.include_router(analytics_routes.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(marketplace_routes.router, prefix="/api/marketplace", tags=["marketplace"])
 app.include_router(serials_routes.router, prefix="/api/serials", tags=["serials"])
+app.include_router(share_routes.router, prefix="/api/share", tags=["share"])
+
+# Public share pages. No prefix: the URL that goes into a WhatsApp message is
+# https://<tenant-host>/s/<token>, and it has to be short and typo-proof.
+#
+# Mounted a SECOND time under /api as cheap insurance. Every tenant already routes
+# /api to this service, whereas /s depends on a per-namespace ingress rule. If that
+# rule lags or gets reverted, /s/<token> falls through to the SPA, whose catch-all
+# redirects to /, and the customer lands on a LOGIN SCREEN -- the worst possible
+# failure mode for a link sent to someone who has no account. The page builds its
+# own links from the request path, so both mounts work end to end.
+app.include_router(public_share_routes.router)
+app.include_router(public_share_routes.router, prefix="/api")
 # The OAuth server exists to authorize MCP clients, so it is mounted only when MCP
 # is on. Serving discovery documents while MCP is disabled would advertise an
 # authorization server at whatever PUBLIC_API_BASE_URL happens to default to and
