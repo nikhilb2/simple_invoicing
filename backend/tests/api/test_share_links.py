@@ -733,6 +733,30 @@ def test_promo_never_reaches_the_pdf(client, db_session):
         assert needle not in pdf.content
 
 
+def test_full_document_starts_collapsed(client, db_session):
+    """The inline document is opt-in.
+
+    It is a native <details>, not a scripted toggle -- the CSP on this response
+    sets script-src 'none', so anything needing JS would silently never open.
+    Collapsed also means the browser does not fetch document.html until someone
+    asks for it, and most readers only want the summary and the download.
+    """
+    company = _company(db_session, "Alpha Ltd")
+    ledger = _ledger(db_session, company)
+    invoice = _invoice(db_session, company, ledger)
+    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
+
+    body = client.get(f"/s/{token}").text
+    assert '<details class="preview">' in body
+    # No `open` attribute anywhere on that element -- that is what "collapsed" is.
+    assert "<details class=\"preview\" open" not in body
+    assert "preview__summary" in body
+    # The iframe is still in the markup; it is the disclosure that defers it.
+    assert f"/s/{token}/document.html" in body
+    # And no inline handler crept in, which the CSP would have killed anyway.
+    assert "onclick=" not in body.lower()
+
+
 def test_every_landing_miss_is_byte_identical(client, db_session):
     """Unknown, revoked and cancelled must be one response, not three.
 
