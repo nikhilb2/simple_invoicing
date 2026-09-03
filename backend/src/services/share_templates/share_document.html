@@ -53,8 +53,22 @@
   <p class="hint">{{ summary.pdf_filename }}</p>
 </main>
 
-<section class="preview">
-  <div class="bar">Full document</div>
-  <div class="frame"><iframe src="{{ document_url }}" title="{{ summary.title }}" loading="lazy"></iframe></div>
-</section>
+{# <details>, not a scripted toggle: the CSP on this response sets
+   script-src 'none', so the disclosure has to be native HTML. Closed by
+   default also means the browser never fetches the iframe until someone asks
+   for it, which saves a WeasyPrint-free but still server-rendered document
+   fetch on every open — most people only want the summary and the download. #}
+<details class="preview">
+  <summary class="preview__summary">
+    <span class="preview__summary-label">Full document</span>
+    <span class="preview__summary-hint" aria-hidden="true"></span>
+    <svg class="preview__chevron" width="18" height="18" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="m6 9 6 6 6-6"/>
+    </svg>
+  </summary>
+  <div class="frame">
+    <iframe src="{{ document_url }}" title="{{ summary.title }}" loading="lazy"></iframe>
+  </div>
+</details>
 {% endblock %}

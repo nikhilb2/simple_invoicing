@@ -143,29 +143,64 @@
     word-break: break-all;
   }
 
-  /* ── Desktop-only inline document ────────────────────────────────── */
-  .preview { display: none; }
+  /* ── Collapsible inline document ─────────────────────────────────────
+     Closed by default. Most readers want the summary above and the download
+     button; the full sheet is there for whoever wants to check it first. */
+  .preview {
+    margin-top: 22px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .preview__summary {
+    display: flex; align-items: center; gap: 10px;
+    padding: 15px 18px;
+    cursor: pointer;
+    font-size: 11px; font-weight: 600; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--muted);
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Both spellings needed: WebKit still uses the pseudo-element, everyone
+     else honours list-style on the summary itself. */
+  .preview__summary::-webkit-details-marker { display: none; }
+  .preview__summary { list-style: none; }
+  .preview__summary:hover { color: var(--ink-soft); }
+  .preview__summary:focus-visible {
+    outline: 2px solid var(--ink); outline-offset: -2px;
+  }
+  .preview__summary-label { flex: 1; }
+  /* The affordance, without JavaScript: CSS content is the only thing that can
+     change the word when the disclosure opens. */
+  .preview__summary-hint::after { content: "Show"; }
+  .preview[open] .preview__summary-hint::after { content: "Hide"; }
+  .preview__chevron {
+    flex: none; transition: transform 160ms ease;
+  }
+  .preview[open] .preview__chevron { transform: rotate(180deg); }
+  @media (prefers-reduced-motion: reduce) {
+    .preview__chevron { transition: none; }
+  }
+
+  /* The document sheet is a dense table whose smallest type is 6px. Shrunk to
+     a 390px phone it is unreadable, so it renders at its natural width and the
+     wrapper pans instead — the page itself never scrolls sideways. */
+  .preview .frame {
+    padding: 10px; background: #fff;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+  }
+  .preview iframe {
+    display: block; width: 100%; min-width: 760px;
+    height: 70vh; border: 0; background: #fff;
+  }
   @media (min-width: 900px) {
     /* Breaks out wider than the 660px reading column: the document is a full
        page of tabular data and reads badly squeezed into a phone-width card.
        The wrap is centred, so a symmetric negative margin keeps it centred too. */
-    .preview {
-      display: block; margin-top: 22px;
-      width: calc(100% + 180px); margin-left: -90px;
-      background: var(--card); border: 1px solid var(--line);
-      border-radius: 20px; overflow: hidden; box-shadow: var(--shadow);
-    }
-    .preview .bar {
-      padding: 12px 20px; border-bottom: 1px solid var(--line-soft);
-      font-size: 11px; font-weight: 600; letter-spacing: .09em;
-      text-transform: uppercase; color: var(--muted);
-    }
-    /* The document template lays out edge-to-edge, so without this inset its
-       right-aligned totals sit flush against the card border. */
-    .preview .frame { padding: 10px; background: #fff; }
-    .preview iframe {
-      display: block; width: 100%; height: 920px; border: 0; background: #fff;
-    }
+    .preview { width: calc(100% + 180px); margin-left: -90px; }
+    .preview iframe { height: 920px; }
   }
 
   .notice { text-align: center; padding: 44px 22px; }
