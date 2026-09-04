@@ -41,10 +41,13 @@ export function initAnalytics() {
     defaults: '2026-05-30',
     disable_session_recording: false,
     session_recording: {
-      // Every screen here is a private company's ledger, and all seven tenants
-      // report into one PostHog project — so anything typed into an invoice,
-      // ledger or company form is masked before it leaves the browser.
-      maskAllInputs: true,
+      // Input text is recorded as typed, so a replay shows what was actually
+      // entered into an invoice, ledger or company form. Every screen here is a
+      // private company's ledger and all seven tenants report into one PostHog
+      // project, so keep sensitive fields out of a replay one at a time: tag
+      // the input with data-private (see maskTextSelector below), or give it
+      // type="password", which posthog-js masks regardless of this setting.
+      maskAllInputs: false,
       // Rendered text is NOT masked by default: customer names, GSTINs and
       // invoice totals sitting in a table are recorded as they appear. Tag an
       // element with data-private to blank it out of the replay.
