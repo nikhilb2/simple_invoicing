@@ -4,6 +4,8 @@ import { getApiErrorMessage } from '../api/client';
 import { listEmailLogs } from '../api/emailLogs';
 import type { EmailLog } from '../api/emailLogs';
 import StatusToasts from '../components/StatusToasts';
+import ScopeBar, { Metric } from '../components/ScopeBar';
+import DateRangePresets from '../components/DateRangePresets';
 import EmptyState from '../components/EmptyState';
 
 const PAGE_SIZE = 20;
@@ -46,6 +48,8 @@ export default function EmailHistoryPage() {
     placeholderData: keepPreviousData,
   });
 
+  const failedOnPage = data?.items.filter((log) => log.status === 'failed').length ?? 0;
+
   function handleFilterChange() {
     setPage(1);
   }
@@ -75,67 +79,82 @@ export default function EmailHistoryPage() {
 
       <StatusToasts error={error ? getApiErrorMessage(error) : ''} onClearError={() => {}} onClearSuccess={() => {}} />
 
-      <section className="content-grid">
-        <article className="panel stack">
-          <div className="panel__header">
-            <div>
-              <p className="eyebrow">Filters</p>
-              <h2 className="nav-panel__title">Narrow results</h2>
-            </div>
-          </div>
+      <ScopeBar
+        presets={(
+          <DateRangePresets
+            value={{ fromDate, toDate }}
+            onChange={(range) => {
+              setFromDate(range.fromDate);
+              setToDate(range.toDate);
+              handleFilterChange();
+            }}
+          />
+        )}
+        metrics={data ? (
+          <>
+            <Metric label="Emails" value={data.total} />
+            {/* The list endpoint returns one page of rows and a grand total, but
+                no failure total — so this counts only what is on screen and says
+                so, rather than reading as "3 failures in the whole period". */}
+            <Metric
+              label="Failed on this page"
+              value={failedOnPage}
+              tone={failedOnPage > 0 ? 'danger' : undefined}
+            />
+          </>
+        ) : undefined}
+      >
+        <div className="field">
+          <label htmlFor="email-log-from">From date</label>
+          <input
+            id="email-log-from"
+            className="input"
+            type="date"
+            value={fromDate}
+            onChange={e => { setFromDate(e.target.value); handleFilterChange(); }}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="email-log-to">To date</label>
+          <input
+            id="email-log-to"
+            className="input"
+            type="date"
+            value={toDate}
+            onChange={e => { setToDate(e.target.value); handleFilterChange(); }}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="email-log-type">Email type</label>
+          <select
+            id="email-log-type"
+            className="input"
+            value={emailType}
+            onChange={e => { setEmailType(e.target.value); handleFilterChange(); }}
+          >
+            <option value="">All types</option>
+            <option value="invoice">Invoice</option>
+            <option value="ledger_statement">Ledger Statement</option>
+            <option value="payment_reminder">Payment Reminder</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="email-log-status">Status</label>
+          <select
+            id="email-log-status"
+            className="input"
+            value={status}
+            onChange={e => { setStatus(e.target.value); handleFilterChange(); }}
+          >
+            <option value="">All</option>
+            <option value="sent">Sent</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
+      </ScopeBar>
 
-          <div className="field-grid">
-            <div className="field">
-              <label htmlFor="email-log-from">From date</label>
-              <input
-                id="email-log-from"
-                className="input"
-                type="date"
-                value={fromDate}
-                onChange={e => { setFromDate(e.target.value); handleFilterChange(); }}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="email-log-to">To date</label>
-              <input
-                id="email-log-to"
-                className="input"
-                type="date"
-                value={toDate}
-                onChange={e => { setToDate(e.target.value); handleFilterChange(); }}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="email-log-type">Email type</label>
-              <select
-                id="email-log-type"
-                className="input"
-                value={emailType}
-                onChange={e => { setEmailType(e.target.value); handleFilterChange(); }}
-              >
-                <option value="">All types</option>
-                <option value="invoice">Invoice</option>
-                <option value="ledger_statement">Ledger Statement</option>
-                <option value="payment_reminder">Payment Reminder</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="email-log-status">Status</label>
-              <select
-                id="email-log-status"
-                className="input"
-                value={status}
-                onChange={e => { setStatus(e.target.value); handleFilterChange(); }}
-              >
-                <option value="">All</option>
-                <option value="sent">Sent</option>
-                <option value="failed">Failed</option>
-              </select>
-            </div>
-          </div>
-        </article>
-
+      <section className="content-grid content-grid--single">
         <article className="panel stack">
           <div className="panel__header">
             <div>

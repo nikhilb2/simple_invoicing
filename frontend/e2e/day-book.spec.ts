@@ -33,7 +33,7 @@ test.describe('Day Book', () => {
 
     // Wait for data to load – either voucher entries or empty state
     await page.waitForTimeout(1_000);
-    const hasVouchers = await page.locator('.invoice-row').count();
+    const hasVouchers = await page.locator('.register__row').count();
     const hasEmpty = await page.getByText('No vouchers found').isVisible().catch(() => false);
     expect(hasVouchers > 0 || hasEmpty).toBeTruthy();
   });
@@ -111,7 +111,10 @@ test.describe('Day Book', () => {
     await page.fill('#day-book-to', today.toISOString().split('T')[0]);
     await page.waitForTimeout(1_000);
 
-    // Should show summary box with Dr / Cr
-    await expect(page.locator('.summary-box')).toBeVisible({ timeout: 5_000 });
+    // Debit and credit are now read off the scope bar's metric strip, which
+    // carries the period totals whatever the register below it is filtered to.
+    await expect(page.locator('.scope-bar .metric-strip')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('Period debit')).toBeVisible();
+    await expect(page.getByText('Period credit')).toBeVisible();
   });
 });

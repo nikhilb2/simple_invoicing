@@ -5,6 +5,7 @@ import type { CompanyProfile, Invoice, Ledger } from '../types/api';
 import { sendDueReminders, type DueRemindersResponse } from '../api/emailLogs';
 import { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
+import ScopeBar, { Metric } from '../components/ScopeBar';
 import InvoicePreview from '../components/InvoicePreview';
 import ConfirmDialog from '../components/ConfirmDialog';
 import formatCurrency from '../utils/formatting';
@@ -43,6 +44,15 @@ function buildDueWindow(mode: DueFilterMode, customDays: number, exactDate: stri
       return {};
   }
 }
+
+const DUE_WINDOW_OPTIONS: { value: DueFilterMode; label: string }[] = [
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'next7', label: 'Next 7 days' },
+  { value: 'next15', label: 'Next 15 days' },
+  { value: 'custom-days', label: 'Custom days' },
+  { value: 'exact-date', label: 'Exact date' },
+  { value: 'all', label: 'All dues' },
+];
 
 function dueBadgeLabel(dueInDays: number | null) {
   if (dueInDays === null) return 'No due date';
@@ -190,30 +200,17 @@ export default function InvoiceDuesPage() {
 
       <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
 
-      <section className="content-grid">
-        <article className="panel stack">
-          <div className="panel__header">
-            <div>
-              <p className="eyebrow">Filters</p>
-              <h2 className="nav-panel__title">Due window</h2>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {[
-              { value: 'overdue', label: 'Overdue' },
-              { value: 'next7', label: 'Next 7 days' },
-              { value: 'next15', label: 'Next 15 days' },
-              { value: 'custom-days', label: 'Custom days' },
-              { value: 'exact-date', label: 'Exact date' },
-              { value: 'all', label: 'All dues' },
-            ].map((option) => (
+      <ScopeBar
+        presets={(
+          <div className="scope-presets" role="group" aria-label="Due window">
+            {DUE_WINDOW_OPTIONS.map((option) => (
               <button
                 key={option.value}
                 type="button"
-                className={mode === option.value ? 'button button--primary button--small' : 'button button--ghost button--small'}
+                className={`scope-preset${mode === option.value ? ' scope-preset--on' : ''}`}
+                aria-pressed={mode === option.value}
                 onClick={() => {
-                  setMode(option.value as DueFilterMode);
+                  setMode(option.value);
                   setPage(1);
                 }}
               >
@@ -221,82 +218,18 @@ export default function InvoiceDuesPage() {
               </button>
             ))}
           </div>
-
-          <div className="field-grid">
-            <div className="field">
-              <label htmlFor="dues-search">Search</label>
-              <input
-                id="dues-search"
-                className="input"
-                type="text"
-                value={searchDraft}
-                placeholder="Invoice number or ledger"
-                onChange={(event) => setSearchDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    setSearch(searchDraft.trim());
-                    setPage(1);
-                  }
-                }}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="dues-ledger">Ledger</label>
-              <select
-                id="dues-ledger"
-                className="input"
-                value={ledgerId ?? ''}
-                onChange={(event) => {
-                  setLedgerId(event.target.value ? Number(event.target.value) : undefined);
-                  setPage(1);
-                }}
-              >
-                <option value="">All ledgers</option>
-                {ledgers.map((ledger) => (
-                  <option key={ledger.id} value={ledger.id}>{ledger.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {mode === 'custom-days' ? (
-            <div className="field">
-              <label htmlFor="dues-custom-days">Days ahead</label>
-              <input
-                id="dues-custom-days"
-                className="input"
-                type="number"
-                min="0"
-                step="1"
-                value={customDays}
-                onChange={(event) => {
-                  setCustomDays(parseInt(event.target.value || '0', 10));
-                  setPage(1);
-                }}
-              />
-            </div>
-          ) : null}
-
-          {mode === 'exact-date' ? (
-            <div className="field">
-              <label htmlFor="dues-exact-date">Exact due date</label>
-              <input
-                id="dues-exact-date"
-                className="input"
-                type="date"
-                value={exactDate}
-                onChange={(event) => {
-                  setExactDate(event.target.value);
-                  setPage(1);
-                }}
-              />
-            </div>
-          ) : null}
-
-          <div style={{ display: 'flex', gap: '10px' }}>
+        )}
+        metrics={(
+          <>
+            <Metric label="Visible outstanding" value={formatCurrency(outstandingTotal, currencyCode)} />
+            <Metric label="Invoices on page" value={items.length} />
+          </>
+        )}
+        actions={(
+          <>
             <button
               type="button"
-              className="button button--secondary"
+              className="button button--secondary button--small"
               onClick={() => {
                 setSearch(searchDraft.trim());
                 setPage(1);
@@ -306,7 +239,7 @@ export default function InvoiceDuesPage() {
             </button>
             <button
               type="button"
-              className="button button--ghost"
+              className="button button--ghost button--small"
               onClick={() => {
                 setMode('overdue');
                 setLedgerId(undefined);
@@ -319,41 +252,108 @@ export default function InvoiceDuesPage() {
             >
               Reset filters
             </button>
+          </>
+        )}
+      >
+        <div className="field">
+          <label htmlFor="dues-search">Search</label>
+          <input
+            id="dues-search"
+            className="input"
+            type="text"
+            value={searchDraft}
+            placeholder="Invoice number or ledger"
+            onChange={(event) => setSearchDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                setSearch(searchDraft.trim());
+                setPage(1);
+              }
+            }}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="dues-ledger">Ledger</label>
+          <select
+            id="dues-ledger"
+            className="input"
+            value={ledgerId ?? ''}
+            onChange={(event) => {
+              setLedgerId(event.target.value ? Number(event.target.value) : undefined);
+              setPage(1);
+            }}
+          >
+            <option value="">All ledgers</option>
+            {ledgers.map((ledger) => (
+              <option key={ledger.id} value={ledger.id}>{ledger.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Only meaningful under their own window, and the fields grid is
+            auto-fit, so they slot in beside the others without a gap when the
+            window is one of the four that needs no extra input. */}
+        {mode === 'custom-days' ? (
+          <div className="field">
+            <label htmlFor="dues-custom-days">Days ahead</label>
+            <input
+              id="dues-custom-days"
+              className="input"
+              type="number"
+              min="0"
+              step="1"
+              value={customDays}
+              onChange={(event) => {
+                setCustomDays(parseInt(event.target.value || '0', 10));
+                setPage(1);
+              }}
+            />
           </div>
+        ) : null}
 
-          <div style={{ borderTop: '1px solid var(--border-color, #e0e0e0)', paddingTop: '12px', marginTop: '4px' }}>
-            <button
-              type="button"
-              className="button button--primary"
-              disabled={sendingReminders}
-              onClick={() => setShowRemindersConfirm(true)}
-            >
-              {sendingReminders ? 'Sending…' : 'Send reminders to all'}
-            </button>
+        {mode === 'exact-date' ? (
+          <div className="field">
+            <label htmlFor="dues-exact-date">Exact due date</label>
+            <input
+              id="dues-exact-date"
+              className="input"
+              type="date"
+              value={exactDate}
+              onChange={(event) => {
+                setExactDate(event.target.value);
+                setPage(1);
+              }}
+            />
           </div>
+        ) : null}
+      </ScopeBar>
 
-          {remindersSuccess ? (
-            <div className="summary-box" style={{ marginTop: '8px' }}>
-              <p className="eyebrow" style={{ color: 'var(--success-color, #155724)' }}>{remindersResult}</p>
-              <p className="muted-text">{remindersSuccess}</p>
-            </div>
-          ) : null}
-
-          <div className="summary-box">
-            <p className="eyebrow">Visible outstanding</p>
-            <p className="summary-box__value">{formatCurrency(outstandingTotal, currencyCode)}</p>
-            <p className="muted-text">Current page total across {items.length} invoices</p>
-          </div>
-        </article>
-
+      <section className="content-grid content-grid--single">
         <article className="panel stack">
           <div className="panel__header">
             <div>
               <p className="eyebrow">Invoices</p>
               <h2 className="nav-panel__title">Due list</h2>
             </div>
-            <div className="status-chip">Page {page} of {Math.max(totalPages, 1)}</div>
+            <div className="button-row">
+              <div className="status-chip">Page {page} of {Math.max(totalPages, 1)}</div>
+              <button
+                type="button"
+                className="button button--primary button--small"
+                disabled={sendingReminders}
+                onClick={() => setShowRemindersConfirm(true)}
+              >
+                {sendingReminders ? 'Sending…' : 'Send reminders to all'}
+              </button>
+            </div>
           </div>
+
+          {remindersSuccess ? (
+            <div className="summary-box">
+              <p className="eyebrow" style={{ color: 'var(--success-color, #155724)' }}>{remindersResult}</p>
+              <p className="muted-text">{remindersSuccess}</p>
+            </div>
+          ) : null}
 
           <div className="invoice-list">
             {loading ? (
