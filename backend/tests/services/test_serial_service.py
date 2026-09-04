@@ -1135,3 +1135,174 @@ class TestSerialsForInvoice:
         company = make_company(db_session)
         purchase = make_invoice(db_session, company.id, voucher_type="purchase")
         assert SerialManager(db_session).serials_for_invoice(purchase) == {}
+
+
+class TestSupplierReturns:
+    """Units going back to the supplier on a credit note we received.
+
+    They are voided, not deleted — the unit existed and the note is the record
+    of where it went — and a voided row sits outside the partial unique index,
+    so the supplier can ship the same IMEI again later.
+    """
+
+    NOTE = "Returned to supplier on credit note DN-001"
+
+    def _purchase_of_two(self, db_session):
+        company = make_company(db_session)
+        product = make_product(db_session, company.id, sku="P-SUPRET")
+        purchase = make_invoice(db_session, company.id, voucher_type="purchase")
+        add_item(db_session, purchase.id, product.id, quantity=2)
+
+        mgr = SerialManager(db_session)
+        mgr.apply_new_items(
+            validated((product, 2, ["S1", "S2"])),
+            "purchase",
+            company_id=company.id,
+            invoice_id=purchase.id,
+        )
+        return company, product, purchase, mgr
+
+    def test_return_voids_the_unit_and_stamps_the_note(self, db_session):
+        company, product, purchase, mgr = self._purchase_of_two(db_session)
+
+        mgr.apply_credit_note_supplier_return(
+            ["S1"],
+            product_id=product.id,
+            company_id=company.id,
+            invoice_id=purchase.id,
+            note=self.NOTE,
+        )
+
+        returned = serials_of(db_session, product.id, status=STATUS_VOID)
+        assert [row.serial_number for row in returned] == ["S1"]
+        assert returned[0].note == self.NOTE
+        assert numbers_of(db_session, product.id, status=STATUS_IN_STOCK) == ["S2"]
+
+    def test_the_number_is_free_for_the_supplier_to_ship_again(self, db_session):
+        company, product, purchase, mgr = self._purchase_of_two(db_session)
+        mgr.apply_credit_note_supplier_return(
+            ["S1"], product_id=product.id, company_id=company.id,
+            invoice_id=purchase.id, note=self.NOTE,
+        )
+
+        later = make_invoice(
+            db_session, company.id, voucher_type="purchase", invoice_number="PINV-2026-002"
+        )
+        add_item(db_session, later.id, product.id, quantity=1)
+        mgr.apply_new_items(
+            validated((product, 1, ["S1"])),
+            "purchase",
+            company_id=company.id,
+            invoice_id=later.id,
+        )
+
+        assert numbers_of(db_session, product.id, status=STATUS_IN_STOCK) == ["S2", "S1"]
+
+    def test_returning_a_sold_unit_is_refused(self, db_session):
+        company, product, purchase, mgr = self._purchase_of_two(db_session)
+        sale = make_invoice(
+            db_session, company.id, voucher_type="sales", invoice_number="INV-2026-441"
+        )
+        mgr.apply_new_items(
+            validated((product, 1, ["S1"])),
+            "sales",
+            company_id=company.id,
+            invoice_id=sale.id,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            mgr.apply_credit_note_supplier_return(
+                ["S1"], product_id=product.id, company_id=company.id,
+                invoice_id=purchase.id, note=self.NOTE,
+            )
+        assert exc_info.value.status_code == 400
+        assert "already been sold" in exc_info.value.detail
+        assert "INV-2026-441" in exc_info.value.detail
+
+    def test_returning_a_unit_from_another_purchase_is_refused(self, db_session):
+        company, product, purchase, mgr = self._purchase_of_two(db_session)
+        other = make_invoice(
+            db_session, company.id, voucher_type="purchase", invoice_number="PINV-2026-009"
+        )
+        add_item(db_session, other.id, product.id, quantity=1)
+        mgr.apply_new_items(
+            validated((product, 1, ["S9"])),
+            "purchase",
+            company_id=company.id,
+            invoice_id=other.id,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            mgr.apply_credit_note_supplier_return(
+                ["S9"], product_id=product.id, company_id=company.id,
+                invoice_id=purchase.id, note=self.NOTE,
+            )
+        assert exc_info.value.status_code == 400
+        assert "did not come in on" in exc_info.value.detail
+
+    def test_cancelling_the_note_brings_the_units_back(self, db_session):
+        company, product, purchase, mgr = self._purchase_of_two(db_session)
+        mgr.apply_credit_note_supplier_return(
+            ["S1"], product_id=product.id, company_id=company.id,
+            invoice_id=purchase.id, note=self.NOTE,
+        )
+
+        mgr.reverse_credit_note_supplier_return(
+            product_id=product.id,
+            company_id=company.id,
+            invoice_id=purchase.id,
+            note=self.NOTE,
+            quantity=1,
+        )
+
+        restored = serials_of(db_session, product.id, status=STATUS_IN_STOCK)
+        assert sorted(row.serial_number for row in restored) == ["S1", "S2"]
+        assert all(row.note is None for row in restored if row.serial_number == "S1")
+
+    def test_cancelling_touches_only_its_own_notes_units(self, db_session):
+        """Serials are not fungible: two returns against one purchase stay apart."""
+        company, product, purchase, mgr = self._purchase_of_two(db_session)
+        other_note = "Returned to supplier on credit note DN-002"
+        mgr.apply_credit_note_supplier_return(
+            ["S1"], product_id=product.id, company_id=company.id,
+            invoice_id=purchase.id, note=self.NOTE,
+        )
+        mgr.apply_credit_note_supplier_return(
+            ["S2"], product_id=product.id, company_id=company.id,
+            invoice_id=purchase.id, note=other_note,
+        )
+
+        mgr.reverse_credit_note_supplier_return(
+            product_id=product.id, company_id=company.id,
+            invoice_id=purchase.id, note=self.NOTE, quantity=1,
+        )
+
+        assert numbers_of(db_session, product.id, status=STATUS_IN_STOCK) == ["S1"]
+        assert numbers_of(db_session, product.id, status=STATUS_VOID) == ["S2"]
+
+    def test_cancelling_is_refused_when_the_number_came_back_elsewhere(self, db_session):
+        company, product, purchase, mgr = self._purchase_of_two(db_session)
+        mgr.apply_credit_note_supplier_return(
+            ["S1"], product_id=product.id, company_id=company.id,
+            invoice_id=purchase.id, note=self.NOTE,
+        )
+
+        later = make_invoice(
+            db_session, company.id, voucher_type="purchase", invoice_number="PINV-2026-777"
+        )
+        add_item(db_session, later.id, product.id, quantity=1)
+        mgr.apply_new_items(
+            validated((product, 1, ["S1"])),
+            "purchase",
+            company_id=company.id,
+            invoice_id=later.id,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            mgr.reverse_credit_note_supplier_return(
+                product_id=product.id, company_id=company.id,
+                invoice_id=purchase.id, note=self.NOTE, quantity=1,
+            )
+        assert exc_info.value.status_code == 400
+        assert "registered again" in exc_info.value.detail
+        assert "PINV-2026-777" in exc_info.value.detail

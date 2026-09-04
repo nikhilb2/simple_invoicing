@@ -441,6 +441,30 @@ class InvoiceProcessor:
         # Snapshot terms & conditions as formatted text
         terms = (company.terms or []) if company else []
         invoice.company_terms_text = "\n".join(f"{t.serial_number}. {t.content}" for t in terms) if terms else None
+        if payload.voucher_type != invoice.voucher_type:
+            # A credit note's direction is settled from the invoices it covers
+            # and drives its numbering, its stock effect and whether it is
+            # filed in GSTR-1. Flipping the invoice underneath it would leave
+            # every one of those wrong with nothing to notice.
+            from src.models.credit_note import CreditNote, CreditNoteItem  # noqa: PLC0415
+
+            has_notes = (
+                self.db.query(CreditNoteItem.id)
+                .join(CreditNote, CreditNote.id == CreditNoteItem.credit_note_id)
+                .filter(
+                    CreditNoteItem.invoice_id == invoice.id,
+                    CreditNote.status == "active",
+                )
+                .first()
+            )
+            if has_notes:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Cannot change the voucher type of an invoice that has "
+                        "credit notes against it — cancel them first"
+                    ),
+                )
         invoice.voucher_type = payload.voucher_type
         invoice.supplier_invoice_number = payload.supplier_invoice_number
         invoice.reference_notes = payload.reference_notes

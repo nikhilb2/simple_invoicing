@@ -511,6 +511,14 @@ def _build_tax_ledger_totals(entries: list[TaxLedgerEntry]) -> TaxLedgerTotals:
     )
 
 
+# GSTR-1 reports outward supplies. A note against a purchase is the supplier's
+# own credit note, which they declare in their GSTR-1 and which reaches us
+# through GSTR-2B as a reduction of input credit — filing it here would lower
+# our output liability instead and declare a document we never issued. Rows
+# predating the direction column are all outward.
+_OUTWARD_ONLY = or_(CreditNote.direction == "outward", CreditNote.direction.is_(None))
+
+
 def _build_tax_liability(entries: list[TaxLedgerEntry]) -> TaxLiability:
     """What actually has to be paid, after input credit is set off.
 
@@ -1946,6 +1954,7 @@ def gstr1_summary(
         db.query(CreditNote)
         .options(joinedload(CreditNote.items))
         .filter(CreditNote.status == "active")
+        .filter(_OUTWARD_ONLY)
         .filter(CreditNote.created_at >= datetime.combine(from_date, time.min))
         .filter(CreditNote.created_at <= datetime.combine(to_date, time.max))
     )
@@ -2194,6 +2203,7 @@ def gstr1_export_json(
         db.query(CreditNote)
         .options(joinedload(CreditNote.items))
         .filter(CreditNote.status == "active")
+        .filter(_OUTWARD_ONLY)
         .filter(CreditNote.created_at >= datetime.combine(from_date, time.min))
         .filter(CreditNote.created_at <= datetime.combine(to_date, time.max))
     )
@@ -2377,7 +2387,9 @@ def gstr1_export_json(
         doc_det.append({"doc_num": 1, "docs": [inv_range]})
     # One credit note series covers every reason, so it is reported whole under
     # nature 5. Splitting it by credit_note_type reported part of the series as
-    # a debit note series that was never issued.
+    # a debit note series that was never issued. `credit_notes` is already
+    # filtered to outward, so notes received from suppliers — which number out
+    # of their own DN series — never reach this range.
     cn_range = _doc_range([cn.credit_note_number or f"CN-{cn.id}" for cn in credit_notes])
     if cn_range:  # 5 = Credit Note
         doc_det.append({"doc_num": 5, "docs": [cn_range]})

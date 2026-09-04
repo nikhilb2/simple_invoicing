@@ -68,6 +68,12 @@ def get_credit_note_ledger_summary(
             entry_buckets[credit_note.id] = {
                 "credit_note_number": credit_note.credit_note_number,
                 "credit_note_type": credit_note.credit_note_type,
+                # getattr, because rows predating the column — and the
+                # SimpleNamespaces the tests build — carry no direction.
+                "direction": getattr(credit_note, "direction", None) or "outward",
+                "supplier_credit_note_number": getattr(
+                    credit_note, "supplier_credit_note_number", None
+                ),
                 "date": credit_note.created_at,
                 "ledger_name": invoice.ledger_name or "Unknown ledger",
                 "invoice_numbers": [],
@@ -99,15 +105,21 @@ def get_credit_note_ledger_summary(
         invoice_numbers = bucket["invoice_numbers"]
         preview_numbers = ", ".join(invoice_numbers[:3])
         suffix = "" if len(invoice_numbers) <= 3 else " +"
+        inward = bucket["direction"] == "inward"
         particulars = (
             f"{bucket['credit_note_number']} ({bucket['credit_note_type'].title()})"
             + (f" against {preview_numbers}{suffix}" if preview_numbers else "")
         )
+        if inward and bucket["supplier_credit_note_number"]:
+            # Their number, not ours, is what this reconciles against in GSTR-2B.
+            particulars += f" · Supplier CN {bucket['supplier_credit_note_number']}"
         entries.append(
             CreditNoteLedgerEntry(
                 entry_id=credit_note_id,
                 date=bucket["date"],
-                voucher_type="Credit Note",
+                # Tally's name for the recipient side of a supplier's credit
+                # note; we issue no document for it.
+                voucher_type="Debit Note" if inward else "Credit Note",
                 credit_note_number=bucket["credit_note_number"],
                 ledger_name=bucket["ledger_name"],
                 particulars=particulars,

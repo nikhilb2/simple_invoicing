@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Numeric, Date, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.db.base import Base
@@ -14,6 +14,14 @@ class CreditNote(Base):
     financial_year_id = Column(Integer, ForeignKey("financial_years.id"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     credit_note_type = Column(String, nullable=False, default="return")
+    # Which way the note runs. An outward note is one we issued against a
+    # sales invoice; an inward one is the supplier's own credit note against
+    # a purchase, recorded here to reverse the input tax we claimed.
+    direction = Column(String(10), nullable=False, default="outward", index=True)
+    # The supplier's document, not ours — this is what reconciles against
+    # GSTR-2B. Null on an outward note.
+    supplier_credit_note_number = Column(String(64), nullable=True)
+    supplier_credit_note_date = Column(Date, nullable=True)
     reason = Column(String, nullable=True)
     status = Column(String, nullable=False, default="active")
     taxable_amount = Column(Numeric(10, 2), nullable=False, default=0)

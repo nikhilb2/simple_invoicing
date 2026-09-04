@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Literal, Optional
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class CreditNoteItemCreate(BaseModel):
@@ -18,8 +18,38 @@ class CreditNoteCreate(BaseModel):
     ledger_id: int
     invoice_ids: List[int] = Field(..., min_length=1)
     credit_note_type: Literal["return", "discount", "adjustment"] = "return"
+    # Outward is one we issued against a sales invoice; inward is the
+    # supplier's own note against a purchase. The service checks this against
+    # the invoices themselves rather than trusting it.
+    direction: Literal["outward", "inward"] = "outward"
+    supplier_credit_note_number: Optional[str] = None
+    supplier_credit_note_date: Optional[date] = None
     reason: Optional[str] = None
     items: List[CreditNoteItemCreate] = Field(..., min_length=1)
+
+    @model_validator(mode="after")
+    def validate_supplier_document(self) -> "CreditNoteCreate":
+        number = (self.supplier_credit_note_number or "").strip()
+        if self.direction == "inward":
+            # We file nothing for an inward note; the supplier's number and
+            # date are the whole of its identity against GSTR-2B, so a note
+            # without them cannot be reconciled later.
+            if not number:
+                raise ValueError(
+                    "The supplier's credit note number is required on a note received from a supplier"
+                )
+            if self.supplier_credit_note_date is None:
+                raise ValueError(
+                    "The supplier's credit note date is required on a note received from a supplier"
+                )
+            self.supplier_credit_note_number = number
+        else:
+            if number or self.supplier_credit_note_date is not None:
+                raise ValueError(
+                    "Supplier credit note details belong only on a note received from a supplier"
+                )
+            self.supplier_credit_note_number = None
+        return self
 
     @model_validator(mode="after")
     def validate_item_invoice_ids(self) -> "CreditNoteCreate":
@@ -75,6 +105,9 @@ class CreditNoteOut(BaseModel):
     ledger_id: int
     financial_year_id: Optional[int] = None
     credit_note_type: str
+    direction: str = "outward"
+    supplier_credit_note_number: Optional[str] = None
+    supplier_credit_note_date: Optional[date] = None
     reason: Optional[str] = None
     status: str
     taxable_amount: float
@@ -86,6 +119,13 @@ class CreditNoteOut(BaseModel):
     cancelled_at: Optional[datetime] = None
     invoice_ids: List[int] = Field(default_factory=list)
     items: List[CreditNoteItemOut] = Field(default_factory=list)
+
+    @field_validator("direction", mode="before")
+    @classmethod
+    def default_direction(cls, value):
+        # Rows written before the column existed carry NULL, and nothing this
+        # system issued before then was inward.
+        return value or "outward"
 
     class Config:
         from_attributes = True

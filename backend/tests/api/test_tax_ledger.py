@@ -129,6 +129,7 @@ def _add_credit_note_item(
     sgst_amount: float,
     igst_amount: float,
     credit_note_type: str = "return",
+    direction: str = "outward",
 ):
     total_tax = cgst_amount + sgst_amount + igst_amount
     credit_note = CreditNote(
@@ -136,6 +137,7 @@ def _add_credit_note_item(
         ledger_id=ledger.id,
         created_by=user.id,
         credit_note_type=credit_note_type,
+        direction=direction,
         status="active",
         taxable_amount=taxable_amount,
         cgst_amount=cgst_amount,
@@ -1691,3 +1693,150 @@ def test_gstr1_hsn_desc_falls_back_to_hsn_code_when_no_description(db_session):
     assert row["desc"], "HSN row 'desc' must not be empty even when item description is NULL"
     # Fallback: desc equals the HSN code
     assert row["desc"] == row["hsn_sc"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Notes received from suppliers stay out of GSTR-1
+#
+# GSTR-1 is a return of outward supplies. A note against a purchase is the
+# supplier's own credit note, which they declare in their GSTR-1 and which
+# reaches us through GSTR-2B as a reduction of input credit. Filing it here
+# would lower our output liability instead, and declare in Table 13 a document
+# we never issued.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _seed_one_of_each_note(db_session):
+    """A sales note and a supplier's note in the same period."""
+    user, ledger = _seed_basics(db_session)
+
+    sales_invoice = _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="MIX-INV-001",
+        when=datetime(2027, 6, 5),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    purchase_invoice = _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="purchase",
+        invoice_number="MIX-PINV-001",
+        when=datetime(2027, 6, 6),
+        gst_rate=18,
+        taxable_amount=3000,
+        cgst_amount=270,
+        sgst_amount=270,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    _add_credit_note_item(
+        db_session, user, ledger, sales_invoice,
+        number="MIX-CN-001",
+        when=datetime(2027, 6, 10),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+    )
+    _add_credit_note_item(
+        db_session, user, ledger, purchase_invoice,
+        number="MIX-DN-001",
+        when=datetime(2027, 6, 11),
+        gst_rate=18,
+        taxable_amount=500,
+        cgst_amount=45,
+        sgst_amount=45,
+        igst_amount=0,
+        direction="inward",
+    )
+    db_session.commit()
+    return user, ledger
+
+
+def test_gstr1_summary_excludes_notes_received_from_suppliers(db_session):
+    user, _ = _seed_one_of_each_note(db_session)
+
+    result = gstr1_summary(
+        from_date=date(2027, 6, 1),
+        to_date=date(2027, 6, 30),
+        db=db_session,
+        _=user,
+        active_company=_make_company(gst="29TESTT1234X1Z5"),
+    )
+
+    # Only the outward note counts: 1000 taxable, not 1500.
+    assert result.credit_notes.invoice_count == 1
+    assert result.credit_notes.taxable_value == 1000
+    assert result.credit_notes.cgst == 90
+    assert result.doc_summary.total_credit_notes == 1
+    assert result.doc_summary.total_debit_notes == 0
+
+
+def test_gstr1_export_json_excludes_supplier_notes_from_cdnr(db_session):
+    user, _ = _seed_one_of_each_note(db_session)
+
+    response = gstr1_export_json(
+        from_date=date(2027, 6, 1),
+        to_date=date(2027, 6, 30),
+        db=db_session,
+        _=user,
+        active_company=_make_company(gst="29TESTT1234X1Z5"),
+    )
+
+    import json as _json
+    data = _json.loads(response.body)
+
+    note_numbers = [
+        note["nt_num"]
+        for group in data.get("cdnr", [])
+        for note in group["nt"]
+    ] + [note["nt_num"] for note in data.get("cdnur", [])]
+    assert note_numbers == ["MIX-CN-001"]
+
+
+def test_gstr1_doc_issue_excludes_the_debit_note_series(db_session):
+    """Table 13 declares a from/to range, so a DN number inside it would be a lie."""
+    user, _ = _seed_one_of_each_note(db_session)
+
+    response = gstr1_export_json(
+        from_date=date(2027, 6, 1),
+        to_date=date(2027, 6, 30),
+        db=db_session,
+        _=user,
+        active_company=_make_company(gst="29TESTT1234X1Z5"),
+    )
+
+    import json as _json
+    data = _json.loads(response.body)
+
+    doc_det = data["doc_issue"]["doc_det"]
+    assert 4 not in [d["doc_num"] for d in doc_det]  # still no debit note series
+    cn_doc = next(d for d in doc_det if d["doc_num"] == 5)
+    assert cn_doc["docs"][0]["from"] == "MIX-CN-001"
+    assert cn_doc["docs"][0]["to"] == "MIX-CN-001"
+    assert cn_doc["docs"][0]["totnum"] == 1
+    assert cn_doc["docs"][0]["net_issue"] == 1
+
+
+def test_supplier_note_still_reverses_input_credit(db_session):
+    """It leaves GSTR-1 alone, but it must still cut the ITC we claimed."""
+    user, _ = _seed_one_of_each_note(db_session)
+
+    result = get_tax_ledger(
+        from_date=date(2027, 6, 1),
+        to_date=date(2027, 6, 30),
+        voucher_type=None,
+        gst_rate=None,
+        db=db_session,
+        _=user,
+    )
+
+    # Purchase brought in 540 of credit; the supplier's note takes back 90.
+    assert result.liability.input_credit == 450.0
+    # Output tax is the sale's 900 less the 180 our own note reversed.
+    assert result.liability.output_tax == 720.0

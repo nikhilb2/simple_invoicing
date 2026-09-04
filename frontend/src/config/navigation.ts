@@ -117,7 +117,9 @@ export const PRIMARY_NAV: NavEntry[] = [
         icon: LayoutList,
       },
       { to: '/invoice-dues', label: 'Invoice Dues', icon: AlarmClock },
-      { to: '/credit-notes', label: 'Credit Notes', icon: FileMinus2 },
+      // One page, both directions — the same shape as Invoices, which hosts
+      // purchases behind its own voucher toggle.
+      { to: '/credit-notes', label: 'Credit / Debit Notes', title: 'Credit Notes', icon: FileMinus2 },
       {
         to: '/cash-bank',
         label: 'Cash & Bank',

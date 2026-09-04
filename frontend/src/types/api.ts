@@ -169,6 +169,10 @@ export type PaginatedInvoices = {
 
 export type CreditNoteType = 'return' | 'discount' | 'adjustment';
 export type CreditNoteStatus = 'active' | 'cancelled';
+// Outward is a note we issued against a sale. Inward is the supplier's own
+// credit note against a purchase — we issue no document for it, we record
+// theirs so the input credit we claimed comes back off.
+export type CreditNoteDirection = 'outward' | 'inward';
 
 export type CompanyTermOut = {
   id: number;
@@ -396,6 +400,9 @@ export type CreditNote = {
   ledger_id: number;
   financial_year_id: number | null;
   credit_note_type: CreditNoteType;
+  direction: CreditNoteDirection;
+  supplier_credit_note_number: string | null;
+  supplier_credit_note_date: string | null;
   reason: string | null;
   status: CreditNoteStatus;
   taxable_amount: number;
@@ -414,12 +421,18 @@ export type CreditNoteItemCreate = {
   invoice_item_id: number;
   quantity?: number;
   discount_amount_inclusive?: number;
+  // Which physical units are coming back — required on a return over a
+  // serial-tracked product.
+  serial_numbers?: string[];
 };
 
 export type CreditNoteCreate = {
   ledger_id: number;
   invoice_ids: number[];
   credit_note_type: CreditNoteType;
+  direction: CreditNoteDirection;
+  supplier_credit_note_number?: string | null;
+  supplier_credit_note_date?: string | null;
   reason?: string | null;
   items: CreditNoteItemCreate[];
 };

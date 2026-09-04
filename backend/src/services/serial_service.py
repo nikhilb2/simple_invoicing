@@ -817,6 +817,138 @@ class SerialManager:
             invoice_id,
         )
 
+    def apply_credit_note_supplier_return(
+        self,
+        codes: list[str],
+        *,
+        product_id: int,
+        company_id: int | None,
+        invoice_id: int | None,
+        note: str | None = None,
+    ) -> None:
+        """Send *codes* back to the supplier they arrived from.
+
+        Each code must be a unit still in stock that came in on *invoice_id* —
+        you cannot return to one supplier what another shipped.  The row is
+        voided rather than deleted, exactly as a cancelled purchase does it:
+        the unit existed and this note is the record of where it went, and a
+        voided row is outside ``ux_product_serials_company_number``, so the
+        supplier can ship the same IMEI again later.
+        """
+        if not codes:
+            return
+        self._require_no_duplicates(codes)
+        existing = self._live_rows(codes, company_id)
+        for code in codes:
+            row = existing.get(code.upper())
+            if row is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Serial {code} is not a known unit — check the code",
+                )
+            if row.product_id != product_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Serial {code} is registered to {self._product_name(row.product_id)}",
+                )
+            if row.purchase_invoice_id != invoice_id:
+                came_in_on = self._invoice_number(invoice_id) or f"invoice {invoice_id}"
+                logger.warning(
+                    "serials: supplier return of %s rejected (purchase_invoice_id=%s wanted=%s)",
+                    code,
+                    row.purchase_invoice_id,
+                    invoice_id,
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Serial {code} did not come in on {came_in_on}",
+                )
+            if row.status != STATUS_IN_STOCK:
+                sold_on = self._invoice_number(row.sales_invoice_id)
+                detail = f"Serial {code} is no longer in stock"
+                if row.status == STATUS_SOLD:
+                    detail = f"Serial {code} has already been sold"
+                    if sold_on:
+                        detail += f" on {sold_on}"
+                    detail += ". Cancel that sale before returning it to the supplier"
+                raise HTTPException(status_code=400, detail=detail)
+            row.status = STATUS_VOID
+            if note:
+                row.note = note
+            # Flush per row so the partial unique index sees each void before
+            # the next code is looked up.
+            self.db.flush()
+        logger.info(
+            "serials: returned %s unit(s) of product_id=%s to the supplier on invoice_id=%s",
+            len(codes),
+            product_id,
+            invoice_id,
+        )
+
+    def reverse_credit_note_supplier_return(
+        self,
+        *,
+        product_id: int,
+        company_id: int | None,
+        invoice_id: int | None,
+        note: str,
+        quantity: int,
+    ) -> None:
+        """Bring back the units a cancelled purchase return sent out.
+
+        Found by the *note* the return stamped on them rather than by product
+        alone, so cancelling one of several returns against the same purchase
+        restores exactly the units that return carried.
+        """
+        if quantity <= 0:
+            return
+        query = self.db.query(ProductSerial).filter(
+            ProductSerial.product_id == product_id,
+            ProductSerial.purchase_invoice_id == invoice_id,
+            ProductSerial.status == STATUS_VOID,
+            ProductSerial.note == note,
+        )
+        rows = (
+            self._scoped(query, company_id)
+            .order_by(ProductSerial.id.asc())
+            .limit(quantity)
+            .all()
+        )
+        if len(rows) < quantity:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{self._product_name(product_id)} no longer has the {quantity} "
+                    f"unit{'' if quantity == 1 else 's'} this credit note returned "
+                    "to the supplier"
+                ),
+            )
+        for row in rows:
+            clash = self._live_row(row.serial_number, company_id)
+            if clash is not None:
+                detail = (
+                    f"Serial {row.serial_number} has been registered again since "
+                    "it was returned to the supplier"
+                )
+                source = self._invoice_number(clash.purchase_invoice_id)
+                if source:
+                    detail += f" on {source}"
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{detail}. Remove it there before cancelling this credit note",
+                )
+            row.status = STATUS_IN_STOCK
+            row.note = None
+            # Flush per row so the partial unique index sees each restore
+            # before the next is checked.
+            self.db.flush()
+        logger.info(
+            "serials: brought back %s unit(s) of product_id=%s from a cancelled supplier return on invoice_id=%s",
+            len(rows),
+            product_id,
+            invoice_id,
+        )
+
     def reverse_credit_note_return(
         self,
         *,
