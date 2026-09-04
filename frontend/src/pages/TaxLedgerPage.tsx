@@ -8,6 +8,8 @@ import type {
   Gstr1Summary,
   Gstr1ValidationResult,
   TaxLedger,
+  TaxLiability,
+  TaxLiabilityBucket,
 } from '../types/api';
 import formatCurrency from '../utils/formatting';
 
@@ -624,9 +626,136 @@ function TaxLedgerFilters({
           </div>
         </div>
       </article>
+
+      <TaxLiabilityPanel
+        liability={taxLedger?.liability ?? null}
+        voucherType={voucherType}
+        gstRate={gstRate}
+        currency={activeCurrencyCode}
+      />
     </>
   );
 }
+
+/* What has to be paid, which is not the same question as what was billed.
+
+   The set-off is done on the server (s.49A/49B, r.88A) because it cannot be
+   read off the bucket balances above: CGST credit is useless against an SGST
+   liability, so heads that net to zero between them can still leave cash due. */
+function TaxLiabilityPanel({
+  liability,
+  voucherType,
+  gstRate,
+  currency,
+}: {
+  liability: TaxLiability | null;
+  voucherType: 'all' | 'sales' | 'purchase';
+  gstRate: string;
+  currency: string;
+}) {
+  const rows: Array<{ head: string; bucket: TaxLiabilityBucket }> = [
+    { head: 'CGST', bucket: liability?.cgst ?? EMPTY_BUCKET },
+    { head: 'SGST', bucket: liability?.sgst ?? EMPTY_BUCKET },
+    { head: 'IGST', bucket: liability?.igst ?? EMPTY_BUCKET },
+  ];
+
+  // A narrowed ledger is a partial return. Sales-only hides the input credit
+  // that would reduce this figure, so the number stops being the liability and
+  // starts being an upper bound — worth saying outright rather than letting the
+  // scope chip carry it.
+  const narrowed = voucherType !== 'all' || gstRate.trim() !== '';
+
+  return (
+    <article className="panel stack">
+      <div className="panel__header">
+        <div>
+          <p className="eyebrow">Liability</p>
+          <h2 className="nav-panel__title">GST payable</h2>
+        </div>
+      </div>
+
+      {narrowed ? (
+        <p className="field-warning">
+          {voucherType === 'sales'
+            ? 'Filtered to sales, so no input credit is set off — this is output tax, not what you owe.'
+            : voucherType === 'purchase'
+              ? 'Filtered to purchases, so there is no output tax to set credit against.'
+              : `Filtered to ${gstRate}% GST, so this covers one rate rather than the whole return.`}
+        </p>
+      ) : null}
+
+      <div className="tax-payable-grid">
+        <TaxTotalTile
+          label="Payable in cash"
+          hint="After credit set-off"
+          value={liability?.payable ?? 0}
+          debit={liability?.output_tax ?? 0}
+          credit={liability?.input_credit ?? 0}
+          debitLabel="Output tax"
+          creditLabel="Input credit"
+          currency={currency}
+          headline
+        />
+        <div className="tax-setoff">
+          <table className="tax-setoff__table">
+            <thead>
+              <tr>
+                <th>Head</th>
+                <th className="text-right">Output tax</th>
+                <th className="text-right">Input credit</th>
+                <th className="text-right">Set off</th>
+                <th className="text-right">Payable</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ head, bucket }) => (
+                <tr key={head}>
+                  <th scope="row">{head}</th>
+                  <td className="text-right">{formatCurrency(bucket.output_tax, currency)}</td>
+                  <td className="text-right">{formatCurrency(bucket.input_credit, currency)}</td>
+                  <td className="text-right">{formatCurrency(bucket.credit_used, currency)}</td>
+                  <td className="text-right tax-setoff__payable">
+                    {formatCurrency(bucket.payable, currency)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th scope="row">Total</th>
+                <td className="text-right">{formatCurrency(liability?.output_tax ?? 0, currency)}</td>
+                <td className="text-right">{formatCurrency(liability?.input_credit ?? 0, currency)}</td>
+                <td className="text-right">{formatCurrency(liability?.credit_used ?? 0, currency)}</td>
+                <td className="text-right tax-setoff__payable">
+                  {formatCurrency(liability?.payable ?? 0, currency)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <p className="field-hint tax-setoff__note">
+            {(liability?.credit_carried_forward ?? 0) > 0 ? (
+              <>
+                <strong>{formatCurrency(liability?.credit_carried_forward ?? 0, currency)}</strong>
+                {' '}of credit is left over and carries forward.{' '}
+              </>
+            ) : null}
+            Computed from vouchers in this period alone — it does not include credit
+            carried in from earlier periods, reverse charge, or your cash ledger balance.
+          </p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+const EMPTY_BUCKET: TaxLiabilityBucket = {
+  output_tax: 0,
+  input_credit: 0,
+  credit_used: 0,
+  payable: 0,
+  credit_carried_forward: 0,
+};
 
 /* One period total: the net figure, with the debit and credit sides it came
    from underneath. Sales sit on the debit side and purchases on the credit
@@ -637,6 +766,8 @@ function TaxTotalTile({
   value,
   debit,
   credit,
+  debitLabel = 'Dr',
+  creditLabel = 'Cr',
   currency,
   headline = false,
   compact = false,
@@ -646,6 +777,8 @@ function TaxTotalTile({
   value: number;
   debit: number;
   credit: number;
+  debitLabel?: string;
+  creditLabel?: string;
   currency: string;
   headline?: boolean;
   compact?: boolean;
@@ -665,8 +798,8 @@ function TaxTotalTile({
       </p>
       <p className="tax-total__value">{formatCurrency(value, currency)}</p>
       <p className="tax-total__split">
-        <span>Dr <b>{formatCurrency(debit, currency)}</b></span>
-        <span>Cr <b>{formatCurrency(credit, currency)}</b></span>
+        <span>{debitLabel} <b>{formatCurrency(debit, currency)}</b></span>
+        <span>{creditLabel} <b>{formatCurrency(credit, currency)}</b></span>
       </p>
     </div>
   );

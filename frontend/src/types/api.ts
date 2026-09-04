@@ -552,6 +552,25 @@ export type TaxLedgerTotals = {
   net_gross: number;
 };
 
+export type TaxLiabilityBucket = {
+  output_tax: number;
+  input_credit: number;
+  credit_used: number;
+  payable: number;
+  credit_carried_forward: number;
+};
+
+export type TaxLiability = {
+  cgst: TaxLiabilityBucket;
+  sgst: TaxLiabilityBucket;
+  igst: TaxLiabilityBucket;
+  output_tax: number;
+  input_credit: number;
+  credit_used: number;
+  payable: number;
+  credit_carried_forward: number;
+};
+
 export type TaxLedger = {
   from_date: string;
   to_date: string;
@@ -559,6 +578,7 @@ export type TaxLedger = {
   gst_rate: number | null;
   entries: TaxLedgerEntry[];
   totals: TaxLedgerTotals;
+  liability: TaxLiability;
   fy_label: string | null;
   financial_year_id: number | null;
 };

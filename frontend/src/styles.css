@@ -2747,6 +2747,89 @@ a.invoice-row {
   color: rgba(230, 238, 251, 0.85);
 }
 
+/* The payable figure leads and the set-off working sits beside it, so the
+   answer is readable at a glance and the arithmetic is there to be checked. */
+.tax-payable-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(0, 2fr);
+  gap: 14px;
+  /* The headline and its working are one unit, so they share an edge rather
+     than leaving the shorter card floating against the taller table. */
+  align-items: stretch;
+}
+
+.tax-setoff {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(148, 184, 255, 0.08);
+  /* Five money columns; on a narrow panel the table scrolls in place rather
+     than widening the page. */
+  overflow-x: auto;
+}
+
+.tax-setoff__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tax-setoff__table th,
+.tax-setoff__table td {
+  padding: 8px 10px;
+}
+
+.tax-setoff__table thead th {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(156, 173, 207, 0.8);
+  text-align: left;
+  border-bottom: 1px solid rgba(148, 184, 255, 0.12);
+}
+
+.tax-setoff__table tbody th,
+.tax-setoff__table tfoot th {
+  text-align: left;
+  font-weight: 700;
+}
+
+.tax-setoff__table tfoot th,
+.tax-setoff__table tfoot td {
+  border-top: 1px solid rgba(148, 184, 255, 0.16);
+}
+
+/* The column the row is read for. */
+.tax-setoff__payable {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.tax-setoff__table tfoot .tax-setoff__payable {
+  color: var(--accent);
+}
+
+.tax-setoff__note {
+  margin: 0;
+  font-size: 0.78rem;
+  white-space: normal;
+}
+
+.tax-setoff__note strong {
+  color: rgba(230, 238, 251, 0.9);
+}
+
+@media (max-width: 1100px) {
+  .tax-payable-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Four filters across reads as one scope line; the shared 2-up .field-grid
    broke it into two rows with the date pair split off from the rest. */
 .tax-filter-grid {

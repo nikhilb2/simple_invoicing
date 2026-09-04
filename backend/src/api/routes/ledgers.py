@@ -23,7 +23,7 @@ from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.product import Product
 from src.models.user import User, UserRole
 from src.schemas.invoice import OutstandingInvoiceOut
-from src.schemas.ledger import DayBookEntry, DayBookOut, Gstr1B2BInvoice, Gstr1CategorySummary, Gstr1DocSummary, Gstr1HsnSummaryItem, Gstr1JsonExport, Gstr1Summary, Gstr1ValidationError, Gstr1ValidationResult, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementInvoiceAllocation, LedgerStatementOut, PaginatedLedgerOut, TaxLedgerEntry, TaxLedgerOut, TaxLedgerTotals
+from src.schemas.ledger import DayBookEntry, DayBookOut, Gstr1B2BInvoice, Gstr1CategorySummary, Gstr1DocSummary, Gstr1HsnSummaryItem, Gstr1JsonExport, Gstr1Summary, Gstr1ValidationError, Gstr1ValidationResult, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementInvoiceAllocation, LedgerStatementOut, PaginatedLedgerOut, TaxLedgerEntry, TaxLedgerOut, TaxLedgerTotals, TaxLiability, TaxLiabilityBucket
 from src.schemas.ledger_address import LedgerAddressCreate, LedgerAddressOut, LedgerAddressUpdate
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
 from src.services.financial_year import get_active_fy
@@ -511,6 +511,76 @@ def _build_tax_ledger_totals(entries: list[TaxLedgerEntry]) -> TaxLedgerTotals:
     )
 
 
+def _build_tax_liability(entries: list[TaxLedgerEntry]) -> TaxLiability:
+    """What actually has to be paid, after input credit is set off.
+
+    Output tax is what sales collected and input credit what purchases paid,
+    each net of its own credit notes. A head whose net runs backwards crosses
+    over: an output reversal beyond the output itself becomes credit, and an
+    input reversal beyond the input becomes liability.
+
+    The set-off order is the portal's own (s.49A/49B, r.88A): IGST credit is
+    spent first and may cross into CGST and SGST, while CGST and SGST credit
+    clear their own head and can then only spill into IGST — never into each
+    other. Netting the three heads together instead, which is all
+    `net_total_tax` does, understates the cash due whenever CGST credit sits
+    against an SGST liability: unusable there, but it looks like it nets off.
+    """
+    heads = ("cgst", "sgst", "igst")
+    output = dict.fromkeys(heads, 0.0)
+    inp = dict.fromkeys(heads, 0.0)
+
+    for entry in entries:
+        # A credit note takes back what the invoice it is raised against put on
+        # the same side, so it subtracts rather than moving to the other side.
+        sign = -1.0 if entry.entry_type == "credit_note" else 1.0
+        side = output if entry.source_voucher_type == "sales" else inp
+        for head in heads:
+            # Exactly one of the two carries the amount; which one is the
+            # entry's Dr/Cr side, which is already what `side` picked out.
+            side[head] += sign * (getattr(entry, f"debit_{head}") + getattr(entry, f"credit_{head}"))
+
+    liability = {h: max(0.0, output[h]) + max(0.0, -inp[h]) for h in heads}
+    credit = {h: max(0.0, inp[h]) + max(0.0, -output[h]) for h in heads}
+    applied = dict.fromkeys(heads, 0.0)
+
+    def set_off(source: str, target: str) -> None:
+        amount = min(credit[source], liability[target])
+        if amount <= 0:
+            return
+        credit[source] -= amount
+        liability[target] -= amount
+        applied[target] += amount
+
+    # IGST credit must discharge IGST liability before it crosses over; spending
+    # it on CGST/SGST first can strand an IGST liability that had credit for it.
+    for target in ("igst", "cgst", "sgst"):
+        set_off("igst", target)
+    for source in ("cgst", "sgst"):
+        set_off(source, source)
+        set_off(source, "igst")
+
+    buckets = {
+        head: TaxLiabilityBucket(
+            output_tax=round(output[head], 2),
+            input_credit=round(inp[head], 2),
+            credit_used=round(applied[head], 2),
+            payable=round(liability[head], 2),
+            credit_carried_forward=round(credit[head], 2),
+        )
+        for head in heads
+    }
+
+    return TaxLiability(
+        **buckets,
+        output_tax=round(sum(output.values()), 2),
+        input_credit=round(sum(inp.values()), 2),
+        credit_used=round(sum(applied.values()), 2),
+        payable=round(sum(liability.values()), 2),
+        credit_carried_forward=round(sum(credit.values()), 2),
+    )
+
+
 @router.post("", response_model=LedgerOut, include_in_schema=False)
 @router.post("/", response_model=LedgerOut)
 def create_ledger(
@@ -945,6 +1015,7 @@ def get_tax_ledger(
         gst_rate=gst_rate,
         entries=entries,
         totals=_build_tax_ledger_totals(entries),
+        liability=_build_tax_liability(entries),
         fy_label=fy_label,
         financial_year_id=financial_year_id,
     )
@@ -1366,6 +1437,7 @@ def download_tax_ledger_pdf(
         to_date=to_date,
         entries=result.entries,
         totals=totals,
+        liability=result.liability,
         currency=currency,
     )
 
@@ -1531,6 +1603,7 @@ def _build_full_tax_ledger(
         from_date=from_date, to_date=to_date,
         voucher_type=voucher_type, gst_rate=gst_rate,
         entries=entries, totals=_build_tax_ledger_totals(entries),
+        liability=_build_tax_liability(entries),
     )
 
 
@@ -1541,6 +1614,7 @@ def _build_tax_ledger_pdf_html(
     to_date: date,
     entries: list[TaxLedgerEntry],
     totals: TaxLedgerTotals,
+    liability: TaxLiability,
     currency: str,
 ) -> str:
     rows_html = ""
@@ -1593,6 +1667,13 @@ def _build_tax_ledger_pdf_html(
         <tr><th>Net IGST</th><td>₹{totals.net_igst:,.2f}</td></tr>
         <tr><th>Net Total Tax</th><td>₹{totals.net_total_tax:,.2f}</td></tr>
         <tr><th>Net Gross Value</th><td>₹{totals.net_gross:,.2f}</td></tr>
+    </table>
+    <table style="margin-top:12px">
+        <tr><th>Output Tax</th><td>₹{liability.output_tax:,.2f}</td></tr>
+        <tr><th>Input Credit</th><td>₹{liability.input_credit:,.2f}</td></tr>
+        <tr><th>Credit Set Off</th><td>₹{liability.credit_used:,.2f}</td></tr>
+        <tr><th>Payable in Cash</th><td><b>₹{liability.payable:,.2f}</b></td></tr>
+        <tr><th>Credit Carried Forward</th><td>₹{liability.credit_carried_forward:,.2f}</td></tr>
     </table>
 </div>
 </body></html>"""

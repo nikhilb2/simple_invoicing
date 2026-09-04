@@ -277,6 +277,169 @@ def test_tax_ledger_includes_invoice_tax_and_credit_note_reversals(db_session):
     )
 
 
+def test_tax_liability_sets_off_credit_within_each_head(db_session):
+    """Intra-state sales against intra-state purchases: like clears like."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="sales", invoice_number="S-100",
+        when=datetime(2026, 1, 10, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=90, sgst_amount=90, igst_amount=0,
+    )
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="purchase", invoice_number="P-100",
+        when=datetime(2026, 1, 11, 9, 0, 0), gst_rate=18,
+        taxable_amount=400, cgst_amount=36, sgst_amount=36, igst_amount=0,
+    )
+    db_session.commit()
+
+    liability = get_tax_ledger(
+        from_date=date(2026, 1, 1), to_date=date(2026, 1, 31),
+        voucher_type=None, gst_rate=None, db=db_session, _=user,
+    ).liability
+
+    assert liability.cgst.output_tax == pytest.approx(90.0)
+    assert liability.cgst.input_credit == pytest.approx(36.0)
+    assert liability.cgst.credit_used == pytest.approx(36.0)
+    assert liability.cgst.payable == pytest.approx(54.0)
+    assert liability.sgst.payable == pytest.approx(54.0)
+    assert liability.igst.payable == pytest.approx(0.0)
+
+    assert liability.payable == pytest.approx(108.0)
+    assert liability.credit_carried_forward == pytest.approx(0.0)
+
+
+def test_tax_liability_does_not_set_cgst_credit_against_sgst(db_session):
+    """The case a plain net of the three heads gets wrong.
+
+    CGST credit cannot touch an SGST liability, so cash is still due even
+    though the heads sum to zero between them.
+    """
+    user, ledger = _seed_basics(db_session)
+
+    # Sales carrying SGST only, purchases carrying CGST only. Contrived, but it
+    # is exactly the shape that separates a real set-off from a subtraction.
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="sales", invoice_number="S-200",
+        when=datetime(2026, 1, 10, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=0, sgst_amount=100, igst_amount=0,
+    )
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="purchase", invoice_number="P-200",
+        when=datetime(2026, 1, 11, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=100, sgst_amount=0, igst_amount=0,
+    )
+    db_session.commit()
+
+    response = get_tax_ledger(
+        from_date=date(2026, 1, 1), to_date=date(2026, 1, 31),
+        voucher_type=None, gst_rate=None, db=db_session, _=user,
+    )
+
+    # Netting the heads together says nothing is owed...
+    assert response.totals.net_total_tax == pytest.approx(0.0)
+    # ...but the SGST has to be paid in cash and the CGST credit carries over.
+    assert response.liability.sgst.payable == pytest.approx(100.0)
+    assert response.liability.sgst.credit_used == pytest.approx(0.0)
+    assert response.liability.payable == pytest.approx(100.0)
+    assert response.liability.cgst.credit_carried_forward == pytest.approx(100.0)
+    assert response.liability.credit_carried_forward == pytest.approx(100.0)
+
+
+def test_tax_liability_spends_igst_credit_across_heads(db_session):
+    """IGST credit clears IGST first, then crosses into CGST and SGST."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="sales", invoice_number="S-300",
+        when=datetime(2026, 1, 10, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=50, sgst_amount=50, igst_amount=30,
+    )
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="purchase", invoice_number="P-300",
+        when=datetime(2026, 1, 11, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=0, sgst_amount=0, igst_amount=100,
+    )
+    db_session.commit()
+
+    liability = get_tax_ledger(
+        from_date=date(2026, 1, 1), to_date=date(2026, 1, 31),
+        voucher_type=None, gst_rate=None, db=db_session, _=user,
+    ).liability
+
+    # 100 of IGST credit: 30 to IGST, then 50 to CGST, leaving 20 for SGST.
+    assert liability.igst.payable == pytest.approx(0.0)
+    assert liability.cgst.credit_used == pytest.approx(50.0)
+    assert liability.cgst.payable == pytest.approx(0.0)
+    assert liability.sgst.credit_used == pytest.approx(20.0)
+    assert liability.sgst.payable == pytest.approx(30.0)
+    assert liability.payable == pytest.approx(30.0)
+    assert liability.credit_carried_forward == pytest.approx(0.0)
+
+
+def test_tax_liability_nets_credit_notes_off_their_own_side(db_session):
+    """A sales credit note reduces output tax; a purchase one reduces credit."""
+    user, ledger = _seed_basics(db_session)
+
+    sales_invoice = _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="sales", invoice_number="S-400",
+        when=datetime(2026, 1, 10, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=90, sgst_amount=90, igst_amount=0,
+    )
+    purchase_invoice = _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="purchase", invoice_number="P-400",
+        when=datetime(2026, 1, 11, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=50, sgst_amount=50, igst_amount=0,
+    )
+    _add_credit_note_item(
+        db_session, user, ledger, sales_invoice, number="CN-S-400",
+        when=datetime(2026, 1, 12, 9, 0, 0), gst_rate=18,
+        taxable_amount=200, cgst_amount=18, sgst_amount=18, igst_amount=0,
+    )
+    _add_credit_note_item(
+        db_session, user, ledger, purchase_invoice, number="CN-P-400",
+        when=datetime(2026, 1, 13, 9, 0, 0), gst_rate=18,
+        taxable_amount=200, cgst_amount=10, sgst_amount=10, igst_amount=0,
+    )
+    db_session.commit()
+
+    liability = get_tax_ledger(
+        from_date=date(2026, 1, 1), to_date=date(2026, 1, 31),
+        voucher_type=None, gst_rate=None, db=db_session, _=user,
+    ).liability
+
+    assert liability.cgst.output_tax == pytest.approx(72.0)   # 90 - 18
+    assert liability.cgst.input_credit == pytest.approx(40.0)  # 50 - 10
+    assert liability.cgst.payable == pytest.approx(32.0)
+    assert liability.payable == pytest.approx(64.0)
+
+
+def test_tax_liability_carries_surplus_credit_forward(db_session):
+    """Buying more than you sell leaves credit, not a negative amount due."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="sales", invoice_number="S-500",
+        when=datetime(2026, 1, 10, 9, 0, 0), gst_rate=18,
+        taxable_amount=100, cgst_amount=9, sgst_amount=9, igst_amount=0,
+    )
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="purchase", invoice_number="P-500",
+        when=datetime(2026, 1, 11, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=90, sgst_amount=90, igst_amount=0,
+    )
+    db_session.commit()
+
+    liability = get_tax_ledger(
+        from_date=date(2026, 1, 1), to_date=date(2026, 1, 31),
+        voucher_type=None, gst_rate=None, db=db_session, _=user,
+    ).liability
+
+    assert liability.payable == pytest.approx(0.0)
+    assert liability.cgst.credit_carried_forward == pytest.approx(81.0)
+    assert liability.credit_carried_forward == pytest.approx(162.0)
+
+
 def test_tax_ledger_supports_voucher_type_and_gst_rate_filters(db_session):
     user, ledger = _seed_basics(db_session)
 

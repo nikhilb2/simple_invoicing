@@ -167,6 +167,27 @@ class TaxLedgerTotals(BaseModel):
     net_gross: float = 0.0
 
 
+class TaxLiabilityBucket(BaseModel):
+    """One tax head's road from what was collected to what has to be paid."""
+
+    output_tax: float = 0.0
+    input_credit: float = 0.0
+    credit_used: float = 0.0
+    payable: float = 0.0
+    credit_carried_forward: float = 0.0
+
+
+class TaxLiability(BaseModel):
+    cgst: TaxLiabilityBucket = TaxLiabilityBucket()
+    sgst: TaxLiabilityBucket = TaxLiabilityBucket()
+    igst: TaxLiabilityBucket = TaxLiabilityBucket()
+    output_tax: float = 0.0
+    input_credit: float = 0.0
+    credit_used: float = 0.0
+    payable: float = 0.0
+    credit_carried_forward: float = 0.0
+
+
 class TaxLedgerOut(BaseModel):
     from_date: date
     to_date: date
@@ -174,6 +195,7 @@ class TaxLedgerOut(BaseModel):
     gst_rate: float | None = None
     entries: list[TaxLedgerEntry]
     totals: TaxLedgerTotals
+    liability: TaxLiability = TaxLiability()
     fy_label: str | None = None
     financial_year_id: int | None = None
 
