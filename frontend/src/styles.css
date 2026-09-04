@@ -468,6 +468,16 @@ textarea {
   flex-shrink: 0;
 }
 
+/* A hero that trails more than one thing — a count chip and the link to the
+   page that used to be this page's second tab. They sit on one line and stay
+   sized by their own content, like any single trailing child would. */
+.page-hero__aside {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .page-title {
   margin: 0;
   font-size: clamp(1.8rem, 3vw, 2.6rem);
@@ -535,6 +545,550 @@ textarea {
 
 .two-column-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* ── Scope bar ────────────────────────────────────────────────────── */
+/* The report pages — day book, cash & bank, email log, invoice dues — were all
+   built as a plain .content-grid: the filter panel in the *wide* 1.15fr track
+   and the register it filters squeezed into the 0.85fr one. Two date inputs
+   held more than half the page while every voucher wrapped its particulars
+   onto three lines and the money column had no room to form.
+
+   Filters are a *scope*, not content. They belong on one full-width line above
+   the result, which then gets the whole page. The bar sticks under the app
+   header so the range, the totals and the exports stay reachable however far
+   the register scrolls — and it publishes its own height as --scope-bar-h so a
+   table header below it can stick directly underneath (see ScopeBar.tsx). */
+.scope-bar {
+  position: sticky;
+  /* .page-header is sticky at top: 0 and 52px tall. */
+  top: 52px;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px 20px;
+  padding: 14px 18px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(13, 25, 42, 0.94);
+  backdrop-filter: blur(14px);
+}
+
+/* The fields are what absorbs a narrowing page: auto-fit reflows them from one
+   row to two to a single column with no breakpoint to keep in sync. They lead
+   the bar, so they take the slack and the trailing cluster never wraps first. */
+.scope-bar__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px 12px;
+  align-items: end;
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+/* A bar-height label, against the 0.92rem the panel form uses: at form size the
+   labels alone made the bar taller than the controls in it. */
+.scope-bar .field > label,
+.scope-bar .field--full > label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.scope-bar .field,
+.scope-bar .field--full {
+  gap: 6px;
+}
+
+.scope-bar .input,
+.scope-bar .select {
+  min-height: 38px;
+  padding: 8px 12px;
+  font-size: 0.88rem;
+}
+
+/* Totals and exports. Sized by their own content — the fields give up width
+   first — and pushed to the far edge so the bar reads left-to-right as
+   scope → result → act. */
+.scope-bar__trailing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 18px;
+  flex: 0 1 auto;
+  margin-left: auto;
+}
+
+.scope-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* A full-width line inside the bar, for the preset chips that sit above the
+   fields rather than beside them. */
+.scope-bar__row {
+  flex: 1 1 100%;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Divides the presets row from the fields under it without a full rule, which
+   at this density read as a second panel edge. */
+.scope-bar__row + .scope-bar__fields {
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 184, 255, 0.1);
+}
+
+/* ── Scope presets ────────────────────────────────────────────────── */
+/* A date range is almost never typed twice — it is "this month", "last month",
+   "the financial year". The chips make the common ranges one click and leave
+   the two date inputs for the range that is genuinely custom. */
+.scope-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.scope-preset {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.scope-preset:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.scope-preset--on {
+  background: rgba(87, 209, 201, 0.14);
+  border-color: rgba(87, 209, 201, 0.42);
+  color: var(--accent);
+}
+
+/* ── Step rail ────────────────────────────────────────────────────── */
+/* Where you are in a multi-step return. As a tab inside the tax ledger the
+   GSTR-1 wizard had no such marker at all: each step replaced the one before
+   it, so there was nothing on screen saying how many were left or how you got
+   here. Same chip vocabulary as .scope-preset, since it reads as the same kind
+   of thing — a position along a short row. */
+.step-rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step-rail__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.step-rail__item--done {
+  border-color: rgba(87, 209, 201, 0.24);
+  color: var(--text);
+}
+
+.step-rail__item--current {
+  border-color: rgba(87, 209, 201, 0.42);
+  background: rgba(87, 209, 201, 0.14);
+  color: var(--accent);
+}
+
+/* Fixed square so a "1" and a "✓" leave the label on the same x. */
+.step-rail__index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.step-rail__item--current .step-rail__index,
+.step-rail__item--done .step-rail__index {
+  background: rgba(87, 209, 201, 0.22);
+}
+
+/* ── GSTR-1 categories ────────────────────────────────────────────── */
+/* One comparable set of six, not two panels of unequal height. auto-fit so the
+   row reflows from six across to three to one on its own. */
+.gstr1-categories {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+}
+
+.gstr1-category {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(148, 184, 255, 0.08);
+}
+
+/* A category with nothing in it still has to be present — a reader checking a
+   return needs to see that B2CL is empty, not wonder where it went — but it
+   should not compete with the ones carrying value. */
+.gstr1-category--empty {
+  opacity: 0.55;
+}
+
+.gstr1-category__value {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  /* Currency strings have no break opportunity of their own. */
+  overflow-wrap: anywhere;
+}
+
+.gstr1-category__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* ── Metric strip ─────────────────────────────────────────────────── */
+/* The inline form of .summary-box. A 2rem figure in a 22px-padded box is right
+   when the totals are the only thing in a column of their own; on one line
+   beside the filters they only have to be *read*, so they drop to label-over-
+   figure and let the register have the vertical space. */
+.metric-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px 20px;
+  min-width: 0;
+}
+
+.metric {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.metric__label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.metric__value {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  /* Figures read by comparing magnitudes, which needs a shared digit width. */
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.metric--accent .metric__value {
+  color: var(--accent);
+}
+
+.metric--danger .metric__value {
+  color: var(--danger);
+}
+
+/* ── Register ─────────────────────────────────────────────────────── */
+/* A ledger register at full page width. The card-per-voucher list it replaces
+   put the date, the ledger and the particulars on three stacked lines and the
+   figure in one cell reading "Dr 1,200" or "Cr 1,200" — so nothing formed a
+   column and debit could not be compared against credit at all. Real columns,
+   a header that names them, and Dr/Cr split into two tracks. */
+.register {
+  --register-head-h: 38px;
+  display: grid;
+  min-width: 0;
+}
+
+.register-scroll {
+  min-width: 0;
+}
+
+.register__head,
+.register__row,
+.register__foot {
+  display: grid;
+  grid-template-columns:
+    minmax(88px, 0.6fr) minmax(150px, 1.4fr) minmax(110px, 1.15fr)
+    minmax(130px, 1.6fr) minmax(96px, 0.8fr) minmax(96px, 0.8fr);
+  gap: 12px 14px;
+  align-items: baseline;
+  padding: 11px 14px;
+}
+
+/* The voucher kind and its number read as one label, so they share a cell and
+   wrap together rather than the number dropping under the tag mid-column. */
+.register__voucher {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+/* Sticks directly under .scope-bar, whose measured height ScopeBar publishes on
+   the page. The fallback keeps the header pinned to the app bar alone on a page
+   that has no scope bar. */
+.register__head {
+  position: sticky;
+  top: calc(52px + var(--scope-bar-h, 0px));
+  z-index: 3;
+  /* Fixed rather than content-sized: the day separators stick directly beneath
+     it, and --register-head-h is what tells them how far down that is. */
+  height: var(--register-head-h);
+  padding-block: 0;
+  align-items: center;
+  background: rgba(13, 25, 42, 0.96);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line-strong);
+  border-radius: 12px 12px 0 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.register__row {
+  border-bottom: 1px solid rgba(148, 184, 255, 0.08);
+  transition: background 140ms ease;
+}
+
+/* A day's band of rows. Only a grouping box — its children carry the tracks —
+   but it still needs the automatic minimum overridden or a long particulars
+   string widens the whole register instead of wrapping in its own cell. */
+.register__day-group {
+  min-width: 0;
+}
+
+.register__row:hover {
+  background: rgba(87, 209, 201, 0.06);
+}
+
+/* One line per day, the way a day book is actually read. Without it a hundred
+   vouchers are an undifferentiated run and the date column is repeated on every
+   row for no gain. */
+.register__day {
+  position: sticky;
+  top: calc(52px + var(--scope-bar-h, 0px) + var(--register-head-h));
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 14px 14px 8px;
+  background: rgba(11, 20, 34, 0.94);
+  backdrop-filter: blur(10px);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.register__day-count {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+}
+
+/* The period totals, aligned to the very columns they total. A summary box off
+   to one side cannot do that — the whole point is reading the footer straight
+   down from the figures above it. */
+.register__foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin-top: 4px;
+  border-top: 1px solid var(--line-strong);
+  border-radius: 0 0 12px 12px;
+  background: rgba(13, 25, 42, 0.96);
+  backdrop-filter: blur(12px);
+  font-weight: 800;
+}
+
+.register__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.register__cell {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.register__ref {
+  font-weight: 700;
+}
+
+.register__date {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Debit and credit are the one distinction a register exists to make, and at
+   equal weight in adjacent columns they are easy to read across. A zero is
+   dropped to a dash so the eye lands only on the side that carries a figure. */
+.register__debit {
+  color: #a9d8ff;
+}
+
+.register__credit {
+  color: #ffc9a6;
+}
+
+.register__nil {
+  color: rgba(156, 173, 207, 0.35);
+}
+
+/* The voucher kind, as a tag rather than a word in a sentence. Kept small on
+   purpose: the reference number shares its cell, and at label size the two
+   together no longer fit on one line. */
+.register__tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+
+.register__tag--sales {
+  border-color: rgba(34, 197, 94, 0.38);
+  background: rgba(34, 197, 94, 0.12);
+  color: #8ce7b4;
+}
+
+.register__tag--purchase {
+  border-color: rgba(251, 146, 60, 0.38);
+  background: rgba(251, 146, 60, 0.12);
+  color: #ffc48a;
+}
+
+.register__tag--payment,
+.register__tag--receipt {
+  border-color: rgba(148, 184, 255, 0.38);
+  background: rgba(148, 184, 255, 0.12);
+  color: #bcd3ff;
+}
+
+.register__tag--credit-note,
+.register__tag--debit-note {
+  border-color: rgba(255, 139, 139, 0.38);
+  background: rgba(255, 139, 139, 0.12);
+  color: #ffc1c1;
+}
+
+/* Six tracks stop fitting here. The per-row date is the column to lose first:
+   the day band above every run of rows already says which day they fell on, so
+   it is the one cell in the register that repeats information the reader can
+   see without it. Particulars keeps a real minimum throughout — squeezed to the
+   slack left over it collapsed to about 30px and set one character per line. */
+@media (max-width: 1120px) {
+  .register__date {
+    display: none;
+  }
+
+  .register__head,
+  .register__row,
+  .register__foot {
+    grid-template-columns:
+      minmax(150px, 1.4fr) minmax(110px, 1.15fr) minmax(130px, 1.6fr)
+      minmax(96px, 0.8fr) minmax(96px, 0.8fr);
+  }
+}
+
+/* Even five tracks no longer fit, so the register scrolls sideways inside its
+   own panel rather than widening the page — the columns are the whole point of
+   it, and collapsing them back into stacked cards would undo the change.
+
+   A scroll container is also a scrollport, and that is where a sticky
+   descendant positions itself: left sticky, the header and the day bands would
+   offset themselves down inside a box that never scrolls vertically and land
+   under the rows they label. They go back into the flow here instead. */
+@media (max-width: 1020px) {
+  .register-scroll {
+    overflow-x: auto;
+    /* A trackpad swipe across the table is meant to move the table, not trigger
+       the browser's back gesture. */
+    overscroll-behavior-x: contain;
+  }
+
+  .register-scroll > .register {
+    min-width: 640px;
+  }
+
+  .register__head,
+  .register__day,
+  .register__foot {
+    position: static;
+  }
+}
+
+/* Stacked, the bar wraps to three or four rows — pinned, that is most of a
+   phone screen. It scrolls away with the page instead. */
+@media (max-width: 720px) {
+  .scope-bar {
+    position: static;
+    padding: 14px;
+  }
+
+  .scope-bar__trailing {
+    margin-left: 0;
+    flex: 1 1 100%;
+    justify-content: space-between;
+  }
 }
 
 .stat-card,
@@ -2830,12 +3384,6 @@ a.invoice-row {
   }
 }
 
-/* Four filters across reads as one scope line; the shared 2-up .field-grid
-   broke it into two rows with the date pair split off from the rest. */
-.tax-filter-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
 /* The equation is worth more than the type size, so the row tightens before it
    breaks: three stacked full-width tiles push the entries table off-screen. */
 @media (max-width: 1100px) {
@@ -2846,10 +3394,6 @@ a.invoice-row {
 
   .tax-total {
     padding: 15px;
-  }
-
-  .tax-filter-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
