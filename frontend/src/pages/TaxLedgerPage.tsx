@@ -8,6 +8,8 @@ import type {
   Gstr1Summary,
   Gstr1ValidationResult,
   TaxLedger,
+  TaxLiability,
+  TaxLiabilityBucket,
 } from '../types/api';
 import formatCurrency from '../utils/formatting';
 
@@ -437,7 +439,7 @@ export default function TaxLedgerPage() {
 }
 
 /* ────────────────────────────────────────────────────────────────────────
-   Tax Ledger Filters (shared across Tab)
+   Tax Ledger scope + period totals
    ──────────────────────────────────────────────────────────────────────── */
 
 function TaxLedgerFilters({
@@ -463,17 +465,40 @@ function TaxLedgerFilters({
   activeCurrencyCode: string;
   taxLedger: TaxLedger | null;
 }) {
+  const totals = taxLedger?.totals;
+
   return (
-    <section className="content-grid">
+    <>
       <article className="panel stack">
         <div className="panel__header">
           <div>
             <p className="eyebrow">Filters</p>
             <h2 className="nav-panel__title">Reporting scope</h2>
           </div>
+          {/* The exports carry the same scope as the filters beside them, so
+              they belong in this header rather than in a button row that reads
+              as an action on the entries table below. */}
+          <div className="button-row">
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => onDownload('pdf')}
+              disabled={downloading !== null}
+            >
+              {downloading === 'pdf' ? 'Downloading PDF...' : 'Export PDF'}
+            </button>
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={() => onDownload('csv')}
+              disabled={downloading !== null}
+            >
+              {downloading === 'csv' ? 'Downloading CSV...' : 'Export CSV'}
+            </button>
+          </div>
         </div>
 
-        <div className="field-grid">
+        <div className="field-grid field-grid--align-controls tax-filter-grid">
           <div className="field">
             <label htmlFor="tax-ledger-from">From</label>
             <input
@@ -527,88 +552,256 @@ function TaxLedgerFilters({
             />
           </div>
         </div>
-
-        <div className="button-row">
-          <button
-            type="button"
-            className="button button--primary"
-            onClick={() => onDownload('pdf')}
-            disabled={downloading !== null}
-          >
-            {downloading === 'pdf' ? 'Downloading PDF...' : 'Export PDF'}
-          </button>
-          <button
-            type="button"
-            className="button button--secondary"
-            onClick={() => onDownload('csv')}
-            disabled={downloading !== null}
-          >
-            {downloading === 'csv' ? 'Downloading CSV...' : 'Export CSV'}
-          </button>
-        </div>
-
-        <div className="summary-box">
-          <p className="eyebrow">Net tax</p>
-          <p className="summary-box__value">
-            {formatCurrency(taxLedger?.totals.net_total_tax ?? 0, activeCurrencyCode)}
-          </p>
-          <p className="muted-text">
-            Dr{' '}
-            {formatCurrency(taxLedger?.totals.debit_total_tax ?? 0, activeCurrencyCode)}{' '}
-            · Cr{' '}
-            {formatCurrency(taxLedger?.totals.credit_total_tax ?? 0, activeCurrencyCode)}
-          </p>
-        </div>
       </article>
 
       <article className="panel stack">
         <div className="panel__header">
           <div>
             <p className="eyebrow">Summary</p>
-            <h2 className="nav-panel__title">GST bucket balances</h2>
+            <h2 className="nav-panel__title">Period totals</h2>
           </div>
+          <span className="status-chip">
+            {voucherType === 'all' ? 'Sales \u0026 purchase' : voucherType === 'sales' ? 'Sales only' : 'Purchase only'}
+          </span>
         </div>
 
-        <div className="field-grid">
-          <div className="summary-box">
-            <p className="eyebrow">CGST net</p>
-            <p className="summary-box__value">
-              {formatCurrency(taxLedger?.totals.net_cgst ?? 0, activeCurrencyCode)}
-            </p>
-            <p className="muted-text">
-              Dr{' '}
-              {formatCurrency(taxLedger?.totals.debit_cgst ?? 0, activeCurrencyCode)}{' '}
-              · Cr{' '}
-              {formatCurrency(taxLedger?.totals.credit_cgst ?? 0, activeCurrencyCode)}
-            </p>
-          </div>
-          <div className="summary-box">
-            <p className="eyebrow">SGST net</p>
-            <p className="summary-box__value">
-              {formatCurrency(taxLedger?.totals.net_sgst ?? 0, activeCurrencyCode)}
-            </p>
-            <p className="muted-text">
-              Dr{' '}
-              {formatCurrency(taxLedger?.totals.debit_sgst ?? 0, activeCurrencyCode)}{' '}
-              · Cr{' '}
-              {formatCurrency(taxLedger?.totals.credit_sgst ?? 0, activeCurrencyCode)}
-            </p>
-          </div>
-          <div className="summary-box">
-            <p className="eyebrow">IGST net</p>
-            <p className="summary-box__value">
-              {formatCurrency(taxLedger?.totals.net_igst ?? 0, activeCurrencyCode)}
-            </p>
-            <p className="muted-text">
-              Dr{' '}
-              {formatCurrency(taxLedger?.totals.debit_igst ?? 0, activeCurrencyCode)}{' '}
-              · Cr{' '}
-              {formatCurrency(taxLedger?.totals.credit_igst ?? 0, activeCurrencyCode)}
-            </p>
+        {/* Taxable value + GST = gross value. Laying the three out as the
+            equation they are saves the reader adding two cards together to
+            find the figure that has to tie back to the books. */}
+        <div className="tax-total-flow">
+          <TaxTotalTile
+            label="Taxable value"
+            value={totals?.net_taxable ?? 0}
+            debit={totals?.debit_taxable ?? 0}
+            credit={totals?.credit_taxable ?? 0}
+            currency={activeCurrencyCode}
+          />
+          <span className="tax-total-flow__op" aria-hidden="true">+</span>
+          <TaxTotalTile
+            label="GST"
+            value={totals?.net_total_tax ?? 0}
+            debit={totals?.debit_total_tax ?? 0}
+            credit={totals?.credit_total_tax ?? 0}
+            currency={activeCurrencyCode}
+          />
+          <span className="tax-total-flow__op" aria-hidden="true">=</span>
+          <TaxTotalTile
+            label="Gross value"
+            hint="Taxable + GST"
+            value={totals?.net_gross ?? 0}
+            debit={totals?.debit_gross ?? 0}
+            credit={totals?.credit_gross ?? 0}
+            currency={activeCurrencyCode}
+            headline
+          />
+        </div>
+
+        <div className="tax-bucket-group">
+          <p className="eyebrow">GST bucket balances</p>
+          <div className="tax-bucket-grid">
+            <TaxTotalTile
+              label="CGST"
+              value={totals?.net_cgst ?? 0}
+              debit={totals?.debit_cgst ?? 0}
+              credit={totals?.credit_cgst ?? 0}
+              currency={activeCurrencyCode}
+              compact
+            />
+            <TaxTotalTile
+              label="SGST"
+              value={totals?.net_sgst ?? 0}
+              debit={totals?.debit_sgst ?? 0}
+              credit={totals?.credit_sgst ?? 0}
+              currency={activeCurrencyCode}
+              compact
+            />
+            <TaxTotalTile
+              label="IGST"
+              value={totals?.net_igst ?? 0}
+              debit={totals?.debit_igst ?? 0}
+              credit={totals?.credit_igst ?? 0}
+              currency={activeCurrencyCode}
+              compact
+            />
           </div>
         </div>
       </article>
-    </section>
+
+      <TaxLiabilityPanel
+        liability={taxLedger?.liability ?? null}
+        voucherType={voucherType}
+        gstRate={gstRate}
+        currency={activeCurrencyCode}
+      />
+    </>
+  );
+}
+
+/* What has to be paid, which is not the same question as what was billed.
+
+   The set-off is done on the server (s.49A/49B, r.88A) because it cannot be
+   read off the bucket balances above: CGST credit is useless against an SGST
+   liability, so heads that net to zero between them can still leave cash due. */
+function TaxLiabilityPanel({
+  liability,
+  voucherType,
+  gstRate,
+  currency,
+}: {
+  liability: TaxLiability | null;
+  voucherType: 'all' | 'sales' | 'purchase';
+  gstRate: string;
+  currency: string;
+}) {
+  const rows: Array<{ head: string; bucket: TaxLiabilityBucket }> = [
+    { head: 'CGST', bucket: liability?.cgst ?? EMPTY_BUCKET },
+    { head: 'SGST', bucket: liability?.sgst ?? EMPTY_BUCKET },
+    { head: 'IGST', bucket: liability?.igst ?? EMPTY_BUCKET },
+  ];
+
+  // A narrowed ledger is a partial return. Sales-only hides the input credit
+  // that would reduce this figure, so the number stops being the liability and
+  // starts being an upper bound — worth saying outright rather than letting the
+  // scope chip carry it.
+  const narrowed = voucherType !== 'all' || gstRate.trim() !== '';
+
+  return (
+    <article className="panel stack">
+      <div className="panel__header">
+        <div>
+          <p className="eyebrow">Liability</p>
+          <h2 className="nav-panel__title">GST payable</h2>
+        </div>
+      </div>
+
+      {narrowed ? (
+        <p className="field-warning">
+          {voucherType === 'sales'
+            ? 'Filtered to sales, so no input credit is set off — this is output tax, not what you owe.'
+            : voucherType === 'purchase'
+              ? 'Filtered to purchases, so there is no output tax to set credit against.'
+              : `Filtered to ${gstRate}% GST, so this covers one rate rather than the whole return.`}
+        </p>
+      ) : null}
+
+      <div className="tax-payable-grid">
+        <TaxTotalTile
+          label="Payable in cash"
+          hint="After credit set-off"
+          value={liability?.payable ?? 0}
+          debit={liability?.output_tax ?? 0}
+          credit={liability?.input_credit ?? 0}
+          debitLabel="Output tax"
+          creditLabel="Input credit"
+          currency={currency}
+          headline
+        />
+        <div className="tax-setoff">
+          <table className="tax-setoff__table">
+            <thead>
+              <tr>
+                <th>Head</th>
+                <th className="text-right">Output tax</th>
+                <th className="text-right">Input credit</th>
+                <th className="text-right">Set off</th>
+                <th className="text-right">Payable</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ head, bucket }) => (
+                <tr key={head}>
+                  <th scope="row">{head}</th>
+                  <td className="text-right">{formatCurrency(bucket.output_tax, currency)}</td>
+                  <td className="text-right">{formatCurrency(bucket.input_credit, currency)}</td>
+                  <td className="text-right">{formatCurrency(bucket.credit_used, currency)}</td>
+                  <td className="text-right tax-setoff__payable">
+                    {formatCurrency(bucket.payable, currency)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th scope="row">Total</th>
+                <td className="text-right">{formatCurrency(liability?.output_tax ?? 0, currency)}</td>
+                <td className="text-right">{formatCurrency(liability?.input_credit ?? 0, currency)}</td>
+                <td className="text-right">{formatCurrency(liability?.credit_used ?? 0, currency)}</td>
+                <td className="text-right tax-setoff__payable">
+                  {formatCurrency(liability?.payable ?? 0, currency)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <p className="field-hint tax-setoff__note">
+            {(liability?.credit_carried_forward ?? 0) > 0 ? (
+              <>
+                <strong>{formatCurrency(liability?.credit_carried_forward ?? 0, currency)}</strong>
+                {' '}of credit is left over and carries forward.{' '}
+              </>
+            ) : null}
+            Computed from vouchers in this period alone — it does not include credit
+            carried in from earlier periods, reverse charge, or your cash ledger balance.
+          </p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+const EMPTY_BUCKET: TaxLiabilityBucket = {
+  output_tax: 0,
+  input_credit: 0,
+  credit_used: 0,
+  payable: 0,
+  credit_carried_forward: 0,
+};
+
+/* One period total: the net figure, with the debit and credit sides it came
+   from underneath. Sales sit on the debit side and purchases on the credit
+   side, matching the Dr/Cr columns of the entries table. */
+function TaxTotalTile({
+  label,
+  hint,
+  value,
+  debit,
+  credit,
+  debitLabel = 'Dr',
+  creditLabel = 'Cr',
+  currency,
+  headline = false,
+  compact = false,
+}: {
+  label: string;
+  hint?: string;
+  value: number;
+  debit: number;
+  credit: number;
+  debitLabel?: string;
+  creditLabel?: string;
+  currency: string;
+  headline?: boolean;
+  compact?: boolean;
+}) {
+  const className = [
+    'tax-total',
+    headline ? 'tax-total--headline' : '',
+    compact ? 'tax-total--compact' : '',
+    value < 0 ? 'tax-total--negative' : '',
+  ].filter(Boolean).join(' ');
+
+  return (
+    <div className={className}>
+      <p className="eyebrow tax-total__label">
+        {label}
+        {hint ? <span className="tax-total__hint">{hint}</span> : null}
+      </p>
+      <p className="tax-total__value">{formatCurrency(value, currency)}</p>
+      <p className="tax-total__split">
+        <span>{debitLabel} <b>{formatCurrency(debit, currency)}</b></span>
+        <span>{creditLabel} <b>{formatCurrency(credit, currency)}</b></span>
+      </p>
+    </div>
   );
 }
 

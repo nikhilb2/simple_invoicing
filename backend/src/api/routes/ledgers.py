@@ -20,9 +20,10 @@ from src.models.invoice import Invoice
 from src.models.invoice import InvoiceItem
 from src.models.ledger_address import LedgerAddress
 from src.models.payment import Payment, PaymentInvoiceAllocation
+from src.models.product import Product
 from src.models.user import User, UserRole
 from src.schemas.invoice import OutstandingInvoiceOut
-from src.schemas.ledger import DayBookEntry, DayBookOut, Gstr1B2BInvoice, Gstr1CategorySummary, Gstr1DocSummary, Gstr1HsnSummaryItem, Gstr1JsonExport, Gstr1Summary, Gstr1ValidationError, Gstr1ValidationResult, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementInvoiceAllocation, LedgerStatementOut, PaginatedLedgerOut, TaxLedgerEntry, TaxLedgerOut, TaxLedgerTotals
+from src.schemas.ledger import DayBookEntry, DayBookOut, Gstr1B2BInvoice, Gstr1CategorySummary, Gstr1DocSummary, Gstr1HsnSummaryItem, Gstr1JsonExport, Gstr1Summary, Gstr1ValidationError, Gstr1ValidationResult, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementInvoiceAllocation, LedgerStatementOut, PaginatedLedgerOut, TaxLedgerEntry, TaxLedgerOut, TaxLedgerTotals, TaxLiability, TaxLiabilityBucket
 from src.schemas.ledger_address import LedgerAddressCreate, LedgerAddressOut, LedgerAddressUpdate
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
 from src.services.financial_year import get_active_fy
@@ -32,7 +33,7 @@ from src.services.invoice_payments import auto_allocate_outstanding_invoices, bu
 from src.services.pdf_templates import _build_day_book_html, _build_statement_html  # noqa: F401
 from src.services.pdf_templates.builders import _e
 from src.services.share_documents import get_ledger as get_shared_ledger, render_statement_pdf
-from src.core.validation import GSTIN_REGEX, HSN_SAC_REGEX
+from src.core.validation import GSTIN_REGEX, HSN_SAC_REGEX, is_gst_rate_slab
 
 router = APIRouter()
 
@@ -475,6 +476,9 @@ def _build_ledger_statement_data(
 
 
 def _build_tax_ledger_totals(entries: list[TaxLedgerEntry]) -> TaxLedgerTotals:
+    debit_taxable = sum(entry.debit_taxable for entry in entries)
+    credit_taxable = sum(entry.credit_taxable for entry in entries)
+
     debit_cgst = sum(entry.debit_cgst for entry in entries)
     debit_sgst = sum(entry.debit_sgst for entry in entries)
     debit_igst = sum(entry.debit_igst for entry in entries)
@@ -486,6 +490,9 @@ def _build_tax_ledger_totals(entries: list[TaxLedgerEntry]) -> TaxLedgerTotals:
     credit_total_tax = sum(entry.credit_total_tax for entry in entries)
 
     return TaxLedgerTotals(
+        debit_taxable=debit_taxable,
+        credit_taxable=credit_taxable,
+        net_taxable=debit_taxable - credit_taxable,
         debit_cgst=debit_cgst,
         debit_sgst=debit_sgst,
         debit_igst=debit_igst,
@@ -498,6 +505,87 @@ def _build_tax_ledger_totals(entries: list[TaxLedgerEntry]) -> TaxLedgerTotals:
         net_sgst=debit_sgst - credit_sgst,
         net_igst=debit_igst - credit_igst,
         net_total_tax=debit_total_tax - credit_total_tax,
+        debit_gross=debit_taxable + debit_total_tax,
+        credit_gross=credit_taxable + credit_total_tax,
+        net_gross=(debit_taxable + debit_total_tax) - (credit_taxable + credit_total_tax),
+    )
+
+
+# GSTR-1 reports outward supplies. A note against a purchase is the supplier's
+# own credit note, which they declare in their GSTR-1 and which reaches us
+# through GSTR-2B as a reduction of input credit — filing it here would lower
+# our output liability instead and declare a document we never issued. Rows
+# predating the direction column are all outward.
+_OUTWARD_ONLY = or_(CreditNote.direction == "outward", CreditNote.direction.is_(None))
+
+
+def _build_tax_liability(entries: list[TaxLedgerEntry]) -> TaxLiability:
+    """What actually has to be paid, after input credit is set off.
+
+    Output tax is what sales collected and input credit what purchases paid,
+    each net of its own credit notes. A head whose net runs backwards crosses
+    over: an output reversal beyond the output itself becomes credit, and an
+    input reversal beyond the input becomes liability.
+
+    The set-off order is the portal's own (s.49A/49B, r.88A): IGST credit is
+    spent first and may cross into CGST and SGST, while CGST and SGST credit
+    clear their own head and can then only spill into IGST — never into each
+    other. Netting the three heads together instead, which is all
+    `net_total_tax` does, understates the cash due whenever CGST credit sits
+    against an SGST liability: unusable there, but it looks like it nets off.
+    """
+    heads = ("cgst", "sgst", "igst")
+    output = dict.fromkeys(heads, 0.0)
+    inp = dict.fromkeys(heads, 0.0)
+
+    for entry in entries:
+        # A credit note takes back what the invoice it is raised against put on
+        # the same side, so it subtracts rather than moving to the other side.
+        sign = -1.0 if entry.entry_type == "credit_note" else 1.0
+        side = output if entry.source_voucher_type == "sales" else inp
+        for head in heads:
+            # Exactly one of the two carries the amount; which one is the
+            # entry's Dr/Cr side, which is already what `side` picked out.
+            side[head] += sign * (getattr(entry, f"debit_{head}") + getattr(entry, f"credit_{head}"))
+
+    liability = {h: max(0.0, output[h]) + max(0.0, -inp[h]) for h in heads}
+    credit = {h: max(0.0, inp[h]) + max(0.0, -output[h]) for h in heads}
+    applied = dict.fromkeys(heads, 0.0)
+
+    def set_off(source: str, target: str) -> None:
+        amount = min(credit[source], liability[target])
+        if amount <= 0:
+            return
+        credit[source] -= amount
+        liability[target] -= amount
+        applied[target] += amount
+
+    # IGST credit must discharge IGST liability before it crosses over; spending
+    # it on CGST/SGST first can strand an IGST liability that had credit for it.
+    for target in ("igst", "cgst", "sgst"):
+        set_off("igst", target)
+    for source in ("cgst", "sgst"):
+        set_off(source, source)
+        set_off(source, "igst")
+
+    buckets = {
+        head: TaxLiabilityBucket(
+            output_tax=round(output[head], 2),
+            input_credit=round(inp[head], 2),
+            credit_used=round(applied[head], 2),
+            payable=round(liability[head], 2),
+            credit_carried_forward=round(credit[head], 2),
+        )
+        for head in heads
+    }
+
+    return TaxLiability(
+        **buckets,
+        output_tax=round(sum(output.values()), 2),
+        input_credit=round(sum(inp.values()), 2),
+        credit_used=round(sum(applied.values()), 2),
+        payable=round(sum(liability.values()), 2),
+        credit_carried_forward=round(sum(credit.values()), 2),
     )
 
 
@@ -883,6 +971,8 @@ def get_tax_ledger(
             particulars=f"{row.source_voucher_type.title()} Invoice",
             gst_rate=float(row.gst_rate or 0),
             taxable_amount=float(row.taxable_amount or 0),
+            debit_taxable=float(row.taxable_amount or 0) if is_sales else 0.0,
+            credit_taxable=0.0 if is_sales else float(row.taxable_amount or 0),
             debit_cgst=cgst_amount if is_sales else 0.0,
             debit_sgst=sgst_amount if is_sales else 0.0,
             debit_igst=igst_amount if is_sales else 0.0,
@@ -912,6 +1002,8 @@ def get_tax_ledger(
             particulars=f"Credit Note against {row.source_voucher_type.title()} Invoice",
             gst_rate=float(row.gst_rate or 0),
             taxable_amount=float(row.taxable_amount or 0),
+            debit_taxable=0.0 if source_is_sales else float(row.taxable_amount or 0),
+            credit_taxable=float(row.taxable_amount or 0) if source_is_sales else 0.0,
             debit_cgst=0.0 if source_is_sales else cgst_amount,
             debit_sgst=0.0 if source_is_sales else sgst_amount,
             debit_igst=0.0 if source_is_sales else igst_amount,
@@ -931,6 +1023,7 @@ def get_tax_ledger(
         gst_rate=gst_rate,
         entries=entries,
         totals=_build_tax_ledger_totals(entries),
+        liability=_build_tax_liability(entries),
         fy_label=fy_label,
         financial_year_id=financial_year_id,
     )
@@ -1352,6 +1445,7 @@ def download_tax_ledger_pdf(
         to_date=to_date,
         entries=result.entries,
         totals=totals,
+        liability=result.liability,
         currency=currency,
     )
 
@@ -1432,6 +1526,8 @@ def _build_full_tax_ledger(
             particulars=f"{row.source_voucher_type.title()} Invoice",
             gst_rate=float(row.gst_rate or 0),
             taxable_amount=float(row.taxable_amount or 0),
+            debit_taxable=float(row.taxable_amount or 0) if is_sales else 0.0,
+            credit_taxable=0.0 if is_sales else float(row.taxable_amount or 0),
             debit_cgst=cgst_amount if is_sales else 0.0,
             debit_sgst=sgst_amount if is_sales else 0.0,
             debit_igst=igst_amount if is_sales else 0.0,
@@ -1498,6 +1594,8 @@ def _build_full_tax_ledger(
             particulars=f"Credit Note against {row.source_voucher_type.title()} Invoice",
             gst_rate=float(row.gst_rate or 0),
             taxable_amount=float(row.taxable_amount or 0),
+            debit_taxable=0.0 if source_is_sales else float(row.taxable_amount or 0),
+            credit_taxable=float(row.taxable_amount or 0) if source_is_sales else 0.0,
             debit_cgst=0.0 if source_is_sales else cgst_amount,
             debit_sgst=0.0 if source_is_sales else sgst_amount,
             debit_igst=0.0 if source_is_sales else igst_amount,
@@ -1513,6 +1611,7 @@ def _build_full_tax_ledger(
         from_date=from_date, to_date=to_date,
         voucher_type=voucher_type, gst_rate=gst_rate,
         entries=entries, totals=_build_tax_ledger_totals(entries),
+        liability=_build_tax_liability(entries),
     )
 
 
@@ -1523,6 +1622,7 @@ def _build_tax_ledger_pdf_html(
     to_date: date,
     entries: list[TaxLedgerEntry],
     totals: TaxLedgerTotals,
+    liability: TaxLiability,
     currency: str,
 ) -> str:
     rows_html = ""
@@ -1569,10 +1669,19 @@ def _build_tax_ledger_pdf_html(
 </table>
 <div class="totals">
     <table>
+        <tr><th>Net Taxable Value</th><td>₹{totals.net_taxable:,.2f}</td></tr>
         <tr><th>Net CGST</th><td>₹{totals.net_cgst:,.2f}</td></tr>
         <tr><th>Net SGST</th><td>₹{totals.net_sgst:,.2f}</td></tr>
         <tr><th>Net IGST</th><td>₹{totals.net_igst:,.2f}</td></tr>
         <tr><th>Net Total Tax</th><td>₹{totals.net_total_tax:,.2f}</td></tr>
+        <tr><th>Net Gross Value</th><td>₹{totals.net_gross:,.2f}</td></tr>
+    </table>
+    <table style="margin-top:12px">
+        <tr><th>Output Tax</th><td>₹{liability.output_tax:,.2f}</td></tr>
+        <tr><th>Input Credit</th><td>₹{liability.input_credit:,.2f}</td></tr>
+        <tr><th>Credit Set Off</th><td>₹{liability.credit_used:,.2f}</td></tr>
+        <tr><th>Payable in Cash</th><td><b>₹{liability.payable:,.2f}</b></td></tr>
+        <tr><th>Credit Carried Forward</th><td>₹{liability.credit_carried_forward:,.2f}</td></tr>
     </table>
 </div>
 </body></html>"""
@@ -1595,12 +1704,45 @@ def _derive_place_of_supply(company_gst: str | None) -> str:
     return "00"
 
 
+# Table 12 takes UQC from a fixed GSTN list, so the product master's free-text
+# unit has to be mapped onto it. Anything unmapped falls back to NOS, which is
+# what every row carried before units were read at all.
+HSN_UQC_BY_UNIT = {
+    "pieces": "NOS", "piece": "NOS", "pcs": "PCS", "nos": "NOS", "unit": "UNT",
+    "kg": "KGS", "kgs": "KGS", "g": "GMS", "gm": "GMS", "gram": "GMS", "grams": "GMS",
+    "m": "MTR", "metre": "MTR", "meter": "MTR", "mtr": "MTR",
+    "l": "LTR", "litre": "LTR", "liter": "LTR", "ltr": "LTR", "ml": "MLT",
+    "box": "BOX", "set": "SET", "pair": "PRS", "dozen": "DOZ", "ton": "TON",
+}
+
+# GSTN caps the Table 12 description at 30 characters.
+HSN_DESC_LIMIT = 30
+
+
+def _hsn_uqc(hsn: str, unit: str | None) -> str:
+    """The UQC to declare for an HSN line."""
+    # Services carry no quantity, so the GSTN convention is UQC "NA" with qty 0.
+    if hsn.startswith("99"):
+        return "NA"
+    return HSN_UQC_BY_UNIT.get((unit or "").strip().lower(), "NOS")
+
+
+def _hsn_desc(value: str | None, hsn: str) -> str:
+    """A Table 12 description: single line, at most 30 characters."""
+    # Item descriptions are free text and routinely hold newlines and serial
+    # number lists, both of which the portal rejects or silently truncates.
+    text = " ".join((value or "").split())
+    return text[:HSN_DESC_LIMIT].strip() or hsn
+
+
 def _validate_hsn(hsn: str | None) -> str | None:
     """Validate HSN/SAC code. Returns error message or None."""
     if not hsn or not hsn.strip():
         return "Missing HSN"
     hsn = hsn.strip()
     if not HSN_SAC_REGEX.fullmatch(hsn):
+        if hsn.isdigit():
+            return f"HSN {hsn} has {len(hsn)} digits — GST accepts 4, 6 or 8 only"
         return f"Invalid HSN: {hsn}"
     return None
 
@@ -1641,11 +1783,19 @@ def _validate_gstr1_export(db: Session, company_gstin: str | None, invoices: lis
                 if pos == "00" or not pos.isdigit():
                     errors.append(f"Invoice {inv_num}: Cannot derive valid Place of Supply from customer GSTIN '{ctin}'.")
 
-        # Check for HSN codes
+        # Check for HSN codes. A malformed code is as fatal as a missing one —
+        # the portal drops the whole HSN summary over a single bad row.
         missing_hsn = [item for item in inv.items if not item.hsn_sac or not item.hsn_sac.strip()]
         if missing_hsn:
             item_ids = ", ".join(str(item.id) for item in missing_hsn)
             errors.append(f"Invoice {inv_num}: Missing HSN/SAC code for item(s) #{item_ids}.")
+        for item in inv.items:
+            hsn = (item.hsn_sac or "").strip()
+            if hsn and not HSN_SAC_REGEX.fullmatch(hsn):
+                errors.append(
+                    f"Invoice {inv_num}: HSN/SAC '{hsn}' on item #{item.id} is not a valid "
+                    f"4, 6 or 8 digit code."
+                )
 
         # Check for duplicate invoice numbers
         if inv_num in seen_numbers:
@@ -1728,6 +1878,16 @@ def gstr1_validate(
                     severity="error",
                 ))
 
+            # Table 12 takes the rate verbatim and accepts only the GST slabs,
+            # so a rate like 17.99 gets the whole HSN summary rejected.
+            if not is_gst_rate_slab(item.gst_rate):
+                errors.append(Gstr1ValidationError(
+                    invoice_number=inv_num,
+                    field=f"GST Rate (item #{item.id})",
+                    message=f"{float(item.gst_rate or 0):g}% is not a GST slab — the portal rejects the HSN summary",
+                    severity="error",
+                ))
+
         # Tax calculation checks: CGST+SGST or IGST
         total_item_tax = sum(
             (float(item.cgst_amount or 0) + float(item.sgst_amount or 0) + float(item.igst_amount or 0))
@@ -1794,6 +1954,7 @@ def gstr1_summary(
         db.query(CreditNote)
         .options(joinedload(CreditNote.items))
         .filter(CreditNote.status == "active")
+        .filter(_OUTWARD_ONLY)
         .filter(CreditNote.created_at >= datetime.combine(from_date, time.min))
         .filter(CreditNote.created_at <= datetime.combine(to_date, time.max))
     )
@@ -1802,6 +1963,8 @@ def gstr1_summary(
     credit_notes = credit_note_q.all()
 
     cn_summary = Gstr1CategorySummary()
+    # Kept so the response shape stays stable; no document here raises a
+    # liability, so the debit note bucket always stays empty.
     dn_summary = Gstr1CategorySummary()
 
     for inv in invoices:
@@ -1845,20 +2008,14 @@ def gstr1_summary(
         cn_cgst = float(cn.cgst_amount or 0)
         cn_sgst = float(cn.sgst_amount or 0)
         cn_igst = float(cn.igst_amount or 0)
-        if cn.credit_note_type == "return":
-            cn_summary.invoice_count += 1
-            cn_summary.taxable_value += cn_taxable
-            cn_summary.cgst += cn_cgst
-            cn_summary.sgst += cn_sgst
-            cn_summary.igst += cn_igst
-            cn_summary.total_tax += cn_cgst + cn_sgst + cn_igst
-        else:
-            dn_summary.invoice_count += 1
-            dn_summary.taxable_value += cn_taxable
-            dn_summary.cgst += cn_cgst
-            dn_summary.sgst += cn_sgst
-            dn_summary.igst += cn_igst
-            dn_summary.total_tax += cn_cgst + cn_sgst + cn_igst
+        # Discount and adjustment notes are credit notes too — every one of them
+        # lowers the liability, so they all belong in the credit note bucket.
+        cn_summary.invoice_count += 1
+        cn_summary.taxable_value += cn_taxable
+        cn_summary.cgst += cn_cgst
+        cn_summary.sgst += cn_sgst
+        cn_summary.igst += cn_igst
+        cn_summary.total_tax += cn_cgst + cn_sgst + cn_igst
 
     # HSN summary
     hsn_map: dict[str, dict] = {}
@@ -1890,8 +2047,8 @@ def gstr1_summary(
     total_sales = sum(1 for inv in invoices if inv.voucher_type == "sales")
     doc_summary = Gstr1DocSummary(
         total_invoices=total_sales,
-        total_credit_notes=sum(1 for cn in credit_notes if cn.credit_note_type == "return"),
-        total_debit_notes=sum(1 for cn in credit_notes if cn.credit_note_type != "return"),
+        total_credit_notes=len(credit_notes),
+        total_debit_notes=0,
     )
 
     return Gstr1Summary(
@@ -2046,6 +2203,7 @@ def gstr1_export_json(
         db.query(CreditNote)
         .options(joinedload(CreditNote.items))
         .filter(CreditNote.status == "active")
+        .filter(_OUTWARD_ONLY)
         .filter(CreditNote.created_at >= datetime.combine(from_date, time.min))
         .filter(CreditNote.created_at <= datetime.combine(to_date, time.max))
     )
@@ -2067,13 +2225,14 @@ def gstr1_export_json(
     cdnr_by_ctin: dict[str, list[dict]] = {}
     cdnur_section: list[dict] = []
     for cn in credit_notes:
-        cn_cgst = float(cn.cgst_amount or 0)
-        cn_sgst = float(cn.sgst_amount or 0)
+        # Whether the note is inter-state decides which tax heads its items fill.
         cn_igst = float(cn.igst_amount or 0)
         items = cn.items or []
-        item_count = len(items) or 1
-        # "return" credit notes reduce the supplier's liability → Credit note ("C").
-        ntty = "C" if (cn.credit_note_type or "").lower() in ("return", "r", "credit", "c") else "D"
+        # Every credit note reduces the supplier's liability, whatever the reason
+        # was — return, discount or adjustment — so Table 9B always reports "C".
+        # Nothing in this system issues a debit note ("D"), which would instead
+        # raise the liability.
+        ntty = "C"
         # Consolidate items by GST rate to avoid RET191117.
         cn_by_rate: dict[float, dict] = {}
         for item in items:
@@ -2088,9 +2247,15 @@ def gstr1_export_json(
                     "csamt": 0.0,
                 }
             cn_by_rate[rate]["txval"] += float(item.taxable_amount or 0)
-            cn_by_rate[rate]["iamt"] += cn_igst / item_count
-            cn_by_rate[rate]["camt"] += cn_cgst / item_count
-            cn_by_rate[rate]["samt"] += cn_sgst / item_count
+            # Items carry a single tax_amount, so split it across the heads the
+            # note itself used. Apportioning the note total by item count would
+            # land the wrong tax in each bucket once a note mixes GST rates.
+            item_tax = float(item.tax_amount or 0)
+            if cn_igst > 0:
+                cn_by_rate[rate]["iamt"] += item_tax
+            else:
+                cn_by_rate[rate]["camt"] += item_tax / 2
+                cn_by_rate[rate]["samt"] += item_tax / 2
 
         itms: list[dict] = []
         for i, rate in enumerate(sorted(cn_by_rate.keys()), start=1):
@@ -2138,9 +2303,18 @@ def gstr1_export_json(
             })
     cdnr_section = [{"ctin": ctin, "nt": nts} for ctin, nts in cdnr_by_ctin.items()]
 
-    # HSN summary (Table 12): split into B2B / B2C, aggregated by (HSN, rate).
-    hsn_b2b_map: dict[tuple[str, float], dict] = {}
-    hsn_b2c_map: dict[tuple[str, float], dict] = {}
+    # HSN summary (Table 12): split into B2B / B2C, aggregated by (HSN, rate, UQC).
+    # The unit lives on the product master, not on the invoice line.
+    product_ids = {item.product_id for inv in invoices for item in inv.items if item.product_id}
+    units_by_product: dict[int, str] = {}
+    if product_ids:
+        units_by_product = {
+            pid: unit
+            for pid, unit in db.query(Product.id, Product.unit).filter(Product.id.in_(product_ids)).all()
+        }
+
+    hsn_b2b_map: dict[tuple[str, float, str], dict] = {}
+    hsn_b2c_map: dict[tuple[str, float, str], dict] = {}
     for inv in invoices:
         if inv.voucher_type != "sales":
             continue
@@ -2148,7 +2322,8 @@ def gstr1_export_json(
         for item in inv.items:
             hsn = (item.hsn_sac or "").strip()
             rate = float(item.gst_rate or 0)
-            agg = target.setdefault((hsn, rate), {"qty": 0.0, "txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0, "desc": ""})
+            uqc = _hsn_uqc(hsn, units_by_product.get(item.product_id))
+            agg = target.setdefault((hsn, rate, uqc), {"qty": 0.0, "txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0, "desc": ""})
             agg["qty"] += float(item.quantity or 0)
             agg["txval"] += float(item.taxable_amount or 0)
             agg["iamt"] += float(item.igst_amount or 0)
@@ -2158,17 +2333,16 @@ def gstr1_export_json(
             if not agg["desc"] and (item.description or "").strip():
                 agg["desc"] = item.description.strip()
 
-    def _hsn_rows(hsn_map: dict[tuple[str, float], dict]) -> list[dict]:
+    def _hsn_rows(hsn_map: dict[tuple[str, float, str], dict]) -> list[dict]:
         rows: list[dict] = []
-        for (hsn, rate), data in sorted(hsn_map.items()):
+        for (hsn, rate, uqc), data in sorted(hsn_map.items()):
             is_service = hsn.startswith("99")
             rows.append({
-                # hsn_sc must be the first property per the GSTN schema.
                 "hsn_sc": hsn,
-                # desc is mandatory per the GSTN portal schema.
-                "desc": data.get("desc") or hsn,
+                # Either hsn_sc or desc must be present (RET191194).
+                "desc": _hsn_desc(data.get("desc"), hsn),
                 "num": len(rows) + 1,
-                "uqc": "NA" if is_service else "NOS",
+                "uqc": uqc,
                 "rt": rate,
                 "qty": 0.0 if is_service else round(data["qty"], 2),
                 "txval": round(data["txval"], 2),
@@ -2211,10 +2385,12 @@ def gstr1_export_json(
     inv_range = _doc_range(inv_numbers)
     if inv_range:  # 1 = Invoices for outward supply
         doc_det.append({"doc_num": 1, "docs": [inv_range]})
-    dn_range = _doc_range([cn.credit_note_number or f"DN-{cn.id}" for cn in credit_notes if cn.credit_note_type != "return"])
-    if dn_range:  # 4 = Debit Note
-        doc_det.append({"doc_num": 4, "docs": [dn_range]})
-    cn_range = _doc_range([cn.credit_note_number or f"CN-{cn.id}" for cn in credit_notes if cn.credit_note_type == "return"])
+    # One credit note series covers every reason, so it is reported whole under
+    # nature 5. Splitting it by credit_note_type reported part of the series as
+    # a debit note series that was never issued. `credit_notes` is already
+    # filtered to outward, so notes received from suppliers — which number out
+    # of their own DN series — never reach this range.
+    cn_range = _doc_range([cn.credit_note_number or f"CN-{cn.id}" for cn in credit_notes])
     if cn_range:  # 5 = Credit Note
         doc_det.append({"doc_num": 5, "docs": [cn_range]})
 

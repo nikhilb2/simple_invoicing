@@ -2630,6 +2630,247 @@ a.invoice-row {
   border: 1px solid rgba(255, 139, 139, 0.25);
 }
 
+/* Tax ledger — period totals ────────────────────────────────────────────
+   Taxable value + GST = gross value. The three figures are one equation, so
+   they sit on a single row with the operators between them; a plain card grid
+   left the reader to work out that two of the three add up to the third. */
+.tax-total-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 14px;
+}
+
+.tax-total-flow__op {
+  align-self: center;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: rgba(156, 173, 207, 0.5);
+}
+
+.tax-bucket-group {
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(148, 184, 255, 0.1);
+}
+
+.tax-bucket-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.tax-total {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 18px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(148, 184, 255, 0.08);
+}
+
+/* The gross figure is the one that has to tie back to the books, so it is the
+   only tile that carries the accent; the two it is built from stay quiet. */
+.tax-total--headline {
+  background: linear-gradient(140deg, rgba(87, 209, 201, 0.16), rgba(87, 209, 201, 0.03));
+  border-color: rgba(87, 209, 201, 0.28);
+}
+
+.tax-total__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+}
+
+/* Lowercase and unspaced, so it reads as a gloss on the label rather than a
+   second label competing with it. */
+.tax-total__hint {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: rgba(156, 173, 207, 0.65);
+}
+
+.tax-total__value {
+  margin: 2px 0 0;
+  font-family: 'Space Grotesk', sans-serif;
+  /* A rupee figure in lakhs is 15 unbreakable characters. At a fixed size it
+     wrapped mid-number ("₹90,67,680.2 / 5") on every width between the
+     breakpoints, so the type scales with the room the tile actually has. */
+  font-size: clamp(1.15rem, 2.6vw - 10px, 1.78rem);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  /* Currency strings hold no spaces and overflow their track otherwise. */
+  overflow-wrap: anywhere;
+}
+
+.tax-total--headline .tax-total__value {
+  color: var(--accent);
+}
+
+/* A net total below zero means the input side outweighed the output side —
+   worth reading as a different state, not just a minus sign. */
+.tax-total--negative .tax-total__value,
+.tax-total--headline.tax-total--negative .tax-total__value {
+  color: var(--warning);
+}
+
+.tax-total--compact .tax-total__value {
+  font-size: clamp(1rem, 1.9vw - 7px, 1.35rem);
+}
+
+/* Dr and Cr each stay whole, so a narrow tile breaks between them and reads as
+   the two-line pair it is rather than splitting a figure down the middle. */
+.tax-total__split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tax-total__split > span {
+  white-space: nowrap;
+}
+
+.tax-total__split b {
+  font-weight: 700;
+  color: rgba(230, 238, 251, 0.85);
+}
+
+/* The payable figure leads and the set-off working sits beside it, so the
+   answer is readable at a glance and the arithmetic is there to be checked. */
+.tax-payable-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(0, 2fr);
+  gap: 14px;
+  /* The headline and its working are one unit, so they share an edge rather
+     than leaving the shorter card floating against the taller table. */
+  align-items: stretch;
+}
+
+.tax-setoff {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(148, 184, 255, 0.08);
+  /* Five money columns; on a narrow panel the table scrolls in place rather
+     than widening the page. */
+  overflow-x: auto;
+}
+
+.tax-setoff__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tax-setoff__table th,
+.tax-setoff__table td {
+  padding: 8px 10px;
+}
+
+.tax-setoff__table thead th {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(156, 173, 207, 0.8);
+  text-align: left;
+  border-bottom: 1px solid rgba(148, 184, 255, 0.12);
+}
+
+.tax-setoff__table tbody th,
+.tax-setoff__table tfoot th {
+  text-align: left;
+  font-weight: 700;
+}
+
+.tax-setoff__table tfoot th,
+.tax-setoff__table tfoot td {
+  border-top: 1px solid rgba(148, 184, 255, 0.16);
+}
+
+/* The column the row is read for. */
+.tax-setoff__payable {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.tax-setoff__table tfoot .tax-setoff__payable {
+  color: var(--accent);
+}
+
+.tax-setoff__note {
+  margin: 0;
+  font-size: 0.78rem;
+  white-space: normal;
+}
+
+.tax-setoff__note strong {
+  color: rgba(230, 238, 251, 0.9);
+}
+
+@media (max-width: 1100px) {
+  .tax-payable-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Four filters across reads as one scope line; the shared 2-up .field-grid
+   broke it into two rows with the date pair split off from the rest. */
+.tax-filter-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* The equation is worth more than the type size, so the row tightens before it
+   breaks: three stacked full-width tiles push the entries table off-screen. */
+@media (max-width: 1100px) {
+  .tax-total-flow,
+  .tax-bucket-grid {
+    gap: 10px;
+  }
+
+  .tax-total {
+    padding: 15px;
+  }
+
+  .tax-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .tax-total-flow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Stacked, the operators are the joints between tiles rather than a column
+     of stray glyphs, so they centre instead of sitting mid-height. */
+  .tax-total-flow__op {
+    justify-self: center;
+  }
+}
+
+@media (max-width: 720px) {
+  .tax-bucket-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .tax-ledger-scroll {
   max-height: 60vh;
   overflow-y: auto;

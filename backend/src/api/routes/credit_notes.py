@@ -44,6 +44,7 @@ def list_credit_notes(
     ledger_id: Optional[int] = Query(None),
     invoice_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
+    direction: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
@@ -73,8 +74,21 @@ def list_credit_notes(
     if status is not None:
         q = q.filter(CreditNote.status == status)
 
+    if direction is not None:
+        # Rows predating the column are all outward.
+        if direction == "outward":
+            q = q.filter(or_(CreditNote.direction == "outward", CreditNote.direction.is_(None)))
+        else:
+            q = q.filter(CreditNote.direction == direction)
+
     if search:
-        q = q.filter(CreditNote.credit_note_number.ilike(f"%{search}%"))
+        # A supplier's note is looked up by their number, not the one we gave it.
+        q = q.filter(
+            or_(
+                CreditNote.credit_note_number.ilike(f"%{search}%"),
+                CreditNote.supplier_credit_note_number.ilike(f"%{search}%"),
+            )
+        )
 
     if date_from:
         from datetime import datetime as dt

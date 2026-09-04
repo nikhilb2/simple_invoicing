@@ -10,7 +10,7 @@ Covers:
 - cancel_credit_note happy path
 """
 from decimal import Decimal
-from datetime import datetime
+from datetime import date, datetime
 from types import SimpleNamespace
 from unittest.mock import ANY, MagicMock, call, patch
 
@@ -40,10 +40,12 @@ def make_ledger(id=1, gst="29ABCDE1234F1Z5"):
     return l
 
 
-def make_invoice(id, ledger_id=1, status="active", company_gst="29XYZAB1234C1Z7", taxable_amount=1000):
+def make_invoice(id, ledger_id=1, status="active", company_gst="29XYZAB1234C1Z7", taxable_amount=1000,
+                 voucher_type="sales"):
     inv = Invoice()
     inv.id = id
     inv.ledger_id = ledger_id
+    inv.voucher_type = voucher_type
     inv.status = status
     inv.company_gst = company_gst
     inv.taxable_amount = taxable_amount
@@ -70,6 +72,9 @@ def make_cn(id=1, status="active", ledger_id=1):
     cn.ledger_id = ledger_id
     cn.financial_year_id = 1
     cn.credit_note_type = "return"
+    cn.direction = "outward"
+    cn.supplier_credit_note_number = None
+    cn.supplier_credit_note_date = None
     cn.reason = "test"
     cn.taxable_amount = 100
     cn.cgst_amount = 9
@@ -490,3 +495,224 @@ class TestCancelCreditNote:
             cancel_credit_note(1, db)
 
         mock_change_inventory.assert_called_once_with(db, 22, -3, context=ANY)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Notes received from a supplier
+#
+# Under s.34 CGST the supplier issues the credit note and we file nothing; the
+# note reaches us through GSTR-2B as a reduction of input credit. Recording it
+# here has to run the other way from an outward note in three places: its
+# number comes from the debit note series, stock goes out rather than in, and
+# nothing about it may reach GSTR-1.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestInwardCreditNotes:
+    @staticmethod
+    def _inward_payload(**overrides):
+        kwargs = dict(
+            ledger_id=1,
+            invoice_ids=[1],
+            credit_note_type="return",
+            direction="inward",
+            supplier_credit_note_number="SUP/CN/12",
+            supplier_credit_note_date=date(2026, 9, 1),
+            items=[CreditNoteItemCreate(invoice_id=1, invoice_item_id=10, quantity=2)],
+        )
+        kwargs.update(overrides)
+        return CreditNoteCreate(**kwargs)
+
+    @staticmethod
+    def _db_for(ledger, invoices, invoice_items, *, duplicate=None, product=None):
+        """A db whose `.first()` answers, in order: ledger, duplicate, product."""
+        db = MagicMock()
+        if product is None:
+            product = SimpleNamespace(id=22, name="Widget", track_serials=False, maintain_inventory=True)
+        db.query.return_value.filter.return_value.first.side_effect = [ledger, duplicate, product]
+        db.query.return_value.filter.return_value.all.side_effect = [invoices, invoice_items]
+        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = 0
+        return db
+
+    def test_mixing_sales_and_purchase_invoices_raises_400(self):
+        ledger = make_ledger(id=1)
+        sales = make_invoice(id=1, ledger_id=1, voucher_type="sales")
+        purchase = make_invoice(id=2, ledger_id=1, voucher_type="purchase")
+
+        payload = CreditNoteCreate(
+            ledger_id=1,
+            invoice_ids=[1, 2],
+            items=[
+                CreditNoteItemCreate(invoice_id=1, invoice_item_id=10, quantity=1),
+                CreditNoteItemCreate(invoice_id=2, invoice_item_id=11, quantity=1),
+            ],
+        )
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = ledger
+        db.query.return_value.filter.return_value.all.return_value = [sales, purchase]
+
+        with pytest.raises(Exception) as exc:
+            create_credit_note(payload, db, current_user_id=1)
+        assert exc.value.status_code == 400
+        assert "both sales and purchase" in exc.value.detail
+
+    def test_declared_direction_must_match_the_invoices(self):
+        """The Sales tab must not be able to file a purchase note by accident."""
+        ledger = make_ledger(id=1)
+        inv = make_invoice(id=1, ledger_id=1, voucher_type="purchase")
+
+        payload = CreditNoteCreate(
+            ledger_id=1,
+            invoice_ids=[1],
+            items=[CreditNoteItemCreate(invoice_id=1, invoice_item_id=10, quantity=2)],
+        )  # direction defaults to outward
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = ledger
+        db.query.return_value.filter.return_value.all.return_value = [inv]
+
+        with pytest.raises(Exception) as exc:
+            create_credit_note(payload, db, current_user_id=1)
+        assert exc.value.status_code == 400
+        assert "must be recorded as inward" in exc.value.detail
+
+    def test_inward_note_numbers_out_of_the_debit_note_series(self):
+        ledger = make_ledger(id=1)
+        inv = make_invoice(id=1, ledger_id=1, voucher_type="purchase")
+        ii = make_invoice_item(id=10, invoice_id=1, product_id=22, quantity=10)
+        db = self._db_for(ledger, [inv], [ii])
+
+        with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
+             patch("src.services.credit_note.get_fy_for_date", return_value=None), \
+             patch("src.services.credit_note.generate_next_number", return_value="DN-2026-001") as mock_number, \
+             patch("src.services.credit_note._recompute_credit_status"), \
+             patch("src.services.credit_note._change_inventory_quantity"):
+            create_credit_note(self._inward_payload(), db, current_user_id=1)
+
+        assert mock_number.call_args.args[1] == "debit_note"
+
+        added = [c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], CreditNote)]
+        assert len(added) == 1
+        assert added[0].direction == "inward"
+        assert added[0].supplier_credit_note_number == "SUP/CN/12"
+        assert added[0].supplier_credit_note_date == date(2026, 9, 1)
+
+    def test_outward_note_still_numbers_out_of_the_credit_note_series(self):
+        ledger = make_ledger(id=1)
+        inv = make_invoice(id=1, ledger_id=1, voucher_type="sales")
+        ii = make_invoice_item(id=10, invoice_id=1, product_id=22, quantity=10)
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = ledger
+        db.query.return_value.filter.return_value.all.side_effect = [[inv], [ii]]
+        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = 0
+
+        payload = CreditNoteCreate(
+            ledger_id=1,
+            invoice_ids=[1],
+            credit_note_type="return",
+            items=[CreditNoteItemCreate(invoice_id=1, invoice_item_id=10, quantity=2)],
+        )
+
+        with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
+             patch("src.services.credit_note.get_fy_for_date", return_value=None), \
+             patch("src.services.credit_note.generate_next_number", return_value="CN-001") as mock_number, \
+             patch("src.services.credit_note._recompute_credit_status"), \
+             patch("src.services.credit_note._change_inventory_quantity"):
+            create_credit_note(payload, db, current_user_id=1)
+
+        assert mock_number.call_args.args[1] == "credit_note"
+
+    def test_purchase_return_decreases_inventory(self):
+        """The goods go back to the supplier, so stock falls."""
+        ledger = make_ledger(id=1)
+        inv = make_invoice(id=1, ledger_id=1, voucher_type="purchase")
+        ii = make_invoice_item(id=10, invoice_id=1, product_id=22, quantity=10)
+        db = self._db_for(ledger, [inv], [ii])
+
+        with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
+             patch("src.services.credit_note.get_fy_for_date", return_value=None), \
+             patch("src.services.credit_note.generate_next_number", return_value="DN-001"), \
+             patch("src.services.credit_note._recompute_credit_status"), \
+             patch("src.services.credit_note._change_inventory_quantity") as mock_change_inventory:
+            create_credit_note(self._inward_payload(), db, current_user_id=1)
+
+        mock_change_inventory.assert_called_once_with(db, 22, Decimal("-2"), context=ANY)
+
+    def test_duplicate_supplier_note_for_the_same_ledger_is_rejected(self):
+        ledger = make_ledger(id=1)
+        inv = make_invoice(id=1, ledger_id=1, voucher_type="purchase")
+        ii = make_invoice_item(id=10, invoice_id=1, product_id=22, quantity=10)
+        # The duplicate lookup finds an existing note under our own number.
+        db = self._db_for(ledger, [inv], [ii], duplicate=("DN-2026-004",))
+
+        with pytest.raises(Exception) as exc:
+            create_credit_note(self._inward_payload(), db, current_user_id=1)
+        assert exc.value.status_code == 400
+        assert "already recorded" in exc.value.detail
+        assert "DN-2026-004" in exc.value.detail
+
+    def test_cancelling_a_purchase_return_brings_the_stock_back(self):
+        item = CreditNoteItem()
+        item.id = 1
+        item.invoice_id = 5
+        item.invoice_item_id = 11
+        item.product_id = 22
+        item.quantity = 3
+        item.unit_price = 100
+        item.gst_rate = 18
+        item.taxable_amount = 300
+        item.tax_amount = 54
+        item.line_total = 354
+
+        cn = make_cn(status="active")
+        cn.credit_note_type = "return"
+        cn.direction = "inward"
+        cn.supplier_credit_note_number = "SUP/CN/12"
+        cn.credit_note_number = "DN-001"
+        cn.items = [item]
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = cn
+
+        with patch("src.services.credit_note._recompute_credit_status"), \
+             patch("src.services.credit_note._change_inventory_quantity") as mock_change_inventory:
+            cancel_credit_note(1, db)
+
+        mock_change_inventory.assert_called_once_with(db, 22, Decimal("3"), context=ANY)
+
+
+class TestSupplierDocumentSchema:
+    def test_inward_requires_the_suppliers_number_and_date(self):
+        base = dict(
+            ledger_id=1,
+            invoice_ids=[1],
+            direction="inward",
+            items=[CreditNoteItemCreate(invoice_id=1, invoice_item_id=10, quantity=1)],
+        )
+        with pytest.raises(ValueError, match="number is required"):
+            CreditNoteCreate(**base, supplier_credit_note_date=date(2026, 9, 1))
+        with pytest.raises(ValueError, match="date is required"):
+            CreditNoteCreate(**base, supplier_credit_note_number="SUP/1")
+        with pytest.raises(ValueError, match="number is required"):
+            CreditNoteCreate(**base, supplier_credit_note_number="   ", supplier_credit_note_date=date(2026, 9, 1))
+
+    def test_outward_rejects_supplier_details(self):
+        with pytest.raises(ValueError, match="only on a note received from a supplier"):
+            CreditNoteCreate(
+                ledger_id=1,
+                invoice_ids=[1],
+                supplier_credit_note_number="SUP/1",
+                items=[CreditNoteItemCreate(invoice_id=1, invoice_item_id=10, quantity=1)],
+            )
+
+    def test_supplier_number_is_stripped(self):
+        payload = CreditNoteCreate(
+            ledger_id=1,
+            invoice_ids=[1],
+            direction="inward",
+            supplier_credit_note_number="  SUP/CN/12  ",
+            supplier_credit_note_date=date(2026, 9, 1),
+            items=[CreditNoteItemCreate(invoice_id=1, invoice_item_id=10, quantity=1)],
+        )
+        assert payload.supplier_credit_note_number == "SUP/CN/12"

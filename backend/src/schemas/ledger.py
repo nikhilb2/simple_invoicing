@@ -132,6 +132,8 @@ class TaxLedgerEntry(BaseModel):
     particulars: str
     gst_rate: float
     taxable_amount: float
+    debit_taxable: float = 0.0
+    credit_taxable: float = 0.0
     debit_cgst: float
     debit_sgst: float
     debit_igst: float
@@ -143,6 +145,9 @@ class TaxLedgerEntry(BaseModel):
 
 
 class TaxLedgerTotals(BaseModel):
+    debit_taxable: float = 0.0
+    credit_taxable: float = 0.0
+    net_taxable: float = 0.0
     debit_cgst: float
     debit_sgst: float
     debit_igst: float
@@ -155,6 +160,32 @@ class TaxLedgerTotals(BaseModel):
     net_sgst: float
     net_igst: float
     net_total_tax: float
+    # Taxable value plus the tax on it — what the voucher was actually raised
+    # for, and the figure that has to tie back to the books.
+    debit_gross: float = 0.0
+    credit_gross: float = 0.0
+    net_gross: float = 0.0
+
+
+class TaxLiabilityBucket(BaseModel):
+    """One tax head's road from what was collected to what has to be paid."""
+
+    output_tax: float = 0.0
+    input_credit: float = 0.0
+    credit_used: float = 0.0
+    payable: float = 0.0
+    credit_carried_forward: float = 0.0
+
+
+class TaxLiability(BaseModel):
+    cgst: TaxLiabilityBucket = TaxLiabilityBucket()
+    sgst: TaxLiabilityBucket = TaxLiabilityBucket()
+    igst: TaxLiabilityBucket = TaxLiabilityBucket()
+    output_tax: float = 0.0
+    input_credit: float = 0.0
+    credit_used: float = 0.0
+    payable: float = 0.0
+    credit_carried_forward: float = 0.0
 
 
 class TaxLedgerOut(BaseModel):
@@ -164,6 +195,7 @@ class TaxLedgerOut(BaseModel):
     gst_rate: float | None = None
     entries: list[TaxLedgerEntry]
     totals: TaxLedgerTotals
+    liability: TaxLiability = TaxLiability()
     fy_label: str | None = None
     financial_year_id: int | None = None
 
