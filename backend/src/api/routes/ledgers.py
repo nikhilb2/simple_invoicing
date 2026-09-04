@@ -20,6 +20,7 @@ from src.models.invoice import Invoice
 from src.models.invoice import InvoiceItem
 from src.models.ledger_address import LedgerAddress
 from src.models.payment import Payment, PaymentInvoiceAllocation
+from src.models.product import Product
 from src.models.user import User, UserRole
 from src.schemas.invoice import OutstandingInvoiceOut
 from src.schemas.ledger import DayBookEntry, DayBookOut, Gstr1B2BInvoice, Gstr1CategorySummary, Gstr1DocSummary, Gstr1HsnSummaryItem, Gstr1JsonExport, Gstr1Summary, Gstr1ValidationError, Gstr1ValidationResult, LedgerCreate, LedgerOut, LedgerStatementEntry, LedgerStatementInvoiceAllocation, LedgerStatementOut, PaginatedLedgerOut, TaxLedgerEntry, TaxLedgerOut, TaxLedgerTotals
@@ -32,7 +33,7 @@ from src.services.invoice_payments import auto_allocate_outstanding_invoices, bu
 from src.services.pdf_templates import _build_day_book_html, _build_statement_html  # noqa: F401
 from src.services.pdf_templates.builders import _e
 from src.services.share_documents import get_ledger as get_shared_ledger, render_statement_pdf
-from src.core.validation import GSTIN_REGEX, HSN_SAC_REGEX
+from src.core.validation import GSTIN_REGEX, HSN_SAC_REGEX, is_gst_rate_slab
 
 router = APIRouter()
 
@@ -1595,12 +1596,45 @@ def _derive_place_of_supply(company_gst: str | None) -> str:
     return "00"
 
 
+# Table 12 takes UQC from a fixed GSTN list, so the product master's free-text
+# unit has to be mapped onto it. Anything unmapped falls back to NOS, which is
+# what every row carried before units were read at all.
+HSN_UQC_BY_UNIT = {
+    "pieces": "NOS", "piece": "NOS", "pcs": "PCS", "nos": "NOS", "unit": "UNT",
+    "kg": "KGS", "kgs": "KGS", "g": "GMS", "gm": "GMS", "gram": "GMS", "grams": "GMS",
+    "m": "MTR", "metre": "MTR", "meter": "MTR", "mtr": "MTR",
+    "l": "LTR", "litre": "LTR", "liter": "LTR", "ltr": "LTR", "ml": "MLT",
+    "box": "BOX", "set": "SET", "pair": "PRS", "dozen": "DOZ", "ton": "TON",
+}
+
+# GSTN caps the Table 12 description at 30 characters.
+HSN_DESC_LIMIT = 30
+
+
+def _hsn_uqc(hsn: str, unit: str | None) -> str:
+    """The UQC to declare for an HSN line."""
+    # Services carry no quantity, so the GSTN convention is UQC "NA" with qty 0.
+    if hsn.startswith("99"):
+        return "NA"
+    return HSN_UQC_BY_UNIT.get((unit or "").strip().lower(), "NOS")
+
+
+def _hsn_desc(value: str | None, hsn: str) -> str:
+    """A Table 12 description: single line, at most 30 characters."""
+    # Item descriptions are free text and routinely hold newlines and serial
+    # number lists, both of which the portal rejects or silently truncates.
+    text = " ".join((value or "").split())
+    return text[:HSN_DESC_LIMIT].strip() or hsn
+
+
 def _validate_hsn(hsn: str | None) -> str | None:
     """Validate HSN/SAC code. Returns error message or None."""
     if not hsn or not hsn.strip():
         return "Missing HSN"
     hsn = hsn.strip()
     if not HSN_SAC_REGEX.fullmatch(hsn):
+        if hsn.isdigit():
+            return f"HSN {hsn} has {len(hsn)} digits — GST accepts 4, 6 or 8 only"
         return f"Invalid HSN: {hsn}"
     return None
 
@@ -1641,11 +1675,19 @@ def _validate_gstr1_export(db: Session, company_gstin: str | None, invoices: lis
                 if pos == "00" or not pos.isdigit():
                     errors.append(f"Invoice {inv_num}: Cannot derive valid Place of Supply from customer GSTIN '{ctin}'.")
 
-        # Check for HSN codes
+        # Check for HSN codes. A malformed code is as fatal as a missing one —
+        # the portal drops the whole HSN summary over a single bad row.
         missing_hsn = [item for item in inv.items if not item.hsn_sac or not item.hsn_sac.strip()]
         if missing_hsn:
             item_ids = ", ".join(str(item.id) for item in missing_hsn)
             errors.append(f"Invoice {inv_num}: Missing HSN/SAC code for item(s) #{item_ids}.")
+        for item in inv.items:
+            hsn = (item.hsn_sac or "").strip()
+            if hsn and not HSN_SAC_REGEX.fullmatch(hsn):
+                errors.append(
+                    f"Invoice {inv_num}: HSN/SAC '{hsn}' on item #{item.id} is not a valid "
+                    f"4, 6 or 8 digit code."
+                )
 
         # Check for duplicate invoice numbers
         if inv_num in seen_numbers:
@@ -1728,6 +1770,16 @@ def gstr1_validate(
                     severity="error",
                 ))
 
+            # Table 12 takes the rate verbatim and accepts only the GST slabs,
+            # so a rate like 17.99 gets the whole HSN summary rejected.
+            if not is_gst_rate_slab(item.gst_rate):
+                errors.append(Gstr1ValidationError(
+                    invoice_number=inv_num,
+                    field=f"GST Rate (item #{item.id})",
+                    message=f"{float(item.gst_rate or 0):g}% is not a GST slab — the portal rejects the HSN summary",
+                    severity="error",
+                ))
+
         # Tax calculation checks: CGST+SGST or IGST
         total_item_tax = sum(
             (float(item.cgst_amount or 0) + float(item.sgst_amount or 0) + float(item.igst_amount or 0))
@@ -1802,6 +1854,8 @@ def gstr1_summary(
     credit_notes = credit_note_q.all()
 
     cn_summary = Gstr1CategorySummary()
+    # Kept so the response shape stays stable; no document here raises a
+    # liability, so the debit note bucket always stays empty.
     dn_summary = Gstr1CategorySummary()
 
     for inv in invoices:
@@ -1845,20 +1899,14 @@ def gstr1_summary(
         cn_cgst = float(cn.cgst_amount or 0)
         cn_sgst = float(cn.sgst_amount or 0)
         cn_igst = float(cn.igst_amount or 0)
-        if cn.credit_note_type == "return":
-            cn_summary.invoice_count += 1
-            cn_summary.taxable_value += cn_taxable
-            cn_summary.cgst += cn_cgst
-            cn_summary.sgst += cn_sgst
-            cn_summary.igst += cn_igst
-            cn_summary.total_tax += cn_cgst + cn_sgst + cn_igst
-        else:
-            dn_summary.invoice_count += 1
-            dn_summary.taxable_value += cn_taxable
-            dn_summary.cgst += cn_cgst
-            dn_summary.sgst += cn_sgst
-            dn_summary.igst += cn_igst
-            dn_summary.total_tax += cn_cgst + cn_sgst + cn_igst
+        # Discount and adjustment notes are credit notes too — every one of them
+        # lowers the liability, so they all belong in the credit note bucket.
+        cn_summary.invoice_count += 1
+        cn_summary.taxable_value += cn_taxable
+        cn_summary.cgst += cn_cgst
+        cn_summary.sgst += cn_sgst
+        cn_summary.igst += cn_igst
+        cn_summary.total_tax += cn_cgst + cn_sgst + cn_igst
 
     # HSN summary
     hsn_map: dict[str, dict] = {}
@@ -1890,8 +1938,8 @@ def gstr1_summary(
     total_sales = sum(1 for inv in invoices if inv.voucher_type == "sales")
     doc_summary = Gstr1DocSummary(
         total_invoices=total_sales,
-        total_credit_notes=sum(1 for cn in credit_notes if cn.credit_note_type == "return"),
-        total_debit_notes=sum(1 for cn in credit_notes if cn.credit_note_type != "return"),
+        total_credit_notes=len(credit_notes),
+        total_debit_notes=0,
     )
 
     return Gstr1Summary(
@@ -2067,13 +2115,14 @@ def gstr1_export_json(
     cdnr_by_ctin: dict[str, list[dict]] = {}
     cdnur_section: list[dict] = []
     for cn in credit_notes:
-        cn_cgst = float(cn.cgst_amount or 0)
-        cn_sgst = float(cn.sgst_amount or 0)
+        # Whether the note is inter-state decides which tax heads its items fill.
         cn_igst = float(cn.igst_amount or 0)
         items = cn.items or []
-        item_count = len(items) or 1
-        # "return" credit notes reduce the supplier's liability → Credit note ("C").
-        ntty = "C" if (cn.credit_note_type or "").lower() in ("return", "r", "credit", "c") else "D"
+        # Every credit note reduces the supplier's liability, whatever the reason
+        # was — return, discount or adjustment — so Table 9B always reports "C".
+        # Nothing in this system issues a debit note ("D"), which would instead
+        # raise the liability.
+        ntty = "C"
         # Consolidate items by GST rate to avoid RET191117.
         cn_by_rate: dict[float, dict] = {}
         for item in items:
@@ -2088,9 +2137,15 @@ def gstr1_export_json(
                     "csamt": 0.0,
                 }
             cn_by_rate[rate]["txval"] += float(item.taxable_amount or 0)
-            cn_by_rate[rate]["iamt"] += cn_igst / item_count
-            cn_by_rate[rate]["camt"] += cn_cgst / item_count
-            cn_by_rate[rate]["samt"] += cn_sgst / item_count
+            # Items carry a single tax_amount, so split it across the heads the
+            # note itself used. Apportioning the note total by item count would
+            # land the wrong tax in each bucket once a note mixes GST rates.
+            item_tax = float(item.tax_amount or 0)
+            if cn_igst > 0:
+                cn_by_rate[rate]["iamt"] += item_tax
+            else:
+                cn_by_rate[rate]["camt"] += item_tax / 2
+                cn_by_rate[rate]["samt"] += item_tax / 2
 
         itms: list[dict] = []
         for i, rate in enumerate(sorted(cn_by_rate.keys()), start=1):
@@ -2138,9 +2193,18 @@ def gstr1_export_json(
             })
     cdnr_section = [{"ctin": ctin, "nt": nts} for ctin, nts in cdnr_by_ctin.items()]
 
-    # HSN summary (Table 12): split into B2B / B2C, aggregated by (HSN, rate).
-    hsn_b2b_map: dict[tuple[str, float], dict] = {}
-    hsn_b2c_map: dict[tuple[str, float], dict] = {}
+    # HSN summary (Table 12): split into B2B / B2C, aggregated by (HSN, rate, UQC).
+    # The unit lives on the product master, not on the invoice line.
+    product_ids = {item.product_id for inv in invoices for item in inv.items if item.product_id}
+    units_by_product: dict[int, str] = {}
+    if product_ids:
+        units_by_product = {
+            pid: unit
+            for pid, unit in db.query(Product.id, Product.unit).filter(Product.id.in_(product_ids)).all()
+        }
+
+    hsn_b2b_map: dict[tuple[str, float, str], dict] = {}
+    hsn_b2c_map: dict[tuple[str, float, str], dict] = {}
     for inv in invoices:
         if inv.voucher_type != "sales":
             continue
@@ -2148,7 +2212,8 @@ def gstr1_export_json(
         for item in inv.items:
             hsn = (item.hsn_sac or "").strip()
             rate = float(item.gst_rate or 0)
-            agg = target.setdefault((hsn, rate), {"qty": 0.0, "txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0, "desc": ""})
+            uqc = _hsn_uqc(hsn, units_by_product.get(item.product_id))
+            agg = target.setdefault((hsn, rate, uqc), {"qty": 0.0, "txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0, "desc": ""})
             agg["qty"] += float(item.quantity or 0)
             agg["txval"] += float(item.taxable_amount or 0)
             agg["iamt"] += float(item.igst_amount or 0)
@@ -2158,17 +2223,16 @@ def gstr1_export_json(
             if not agg["desc"] and (item.description or "").strip():
                 agg["desc"] = item.description.strip()
 
-    def _hsn_rows(hsn_map: dict[tuple[str, float], dict]) -> list[dict]:
+    def _hsn_rows(hsn_map: dict[tuple[str, float, str], dict]) -> list[dict]:
         rows: list[dict] = []
-        for (hsn, rate), data in sorted(hsn_map.items()):
+        for (hsn, rate, uqc), data in sorted(hsn_map.items()):
             is_service = hsn.startswith("99")
             rows.append({
-                # hsn_sc must be the first property per the GSTN schema.
                 "hsn_sc": hsn,
-                # desc is mandatory per the GSTN portal schema.
-                "desc": data.get("desc") or hsn,
+                # Either hsn_sc or desc must be present (RET191194).
+                "desc": _hsn_desc(data.get("desc"), hsn),
                 "num": len(rows) + 1,
-                "uqc": "NA" if is_service else "NOS",
+                "uqc": uqc,
                 "rt": rate,
                 "qty": 0.0 if is_service else round(data["qty"], 2),
                 "txval": round(data["txval"], 2),
@@ -2211,10 +2275,10 @@ def gstr1_export_json(
     inv_range = _doc_range(inv_numbers)
     if inv_range:  # 1 = Invoices for outward supply
         doc_det.append({"doc_num": 1, "docs": [inv_range]})
-    dn_range = _doc_range([cn.credit_note_number or f"DN-{cn.id}" for cn in credit_notes if cn.credit_note_type != "return"])
-    if dn_range:  # 4 = Debit Note
-        doc_det.append({"doc_num": 4, "docs": [dn_range]})
-    cn_range = _doc_range([cn.credit_note_number or f"CN-{cn.id}" for cn in credit_notes if cn.credit_note_type == "return"])
+    # One credit note series covers every reason, so it is reported whole under
+    # nature 5. Splitting it by credit_note_type reported part of the series as
+    # a debit note series that was never issued.
+    cn_range = _doc_range([cn.credit_note_number or f"CN-{cn.id}" for cn in credit_notes])
     if cn_range:  # 5 = Credit Note
         doc_det.append({"doc_num": 5, "docs": [cn_range]})
 

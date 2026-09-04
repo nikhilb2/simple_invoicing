@@ -13,6 +13,7 @@ from src.models.buyer import Buyer
 from src.models.company import CompanyProfile
 from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.invoice import Invoice, InvoiceItem
+from src.models.product import Product
 from src.models.user import User, UserRole
 
 
@@ -127,13 +128,14 @@ def _add_credit_note_item(
     cgst_amount: float,
     sgst_amount: float,
     igst_amount: float,
+    credit_note_type: str = "return",
 ):
     total_tax = cgst_amount + sgst_amount + igst_amount
     credit_note = CreditNote(
         credit_note_number=number,
         ledger_id=ledger.id,
         created_by=user.id,
-        credit_note_type="return",
+        credit_note_type=credit_note_type,
         status="active",
         taxable_amount=taxable_amount,
         cgst_amount=cgst_amount,
@@ -579,6 +581,101 @@ def test_gstr1_validate_detects_missing_hsn(db_session):
 
     assert result.status == "invalid"
     assert any("Missing HSN" in e.message for e in result.errors)
+
+
+def test_gstr1_validate_detects_hsn_of_illegal_length(db_session):
+    """5- and 7-digit HSN codes are rejected by the portal, so flag them here."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="GS-BADHSN",
+        when=datetime(2026, 8, 10, 9, 0, 0),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    inv = db_session.query(Invoice).filter(Invoice.invoice_number == "GS-BADHSN").first()
+    inv.items[0].hsn_sac = "8507600"  # 7 digits — a truncated 85076000
+    db_session.commit()
+
+    result = gstr1_validate(
+        from_date=date(2026, 8, 1),
+        to_date=date(2026, 8, 31),
+        db=db_session,
+        _=user,
+        active_company=None,
+    )
+
+    assert result.status == "invalid"
+    assert any("7 digits" in e.message for e in result.errors)
+
+
+def test_gstr1_validate_detects_non_slab_gst_rate(db_session):
+    """A rate of 17.99 lands in Table 12 verbatim and fails the upload."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="GS-BADRATE",
+        when=datetime(2026, 8, 10, 9, 0, 0),
+        gst_rate=17.99,
+        taxable_amount=1000,
+        cgst_amount=89.95,
+        sgst_amount=89.95,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    result = gstr1_validate(
+        from_date=date(2026, 8, 1),
+        to_date=date(2026, 8, 31),
+        db=db_session,
+        _=user,
+        active_company=None,
+    )
+
+    assert result.status == "invalid"
+    assert any("not a GST slab" in e.message for e in result.errors)
+
+
+def test_gstr1_json_export_blocked_on_malformed_hsn(db_session):
+    """Export refuses rather than shipping a file the portal will drop."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="BADHSN-001",
+        when=datetime(2027, 1, 10),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    inv = db_session.query(Invoice).filter(Invoice.invoice_number == "BADHSN-001").first()
+    inv.items[0].hsn_sac = "99842"  # 5 digits
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        gstr1_export_json(
+            from_date=date(2027, 1, 1),
+            to_date=date(2027, 1, 31),
+            db=db_session,
+            _=user,
+            active_company=_make_company(gst="29TESTT1234X1Z5"),
+        )
+    assert exc_info.value.status_code == 400
+    assert "99842" in exc_info.value.detail
 
 
 def test_gstr1_summary_classifies_b2b(db_session):
@@ -1038,6 +1135,59 @@ def test_gstr1_cdnr_ctin_from_invoice_id(db_session):
     assert data["cdnr"][0]["nt"][0]["pos"] == "29"
 
 
+def test_gstr1_discount_credit_note_is_reported_as_a_credit_note(db_session):
+    """A discount note still lowers the liability, so it is ntty "C", not "D"."""
+    user, ledger = _seed_basics(db_session)
+
+    sales_invoice = _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="DISC-INV-001",
+        when=datetime(2027, 4, 10),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    _add_credit_note_item(
+        db_session, user, ledger, sales_invoice,
+        number="DISC-CN-001",
+        when=datetime(2027, 4, 15),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+        credit_note_type="discount",
+    )
+    db_session.commit()
+
+    response = gstr1_export_json(
+        from_date=date(2027, 4, 1),
+        to_date=date(2027, 4, 30),
+        db=db_session,
+        _=user,
+        active_company=_make_company(gst="29TESTT1234X1Z5"),
+    )
+
+    import json as _json
+    data = _json.loads(response.body)
+    note = data["cdnr"][0]["nt"][0]
+    assert note["nt_num"] == "DISC-CN-001"
+    assert note["ntty"] == "C"
+    assert note["itms"][0]["itm_det"]["camt"] == 90.0
+    assert note["itms"][0]["itm_det"]["samt"] == 90.0
+
+    doc_nums = [d["doc_num"] for d in data["doc_issue"]["doc_det"]]
+    assert 4 not in doc_nums  # no debit note series is ever issued
+    cn_doc = next(d for d in data["doc_issue"]["doc_det"] if d["doc_num"] == 5)
+    assert cn_doc["docs"][0]["from"] == "DISC-CN-001"
+    assert cn_doc["docs"][0]["totnum"] == 1
+
+
 def test_gstr1_csv_export_blocked_when_company_has_no_gstin(db_session):
     """CSV export should raise HTTP 400 when company GSTIN is empty."""
     user, ledger = _seed_basics(db_session)
@@ -1260,6 +1410,45 @@ def test_gstr1_hsn_section_splits_b2b_with_rate(db_session):
     assert row["hsn_sc"] == "84713010"
     assert row["rt"] == 18
     assert row["txval"] == 5000.0
+
+
+def test_gstr1_hsn_row_uses_product_unit_and_trimmed_desc(db_session):
+    """UQC comes from the product unit; desc is one line of at most 30 chars."""
+    user, ledger = _seed_basics(db_session)
+
+    product = Product(name="Copper wire", sku="CW-1", price=100, gst_rate=18, unit="Kg")
+    db_session.add(product)
+    db_session.commit()
+
+    invoice = _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="UQC-001",
+        when=datetime(2027, 5, 10),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+    )
+    invoice.items[0].product_id = product.id
+    invoice.items[0].description = "ZAD04NV203095, ZAD04NV705458,\n ZAD04NV203097"
+    db_session.commit()
+
+    response = gstr1_export_json(
+        from_date=date(2027, 5, 1),
+        to_date=date(2027, 5, 31),
+        db=db_session,
+        _=user,
+        active_company=_make_company(gst="29TESTT1234X1Z5"),
+    )
+
+    import json as _json
+    row = _json.loads(response.body)["hsn"]["hsn_b2b"][0]
+    assert row["uqc"] == "KGS"
+    assert len(row["desc"]) <= 30
+    assert "\n" not in row["desc"]
+    assert row["desc"] == "ZAD04NV203095, ZAD04NV705458,"
 
 
 def test_gstr1_hsn_desc_is_populated(db_session):
