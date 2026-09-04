@@ -437,7 +437,7 @@ export default function TaxLedgerPage() {
 }
 
 /* ────────────────────────────────────────────────────────────────────────
-   Tax Ledger Filters (shared across Tab)
+   Tax Ledger scope + period totals
    ──────────────────────────────────────────────────────────────────────── */
 
 function TaxLedgerFilters({
@@ -463,17 +463,40 @@ function TaxLedgerFilters({
   activeCurrencyCode: string;
   taxLedger: TaxLedger | null;
 }) {
+  const totals = taxLedger?.totals;
+
   return (
-    <section className="content-grid">
+    <>
       <article className="panel stack">
         <div className="panel__header">
           <div>
             <p className="eyebrow">Filters</p>
             <h2 className="nav-panel__title">Reporting scope</h2>
           </div>
+          {/* The exports carry the same scope as the filters beside them, so
+              they belong in this header rather than in a button row that reads
+              as an action on the entries table below. */}
+          <div className="button-row">
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => onDownload('pdf')}
+              disabled={downloading !== null}
+            >
+              {downloading === 'pdf' ? 'Downloading PDF...' : 'Export PDF'}
+            </button>
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={() => onDownload('csv')}
+              disabled={downloading !== null}
+            >
+              {downloading === 'csv' ? 'Downloading CSV...' : 'Export CSV'}
+            </button>
+          </div>
         </div>
 
-        <div className="field-grid">
+        <div className="field-grid field-grid--align-controls tax-filter-grid">
           <div className="field">
             <label htmlFor="tax-ledger-from">From</label>
             <input
@@ -527,88 +550,125 @@ function TaxLedgerFilters({
             />
           </div>
         </div>
-
-        <div className="button-row">
-          <button
-            type="button"
-            className="button button--primary"
-            onClick={() => onDownload('pdf')}
-            disabled={downloading !== null}
-          >
-            {downloading === 'pdf' ? 'Downloading PDF...' : 'Export PDF'}
-          </button>
-          <button
-            type="button"
-            className="button button--secondary"
-            onClick={() => onDownload('csv')}
-            disabled={downloading !== null}
-          >
-            {downloading === 'csv' ? 'Downloading CSV...' : 'Export CSV'}
-          </button>
-        </div>
-
-        <div className="summary-box">
-          <p className="eyebrow">Net tax</p>
-          <p className="summary-box__value">
-            {formatCurrency(taxLedger?.totals.net_total_tax ?? 0, activeCurrencyCode)}
-          </p>
-          <p className="muted-text">
-            Dr{' '}
-            {formatCurrency(taxLedger?.totals.debit_total_tax ?? 0, activeCurrencyCode)}{' '}
-            · Cr{' '}
-            {formatCurrency(taxLedger?.totals.credit_total_tax ?? 0, activeCurrencyCode)}
-          </p>
-        </div>
       </article>
 
       <article className="panel stack">
         <div className="panel__header">
           <div>
             <p className="eyebrow">Summary</p>
-            <h2 className="nav-panel__title">GST bucket balances</h2>
+            <h2 className="nav-panel__title">Period totals</h2>
           </div>
+          <span className="status-chip">
+            {voucherType === 'all' ? 'Sales \u0026 purchase' : voucherType === 'sales' ? 'Sales only' : 'Purchase only'}
+          </span>
         </div>
 
-        <div className="field-grid">
-          <div className="summary-box">
-            <p className="eyebrow">CGST net</p>
-            <p className="summary-box__value">
-              {formatCurrency(taxLedger?.totals.net_cgst ?? 0, activeCurrencyCode)}
-            </p>
-            <p className="muted-text">
-              Dr{' '}
-              {formatCurrency(taxLedger?.totals.debit_cgst ?? 0, activeCurrencyCode)}{' '}
-              · Cr{' '}
-              {formatCurrency(taxLedger?.totals.credit_cgst ?? 0, activeCurrencyCode)}
-            </p>
-          </div>
-          <div className="summary-box">
-            <p className="eyebrow">SGST net</p>
-            <p className="summary-box__value">
-              {formatCurrency(taxLedger?.totals.net_sgst ?? 0, activeCurrencyCode)}
-            </p>
-            <p className="muted-text">
-              Dr{' '}
-              {formatCurrency(taxLedger?.totals.debit_sgst ?? 0, activeCurrencyCode)}{' '}
-              · Cr{' '}
-              {formatCurrency(taxLedger?.totals.credit_sgst ?? 0, activeCurrencyCode)}
-            </p>
-          </div>
-          <div className="summary-box">
-            <p className="eyebrow">IGST net</p>
-            <p className="summary-box__value">
-              {formatCurrency(taxLedger?.totals.net_igst ?? 0, activeCurrencyCode)}
-            </p>
-            <p className="muted-text">
-              Dr{' '}
-              {formatCurrency(taxLedger?.totals.debit_igst ?? 0, activeCurrencyCode)}{' '}
-              · Cr{' '}
-              {formatCurrency(taxLedger?.totals.credit_igst ?? 0, activeCurrencyCode)}
-            </p>
+        {/* Taxable value + GST = gross value. Laying the three out as the
+            equation they are saves the reader adding two cards together to
+            find the figure that has to tie back to the books. */}
+        <div className="tax-total-flow">
+          <TaxTotalTile
+            label="Taxable value"
+            value={totals?.net_taxable ?? 0}
+            debit={totals?.debit_taxable ?? 0}
+            credit={totals?.credit_taxable ?? 0}
+            currency={activeCurrencyCode}
+          />
+          <span className="tax-total-flow__op" aria-hidden="true">+</span>
+          <TaxTotalTile
+            label="GST"
+            value={totals?.net_total_tax ?? 0}
+            debit={totals?.debit_total_tax ?? 0}
+            credit={totals?.credit_total_tax ?? 0}
+            currency={activeCurrencyCode}
+          />
+          <span className="tax-total-flow__op" aria-hidden="true">=</span>
+          <TaxTotalTile
+            label="Gross value"
+            hint="Taxable + GST"
+            value={totals?.net_gross ?? 0}
+            debit={totals?.debit_gross ?? 0}
+            credit={totals?.credit_gross ?? 0}
+            currency={activeCurrencyCode}
+            headline
+          />
+        </div>
+
+        <div className="tax-bucket-group">
+          <p className="eyebrow">GST bucket balances</p>
+          <div className="tax-bucket-grid">
+            <TaxTotalTile
+              label="CGST"
+              value={totals?.net_cgst ?? 0}
+              debit={totals?.debit_cgst ?? 0}
+              credit={totals?.credit_cgst ?? 0}
+              currency={activeCurrencyCode}
+              compact
+            />
+            <TaxTotalTile
+              label="SGST"
+              value={totals?.net_sgst ?? 0}
+              debit={totals?.debit_sgst ?? 0}
+              credit={totals?.credit_sgst ?? 0}
+              currency={activeCurrencyCode}
+              compact
+            />
+            <TaxTotalTile
+              label="IGST"
+              value={totals?.net_igst ?? 0}
+              debit={totals?.debit_igst ?? 0}
+              credit={totals?.credit_igst ?? 0}
+              currency={activeCurrencyCode}
+              compact
+            />
           </div>
         </div>
       </article>
-    </section>
+    </>
+  );
+}
+
+/* One period total: the net figure, with the debit and credit sides it came
+   from underneath. Sales sit on the debit side and purchases on the credit
+   side, matching the Dr/Cr columns of the entries table. */
+function TaxTotalTile({
+  label,
+  hint,
+  value,
+  debit,
+  credit,
+  currency,
+  headline = false,
+  compact = false,
+}: {
+  label: string;
+  hint?: string;
+  value: number;
+  debit: number;
+  credit: number;
+  currency: string;
+  headline?: boolean;
+  compact?: boolean;
+}) {
+  const className = [
+    'tax-total',
+    headline ? 'tax-total--headline' : '',
+    compact ? 'tax-total--compact' : '',
+    value < 0 ? 'tax-total--negative' : '',
+  ].filter(Boolean).join(' ');
+
+  return (
+    <div className={className}>
+      <p className="eyebrow tax-total__label">
+        {label}
+        {hint ? <span className="tax-total__hint">{hint}</span> : null}
+      </p>
+      <p className="tax-total__value">{formatCurrency(value, currency)}</p>
+      <p className="tax-total__split">
+        <span>Dr <b>{formatCurrency(debit, currency)}</b></span>
+        <span>Cr <b>{formatCurrency(credit, currency)}</b></span>
+      </p>
+    </div>
   );
 }
 

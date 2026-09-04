@@ -519,6 +519,8 @@ export type TaxLedgerEntry = {
   particulars: string;
   gst_rate: number;
   taxable_amount: number;
+  debit_taxable: number;
+  credit_taxable: number;
   debit_cgst: number;
   debit_sgst: number;
   debit_igst: number;
@@ -530,6 +532,9 @@ export type TaxLedgerEntry = {
 };
 
 export type TaxLedgerTotals = {
+  debit_taxable: number;
+  credit_taxable: number;
+  net_taxable: number;
   debit_cgst: number;
   debit_sgst: number;
   debit_igst: number;
@@ -542,6 +547,9 @@ export type TaxLedgerTotals = {
   net_sgst: number;
   net_igst: number;
   net_total_tax: number;
+  debit_gross: number;
+  credit_gross: number;
+  net_gross: number;
 };
 
 export type TaxLedger = {

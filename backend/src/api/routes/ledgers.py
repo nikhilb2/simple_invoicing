@@ -476,6 +476,9 @@ def _build_ledger_statement_data(
 
 
 def _build_tax_ledger_totals(entries: list[TaxLedgerEntry]) -> TaxLedgerTotals:
+    debit_taxable = sum(entry.debit_taxable for entry in entries)
+    credit_taxable = sum(entry.credit_taxable for entry in entries)
+
     debit_cgst = sum(entry.debit_cgst for entry in entries)
     debit_sgst = sum(entry.debit_sgst for entry in entries)
     debit_igst = sum(entry.debit_igst for entry in entries)
@@ -487,6 +490,9 @@ def _build_tax_ledger_totals(entries: list[TaxLedgerEntry]) -> TaxLedgerTotals:
     credit_total_tax = sum(entry.credit_total_tax for entry in entries)
 
     return TaxLedgerTotals(
+        debit_taxable=debit_taxable,
+        credit_taxable=credit_taxable,
+        net_taxable=debit_taxable - credit_taxable,
         debit_cgst=debit_cgst,
         debit_sgst=debit_sgst,
         debit_igst=debit_igst,
@@ -499,6 +505,9 @@ def _build_tax_ledger_totals(entries: list[TaxLedgerEntry]) -> TaxLedgerTotals:
         net_sgst=debit_sgst - credit_sgst,
         net_igst=debit_igst - credit_igst,
         net_total_tax=debit_total_tax - credit_total_tax,
+        debit_gross=debit_taxable + debit_total_tax,
+        credit_gross=credit_taxable + credit_total_tax,
+        net_gross=(debit_taxable + debit_total_tax) - (credit_taxable + credit_total_tax),
     )
 
 
@@ -884,6 +893,8 @@ def get_tax_ledger(
             particulars=f"{row.source_voucher_type.title()} Invoice",
             gst_rate=float(row.gst_rate or 0),
             taxable_amount=float(row.taxable_amount or 0),
+            debit_taxable=float(row.taxable_amount or 0) if is_sales else 0.0,
+            credit_taxable=0.0 if is_sales else float(row.taxable_amount or 0),
             debit_cgst=cgst_amount if is_sales else 0.0,
             debit_sgst=sgst_amount if is_sales else 0.0,
             debit_igst=igst_amount if is_sales else 0.0,
@@ -913,6 +924,8 @@ def get_tax_ledger(
             particulars=f"Credit Note against {row.source_voucher_type.title()} Invoice",
             gst_rate=float(row.gst_rate or 0),
             taxable_amount=float(row.taxable_amount or 0),
+            debit_taxable=0.0 if source_is_sales else float(row.taxable_amount or 0),
+            credit_taxable=float(row.taxable_amount or 0) if source_is_sales else 0.0,
             debit_cgst=0.0 if source_is_sales else cgst_amount,
             debit_sgst=0.0 if source_is_sales else sgst_amount,
             debit_igst=0.0 if source_is_sales else igst_amount,
@@ -1433,6 +1446,8 @@ def _build_full_tax_ledger(
             particulars=f"{row.source_voucher_type.title()} Invoice",
             gst_rate=float(row.gst_rate or 0),
             taxable_amount=float(row.taxable_amount or 0),
+            debit_taxable=float(row.taxable_amount or 0) if is_sales else 0.0,
+            credit_taxable=0.0 if is_sales else float(row.taxable_amount or 0),
             debit_cgst=cgst_amount if is_sales else 0.0,
             debit_sgst=sgst_amount if is_sales else 0.0,
             debit_igst=igst_amount if is_sales else 0.0,
@@ -1499,6 +1514,8 @@ def _build_full_tax_ledger(
             particulars=f"Credit Note against {row.source_voucher_type.title()} Invoice",
             gst_rate=float(row.gst_rate or 0),
             taxable_amount=float(row.taxable_amount or 0),
+            debit_taxable=0.0 if source_is_sales else float(row.taxable_amount or 0),
+            credit_taxable=float(row.taxable_amount or 0) if source_is_sales else 0.0,
             debit_cgst=0.0 if source_is_sales else cgst_amount,
             debit_sgst=0.0 if source_is_sales else sgst_amount,
             debit_igst=0.0 if source_is_sales else igst_amount,
@@ -1570,10 +1587,12 @@ def _build_tax_ledger_pdf_html(
 </table>
 <div class="totals">
     <table>
+        <tr><th>Net Taxable Value</th><td>₹{totals.net_taxable:,.2f}</td></tr>
         <tr><th>Net CGST</th><td>₹{totals.net_cgst:,.2f}</td></tr>
         <tr><th>Net SGST</th><td>₹{totals.net_sgst:,.2f}</td></tr>
         <tr><th>Net IGST</th><td>₹{totals.net_igst:,.2f}</td></tr>
         <tr><th>Net Total Tax</th><td>₹{totals.net_total_tax:,.2f}</td></tr>
+        <tr><th>Net Gross Value</th><td>₹{totals.net_gross:,.2f}</td></tr>
     </table>
 </div>
 </body></html>"""

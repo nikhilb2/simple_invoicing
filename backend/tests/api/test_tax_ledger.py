@@ -263,6 +263,19 @@ def test_tax_ledger_includes_invoice_tax_and_credit_note_reversals(db_session):
     assert response.totals.credit_total_tax == pytest.approx(45.0)
     assert response.totals.net_total_tax == pytest.approx(-9.0)
 
+    # Taxable value follows the same side as the tax on it, so the summary
+    # figures net purchases and credit notes off sales the way the tax does.
+    assert response.totals.debit_taxable == pytest.approx(200.0)   # S-001 + CN-P-001
+    assert response.totals.credit_taxable == pytest.approx(250.0)  # P-001 + CN-S-001
+    assert response.totals.net_taxable == pytest.approx(-50.0)
+
+    assert response.totals.debit_gross == pytest.approx(236.0)
+    assert response.totals.credit_gross == pytest.approx(295.0)
+    assert response.totals.net_gross == pytest.approx(-59.0)
+    assert response.totals.net_gross == pytest.approx(
+        response.totals.net_taxable + response.totals.net_total_tax
+    )
+
 
 def test_tax_ledger_supports_voucher_type_and_gst_rate_filters(db_session):
     user, ledger = _seed_basics(db_session)
