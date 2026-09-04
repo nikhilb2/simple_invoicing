@@ -19,6 +19,9 @@ DEFAULT_SERIES_CONFIGS = {
     "purchase": {"prefix": "PINV", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
     "payment": {"prefix": "PAY", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
     "credit_note": {"prefix": "CN", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
+    # Notes received from suppliers number separately so the outward credit
+    # note series stays contiguous for GSTR-1 Table 13.
+    "debit_note": {"prefix": "DN", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
 }
 
 

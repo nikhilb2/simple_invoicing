@@ -1,5 +1,10 @@
 import api, { withParams } from './client';
-import type { CreditNote, CreditNoteCreate, PaginatedCreditNotes } from '../types/api';
+import type {
+  CreditNote,
+  CreditNoteCreate,
+  CreditNoteDirection,
+  PaginatedCreditNotes,
+} from '../types/api';
 
 type CreditNoteListParams = {
   page?: number;
@@ -7,6 +12,7 @@ type CreditNoteListParams = {
   ledger_id?: number;
   invoice_id?: number;
   status?: string;
+  direction?: CreditNoteDirection;
   search?: string;
   date_from?: string;
   date_to?: string;

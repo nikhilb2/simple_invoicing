@@ -169,6 +169,10 @@ export type PaginatedInvoices = {
 
 export type CreditNoteType = 'return' | 'discount' | 'adjustment';
 export type CreditNoteStatus = 'active' | 'cancelled';
+// Outward is a note we issued against a sale. Inward is the supplier's own
+// credit note against a purchase — we issue no document for it, we record
+// theirs so the input credit we claimed comes back off.
+export type CreditNoteDirection = 'outward' | 'inward';
 
 export type CompanyTermOut = {
   id: number;
@@ -396,6 +400,9 @@ export type CreditNote = {
   ledger_id: number;
   financial_year_id: number | null;
   credit_note_type: CreditNoteType;
+  direction: CreditNoteDirection;
+  supplier_credit_note_number: string | null;
+  supplier_credit_note_date: string | null;
   reason: string | null;
   status: CreditNoteStatus;
   taxable_amount: number;
@@ -414,12 +421,18 @@ export type CreditNoteItemCreate = {
   invoice_item_id: number;
   quantity?: number;
   discount_amount_inclusive?: number;
+  // Which physical units are coming back — required on a return over a
+  // serial-tracked product.
+  serial_numbers?: string[];
 };
 
 export type CreditNoteCreate = {
   ledger_id: number;
   invoice_ids: number[];
   credit_note_type: CreditNoteType;
+  direction: CreditNoteDirection;
+  supplier_credit_note_number?: string | null;
+  supplier_credit_note_date?: string | null;
   reason?: string | null;
   items: CreditNoteItemCreate[];
 };
@@ -519,6 +532,8 @@ export type TaxLedgerEntry = {
   particulars: string;
   gst_rate: number;
   taxable_amount: number;
+  debit_taxable: number;
+  credit_taxable: number;
   debit_cgst: number;
   debit_sgst: number;
   debit_igst: number;
@@ -530,6 +545,9 @@ export type TaxLedgerEntry = {
 };
 
 export type TaxLedgerTotals = {
+  debit_taxable: number;
+  credit_taxable: number;
+  net_taxable: number;
   debit_cgst: number;
   debit_sgst: number;
   debit_igst: number;
@@ -542,6 +560,28 @@ export type TaxLedgerTotals = {
   net_sgst: number;
   net_igst: number;
   net_total_tax: number;
+  debit_gross: number;
+  credit_gross: number;
+  net_gross: number;
+};
+
+export type TaxLiabilityBucket = {
+  output_tax: number;
+  input_credit: number;
+  credit_used: number;
+  payable: number;
+  credit_carried_forward: number;
+};
+
+export type TaxLiability = {
+  cgst: TaxLiabilityBucket;
+  sgst: TaxLiabilityBucket;
+  igst: TaxLiabilityBucket;
+  output_tax: number;
+  input_credit: number;
+  credit_used: number;
+  payable: number;
+  credit_carried_forward: number;
 };
 
 export type TaxLedger = {
@@ -551,6 +591,7 @@ export type TaxLedger = {
   gst_rate: number | null;
   entries: TaxLedgerEntry[];
   totals: TaxLedgerTotals;
+  liability: TaxLiability;
   fy_label: string | null;
   financial_year_id: number | null;
 };
