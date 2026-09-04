@@ -10,11 +10,11 @@
   anything needing JS or a third-party asset does not work here. Every visual
   effect below is therefore plain CSS: gradients, not image files.
 
-  Two voices share this page on purpose. The top is the BUSINESS's document, so it
-  is light, quiet and neutral — their customer is reading it. The bottom is Simple
-  Invoicings talking, so it takes the brand's own dark/lime/pink treatment. The
-  hard visual break between them is what stops the promotion reading as if the
-  business wrote it.
+  The page is one panel in the brand's own dark/lime/pink treatment. Inside it,
+  the document the recipient came for is first — who shared it, what it is, what
+  it is worth, and the download button — and the product's pitch follows below.
+  The document block is inset and quiet against the panel so the two are still
+  legibly separate: the business's figures are not the brand's copy.
 #}<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -48,6 +48,12 @@
     --lime: #9ceb0a;
     --pink: #f924a4;
     --yellow: #ffcc33;
+    --brand-border: rgba(54,43,38,.7);
+    /* The marketing site's two named shadows, kept under its own names. */
+    --brand-glow: 0 0 60px -10px rgba(156,235,10,.55);
+    /* The site's magenta drop, pulled back a stop: it lands on a light page
+       here, where the full-strength version reads as a smear under the panel. */
+    --brand-elegant: 0 18px 50px -24px rgba(179,5,109,.35);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -81,15 +87,9 @@
   }
   .wrap { max-width: 660px; margin: 0 auto; padding: 20px 16px 40px; }
 
-  /* ── Sender identity ─────────────────────────────────────────────── */
-  .brand { display: flex; align-items: center; gap: 12px; padding: 6px 4px 18px; }
-  .brand img { max-height: 40px; max-width: 132px; object-fit: contain; display: block; }
-  .brand .company {
-    font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
-    color: var(--ink-soft); word-break: break-word;
-  }
-
-  /* ── Document summary card ───────────────────────────────────────── */
+  /* ── Document card ───────────────────────────────────────────────────
+     Only the unavailable page uses this now; the document page's own summary
+     lives inside the panel below. */
   .card {
     background: var(--card);
     border: 1px solid var(--line);
@@ -97,134 +97,33 @@
     padding: 26px 24px 24px;
     box-shadow: var(--shadow);
   }
-  .doc-kicker {
-    display: inline-flex; align-items: center; gap: 7px;
-    font-size: 11px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase;
-    color: var(--muted); margin: 0 0 12px;
-  }
-  .doc-kicker .dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--lime); box-shadow: 0 0 0 3px rgba(156,235,10,.18);
-  }
-  .doc-title {
-    font-size: 25px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.2;
-    margin: 0 0 20px; word-break: break-word;
-  }
-  .rows { margin: 0 0 20px; }
-  .row {
-    display: flex; justify-content: space-between; gap: 16px;
-    padding: 11px 0; border-bottom: 1px solid var(--line-soft);
-  }
-  .row:first-child { border-top: 1px solid var(--line-soft); }
-  .row .k { color: var(--muted); font-size: 14px; white-space: nowrap; }
-  .row .v { font-size: 14px; font-weight: 550; text-align: right; word-break: break-word; }
-
-  .amount { padding: 4px 0 2px; }
-  .amount .k {
-    color: var(--muted); font-size: 11px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: .09em;
-  }
-  .amount .v {
-    font-size: 40px; font-weight: 750; letter-spacing: -0.035em; line-height: 1.1;
-    margin-top: 4px; word-break: break-word; font-variant-numeric: tabular-nums;
-  }
-
-  .btn {
-    display: flex; align-items: center; justify-content: center; gap: 9px;
-    width: 100%; margin-top: 22px; padding: 16px 18px;
-    background: var(--btn); color: var(--btn-ink);
-    text-align: center; text-decoration: none;
-    font-size: 16px; font-weight: 650; letter-spacing: -0.01em;
-    border-radius: 999px;
-  }
-  .btn svg { flex: none; }
-  .hint {
-    margin: 12px 2px 0; font-size: 12.5px; color: var(--muted); text-align: center;
-    word-break: break-all;
-  }
-
-  /* ── Collapsible inline document ─────────────────────────────────────
-     Closed by default. Most readers want the summary above and the download
-     button; the full sheet is there for whoever wants to check it first. */
-  .preview {
-    margin-top: 22px;
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 20px;
-    overflow: hidden;
-    box-shadow: var(--shadow);
-  }
-  .preview__summary {
-    display: flex; align-items: center; gap: 10px;
-    padding: 15px 18px;
-    cursor: pointer;
-    font-size: 11px; font-weight: 600; letter-spacing: .09em;
-    text-transform: uppercase; color: var(--muted);
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
-  }
-  /* Both spellings needed: WebKit still uses the pseudo-element, everyone
-     else honours list-style on the summary itself. */
-  .preview__summary::-webkit-details-marker { display: none; }
-  .preview__summary { list-style: none; }
-  .preview__summary:hover { color: var(--ink-soft); }
-  .preview__summary:focus-visible {
-    outline: 2px solid var(--ink); outline-offset: -2px;
-  }
-  .preview__summary-label { flex: 1; }
-  /* The affordance, without JavaScript: CSS content is the only thing that can
-     change the word when the disclosure opens. */
-  .preview__summary-hint::after { content: "Show"; }
-  .preview[open] .preview__summary-hint::after { content: "Hide"; }
-  .preview__chevron {
-    flex: none; transition: transform 160ms ease;
-  }
-  .preview[open] .preview__chevron { transform: rotate(180deg); }
-  @media (prefers-reduced-motion: reduce) {
-    .preview__chevron { transition: none; }
-  }
-
-  /* The document sheet is a dense table whose smallest type is 6px. Shrunk to
-     a 390px phone it is unreadable, so it renders at its natural width and the
-     wrapper pans instead — the page itself never scrolls sideways. */
-  .preview .frame {
-    padding: 10px; background: #fff;
-    overflow-x: auto; -webkit-overflow-scrolling: touch;
-  }
-  .preview iframe {
-    display: block; width: 100%; min-width: 760px;
-    height: 70vh; border: 0; background: #fff;
-  }
-  @media (min-width: 900px) {
-    /* Breaks out wider than the 660px reading column: the document is a full
-       page of tabular data and reads badly squeezed into a phone-width card.
-       The wrap is centred, so a symmetric negative margin keeps it centred too. */
-    .preview { width: calc(100% + 180px); margin-left: -90px; }
-    .preview iframe { height: 920px; }
-  }
 
   .notice { text-align: center; padding: 44px 22px; }
   .notice h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 10px; }
   .notice p { margin: 0; color: var(--muted); font-size: 15px; }
 
-  /* ── Promo surface ───────────────────────────────────────────────────
-     Not an ad slot: the product's own brand surface, lifted from its marketing
-     site — warm near-black, a lime glow top-left, a magenta glow bottom-right,
-     a faint grid, and the lime→pink gradient the wordmark uses. It stays dark
-     in both colour schemes because it is a brand asset, not page chrome.
+  /* ── Brand panel ─────────────────────────────────────────────────────
+     Not an ad slot: the product's own brand surface, rebuilt from the marketing
+     site's panel primitive — warm near-black under a lime glow top-left and a
+     magenta glow bottom-right, a faint grid, the lime→pink gradient the wordmark
+     uses, and the site's own price typesetting. It stays dark in both colour
+     schemes because it is a brand asset, not page chrome.
      (Kept free of the brand name on purpose: everything inside <style> is
-     served to every visitor, so a name here would survive the promo being
+     served to every visitor, so a name here would survive the panel being
      switched off and make "is it really gone?" untestable.) */
   .promo {
     position: relative; overflow: hidden; isolation: isolate;
-    margin-top: 30px; padding: 30px 26px 26px;
-    border-radius: 24px;
+    margin-top: 30px; padding: 28px 26px 22px;
+    /* The marketing site's panel radius (1.75rem), deliberately rounder than
+       the document card above it — the two halves are different objects. */
+    border-radius: 28px;
     background:
       radial-gradient(34rem 20rem at -10% -20%, rgba(156,235,10,.30), transparent 62%),
       radial-gradient(30rem 22rem at 115% 118%, rgba(249,36,164,.30), transparent 62%),
-      var(--brand-black);
+      linear-gradient(180deg, #1e1815 0%, var(--brand-black) 76%);
     color: var(--brand-ink);
-    border: 1px solid rgba(252,251,248,.10);
+    border: 1px solid var(--brand-border);
+    box-shadow: var(--brand-elegant);
   }
   /* Faint grid, matching the marketing site's backdrop. Behind the content. */
   .promo::before {
@@ -237,10 +136,17 @@
     -webkit-mask-image: radial-gradient(28rem 20rem at 50% 0%, #000 35%, transparent 78%);
   }
 
-  .promo-id { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+  .promo-id { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
   .promo-mark { flex: none; display: block; border-radius: 9px; }
   .promo-id .name {
     font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: var(--brand-ink);
+  }
+
+  /* The site's signature label: uppercase, widely letterspaced, lime. */
+  .eyebrow {
+    margin: 0 0 8px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .28em;
+    color: var(--lime);
   }
 
   .promo h2 {
@@ -260,15 +166,39 @@
     max-width: 34rem;
   }
 
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 22px; padding: 0; list-style: none; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; padding: 0; list-style: none; }
+  /* The site's pill: lime-tinted hairline over the panel fill, with the same
+     tight lime bloom underneath. */
   .chips li {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 7px 13px 7px 10px; border-radius: 999px;
     font-size: 12.5px; font-weight: 550; color: var(--brand-ink);
-    background: rgba(252,251,248,.06);
-    border: 1px solid rgba(252,251,248,.12);
+    background: rgba(24,19,17,.88);
+    border: 1px solid rgba(156,235,10,.26);
+    box-shadow: 0 0 28px -16px rgba(156,235,10,.9);
   }
   .chips svg { flex: none; color: var(--lime); }
+
+  /* Price, set the way the marketing site sets it: the amount large and heavy,
+     the period small beside it, a quiet lead-in above the baseline. */
+  .price { display: flex; align-items: baseline; flex-wrap: wrap; margin: 0 0 20px; }
+  .price .lead {
+    margin-right: 11px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .22em;
+    color: var(--brand-muted);
+  }
+  .price .amount {
+    font-size: 38px; font-weight: 800; letter-spacing: -0.035em; line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--brand-ink);
+    background-image: linear-gradient(96deg, var(--lime) 6%, #eaf7c0 44%, var(--pink) 100%);
+    -webkit-background-clip: text; background-clip: text;
+  }
+  @supports ((-webkit-background-clip: text) or (background-clip: text)) {
+    .price .amount { -webkit-text-fill-color: transparent; }
+  }
+  /* Tight against the amount: it reads as one price, not two words. */
+  .price .period { margin-left: 3px; font-size: 15px; font-weight: 600; color: var(--brand-muted); }
 
   .promo-cta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
   .cta-primary {
@@ -283,18 +213,101 @@
     display: inline-flex; align-items: center; gap: 8px;
     padding: 13px 20px; border-radius: 999px;
     font-size: 15px; font-weight: 600; color: var(--brand-ink); text-decoration: none;
-    background: rgba(252,251,248,.07);
-    border: 1px solid rgba(252,251,248,.16);
+    background: linear-gradient(180deg, rgba(30,24,21,.82), rgba(15,12,10,.92));
+    border: 1px solid var(--brand-border);
   }
   .cta-secondary svg { color: var(--lime); }
+  /* Hover only where there is a pointer: on a phone :hover sticks after a tap. */
+  @media (hover: hover) {
+    .cta-primary, .cta-secondary { transition: transform .26s cubic-bezier(.16,1,.3,1), box-shadow .3s ease; }
+    .cta-primary:hover { transform: translateY(-2px); box-shadow: var(--brand-glow); }
+    .cta-secondary:hover { transform: translateY(-2px); border-color: rgba(156,235,10,.40); }
+  }
+
+  /* ── The document ────────────────────────────────────────────────────
+     What the recipient came for, so it sits at the top of the panel with the
+     download button in it and the pitch underneath. Rendered only on the
+     document page: the unavailable page has no summary. */
+  .recap {
+    margin: 0 0 26px; padding: 17px 18px 16px;
+    border-radius: 18px;
+    background: rgba(9,7,6,.55);
+    border: 1px solid rgba(252,251,248,.09);
+  }
+  .recap-label {
+    display: flex; align-items: center; gap: 8px; margin: 0 0 12px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .18em;
+    color: rgba(192,188,175,.75);
+    word-break: break-word;
+  }
+  .recap-label .dot {
+    flex: none; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--lime); box-shadow: 0 0 0 3px rgba(156,235,10,.18);
+  }
+  .recap-doc {
+    margin: 0 0 14px; font-size: 20px; font-weight: 700; letter-spacing: -0.025em;
+    line-height: 1.2; color: var(--brand-ink); word-break: break-word;
+  }
+  .recap-rows {
+    display: grid; gap: 11px 20px; margin: 0;
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  }
+  .recap-rows dt {
+    /* Mono for the captions, the way the site sets its technical labels. */
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px; text-transform: uppercase; letter-spacing: .16em;
+    color: rgba(192,188,175,.7);
+  }
+  .recap-rows dd {
+    margin: 4px 0 0; font-size: 14.5px; font-weight: 600; color: var(--brand-ink);
+    word-break: break-word;
+  }
+  .recap-rows .figure { font-variant-numeric: tabular-nums; color: var(--lime); }
+
+  /* The recipient's own action, so it is the solid one. Warm white rather than
+     the brand gradient: the gradient button below is the product asking for
+     something, this one is the reader getting what they came for. */
+  .recap-btn {
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    width: 100%; margin-top: 18px; padding: 15px 18px;
+    background: var(--brand-ink); color: var(--brand-black);
+    text-decoration: none; border-radius: 999px;
+    font-size: 16px; font-weight: 650; letter-spacing: -0.01em;
+  }
+  .recap-btn svg { flex: none; }
+  .recap-hint {
+    margin: 10px 2px 0; font-size: 12px; text-align: center;
+    color: rgba(192,188,175,.7); word-break: break-all;
+  }
+
   .promo-foot {
     margin: 16px 0 0; font-size: 12.5px; color: rgba(192,188,175,.75);
   }
   .promo-foot a { color: var(--brand-muted); text-decoration: underline; text-underline-offset: 3px; }
+  /* The trailing "s" is the character people drop when they type the domain
+     from memory, so it is the one thing on this page that moves: set as a
+     capital, in brand lime, blinking twice and then resting. The <a> text
+     itself stays the real lowercase domain, so what a reader copies is right. */
+  .flash-s {
+    text-transform: uppercase; font-weight: 800; color: var(--lime);
+    animation: flash-s 2.6s ease-in-out infinite;
+  }
+  @keyframes flash-s {
+    0%, 100% { color: var(--brand-muted); text-shadow: none; }
+    7%       { color: var(--lime); text-shadow: 0 0 14px rgba(156,235,10,.9); }
+    20%      { color: var(--brand-muted); text-shadow: none; }
+    29%      { color: var(--lime); text-shadow: 0 0 14px rgba(156,235,10,.9); }
+    44%      { color: var(--brand-muted); text-shadow: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* Still the loudest character in the line, just no longer moving. */
+    .flash-s { animation: none; color: var(--lime); text-shadow: none; }
+  }
 
   @media (max-width: 400px) {
-    .promo { padding: 26px 20px 22px; }
+    .promo { padding: 24px 20px 20px; }
     .promo h2 { font-size: 24px; }
+    .price .amount { font-size: 34px; }
     .cta-primary, .cta-secondary { width: 100%; justify-content: center; }
   }
 </style>
@@ -322,6 +335,35 @@
       <span class="name">{{ ad.brand_name }}</span>
     </div>
 
+    {# The reason the recipient opened the link, so it comes first and the pitch
+       waits below it. `summary` is undefined on the unavailable page, and
+       Jinja's undefined is falsy, so that page drops this block and keeps the
+       rest — no second template to maintain. #}
+    {% if summary %}
+    <div class="recap">
+      <p class="recap-label">
+        <span class="dot"></span>{% if summary.company_name %}Shared by {{ summary.company_name }}{% else %}Shared document{% endif %}
+      </p>
+      <p class="recap-doc">{{ summary.title }}</p>
+      <dl class="recap-rows">
+        {% if summary.party_name %}
+        <div><dt>{{ party_label }}</dt><dd>{{ summary.party_name }}</dd></div>
+        {% endif %}
+        {% if summary.date_label %}
+        <div><dt>{{ date_label_caption }}</dt><dd>{{ summary.date_label }}</dd></div>
+        {% endif %}
+        <div><dt>{{ amount_caption }}</dt><dd class="figure">{{ summary.amount_label }}</dd></div>
+      </dl>
+      <a class="recap-btn" href="{{ download_url }}">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M4 17.5V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1.5"/>
+        </svg>Download PDF
+      </a>
+      <p class="recap-hint">{{ summary.pdf_filename }}</p>
+    </div>
+    {% endif %}
+
+    {% if ad.footnote %}<p class="eyebrow">{{ ad.footnote }}</p>{% endif %}
     <h2>{{ ad.headline }}</h2>
     <p class="sub">{{ ad.tagline }}</p>
 
@@ -335,6 +377,14 @@
       </li>
       {% endfor %}
     </ul>
+    {% endif %}
+
+    {% if ad.price %}
+    <p class="price">
+      {% if ad.price_prefix %}<span class="lead">{{ ad.price_prefix }}</span>{% endif %}
+      <span class="amount">{{ ad.price }}</span>
+      {% if ad.price_period %}<span class="period">{{ ad.price_period }}</span>{% endif %}
+    </p>
     {% endif %}
 
     <div class="promo-cta">
@@ -360,9 +410,10 @@
     </div>
 
     {% if ad.website %}
+      {# One line on purpose: a newline inside the <a> would put whitespace in
+         the middle of the domain the reader copies. #}
       <p class="promo-foot">
-        {{ ad.footnote }} —
-        <a href="{{ ad.website }}" rel="noopener noreferrer nofollow" target="_blank">{{ ad.website_label }}</a>
+        Powered by <a href="{{ ad.website }}" rel="noopener noreferrer nofollow" target="_blank">{{ ad.domain_head }}<span class="flash-s">{{ ad.domain_flash }}</span>{{ ad.domain_tail }}</a>
       </p>
     {% endif %}
   </section>
