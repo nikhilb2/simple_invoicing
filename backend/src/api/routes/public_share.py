@@ -21,6 +21,7 @@ import binascii
 import threading
 import time
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -198,15 +199,71 @@ def _base_path(request: Request) -> str:
     return request.url.path.rstrip("/")
 
 
-def _ad_context() -> dict:
+# Campaign tags on the ad's outbound link. This page sends
+# `Referrer-Policy: no-referrer` and marks the link `rel="noreferrer"` on purpose,
+# so the share token never reaches the marketing site in a Referer header — which
+# also means simpleinvoicings.com would otherwise log every one of these arrivals
+# as direct traffic. These tags are the only thing that identifies a visitor who
+# came from a shared document; utm_content says which kind of document it was.
+_AD_UTM = (
+    ("utm_source", "share_page"),
+    ("utm_medium", "referral"),
+    ("utm_campaign", "document_share"),
+)
+
+
+def _tag_ad_website(website: str, placement: str) -> str:
+    """`website` with the campaign tags appended, preserving any query it has."""
+    if not website:
+        return ""
+
+    parts = urlsplit(website)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    # A deployment that already points SHARE_AD_WEBSITE at a tagged URL keeps its
+    # own tags rather than carrying two conflicting utm_sources.
+    if any(key.startswith("utm_") for key, _ in query):
+        return website
+
+    query.extend(_AD_UTM)
+    query.append(("utm_content", placement))
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def _split_domain_label(label: str) -> tuple[str, str, str]:
+    """Splits ``simpleinvoicings.com`` into ``("simpleinvoicing", "s", ".com")``.
+
+    The middle piece is the one the panel flashes. The trailing "s" is the
+    character people drop when they type the domain from memory, so the panel
+    animates exactly that one letter and nothing else.
+
+    A domain whose name does not end in "s" comes back as ``(label, "", "")`` and
+    renders as flat text — a white-label deployment gets no stray animation
+    drawing the eye to an ordinary letter.
+    """
+    name, dot, rest = label.partition(".")
+    if not dot or not name.endswith("s"):
+        return label, "", ""
+    return name[:-1], name[-1], f".{rest}"
+
+
+def _ad_context(placement: str) -> dict:
     """Everything the Simple Invoicings block renders.
 
+    `placement` is what the reader was looking at — the resource type, or
+    "unavailable" on the dead-link page — and rides out on the link as
+    `utm_content`, so the marketing site can tell an invoice recipient from a
+    statement recipient.
+
     Every field degrades independently: blank the phone and that button goes,
-    blank the chips and the row goes, blank the website and the footnote goes.
-    A half-configured deployment therefore shows less, never something broken.
+    blank the chips and the row goes, blank the price and that line goes, blank
+    the website and the whole "powered by" line goes. A half-configured
+    deployment therefore shows less, never something broken.
     """
     website = (settings.SHARE_AD_WEBSITE or "").strip()
+    # The visible label is the bare domain, so it is taken before the tags go on.
     label = website.replace("https://", "").replace("http://", "").rstrip("/")
+    label = label or website
+    domain_head, domain_flash, domain_tail = _split_domain_label(label)
     phone = (settings.SHARE_AD_PHONE or "").strip()
     wa = "".join(ch for ch in (settings.SHARE_AD_WHATSAPP or "") if ch.isdigit())
     chips = [c.strip() for c in (settings.SHARE_AD_CHIPS or "").split(",") if c.strip()]
@@ -215,11 +272,20 @@ def _ad_context() -> dict:
         "brand_name": settings.SHARE_AD_BRAND_NAME,
         "headline": settings.SHARE_AD_HEADLINE,
         "tagline": settings.SHARE_AD_TAGLINE,
-        "website": website,
-        "website_label": label or website,
+        "website": _tag_ad_website(website, placement),
+        "website_label": label,
+        # The label again, cut into the three pieces the "powered by" line sets
+        # separately. Kept beside the whole label so anything that just wants
+        # the domain as text still has it.
+        "domain_head": domain_head,
+        "domain_flash": domain_flash,
+        "domain_tail": domain_tail,
         "chips": chips,
         "cta_label": settings.SHARE_AD_CTA_LABEL,
         "footnote": settings.SHARE_AD_FOOTNOTE,
+        "price": (settings.SHARE_AD_PRICE or "").strip(),
+        "price_period": (settings.SHARE_AD_PRICE_PERIOD or "").strip(),
+        "price_prefix": (settings.SHARE_AD_PRICE_PREFIX or "").strip(),
         "phone": phone,
         # tel: wants no spaces; the visible label keeps them.
         "phone_href": "".join(ch for ch in phone if ch.isdigit() or ch == "+"),
@@ -247,7 +313,7 @@ def _render_unavailable(request: Request) -> HTMLResponse:
     """
     html = _jinja_env.get_template("share_unavailable.html").render(
         page_title="Document unavailable",
-        ad=_ad_context(),
+        ad=_ad_context("unavailable"),
     )
     return HTMLResponse(content=html, status_code=404, headers=_html_headers())
 
@@ -280,8 +346,8 @@ def public_share_page(
         # Dangling: the document row is gone. Same answer as an unknown token.
         return _render_unavailable(request)
 
-    # Counted here and ONLY here. The PDF route is hit again by the desktop preview
-    # and by the download button, so counting it would multiply every real open.
+    # Counted here and ONLY here. The PDF route is hit again by the download
+    # button, so counting it there would multiply every real open.
     if not _is_crawler(request):
         _record_view(db, link)
 
@@ -301,8 +367,9 @@ def public_share_page(
         date_label_caption=date_caption,
         amount_caption=amount_caption,
         download_url=f"{base}/pdf?download=1",
-        document_url=f"{base}/document.html",
-        logo_url=f"{base}/logo" if summary.logo_data else None,
+        # No document_url or logo_url: the page no longer embeds the document or
+        # draws the sender's logo. Both routes still answer on their own — the
+        # logo is what a chat app fetches for the og:image below.
         og={
             "site_name": summary.company_name or "Simple Invoicing",
             "title": f"{summary.title} · {summary.company_name}".strip(" ·"),
@@ -311,7 +378,7 @@ def public_share_page(
             # Absolute, because a crawler will not resolve a relative og:image.
             "image": f"{origin}{base}/logo" if summary.logo_data else None,
         },
-        ad=_ad_context(),
+        ad=_ad_context(link.resource_type),
     )
     return HTMLResponse(content=html, headers=_html_headers())
 
@@ -351,9 +418,11 @@ def public_share_document_html(
     request: Request,
     db: Session = Depends(get_db),
 ) -> Response:
-    """The print-styled document, for the desktop preview iframe.
+    """The print-styled document as HTML.
 
-    An HTML iframe renders on every browser; a PDF iframe does not.
+    No longer embedded anywhere — the share page dropped its inline preview —
+    but still served: it is the one way to read the document itself without
+    downloading a PDF, and links to it are already in circulation.
     """
     if _rate_limited(request):
         return _too_many_requests()

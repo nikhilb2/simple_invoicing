@@ -381,6 +381,126 @@ def test_ad_links_carry_noreferrer(client, db_session):
     assert 'rel="noopener noreferrer nofollow"' in body
 
 
+def test_ad_link_carries_campaign_tags(client, db_session):
+    """The tags are the only attribution the destination gets.
+
+    `Referrer-Policy: no-referrer` plus `rel="noreferrer"` keep the share token
+    out of the marketing site's logs, and the price of that is a visit which
+    otherwise looks like direct traffic.
+    """
+    company = _company(db_session, "Alpha Ltd")
+    ledger = _ledger(db_session, company)
+    invoice = _invoice(db_session, company, ledger)
+    payment = _payment(db_session, company, ledger)
+    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
+
+    # Autoescaped, so the separators reach the browser as &amp;.
+    tags = "utm_source=share_page&amp;utm_medium=referral&amp;utm_campaign=document_share"
+
+    body = client.get(f"/s/{token}").text
+    assert f"https://simpleinvoicings.com?{tags}&amp;utm_content=invoice" in body
+    # The visible label stays the bare domain -- the tags belong in the href only.
+    # It is split so the trailing "s" can flash, but the pieces still spell the
+    # domain with nothing between them, which is what a reader copies.
+    assert '>simpleinvoicing<span class="flash-s">s</span>.com</a>' in body
+
+    # utm_content names the document, so an invoice recipient and a receipt
+    # recipient are distinguishable on the other side.
+    pay_token = _create_link(client, company, "payment", payment.id).json()["token"]
+    assert f"{tags}&amp;utm_content=payment" in client.get(f"/s/{pay_token}").text
+
+    # Including the dead-link page, which is a different arrival entirely.
+    assert f"{tags}&amp;utm_content=unavailable" in client.get("/s/nosuchtoken").text
+
+
+def test_the_panel_flashes_only_the_trailing_s(client, db_session, monkeypatch):
+    """The whole point of the animation is the one letter people drop.
+
+    A domain that does not end in "s" must render flat -- animating an ordinary
+    letter of somebody else's domain would be noise, not a hint.
+    """
+    from src.core.config import settings
+
+    company = _company(db_session, "Alpha Ltd")
+    ledger = _ledger(db_session, company)
+    invoice = _invoice(db_session, company, ledger)
+    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
+
+    body = client.get(f"/s/{token}").text
+    assert "Powered by " in body
+    assert '<span class="flash-s">s</span>' in body
+    # CSS does the flashing, because script-src is 'none' on this response.
+    assert "@keyframes flash-s" in body
+    # And it stops for anyone who asked the OS for less motion.
+    assert "prefers-reduced-motion" in body
+
+    monkeypatch.setattr(settings, "SHARE_AD_WEBSITE", "https://billing.example.org")
+    body = client.get(f"/s/{token}").text
+    assert "billing.example.org" in body
+    assert '<span class="flash-s"></span>' in body  # present, but empty: nothing flashes
+
+
+def test_the_panel_prices_the_product(client, db_session, monkeypatch):
+    from src.core.config import settings
+
+    company = _company(db_session, "Alpha Ltd")
+    ledger = _ledger(db_session, company)
+    invoice = _invoice(db_session, company, ledger)
+    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
+
+    body = client.get(f"/s/{token}").text
+    assert "only" in body
+    assert "Rs. 299" in body
+    assert "/month" in body
+
+    # Blank the amount and the whole line goes, prefix and period with it.
+    monkeypatch.setattr(settings, "SHARE_AD_PRICE", "")
+    body = client.get(f"/s/{token}").text
+    assert "Rs. 299" not in body
+    assert '<p class="price">' not in body
+
+
+def test_the_panel_restates_the_document(client, db_session):
+    """The recipient scrolled past the card to reach the panel."""
+    company = _company(db_session, "Alpha Ltd")
+    ledger = _ledger(db_session, company)
+    invoice = _invoice(db_session, company, ledger)
+    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
+
+    body = client.get(f"/s/{token}").text
+    recap = body[body.index('<div class="recap">'):]
+    assert "INV-0042" in recap
+    assert "Acme Traders" in recap
+    assert "Billed to" in recap
+    assert "118.00" in recap
+
+    # The dead-link page has no document to restate, and must not grow a hole
+    # where one would have gone.
+    missing = client.get("/s/nosuchtoken").text
+    assert 'class="recap"' not in missing
+    assert "The document above" not in missing
+    # The panel itself still renders there -- that page is a real arrival too.
+    assert "simpleinvoicings.com" in missing
+
+
+def test_a_pre_tagged_ad_website_keeps_its_own_tags(client, db_session, monkeypatch):
+    """A deployment pointing at its own campaign URL must not get two sources."""
+    from src.core.config import settings
+
+    monkeypatch.setattr(
+        settings, "SHARE_AD_WEBSITE", "https://simpleinvoicings.com/?utm_source=mine"
+    )
+
+    company = _company(db_session, "Alpha Ltd")
+    ledger = _ledger(db_session, company)
+    invoice = _invoice(db_session, company, ledger)
+    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
+
+    body = client.get(f"/s/{token}").text
+    assert "utm_source=mine" in body
+    assert "utm_source=share_page" not in body
+
+
 def test_the_ad_never_reaches_the_pdf(client, db_session):
     """The load-bearing half of "ad on the page, never in the document".
 
@@ -733,13 +853,12 @@ def test_promo_never_reaches_the_pdf(client, db_session):
         assert needle not in pdf.content
 
 
-def test_full_document_starts_collapsed(client, db_session):
-    """The inline document is opt-in.
+def test_the_page_is_the_panel_and_nothing_else(client, db_session):
+    """One block, not a light card with an ad under it.
 
-    It is a native <details>, not a scripted toggle -- the CSP on this response
-    sets script-src 'none', so anything needing JS would silently never open.
-    Collapsed also means the browser does not fetch document.html until someone
-    asks for it, and most readers only want the summary and the download.
+    The document's summary and its download button live inside the panel, and
+    the inline document preview is gone -- `document.html` is still served, it
+    just is not embedded here any more.
     """
     company = _company(db_session, "Alpha Ltd")
     ledger = _ledger(db_session, company)
@@ -747,14 +866,28 @@ def test_full_document_starts_collapsed(client, db_session):
     token = _create_link(client, company, "invoice", invoice.id).json()["token"]
 
     body = client.get(f"/s/{token}").text
-    assert '<details class="preview">' in body
-    # No `open` attribute anywhere on that element -- that is what "collapsed" is.
-    assert "<details class=\"preview\" open" not in body
-    assert "preview__summary" in body
-    # The iframe is still in the markup; it is the disclosure that defers it.
-    assert f"/s/{token}/document.html" in body
+
+    # Nothing renders before the panel: the page body opens straight into it.
+    opening = '<div class="wrap">'
+    before = body[body.index(opening) + len(opening):body.index('<section class="promo"')]
+    assert before.strip() == "", before
+    assert "<details" not in body
+    assert "<iframe" not in body
+    assert f"/s/{token}/document.html" not in body
+
+    # The download button is inside the panel, in the document block.
+    recap = body[body.index('<div class="recap">'):body.index("</section>")]
+    assert f'href="/s/{token}/pdf?download=1"' in recap
+    assert "Download PDF" in recap
+    assert "invoice_INV-0042.pdf" in recap
+    # The sender still says who they are, since the header above is gone.
+    assert "Alpha Ltd" in recap
+
     # And no inline handler crept in, which the CSP would have killed anyway.
     assert "onclick=" not in body.lower()
+
+    # The route the preview used to embed still answers on its own.
+    assert client.get(f"/s/{token}/document.html").status_code == 200
 
 
 def test_every_landing_miss_is_byte_identical(client, db_session):
