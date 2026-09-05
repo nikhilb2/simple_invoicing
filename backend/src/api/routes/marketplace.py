@@ -14,6 +14,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_active_company, get_current_user, require_roles
+from src.core.analytics import distinct_id_for, track
 from src.core.validation import normalize_gstin
 from src.db.session import get_db
 from src.models.company import CompanyProfile
@@ -331,7 +332,7 @@ def list_listings(
 def create_listing(
     payload: ListingCreateIn,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(*_MUTATOR_ROLES)),
+    current_user: User = Depends(require_roles(*_MUTATOR_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     connection = _require_connection(db, active_company.id)
@@ -372,6 +373,18 @@ def create_listing(
     except MarketplaceError as exc:
         raise _http(exc) from exc
     db.refresh(listing)
+
+    track(
+        "marketplace_listing_published",
+        distinct_id_for(current_user),
+        {
+            "listing_id": listing.id,
+            "product_id": listing.product_id,
+            "listing_type": listing.listing_type,
+            "has_title": bool(payload.title),
+            "has_min_order_quantity": payload.min_order_quantity is not None,
+        },
+    )
     return _to_listing_out(listing)
 
 
@@ -506,7 +519,7 @@ def get_order(
 def create_order(
     payload: OrderCreateIn,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(*_MUTATOR_ROLES)),
+    current_user: User = Depends(require_roles(*_MUTATOR_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Buy now. The response is mirrored locally straight away — the divergence
@@ -530,6 +543,17 @@ def create_order(
     order.posting_state = "not_required"
     db.commit()
     db.refresh(order)
+
+    track(
+        "marketplace_order_placed",
+        distinct_id_for(current_user),
+        {
+            "order_id": order.id,
+            "total_amount": float(order.remote_total_amount or 0),
+            "currency_code": order.currency_code,
+            "has_buyer_note": bool(payload.buyer_note),
+        },
+    )
     return _to_order_out(db, order)
 
 
@@ -544,7 +568,7 @@ def _load_order(db: Session, company_id: int, order_id: int) -> MarketplaceOrder
 def accept_order(
     order_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(*_MUTATOR_ROLES)),
+    current_user: User = Depends(require_roles(*_MUTATOR_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     connection = _require_connection(db, active_company.id)
@@ -563,6 +587,16 @@ def accept_order(
     order.posting_state = "pending"
     db.commit()
     db.refresh(order)
+
+    track(
+        "marketplace_order_accepted",
+        distinct_id_for(current_user),
+        {
+            "order_id": order.id,
+            "total_amount": float(order.remote_total_amount or 0),
+            "currency_code": order.currency_code,
+        },
+    )
     return _to_order_out(db, order)
 
 
@@ -571,7 +605,7 @@ def reject_order(
     order_id: int,
     payload: OrderRejectIn,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(*_MUTATOR_ROLES)),
+    current_user: User = Depends(require_roles(*_MUTATOR_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     connection = _require_connection(db, active_company.id)
@@ -590,6 +624,17 @@ def reject_order(
     order.posting_state = "not_required"
     db.commit()
     db.refresh(order)
+
+    # The reason is an enum the seller picks from; the free-text note beside it
+    # is not sent -- it is written to a counterparty, not to us.
+    track(
+        "marketplace_order_rejected",
+        distinct_id_for(current_user),
+        {
+            "order_id": order.id,
+            "reason": order.reject_reason,
+        },
+    )
     return _to_order_out(db, order)
 
 

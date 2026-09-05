@@ -22,9 +22,21 @@ export type ScanLookup =
   | { found: true; result: ScanResult }
   | { found: false; detail: string };
 
-export async function scanCode(code: string): Promise<ScanLookup> {
+export async function scanCode(
+  code: string,
+  /**
+   * Which voucher the scanner is pointed at. Sent as a header, not a query
+   * param, because the lookup itself does not depend on it: it is there so the
+   * scan event the backend captures can tell receiving stock apart from selling
+   * it, a distinction that otherwise exists only in the composer.
+   */
+  mode?: 'sales' | 'purchase',
+): Promise<ScanLookup> {
   try {
-    const res = await api.get<ScanResult>('/serials/scan', { params: { code } });
+    const res = await api.get<ScanResult>('/serials/scan', {
+      params: { code },
+      headers: mode ? { 'X-Scan-Mode': mode } : undefined,
+    });
     return { found: true, result: res.data };
   } catch (err) {
     if (axios.isAxiosError(err) && err.response?.status === 404) {

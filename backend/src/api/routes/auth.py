@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from jose import JWTError
 from sqlalchemy.orm import Session
 
@@ -8,6 +8,7 @@ from src.schemas.auth import ChangePasswordRequest, ChangePasswordResponse, Logi
 from src.schemas.user import UserOut
 from src.core.security import verify_password, create_access_token, create_refresh_token, decode_token, get_password_hash
 from src.api.deps import get_current_user
+from src.core.analytics import distinct_id_for, track
 
 router = APIRouter()
 
@@ -16,11 +17,50 @@ router = APIRouter()
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
     if not user or not verify_password(payload.password, user.hashed_password):
+        # Without this, a spike in failed sign-ins looks exactly like people
+        # simply not showing up. The reason separates "wrong password, tell
+        # support to reset it" from "typed the wrong address" -- and for an
+        # address that is not an account, $process_person_profile keeps PostHog
+        # from minting a person out of a stranger's typo or an enumeration probe.
+        track(
+            "login_failed",
+            payload.email,
+            {
+                "reason": "unknown_email" if not user else "bad_password",
+                **({} if user else {"$process_person_profile": False}),
+            },
+        )
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     access_token = create_access_token(subject=user.email)
     refresh_token = create_refresh_token(subject=user.email)
+
+    # $set rides along on the event rather than going out as its own person
+    # update: role and active company are wanted for segmenting, and login is
+    # the moment they are known to be current.
+    track(
+        "user_logged_in",
+        distinct_id_for(user),
+        {
+            "$set": {
+                "email": user.email,
+                "role": getattr(user.role, "value", user.role),
+                "active_company_id": user.active_company_id,
+            },
+        },
+    )
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+
+
+# Deliberately out of the OpenAPI schema: the MCP registry turns every documented
+# operation into a callable tool (src/mcp_server/registry.py), and "log the user
+# out" is not an action an LLM should be able to take. The browser calls it so
+# that signing out is counted where every other event is counted -- on the
+# server -- rather than being the one event left behind in the bundle.
+@router.post("/logout", status_code=204, include_in_schema=False)
+def logout(current_user: User = Depends(get_current_user)):
+    track("user_logged_out", distinct_id_for(current_user))
+    return Response(status_code=204)
 
 
 @router.post("/refresh", response_model=Token)

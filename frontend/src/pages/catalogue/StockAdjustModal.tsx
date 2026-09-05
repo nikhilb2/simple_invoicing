@@ -2,7 +2,6 @@ import { useCallback, useState } from 'react';
 import type { FormEvent } from 'react';
 import { ArrowRight, PackageX } from 'lucide-react';
 import api, { getApiErrorMessage } from '../../api/client';
-import { track } from '../../lib/analytics';
 import ModalCloseButton from '../../components/ModalCloseButton';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import SerialChips from '../invoices/components/SerialChips';
@@ -153,11 +152,6 @@ export default function StockAdjustModal({ row, onCancel, onAdjusted }: StockAdj
         ...(note ? { note } : {}),
       };
       await api.post('/inventory/adjust', payload);
-      track('inventory_adjusted', {
-        product_id: row.id,
-        direction: parsedDelta > 0 ? 'increase' : 'decrease',
-        source: 'catalogue',
-      });
       onAdjusted(
         `${row.name}: ${formatQuantity(row.current_stock, row.allow_decimal)} → ${formatQuantity(newQuantity, row.allow_decimal)} (${formatDelta(parsedDelta, row.allow_decimal)}).`,
       );

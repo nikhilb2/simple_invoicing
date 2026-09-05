@@ -19,6 +19,7 @@ from src.models.product_serial import ProductSerial
 from src.models.user import User
 from src.schemas.invoice import InvoiceCreate, InvoiceOut, PaginatedInvoiceOut
 from src.api.deps import get_active_company, get_current_user
+from src.core.analytics import distinct_id_for, track
 from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.invoice_payments import build_invoice_payment_summaries
 from src.services.pdf_templates import (
@@ -132,7 +133,6 @@ def create_invoice(
         _enrich_items_with_serials([invoice], db)
         result = _to_invoice_out(invoice, payment_summary=summary)
         result.warnings = warnings
-        return result
     except HTTPException:
         db.rollback()
         raise
@@ -140,6 +140,29 @@ def create_invoice(
         print(f"Error creating invoice: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+    # The app's core conversion event. Captured after the try block, not inside
+    # it: the handler turns any stray exception into a 500, and an invoice that
+    # is committed and returned must not be reported as a failure because the
+    # analytics host was unreachable.
+    track(
+        "invoice_created",
+        distinct_id_for(current_user),
+        {
+            "invoice_id": invoice.id,
+            "voucher_type": invoice.voucher_type,
+            "line_item_count": len(payload.items),
+            "total_amount": float(invoice.total_amount or 0),
+            "total_tax_amount": float(invoice.total_tax_amount or 0),
+            "tax_inclusive": payload.tax_inclusive,
+            "has_invoice_discount": bool(payload.discount_value),
+            "serial_line_count": sum(
+                1 for line in payload.items if line.serial_numbers
+            ),
+            "outside_active_fy": "invoice_date_outside_fy" in warnings,
+        },
+    )
+    return result
 
 
 def _apply_invoice_filters(
@@ -510,7 +533,7 @@ def update_invoice(
     invoice_id: int,
     payload: InvoiceCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     invoice = (
@@ -580,13 +603,25 @@ def update_invoice(
         _enrich_items_with_serials([invoice], db)
         result = _to_invoice_out(invoice, payment_summary=summary)
         result.warnings = warnings
-        return result
     except HTTPException:
         db.rollback()
         raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+    track(
+        "invoice_updated",
+        distinct_id_for(current_user),
+        {
+            "invoice_id": invoice.id,
+            "voucher_type": invoice.voucher_type,
+            "line_item_count": len(payload.items),
+            "total_amount": float(invoice.total_amount or 0),
+            "tax_inclusive": payload.tax_inclusive,
+        },
+    )
+    return result
 
 
 
@@ -615,7 +650,7 @@ def download_invoice_pdf(
     invoice_id: int,
     copies: int = Query(default=1, ge=1, le=10),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     # The rendering itself lives in src/services/share_documents so that the
@@ -628,6 +663,20 @@ def download_invoice_pdf(
     pdf_buffer = render_invoice_pdf(db, active_company.id, invoice_id, copies=copies)
     filename = f"invoice_{invoice.invoice_number or invoice.id}.pdf"
 
+    # The preview pane fetches this endpoint too, so this counts renders rather
+    # than saves -- the browser event it replaces fired only on the Download
+    # button. Read it as "how often is this invoice put on paper", not as a
+    # download count.
+    track(
+        "invoice_pdf_downloaded",
+        distinct_id_for(current_user),
+        {
+            "invoice_id": invoice.id,
+            "voucher_type": invoice.voucher_type,
+            "copies": copies,
+        },
+    )
+
     return StreamingResponse(
         pdf_buffer,
         media_type="application/pdf",
@@ -639,7 +688,7 @@ def download_invoice_pdf(
 def cancel_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     invoice = (
@@ -663,13 +712,23 @@ def cancel_invoice(
         invoice.status = "cancelled"
         db.commit()
         db.refresh(invoice)
-        return invoice
     except HTTPException:
         db.rollback()
         raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+    track(
+        "invoice_cancelled",
+        distinct_id_for(current_user),
+        {
+            "invoice_id": invoice.id,
+            "voucher_type": invoice.voucher_type,
+            "total_amount": float(invoice.total_amount or 0),
+        },
+    )
+    return invoice
 
 
 @router.post("/{invoice_id}/restore", response_model=InvoiceOut)

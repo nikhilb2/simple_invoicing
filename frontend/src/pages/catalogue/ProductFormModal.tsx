@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../../api/client';
-import { track } from '../../lib/analytics';
 import ModalCloseButton from '../../components/ModalCloseButton';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import type { Product, ProductCreate } from '../../types/api';
@@ -235,14 +234,6 @@ export default function ProductFormModal({
             reorder_level: form.reorder_level === '' ? 0 : Number(form.reorder_level),
           });
         }
-        track('product_created', {
-          gst_rate: payload.gst_rate,
-          maintain_inventory: payload.maintain_inventory,
-          track_serials: payload.track_serials,
-          is_producable: payload.is_producable,
-          has_opening_stock: (payload.initial_quantity ?? 0) > 0,
-          source: 'catalogue_page',
-        });
         onSaved(`${payload.name} created.`);
       }
     } catch (err) {

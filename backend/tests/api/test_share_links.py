@@ -814,19 +814,21 @@ def test_ad_block_degrades_field_by_field(client, db_session, monkeypatch):
     assert "simpleinvoicings.com" in body
     # The published number renders as a tel: link, not as plain text.
     assert 'href="tel:+919871052105"' in body
-    assert "https://wa.me/919871052105" in body
+    # The WhatsApp button goes through this app so the press can be counted --
+    # the page runs no JavaScript -- and comes out at the configured chat.
+    assert f'href="/s/{token}/whatsapp"' in body
     assert "1 month free" in body
 
     # Blanking the phone removes the button rather than leaving an empty tel:.
     monkeypatch.setattr(settings, "SHARE_AD_PHONE", "")
     body = client.get(f"/s/{token}").text
     assert "tel:" not in body
-    assert "https://wa.me/919871052105" in body  # unaffected
+    assert f'href="/s/{token}/whatsapp"' in body  # unaffected
 
     # Blanking WhatsApp falls back to the website as the primary call to action.
     monkeypatch.setattr(settings, "SHARE_AD_WHATSAPP", "")
     body = client.get(f"/s/{token}").text
-    assert "wa.me" not in body
+    assert "/whatsapp" not in body
     assert "simpleinvoicings.com" in body
 
     # Blank chips drop the row entirely.

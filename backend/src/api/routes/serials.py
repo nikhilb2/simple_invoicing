@@ -5,11 +5,12 @@ raw code to a unit first and to a product SKU second, so phones and accessories
 can be scanned in one uninterrupted rhythm.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from typing import Literal
 
+from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
 from src.models.company import CompanyProfile
 from src.models.invoice import Invoice
@@ -102,20 +103,34 @@ def _build_serial_outs(
 
 @router.get("/scan", response_model=SerialScanOut)
 def scan_code(
+    request: Request,
     code: str = Query(...),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Resolve a scanned code: a live serial first, then an exact product SKU."""
     manager = SerialManager(db)
     normalized = manager.normalize(code)
 
+    # Whether the scanner is pointed at a sales or a purchase voucher lives in
+    # the composer, not in this lookup, so the client passes it as an advisory
+    # header. Read off the raw headers rather than declared as a parameter: a
+    # declared one would join the OpenAPI schema, and the MCP registry generates
+    # a callable tool from every documented operation.
+    scan_mode = request.headers.get("X-Scan-Mode") or None
+    distinct_id = distinct_id_for(current_user)
+
     if normalized:
         serial = manager.lookup(normalized, active_company.id)
         if serial is not None:
             built = _build_serial_outs([serial], db, active_company.id)
             if built:
+                track(
+                    "serial_scan",
+                    distinct_id,
+                    {"kind": "serial", "mode": scan_mode, "serial_status": serial.status},
+                )
                 return SerialScanOut(kind="serial", serial=built[0], product=None)
 
         product = (
@@ -127,8 +142,21 @@ def scan_code(
             .first()
         )
         if product is not None:
+            track(
+                "serial_scan",
+                distinct_id,
+                {"kind": "product", "mode": scan_mode},
+            )
             return SerialScanOut(kind="product", serial=None, product=product)
 
+    # The only failure this endpoint can see. The composer rejects scans for
+    # reasons of its own -- a unit already on the voucher, no line to attach it
+    # to -- and those never reach the server.
+    track(
+        "serial_scan_failed",
+        distinct_id,
+        {"reason": "unknown_code", "mode": scan_mode},
+    )
     raise HTTPException(
         status_code=404,
         detail=f'No product or serial number found for "{code}"',
