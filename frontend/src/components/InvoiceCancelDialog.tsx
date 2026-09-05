@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api, { getApiErrorMessage } from '../api/client';
-import { track } from '../lib/analytics';
 import ConfirmDialog from './ConfirmDialog';
 import StatusToasts from './StatusToasts';
 import { useInvoiceCancelStore } from '../store/useInvoiceCancelStore';
@@ -15,8 +14,7 @@ export default function InvoiceCancelDialog() {
 
   const cancelMutation = useMutation({
     mutationFn: (invoiceId: number) => api.delete(`/invoices/${invoiceId}`),
-    onSuccess: (_data, invoiceId) => {
-      track('invoice_cancelled', { invoice_id: invoiceId });
+    onSuccess: () => {
       setSuccess('Invoice cancelled. Inventory has been reversed.');
       void queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
     },

@@ -3,7 +3,6 @@ import { Lock } from 'lucide-react';
 import ModalCloseButton from './ModalCloseButton';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
-import { track } from '../lib/analytics';
 import type { InvoiceCreate, Invoice, Ledger, Product } from '../types/api';
 import { useFY } from '../context/FYContext';
 import formatCurrency from '../utils/formatting';
@@ -197,17 +196,6 @@ export default function CreateInvoiceModal({
         }),
       };
       const res = await api.post<Invoice>('/invoices/', payload);
-      track('invoice_created', {
-        invoice_id: res.data.id,
-        voucher_type: voucherType,
-        line_item_count: payload.items.length,
-        total_amount: res.data.total_amount,
-        total_tax_amount: res.data.total_tax_amount,
-        tax_inclusive: taxInclusive,
-        has_invoice_discount: false,
-        outside_active_fy: Boolean(res.data.warnings?.includes('invoice_date_outside_fy')),
-        source: 'quick_create_modal',
-      });
       const msg = voucherType === 'sales'
         ? 'Sales invoice created. Inventory has been reduced.'
         : 'Purchase invoice created. Inventory has been increased.';

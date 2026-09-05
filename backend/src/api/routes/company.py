@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from src.api.deps import get_active_company, get_current_user, require_roles
+from src.core.analytics import distinct_id_for, set_person_properties, track
 from src.db.session import get_db
 from src.models.company import CompanyProfile
 from src.models.company_term import CompanyTerm
@@ -197,6 +198,14 @@ def select_active_company(
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
     _set_active_company(db, current_user, company.id)
+
+    # A person property, not an event: which company someone is looking at is a
+    # dimension to break other events down by. Login sets it too; this keeps it
+    # true for an operator who switches companies without signing out again.
+    set_person_properties(
+        distinct_id_for(current_user),
+        {"active_company_id": company.id},
+    )
     return CompanySelectOut(active_company_id=company.id)
 
 
@@ -231,6 +240,13 @@ def upsert_company_profile(
             raise
         profile = _create_blank_company_profile(db)
         _set_active_company(db, current_user, profile.id)
+
+    # Read before the assignments below overwrite it. A profile with no name is
+    # one nobody has filled in yet, so this save is the end of onboarding rather
+    # than an established company correcting its address -- the same split the
+    # browser event drew with `is_initial_setup`.
+    is_initial_setup = not (profile.name or "").strip()
+
     profile.name = payload.name.strip()
     profile.address = payload.address.strip()
     profile.gst = payload.gst.strip().upper()
@@ -247,6 +263,18 @@ def upsert_company_profile(
     profile.show_sku_on_pdf = payload.show_sku_on_pdf
     db.commit()
     db.refresh(profile)
+
+    track(
+        "company_profile_saved",
+        distinct_id_for(current_user),
+        {
+            "company_id": profile.id,
+            "is_initial_setup": is_initial_setup,
+            "has_gst": bool(profile.gst),
+            "has_logo": bool(profile.logo_data),
+            "currency_code": profile.currency_code,
+        },
+    )
     return _company_to_out(profile)
 
 

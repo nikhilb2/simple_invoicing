@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     MARKETPLACE_ALLOW_INSECURE_URL: bool = False
     MARKETPLACE_HTTP_TIMEOUT_SECONDS: int = 15
 
+    # --- PostHog product analytics ---
+    # Events are captured server-side; the browser only records replays. Leave the
+    # key blank and the app runs with analytics off, silently, in every
+    # environment -- see src/core/analytics.py.
+    POSTHOG_PROJECT_API_KEY: str | None = None
+    POSTHOG_HOST: str = "https://eu.i.posthog.com"
+
     # --- MCP server + OAuth authorization server ---
     # Public origin of this API. Doubles as the OAuth issuer and the base of the
     # canonical MCP resource URI, so it MUST match what users type into their client.

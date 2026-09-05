@@ -9,6 +9,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from src.api.deps import get_active_company, require_roles
+from src.core.analytics import distinct_id_for, track
 from src.api.routes.invoices import _build_invoice_pdf
 from src.services.serial_service import SerialManager
 from src.api.routes.ledgers import _build_ledger_statement_data, _build_statement_html
@@ -171,6 +172,17 @@ async def send_invoice_email(
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    track(
+        "document_emailed",
+        distinct_id_for(current_user),
+        {
+            "document_type": "invoice",
+            "entity_id": invoice_id,
+            "has_cc": bool(payload.cc and payload.cc.strip()),
+            "has_message": bool(payload.message and payload.message.strip()),
+        },
+    )
+
     return {"message": f"Invoice email sent successfully to {to_email}"}
 
 
@@ -263,6 +275,17 @@ async def send_ledger_statement_email(
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+    track(
+        "document_emailed",
+        distinct_id_for(current_user),
+        {
+            "document_type": "statement",
+            "entity_id": ledger_id,
+            "has_cc": bool(payload.cc and payload.cc.strip()),
+            "has_message": bool(payload.message and payload.message.strip()),
+        },
+    )
 
     return {"message": "Ledger statement email sent successfully"}
 
@@ -378,6 +401,17 @@ async def send_payment_reminder_email(
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+    track(
+        "document_emailed",
+        distinct_id_for(current_user),
+        {
+            "document_type": "reminder",
+            "entity_id": ledger_id,
+            "has_cc": bool(payload.cc and payload.cc.strip()),
+            "has_message": bool(payload.message and payload.message.strip()),
+        },
+    )
 
     return {"message": "Payment reminder sent successfully"}
 

@@ -167,7 +167,7 @@ export default function ScanBar({ mode, onResolve, target = null, inputRef, disa
 
   const resolveOne = useCallback(async (raw: string): Promise<ScanOutcome> => {
     try {
-      const lookup = await scanCode(raw);
+      const lookup = await scanCode(raw, mode);
       const resolution: ScanResolution = lookup.found
         ? lookup.result.kind === 'serial'
           ? { kind: 'serial', code: raw, serial: lookup.result.serial }
@@ -177,7 +177,7 @@ export default function ScanBar({ mode, onResolve, target = null, inputRef, disa
     } catch (err) {
       return { status: 'error', message: getApiErrorMessage(err, 'Scan failed — check the connection and scan again.') };
     }
-  }, []);
+  }, [mode]);
 
   /* Only ever takes focus back when nothing else holds it. The operator may be
      typing a price two fields down while a lookup finishes, and a scan bar that

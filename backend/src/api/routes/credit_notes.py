@@ -6,6 +6,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from src.api.deps import get_active_company, get_current_user
+from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
 from src.models.company import CompanyProfile
 from src.models.credit_note import CreditNote, CreditNoteInvoiceRef
@@ -33,7 +34,22 @@ def create_credit_note_endpoint(
     company_id = getattr(active_company, "id", None)
     cn = create_credit_note(payload, db, current_user.id, company_id=company_id)
     db.refresh(cn)
-    return _to_out(cn)
+    result = _to_out(cn)
+
+    track(
+        "credit_note_created",
+        distinct_id_for(current_user),
+        {
+            "credit_note_id": cn.id,
+            "credit_note_type": cn.credit_note_type,
+            "direction": result.direction,
+            "invoice_count": len(result.invoice_ids),
+            "line_item_count": len(result.items),
+            "total_amount": float(cn.total_amount or 0),
+            "has_reason": bool(cn.reason and cn.reason.strip()),
+        },
+    )
+    return result
 
 
 @router.get("", response_model=PaginatedCreditNoteOut, include_in_schema=False)

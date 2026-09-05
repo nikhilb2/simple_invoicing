@@ -2,6 +2,8 @@ import os
 import importlib.util
 from pathlib import Path
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -9,6 +11,13 @@ from sqlalchemy import text
 from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes
 from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes, bom as bom_routes, email_logs as email_logs_routes, api_keys as api_keys_routes, dashboard as dashboard_routes, analytics as analytics_routes, marketplace as marketplace_routes, serials as serials_routes, oauth as oauth_routes, well_known as well_known_routes, share as share_routes, public_share as public_share_routes
 from src.mcp_server import register_mcp
+from src.core.analytics import (
+    bind_request,
+    client_ip_from_request,
+    client_kind_from_headers,
+    shutdown_analytics,
+    track_exception,
+)
 from src.core.config import settings
 from src.db.base import Base
 from src.db.session import engine
@@ -63,7 +72,21 @@ def run_pending_migrations() -> None:
 
 run_pending_migrations()
 
-app = FastAPI(title="Simple Invoicing API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Drains the PostHog queue so events from a pod's last seconds are not lost.
+
+    Nothing to do on the way up: the analytics client builds itself on first use
+    and is a no-op when unconfigured. Note that ``tests/conftest.py`` builds a
+    bare ``TestClient(app)``, which never runs a lifespan -- fine here, since
+    there is nothing a test needs this to have done.
+    """
+    yield
+    shutdown_analytics()
+
+
+app = FastAPI(title="Simple Invoicing API", version="0.1.0", lifespan=lifespan)
 
 
 def get_cors_origins() -> list[str]:
@@ -92,6 +115,49 @@ app.add_middleware(
     # the failure looks like "works in curl, fails in the browser".
     expose_headers=["WWW-Authenticate", "Mcp-Session-Id", "MCP-Protocol-Version"],
 )
+
+
+@app.middleware("http")
+async def analytics_context(request, call_next):
+    """Carries the browser's replay session onto this request's server events.
+
+    The browser records replays but captures no product events; those are
+    captured here. PostHog stitches an event to a recording by its $session_id,
+    so the SPA sends its current session on every API call and the handlers that
+    capture events attach it. Without this the recording and the events it
+    produced never line up on one timeline.
+
+    The header is advisory. A request without it -- the MCP connector, an API
+    key, curl -- still captures its events, just with nothing to pin them to.
+
+    The caller's IP is bound here too, and it is the only thing that gives an
+    event a location. PostHog geolocates whatever address it sees, which for a
+    server-side event is this pod -- so the client disables GeoIP wholesale and
+    the capture path re-enables it per event, against the address bound here.
+
+    This is also where unhandled exceptions are reported, replacing the 5xx
+    reporting the browser's axios interceptor used to do. Only genuine crashes
+    reach here: FastAPI turns a deliberate `raise HTTPException(...)` into a
+    response further in, which is the right split -- a 400 is the app telling a
+    user they got something wrong, not a fault.
+    """
+    bind_request(
+        request.headers.get("X-PostHog-Session-Id"),
+        client_kind_from_headers(request.headers),
+        client_ip_from_request(request),
+    )
+
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        track_exception(
+            exc,
+            properties={
+                "request_url": request.url.path,
+                "request_method": request.method,
+            },
+        )
+        raise
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])

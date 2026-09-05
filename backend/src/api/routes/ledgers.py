@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 import weasyprint
 
 from src.api.deps import get_active_company, get_current_user, require_roles
+from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
 from src.models.company import CompanyProfile
@@ -635,6 +636,17 @@ def create_ledger(
       )
     raise
   db.refresh(ledger)
+
+  track(
+    "ledger_created",
+    distinct_id_for(current_user),
+    {
+      "ledger_id": ledger.id,
+      "has_gst": bool(ledger.gst),
+      "has_opening_balance": float(payload.opening_balance or 0) != 0,
+      "has_bank_details": bool(ledger.account_number),
+    },
+  )
   return _serialize_ledger(db, ledger, company_id=company_id)
 
 

@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_active_company, get_current_user
+from src.core.analytics import distinct_id_for, track
 from src.core.config import settings
 from src.db.session import get_db
 from src.models.company import CompanyProfile
@@ -168,6 +169,20 @@ def create_share_link(
         return _to_out(existing, build_share_url(request, existing.token))
 
     db.refresh(link)
+
+    # Only a genuinely new token counts. The two returns above hand back a link
+    # that already existed -- pressing Share twice, or losing a race -- and the
+    # browser event this replaces could not tell the difference, so it inflated
+    # this number every time a user reopened the share dialog.
+    track(
+        "share_link_created",
+        distinct_id_for(current_user),
+        {
+            "share_link_id": link.id,
+            "resource_type": link.resource_type,
+            "resource_id": link.resource_id,
+        },
+    )
     return _to_out(link, build_share_url(request, link.token))
 
 
@@ -203,7 +218,7 @@ def list_share_links(
 def revoke_share_link(
     link_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     link = (
@@ -219,5 +234,17 @@ def revoke_share_link(
     if link.revoked_at is None:
         link.revoked_at = datetime.utcnow()
         db.commit()
+        # Inside the guard: revoking an already-revoked link is a no-op, not a
+        # second revocation.
+        track(
+            "share_link_revoked",
+            distinct_id_for(current_user),
+            {
+                "share_link_id": link.id,
+                "resource_type": link.resource_type,
+                "resource_id": link.resource_id,
+                "view_count": link.view_count,
+            },
+        )
 
     return Response(status_code=204)

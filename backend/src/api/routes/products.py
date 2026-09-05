@@ -25,6 +25,7 @@ from src.schemas.product import (
     ProductWithInventoryUpdate,
 )
 from src.api.deps import get_active_company, get_current_user, require_roles
+from src.core.analytics import distinct_id_for, track
 from src.services.serial_service import SerialManager
 
 router = APIRouter()
@@ -43,7 +44,7 @@ def _plural(count: int, noun: str) -> str:
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     if payload.gst_rate < 0 or payload.gst_rate > 100:
@@ -132,6 +133,19 @@ def create_product(
 
     db.commit()
     db.refresh(product)
+
+    track(
+        "product_created",
+        distinct_id_for(current_user),
+        {
+            "product_id": product.id,
+            "gst_rate": float(product.gst_rate or 0),
+            "maintain_inventory": product.maintain_inventory,
+            "track_serials": product.track_serials,
+            "is_producable": product.is_producable,
+            "has_opening_stock": (payload.initial_quantity or 0) > 0,
+        },
+    )
     return product
 
 
@@ -736,7 +750,7 @@ def export_products_csv(
 async def import_products_csv(
     file: UploadFile = FastAPIFile(...),
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Import products from CSV — upsert by Item Code (SKU).
@@ -745,7 +759,20 @@ async def import_products_csv(
     Returns a summary of created, updated, and error counts.
     """
     content = await file.read()
-    return _import_csv_from_content(content, db, active_company)
+    result = _import_csv_from_content(content, db, active_company)
+
+    # A wholly failed import is still an import attempt worth counting: rows that
+    # error are the reason someone gives up on the feature.
+    track(
+        "products_csv_imported",
+        distinct_id_for(current_user),
+        {
+            "created_count": result["created"],
+            "updated_count": result["updated"],
+            "error_count": len(result["errors"]),
+        },
+    )
+    return result
 
 
 def _import_csv_from_content(content: bytes, db: Session, active_company: CompanyProfile) -> dict:

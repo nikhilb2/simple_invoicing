@@ -181,14 +181,21 @@ FRONTEND_DEV_HOST_PORT=5173
 | `VITE_API_BASE_URL` | `http://localhost:8000/api` | `/api` | Backend API endpoint |
 | `VITE_APP_NAME` | `Simple Invoicing` | `Simple Invoicing` | App display name |
 | `VITE_LOG_LEVEL` | `debug` | `error` | Console logging verbosity |
-| `VITE_POSTHOG_PROJECT_TOKEN` | `phc_...` | `phc_...` | PostHog project token (product analytics) |
+| `VITE_POSTHOG_PROJECT_TOKEN` | `phc_...` | `phc_...` | PostHog project token (session replay) |
 | `VITE_POSTHOG_HOST` | `https://eu.i.posthog.com` | `https://eu.i.posthog.com` | PostHog ingestion host (`us.i.posthog.com` for US Cloud) |
 
-**PostHog Note**: Both PostHog variables are optional — leave them blank and the
-app runs with analytics disabled, silently and in every environment. Nothing
-warns you about a missing token, so if you expect events and see none, check
-these two first. The project token is write-only and ships in the JavaScript
-bundle, so it is not a secret. For container builds, pass them as
+**PostHog Note**: The browser records **session replays** and autocaptures
+pageviews and clicks; the app's named product events (`invoice_created`,
+`payment_recorded`, …) are captured by the **backend** — see
+`POSTHOG_PROJECT_API_KEY` below. Point both halves at the same project: the
+browser identifies the operator by email and the backend keys its events by the
+same email, so a replay and the events it produced land on one person.
+
+Both variables are optional — leave them blank and the app runs with analytics
+disabled, silently and in every environment. Nothing warns you about a missing
+token, so if you expect replays and see none, check these two first. The project
+token is write-only and ships in the JavaScript bundle, so it is not a secret.
+For container builds, pass them as
 `--build-arg VITE_POSTHOG_PROJECT_TOKEN=... --build-arg VITE_POSTHOG_HOST=...`;
 Vite inlines them at build time, so an already-built image cannot be
 reconfigured at runtime.
@@ -204,6 +211,45 @@ reconfigured at runtime.
 | `ALGORITHM` | `HS256` | `HS256` | JWT algorithm | ✓ |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | `30` | Token expiration time | ✓ |
 | `DEBUG` | `true` | `false` | Debug mode (detailed error messages) | ✓ |
+| `POSTHOG_PROJECT_API_KEY` | `phc_...` | `phc_...` | PostHog project key — product events are captured server-side | |
+| `POSTHOG_HOST` | `https://eu.i.posthog.com` | `https://eu.i.posthog.com` | PostHog ingestion host (`us.i.posthog.com` for US Cloud) | |
+
+**PostHog Note**: Product events live on the backend so that an event fires when
+the write actually committed, not when a request appeared to succeed — and so
+that the same action taken through the MCP connector or an API key is counted
+identically. Every event carries a `client` property of `web`, `mcp` or `api`
+saying which. Leave `POSTHOG_PROJECT_API_KEY` blank and the app runs with
+analytics off, silently, in every environment. Unlike the `VITE_` pair, these are
+read at runtime, so an existing image picks them up from its secret with a
+restart — no rebuild.
+
+Events carry the caller's IP as `$ip` so PostHog can resolve a location from
+it. Without that they would be geolocated to whichever datacentre the pod runs
+in, so GeoIP is disabled client-wide and re-enabled per event, only for events
+that actually carry a caller address. The IP is read from `X-Forwarded-For`, so
+an ingress that does not set that header leaves every event located at the
+cluster's internal address. If you would rather PostHog not retain the address
+itself, turn on "Discard client IP data" in the project's settings — the
+geolocation is resolved before that discard, so country and city still work.
+
+Public share pages (`/s/<token>`) are counted too — views, PDF downloads and
+presses of the ad's WhatsApp button, the last via a redirect through
+`/s/<token>/whatsapp` because that page runs no JavaScript. Those readers are the
+tenant's customers, so their events are anonymous: no person profile is created
+for them.
+
+**Those events carry the full share URL, token included**, so a link can be
+opened straight from PostHog. The token is the entire credential for the document
+behind it, which makes read access to this PostHog project equivalent to read
+access to every document ever shared from the app — grant it on those terms. When
+grouping share traffic, break down by the `share_route` property (`/s/:token`,
+`/s/:token/pdf`) rather than by URL: the raw URL is one row per link.
+
+The browser sends its replay session id on every API call as
+`X-PostHog-Session-Id`, and the backend attaches it to the events that request
+produces. That header is the whole link between a recording and its events: drop
+it at a proxy and both halves still work, but they no longer line up on one
+timeline.
 
 ### MCP Connector / OAuth Variables
 

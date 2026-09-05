@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import api from '../api/client';
-import { identifyUser, resetAnalyticsUser, setUserProperties, track } from '../lib/analytics';
+import { identifyUser, resetAnalyticsUser } from '../lib/analytics';
 import type { AuthToken, UserProfile } from '../types/api';
 
 function decodeEmailFromToken(token: string | null) {
@@ -55,10 +55,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       } else {
         localStorage.removeItem('active_company_id');
       }
-      setUserProperties({
-        role: res.data.role,
-        active_company_id: res.data.active_company_id ?? null,
-      });
       set({ userRole: res.data.role });
     } catch {
       set({ userRole: null });
@@ -75,18 +71,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       userEmail: identifiedEmail,
     });
 
-    // Identify before the first post-login event so the anonymous events this
-    // browser already captured are stitched onto the operator's person.
+    // The one piece of analytics the browser still owns. Events are captured
+    // server-side and keyed by this same email, so identifying here is what puts
+    // the recording of a session and the events that session produced on one
+    // person instead of two. Role and active company are set on the person by
+    // the backend, on login and on every company switch.
     if (identifiedEmail) {
       identifyUser(identifiedEmail, { email: identifiedEmail });
     }
-    track('user_logged_in');
 
     await get().hydrateUserRole();
   },
 
   logout: () => {
-    track('user_logged_out');
+    // Fire-and-forget, and before the token is cleared: the endpoint exists so
+    // that signing out is counted on the server like every other event. Nothing
+    // waits on it and a failure is not worth surfacing -- the sign-out itself is
+    // local, and happens either way.
+    void api.post('/auth/logout').catch(() => undefined);
     resetAnalyticsUser();
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');

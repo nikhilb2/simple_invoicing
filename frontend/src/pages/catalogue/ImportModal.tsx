@@ -10,7 +10,6 @@ import { CircleCheck, FileDown, FileSpreadsheet, TriangleAlert, Upload } from 'l
 import api, { getApiErrorMessage } from '../../api/client';
 import ModalCloseButton from '../../components/ModalCloseButton';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
-import { track } from '../../lib/analytics';
 import { exportCatalogueCsv } from './exports';
 
 type ImportError = {
@@ -125,11 +124,6 @@ export default function ImportModal({ onClose, onImported }: ImportModalProps) {
 
       setResult(res.data);
       setFile(null);
-      track('products_csv_imported', {
-        created_count: res.data.created,
-        updated_count: res.data.updated,
-        error_count: res.data.errors.length,
-      });
 
       // Only tell the list to refetch when something actually moved.
       if (res.data.created > 0 || res.data.updated > 0) {

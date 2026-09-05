@@ -7,6 +7,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from src.api.deps import get_active_company, get_current_user, require_roles
+from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
 from src.models.company_account import CompanyAccount
@@ -176,6 +177,32 @@ def create_payment(
 
     result = _to_payment_out(payment)
     result.warnings = warnings
+
+    # One endpoint, two events, because that is how the funnels were already
+    # built: money coming in was `payment_recorded` and money going out was
+    # `payment_voucher_created` back when each had its own screen. voucher_type
+    # is the same distinction the two screens encoded. An opening balance is
+    # neither -- it is a ledger's starting position, not a transaction -- and
+    # stays uncounted, as it always was.
+    event = {
+        "receipt": "payment_recorded",
+        "payment": "payment_voucher_created",
+    }.get(payment.voucher_type)
+    if event:
+        track(
+            event,
+            distinct_id_for(current_user),
+            {
+                "payment_id": payment.id,
+                "voucher_type": payment.voucher_type,
+                "amount": float(payment.amount or 0),
+                "mode": payment.mode or None,
+                "has_account": payment.account_id is not None,
+                "allocated_invoice_count": len(payload.invoice_allocations or []),
+                "outside_active_fy": bool(warnings),
+            },
+        )
+
     return result
 
 

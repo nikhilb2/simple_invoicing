@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getApiErrorMessage } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { track } from '../lib/analytics';
 import { sanitizeNextPath } from '../utils/nextPath';
 import StatusToasts from '../components/StatusToasts';
 
@@ -29,9 +28,6 @@ export default function LoginPage() {
       await login(email, password);
       navigate(next, { replace: true });
     } catch (err) {
-      // The counterpart to user_logged_in: without it a spike in failed
-      // sign-ins looks the same as people simply not showing up.
-      track('login_failed');
       setError(getApiErrorMessage(err, 'Unable to sign in'));
     } finally {
       setSubmitting(false);

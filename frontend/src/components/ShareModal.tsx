@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, MessageCircle, Trash2 } from 'lucide-react';
 import ModalCloseButton from './ModalCloseButton';
@@ -7,7 +7,6 @@ import { useEscapeClose } from '../hooks/useEscapeClose';
 import { getApiErrorMessage } from '../api/client';
 import { ensureShareLink, revokeShareLink } from '../features/share/api';
 import { shareQueryKeys } from '../features/share/queryKeys';
-import { track } from '../lib/analytics';
 import type { ShareResourceType } from '../types/api';
 import { buildWhatsAppUrl, toWhatsAppNumber } from '../utils/phone';
 
@@ -108,7 +107,6 @@ export default function ShareModal({
   const [confirmingRevoke, setConfirmingRevoke] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState('');
-  const trackedLinkIds = useRef<Set<number>>(new Set());
 
   const queryKey = shareQueryKeys.link(resourceType, resourceId, fromDate, toDate);
 
@@ -133,12 +131,7 @@ export default function ShareModal({
 
   const revokeMutation = useMutation({
     mutationFn: (id: number) => revokeShareLink(id),
-    onSuccess: (_result, id) => {
-      track('share_link_revoked', {
-        share_link_id: id,
-        resource_type: resourceType,
-        resource_id: resourceId,
-      });
+    onSuccess: () => {
       setConfirmingRevoke(false);
       setRevoked(true);
       // removeQueries, not invalidateQueries: invalidating would immediately
@@ -146,19 +139,6 @@ export default function ShareModal({
       queryClient.removeQueries({ queryKey });
     },
   });
-
-  useEffect(() => {
-    if (!link || trackedLinkIds.current.has(link.id)) {
-      return;
-    }
-    trackedLinkIds.current.add(link.id);
-    track('share_link_created', {
-      share_link_id: link.id,
-      resource_type: link.resource_type,
-      resource_id: link.resource_id,
-      view_count: link.view_count,
-    });
-  }, [link]);
 
   useEffect(() => {
     if (!copied) {
@@ -195,13 +175,6 @@ export default function ShareModal({
 
   const handleWhatsApp = () => {
     if (!link) return;
-    track('share_link_whatsapp_opened', {
-      share_link_id: link.id,
-      resource_type: link.resource_type,
-      resource_id: link.resource_id,
-      // Whether we could address the chat, not the number itself.
-      has_recipient_number: whatsAppNumber !== null,
-    });
     window.open(buildWhatsAppUrl(whatsAppNumber, message), '_blank', 'noopener,noreferrer');
   };
 
