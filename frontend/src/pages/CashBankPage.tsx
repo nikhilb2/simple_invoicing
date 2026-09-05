@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import ModalCloseButton from '../components/ModalCloseButton';
 import StatusToasts from '../components/StatusToasts';
+import ScopeBar, { Metric } from '../components/ScopeBar';
+import DateRangePresets from '../components/DateRangePresets';
 import type { CompanyAccount, CompanyProfile, Ledger, Payment, PaymentCreate, PaymentUpdate } from '../types/api';
 import formatCurrency from '../utils/formatting';
 import { useFY } from '../context/FYContext';
@@ -332,64 +334,68 @@ export default function CashBankPage() {
         onClearSuccess={() => setSuccess('')}
       />
 
-      <section className="content-grid">
-        <article className="panel stack">
-          <div className="panel__header">
-            <div>
-              <p className="eyebrow">Filters</p>
-              <h2 className="nav-panel__title">Account and period</h2>
-            </div>
-          </div>
+      <ScopeBar
+        presets={(
+          <DateRangePresets
+            value={period}
+            onChange={setPeriod}
+            fy={activeFY}
+          />
+        )}
+        metrics={(
+          <>
+            <Metric
+              label="Available balance"
+              value={formatCurrency(totals.availableBalance, activeCurrencyCode)}
+              tone="accent"
+            />
+            <Metric label="Opening balance" value={formatCurrency(totals.openingBalance, activeCurrencyCode)} />
+            <Metric label="Debit" value={formatCurrency(totals.totalDebit, activeCurrencyCode)} />
+            <Metric label="Credit" value={formatCurrency(totals.totalCredit, activeCurrencyCode)} />
+          </>
+        )}
+      >
+        <div className="field">
+          <label htmlFor="cash-bank-account">Account</label>
+          <select
+            id="cash-bank-account"
+            className="select"
+            value={selectedAccountId}
+            onChange={(event) => setSelectedAccountId(event.target.value)}
+          >
+            <option value="">Unallocated</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.display_name} ({account.account_type})
+              </option>
+            ))}
+          </select>
+        </div>
 
-          <div className="field-grid">
-            <div className="field">
-              <label htmlFor="cash-bank-account">Account</label>
-              <select
-                id="cash-bank-account"
-                className="select"
-                value={selectedAccountId}
-                onChange={(event) => setSelectedAccountId(event.target.value)}
-              >
-                <option value="">Unallocated</option>
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.display_name} ({account.account_type})
-                  </option>
-                ))}
-              </select>
-            </div>
+        <div className="field">
+          <label htmlFor="cash-bank-from">From</label>
+          <input
+            id="cash-bank-from"
+            className="input"
+            type="date"
+            value={period.fromDate}
+            onChange={(event) => setPeriod((current) => ({ ...current, fromDate: event.target.value }))}
+          />
+        </div>
 
-            <div className="field">
-              <label htmlFor="cash-bank-from">From</label>
-              <input
-                id="cash-bank-from"
-                className="input"
-                type="date"
-                value={period.fromDate}
-                onChange={(event) => setPeriod((current) => ({ ...current, fromDate: event.target.value }))}
-              />
-            </div>
+        <div className="field">
+          <label htmlFor="cash-bank-to">To</label>
+          <input
+            id="cash-bank-to"
+            className="input"
+            type="date"
+            value={period.toDate}
+            onChange={(event) => setPeriod((current) => ({ ...current, toDate: event.target.value }))}
+          />
+        </div>
+      </ScopeBar>
 
-            <div className="field">
-              <label htmlFor="cash-bank-to">To</label>
-              <input
-                id="cash-bank-to"
-                className="input"
-                type="date"
-                value={period.toDate}
-                onChange={(event) => setPeriod((current) => ({ ...current, toDate: event.target.value }))}
-              />
-            </div>
-          </div>
-
-          <div className="summary-box">
-            <p className="eyebrow">Account totals</p>
-            <p className="summary-box__value">{formatCurrency(totals.availableBalance, activeCurrencyCode)}</p>
-            <p className="muted-text">Opening available balance {formatCurrency(totals.openingBalance, activeCurrencyCode)}</p>
-            <p className="muted-text">Dr {formatCurrency(totals.totalDebit, activeCurrencyCode)} · Cr {formatCurrency(totals.totalCredit, activeCurrencyCode)}</p>
-          </div>
-        </article>
-
+      <section className="content-grid content-grid--single">
         <article className="panel stack">
           <div className="panel__header">
             <div>

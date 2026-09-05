@@ -8,6 +8,7 @@ import {
   Compass,
   DatabaseBackup,
   Factory,
+  FileCheck2,
   FileMinus2,
   FileText,
   KeyRound,
@@ -150,6 +151,10 @@ export const PRIMARY_NAV: NavEntry[] = [
       { to: '/analytics', label: 'Analytics', icon: ChartColumn, shortcutAction: 'open_reports' },
       { to: '/day-book', label: 'Day Book', icon: BookOpen, shortcutAction: 'go_day_book' },
       { to: '/tax-ledger', label: 'Tax Ledger', icon: Percent, shortcutAction: 'go_tax_ledger' },
+      // Was the second tab of /tax-ledger. A three-step filing wizard is a
+      // destination, not a view of the ledger beside it — and buried in a tab
+      // it was unreachable from the rail, unlinkable, and lost on reload.
+      { to: '/gstr1', label: 'GSTR-1 Filing', icon: FileCheck2 },
     ],
   },
   {
