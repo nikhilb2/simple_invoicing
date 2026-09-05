@@ -4,7 +4,16 @@
 FROM --platform=$BUILDPLATFORM node:22-slim AS build
 WORKDIR /app
 COPY package.json .
-RUN npm install
+
+# node:22-slim ships npm 10.9.8, whose peer-dependency resolver crashes with
+# "Cannot read properties of null (reading 'edgesOut')" while walking vitest 4's
+# optional peers (@vitest/browser-playwright peer-depends on vitest, and arborist
+# nulls out on the cycle). Nothing in this repo triggered it -- the step below
+# resolves from the registry on every build, so a version published upstream
+# broke the image with no commit here. Pinning npm is the fix because the bug is
+# in npm; pinning vitest would only move the tripwire.
+RUN npm install -g npm@11.13.0 && npm install
+
 COPY . .
 ARG VITE_API_BASE_URL
 ARG VITE_POSTHOG_PROJECT_TOKEN
