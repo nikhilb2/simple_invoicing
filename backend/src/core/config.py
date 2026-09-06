@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     SHARE_AD_PHONE: str = "+91 98710 52105"
     SHARE_AD_WHATSAPP: str = "919871052105"
 
+    # --- UPI ---
+    # Kill switch for the pay-by-UPI block on public share pages. Kept separate from
+    # SHARE_LINKS_ENABLED because a deployment outside India wants the share pages
+    # and has no use at all for the payment offer.
+    UPI_QR_ENABLED: bool = True
+
     @property
     def MCP_RESOURCE_URI(self) -> str:
         """Canonical RFC 8707 resource identifier for the MCP endpoint."""

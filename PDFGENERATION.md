@@ -85,6 +85,37 @@ apk add --no-cache pango fontconfig ttf-freefont
 - Blank PDF output:
     - Validate generated HTML and inline CSS; run backend with debug logging.
 
+## Pay-online QR
+
+When a company turns on **Show pay-online QR on invoice PDFs** (Company settings), invoice and
+statement PDFs carry a QR in their payment details block. The QR encodes that document's own
+**public share URL**, not a `upi://` payment intent.
+
+That distinction is the whole design:
+
+- A printed UPI QR is a snapshot. It carries whatever was outstanding on the day it was printed,
+  never expires (there is no expiry parameter in the UPI spec), and stays payable a month after the
+  invoice was settled.
+- A printed URL is live. The share page reprices itself from the outstanding balance on every open,
+  and a settled invoice simply shows no pay button.
+- NPCI also caps a *forwarded* QR image at Rs 2,000, and invoices get forwarded constantly. A URL QR
+  is unaffected, because the recipient ends up scanning the UPI QR off the page.
+
+The pay-by-UPI offer itself lives on the share page, built by `backend/src/services/upi.py`.
+
+### How it is wired
+
+- The QR image is rendered at the DB-aware call site and passed *down* as a pre-rendered HTML
+  string (`pay_qr_html`). `pdf_templates` has no database or request access and must keep it.
+- Passing a string is also the memoisation. `_build_multi_copy_invoice_html` re-renders the body
+  once per copy, so a QR built inside it would be encoded three times for a triplicate print.
+- `share_documents.document_share_url()` is the single gate. It returns `None` -- print nothing --
+  when share links are disabled, the company has not opted in, or the document is cancelled;
+  otherwise it mints the document's share link (idempotently) and returns its URL with `?src=qr`
+  appended so a scan is distinguishable from a forwarded link in analytics.
+- `segno` renders the PNG as a `data:` URI, matching the existing company-logo embed pattern.
+  Error correction M, printed at 124px (~33mm on A4) -- above the ~25-30mm floor a printed QR needs.
+
 ## Conventions For New PDFs
 
 - Put new HTML builders in `backend/src/services/pdf_templates/`.

@@ -275,6 +275,45 @@
     font-size: 16px; font-weight: 650; letter-spacing: -0.01em;
   }
   .recap-btn svg { flex: none; }
+  /* Download demotes to an outline once there is a payment button above it, so the
+     two do not compete: paying is what the reader came to do. */
+  .recap-upi + .recap-btn {
+    background: transparent; color: var(--brand-ink);
+    box-shadow: inset 0 0 0 1px rgba(192,188,175,.28);
+  }
+
+  .recap-upi { margin-top: 18px; text-align: center; scroll-margin-top: 16px; }
+  /* Amber, not the brand lime and not red: nothing has gone wrong with the document
+     or the payment, the device simply had nothing to hand the payment to. */
+  .recap-upi-alert {
+    margin: 0 0 6px; font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .08em; color: #f5b53f;
+  }
+  .recap-upi-label {
+    margin: 0 0 12px; font-size: 15px; font-weight: 650;
+    letter-spacing: -0.01em; color: var(--brand-ink);
+  }
+  /* The white tile is not decoration. A QR has to be dark-on-light to scan, and
+     this panel is near-black. */
+  .recap-upi-code {
+    display: inline-block; background: #fff;
+    padding: 10px; border-radius: 14px; line-height: 0;
+  }
+  .recap-upi-qr {
+    width: 200px; height: 200px; display: block;
+    image-rendering: pixelated;
+  }
+  .recap-upi-vpa {
+    margin: 10px 2px 0; font-size: 13px; color: var(--brand-muted);
+    /* Selectable on purpose: copying the address by hand is the one route that
+       works everywhere -- inside a chat app's webview, on iOS, and on a feature
+       phone that cannot scan anything at all. */
+    user-select: all; word-break: break-all;
+  }
+  .recap-btn--upi { margin-top: 14px; background: var(--lime); color: var(--brand-black); }
+  .recap-upi-hint {
+    margin: 10px 2px 0; font-size: 12px; color: rgba(192,188,175,.7);
+  }
   .recap-hint {
     margin: 10px 2px 0; font-size: 12px; text-align: center;
     color: rgba(192,188,175,.7); word-break: break-all;
@@ -354,6 +393,41 @@
         {% endif %}
         <div><dt>{{ amount_caption }}</dt><dd class="figure">{{ summary.amount_label }}</dd></div>
       </dl>
+      {% if summary.upi_qr_data_uri %}
+      {# Server-rendered: the page ships no JavaScript, so the QR arrives as a data
+         URI, which is what `img-src 'self' data:` in the CSP is there to allow.
+
+         `upi_unavailable` is set when Android's intent fallback sent the reader back
+         here because no UPI app could take the hand-off. The block then drops the
+         button -- pressing it again would fail the same way -- and says so, with the
+         QR and the copyable address as what is left. #}
+      <div class="recap-upi" id="pay">
+        {% if upi_unavailable %}
+        <p class="recap-upi-alert">No UPI app on this device</p>
+        <p class="recap-upi-label">Scan to pay {{ summary.upi_amount_label }}</p>
+        {% else %}
+        <p class="recap-upi-label">Pay {{ summary.upi_amount_label }} by UPI</p>
+        {% endif %}
+        <span class="recap-upi-code">
+          <img class="recap-upi-qr" src="{{ summary.upi_qr_data_uri }}" width="200" height="200"
+               alt="UPI QR code to pay {{ summary.upi_amount_label }}">
+        </span>
+        <p class="recap-upi-vpa">{{ summary.upi_vpa }}</p>
+        {% if upi_unavailable %}
+        <p class="recap-upi-hint">
+          Scan this code with a UPI app on another phone, or copy the UPI ID above and
+          pay from your bank app.
+        </p>
+        {% else %}
+        {# Points at our own route, not straight at upi://, so the press can be
+           counted -- there is no JavaScript here to count it any other way. #}
+        <a class="recap-btn recap-btn--upi" href="{{ upi_url }}" rel="noreferrer">Pay with UPI</a>
+        <p class="recap-upi-hint">
+          Scan the code with any UPI app, or tap the button on the phone your UPI app is on.
+        </p>
+        {% endif %}
+      </div>
+      {% endif %}
       <a class="recap-btn" href="{{ download_url }}">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M4 17.5V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1.5"/>

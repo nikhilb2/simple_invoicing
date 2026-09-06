@@ -82,6 +82,21 @@
 </table>
 {% endif %}
 
+{% if share_url %}
+{# Opens the account statement, which is where the pay-by-UPI offer for this balance
+   lives. A link rather than an embedded QR: the reader is already in something that
+   opens URLs. Table-wrapped with inline styles because that is what survives Outlook. #}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 24px 0 0 0;">
+    <tr>
+        <td align="center" bgcolor="#2c3e50" style="border-radius: 6px;">
+            <a href="{{ share_url }}" style="display: inline-block; padding: 13px 26px; font-size: 15px; font-weight: bold; color: #ffffff; text-decoration: none;">
+                View &amp; pay online
+            </a>
+        </td>
+    </tr>
+</table>
+{% endif %}
+
 <p style="margin: 24px 0 0 0;">
     If you have already made the payment, please disregard this message. Should you have any questions,
     feel free to reach out to us.

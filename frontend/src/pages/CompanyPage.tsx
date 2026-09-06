@@ -634,6 +634,7 @@ export default function CompanyPage() {
     email: '',
     website: '',
     show_sku_on_pdf: false,
+    show_pay_qr_on_invoice: false,
   });
   const [companyId, setCompanyId] = useState<number>(0);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -674,6 +675,7 @@ export default function CompanyPage() {
         email: data.email || '',
         website: data.website || '',
         show_sku_on_pdf: data.show_sku_on_pdf || false,
+        show_pay_qr_on_invoice: data.show_pay_qr_on_invoice || false,
       });
       setAdditionalInfo(data.additional_company_info || '');
       if (data.logo_data && data.logo_mime_type) {
@@ -709,6 +711,7 @@ export default function CompanyPage() {
         email: form.email.trim(),
         website: form.website.trim(),
         show_sku_on_pdf: form.show_sku_on_pdf,
+        show_pay_qr_on_invoice: form.show_pay_qr_on_invoice,
       };
 
       await api.put<CompanyProfileUpdate>('/company/', payload);
@@ -978,6 +981,30 @@ export default function CompanyPage() {
                   </div>
                   <small className="field-hint" style={{ marginLeft: '24px' }}>
                     When disabled, SKU is hidden and the item description gets more horizontal space.
+                  </small>
+                </div>
+
+                <div className="field field--full">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                    <input
+                      id="company-show-pay-qr"
+                      type="checkbox"
+                      checked={form.show_pay_qr_on_invoice}
+                      onChange={(e) => setForm((current) => ({ ...current, show_pay_qr_on_invoice: e.target.checked }))}
+                    />
+                    <label htmlFor="company-show-pay-qr" style={{ marginBottom: 0, cursor: 'pointer', fontWeight: 500 }}>
+                      Show pay-online QR on invoice PDFs
+                    </label>
+                  </div>
+                  {/* Both consequences are stated because neither is guessable: the QR
+                      only works if the invoice has a public link, so printing starts
+                      creating one -- and revoking that link later kills the QR on
+                      paper already in a customer's hands. */}
+                  <small className="field-hint" style={{ marginLeft: '24px' }}>
+                    Adds a QR that opens a page where the customer can pay you by UPI. Printing an
+                    invoice creates a shareable link for it; revoking that link later stops the QR on
+                    copies already printed from working. Add a UPI ID under Cash &amp; Bank Accounts
+                    for the payment option to appear.
                   </small>
                 </div>
 

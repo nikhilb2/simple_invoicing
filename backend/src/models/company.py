@@ -26,4 +26,7 @@ class CompanyProfile(Base):
     # server_default so create_all() emits a DB-level default — raw-SQL data
     # migrations (e.g. the company-scope backfill) INSERT without this column.
     show_sku_on_pdf = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # Off by default on purpose: switching it on makes printing an invoice mint a
+    # publicly reachable share link for it, which is the owner's call to make.
+    show_pay_qr_on_invoice = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     terms = relationship("CompanyTerm", back_populates="company", order_by="CompanyTerm.serial_number", cascade="all, delete-orphan")

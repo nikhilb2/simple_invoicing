@@ -18,6 +18,9 @@ class CompanyAccount(Base):
     account_name = Column(String, nullable=True)
     account_number = Column(String, nullable=True)
     ifsc_code = Column(String, nullable=True)
+    # The UPI ID money is collected into. Bounded rather than open String so
+    # create_all() gives the SQLite test schema a usable column too.
+    upi_vpa = Column(String(64), nullable=True)
     display_on_invoice = Column(Boolean, nullable=False, default=True)
     opening_balance = Column(Numeric(12, 2), nullable=False, default=0)
     is_active = Column(Boolean, nullable=False, default=True)

@@ -166,3 +166,91 @@ def test_account_only_cash_bank_entry_lifecycle(client):
     cancelled = [item for item in list_all_response.json() if item["id"] == created["id"]]
     assert len(cancelled) == 1
     assert cancelled[0]["status"] == "cancelled"
+
+
+# ---------------------------------------------------------------------------
+# UPI ID
+# ---------------------------------------------------------------------------
+
+def test_upi_id_round_trips_without_being_case_folded(client):
+    # Resolving the local part is delegated to each bank's own mapper and nothing
+    # says that lookup is case insensitive, so the stored value must be what was
+    # typed -- unlike IFSC, which the client upper-cases on purpose.
+    response = client.post(
+        "/api/company-accounts/",
+        json={
+            "account_type": "bank",
+            "display_name": "UPI HDFC",
+            "bank_name": "HDFC Bank",
+            "upi_vpa": "  Acme.Traders@okHDFCbank  ",
+            "opening_balance": 0,
+        },
+    )
+    assert response.status_code in (200, 201), response.text
+    assert response.json()["upi_vpa"] == "Acme.Traders@okHDFCbank"
+
+
+def test_malformed_upi_id_is_rejected(client):
+    response = client.post(
+        "/api/company-accounts/",
+        json={
+            "account_type": "bank",
+            "display_name": "Bad UPI",
+            # A raw '&' would silently truncate the rest of a upi:// link, so it must
+            # never reach the database in the first place.
+            "upi_vpa": "acme&pn=attacker@okaxis",
+            "opening_balance": 0,
+        },
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_a_cash_account_never_stores_a_upi_id(client):
+    response = client.post(
+        "/api/company-accounts/",
+        json={
+            "account_type": "cash",
+            "display_name": "Petty cash",
+            "upi_vpa": "acme@okaxis",
+            "opening_balance": 0,
+        },
+    )
+    assert response.status_code in (200, 201), response.text
+    assert response.json()["upi_vpa"] is None
+
+
+def test_blank_clears_a_stored_upi_id(client):
+    created = client.post(
+        "/api/company-accounts/",
+        json={
+            "account_type": "bank",
+            "display_name": "Clearable UPI",
+            "upi_vpa": "acme@okaxis",
+            "opening_balance": 0,
+        },
+    ).json()
+    assert created["upi_vpa"] == "acme@okaxis"
+
+    # "" and not JSON null: the update route skips every field it receives as None,
+    # so null would silently be a no-op.
+    updated = client.put(f"/api/company-accounts/{created['id']}", json={"upi_vpa": ""})
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["upi_vpa"] is None
+
+
+def test_switching_an_account_to_cash_drops_its_upi_id(client):
+    created = client.post(
+        "/api/company-accounts/",
+        json={
+            "account_type": "bank",
+            "display_name": "Becomes cash",
+            "upi_vpa": "acme@okaxis",
+            "opening_balance": 0,
+        },
+    ).json()
+
+    updated = client.put(
+        f"/api/company-accounts/{created['id']}", json={"account_type": "cash"}
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["upi_vpa"] is None

@@ -296,6 +296,7 @@ this feature without touching its secret and the feature simply works.
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `SHARE_LINKS_ENABLED` | `true` | Master switch. With this off, `POST /api/share/` returns `403` and every `/s/<token>` URL returns the same uniform `404` an unknown token gets. Existing rows are left alone, so turning it back on restores every live link. |
+| `UPI_QR_ENABLED` | `true` | Master switch for the pay-by-UPI block on share pages. Kept separate from `SHARE_LINKS_ENABLED` because a deployment outside India wants the share pages and has no use for the payment offer. With this off, no `upi://` link or QR is produced and `/s/<token>/upi` returns the uniform `404`. |
 | `SHARE_AD_ENABLED` | `true` | Renders the Simple Invoicings panel at the bottom of the public page — brand, pitch, price, call-to-action, a restatement of the document above, and the "Powered by" line. Set to `false` for a white-label deployment: with it off the brand name appears nowhere in the response. The panel is **never** stamped into the PDF under any setting. |
 | `SHARE_AD_BRAND_NAME` | `Simple Invoicings` | Wordmark shown beside the brand mark. |
 | `SHARE_AD_HEADLINE` | `Invoices this clean, in two minutes.` | Headline, rendered in the lime→pink brand gradient. Deliberately contextual: the reader has just looked at a clean invoice. |

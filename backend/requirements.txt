@@ -14,5 +14,6 @@ httpx==0.27.2
 weasyprint==63.1
 cryptography>=42.0.0
 Jinja2==3.1.6
+segno==1.6.1
 posthog==7.47.0
 

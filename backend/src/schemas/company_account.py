@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, field_validator
 
+from src.services.upi import is_valid_vpa, normalize_vpa
+
 
 ACCOUNT_TYPES = ("bank", "cash")
 
@@ -14,6 +16,7 @@ class CompanyAccountBase(BaseModel):
     account_name: str | None = None
     account_number: str | None = None
     ifsc_code: str | None = None
+    upi_vpa: str | None = None
     display_on_invoice: bool = True
     opening_balance: float = 0
     is_active: bool = True
@@ -34,6 +37,26 @@ class CompanyAccountBase(BaseModel):
             raise ValueError("display_name is required")
         return normalized
 
+    @field_validator("upi_vpa")
+    @classmethod
+    def validate_upi_vpa(cls, value: str | None) -> str | None:
+        # Blank passes through as "" rather than collapsing to None. The update
+        # route guards every field with `is not None`, so a client clears a value by
+        # sending "" -- turning that into None here would silently make clearing a
+        # no-op, which is how the neighbouring string fields already behave.
+        if value is None:
+            return None
+        # normalize_vpa trims but deliberately does not lowercase: UPI delegates
+        # resolution of the local part to each PSP's own mapper and no specification
+        # says whether that lookup is case sensitive, so the only safe thing to store
+        # is exactly what the user typed.
+        normalized = normalize_vpa(value)
+        if normalized is None:
+            return ""
+        if not is_valid_vpa(normalized):
+            raise ValueError("Enter a valid UPI ID, for example name@bank")
+        return normalized
+
 class CompanyAccountCreate(CompanyAccountBase):
     @field_validator("opening_balance")
     @classmethod
@@ -51,6 +74,7 @@ class CompanyAccountUpdate(BaseModel):
     account_name: str | None = None
     account_number: str | None = None
     ifsc_code: str | None = None
+    upi_vpa: str | None = None
     display_on_invoice: bool | None = None
     opening_balance: float | None = None
     is_active: bool | None = None
@@ -73,6 +97,26 @@ class CompanyAccountUpdate(BaseModel):
         normalized = value.strip()
         if not normalized:
             raise ValueError("display_name cannot be empty")
+        return normalized
+
+    @field_validator("upi_vpa")
+    @classmethod
+    def validate_upi_vpa(cls, value: str | None) -> str | None:
+        # Blank passes through as "" rather than collapsing to None. The update
+        # route guards every field with `is not None`, so a client clears a value by
+        # sending "" -- turning that into None here would silently make clearing a
+        # no-op, which is how the neighbouring string fields already behave.
+        if value is None:
+            return None
+        # normalize_vpa trims but deliberately does not lowercase: UPI delegates
+        # resolution of the local part to each PSP's own mapper and no specification
+        # says whether that lookup is case sensitive, so the only safe thing to store
+        # is exactly what the user typed.
+        normalized = normalize_vpa(value)
+        if normalized is None:
+            return ""
+        if not is_valid_vpa(normalized):
+            raise ValueError("Enter a valid UPI ID, for example name@bank")
         return normalized
 
     @field_validator("opening_balance")

@@ -28,6 +28,7 @@ A Tally-inspired full-stack application with dual-voucher accounting, inventory 
 - **Dashboard Analytics** — Server-side metrics with monthly trend, payment-status, and top-product charts
 - **Payment Tracking** — Record and track payments against invoices, with due/receivables views
 - **PDF Invoice Generation** — Generate professional invoices with WeasyPrint
+- **Pay by UPI** — Optional QR on invoice PDFs that opens the invoice's share page, where the customer pays the live outstanding balance from any UPI app
 - **Email Delivery** — Send invoices over SMTP with per-company config and full email history/logs
 - **Custom Invoice Numbering** — Configurable invoice series per financial year
 - **Financial Years** — Period management for scoping vouchers and reports
