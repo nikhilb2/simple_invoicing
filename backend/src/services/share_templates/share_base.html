@@ -275,7 +275,7 @@
     font-size: 16px; font-weight: 650; letter-spacing: -0.01em;
   }
   .recap-btn svg { flex: none; }
-  /* Download demotes to an outline once there is a payment button above it, so the
+  /* Download demotes to an outline once there is a payment block above it, so the
      two do not compete: paying is what the reader came to do. */
   .recap-upi + .recap-btn {
     background: transparent; color: var(--brand-ink);
@@ -283,12 +283,6 @@
   }
 
   .recap-upi { margin-top: 18px; text-align: center; scroll-margin-top: 16px; }
-  /* Amber, not the brand lime and not red: nothing has gone wrong with the document
-     or the payment, the device simply had nothing to hand the payment to. */
-  .recap-upi-alert {
-    margin: 0 0 6px; font-size: 12px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: .08em; color: #f5b53f;
-  }
   .recap-upi-label {
     margin: 0 0 12px; font-size: 15px; font-weight: 650;
     letter-spacing: -0.01em; color: var(--brand-ink);
@@ -310,7 +304,6 @@
        phone that cannot scan anything at all. */
     user-select: all; word-break: break-all;
   }
-  .recap-btn--upi { margin-top: 14px; background: var(--lime); color: var(--brand-black); }
   .recap-upi-hint {
     margin: 10px 2px 0; font-size: 12px; color: rgba(192,188,175,.7);
   }
@@ -394,38 +387,28 @@
         <div><dt>{{ amount_caption }}</dt><dd class="figure">{{ summary.amount_label }}</dd></div>
       </dl>
       {% if summary.upi_qr_data_uri %}
-      {# Server-rendered: the page ships no JavaScript, so the QR arrives as a data
-         URI, which is what `img-src 'self' data:` in the CSP is there to allow.
+      {# Scan only, deliberately -- there is no "pay" button beside this.
 
-         `upi_unavailable` is set when Android's intent fallback sent the reader back
-         here because no UPI app could take the hand-off. The block then drops the
-         button -- pressing it again would fail the same way -- and says so, with the
-         QR and the copyable address as what is left. #}
+         A tappable upi:// hand-off worked, but Paytm met it with "this payment may
+         fail as per UPI Risk Policy" and steered the payer to scan a QR instead.
+         That friction is the cost of an unsigned intent: signing needs an RSA key
+         registered with an acquiring bank through NPCI, which a self-hosted app
+         cannot get. Scanning carries no such warning, so scanning is the whole
+         offer.
+
+         Server-rendered: the page ships no JavaScript, so the QR arrives as a data
+         URI, which is what `img-src 'self' data:` in the CSP is there to allow. #}
       <div class="recap-upi" id="pay">
-        {% if upi_unavailable %}
-        <p class="recap-upi-alert">No UPI app on this device</p>
-        <p class="recap-upi-label">Scan to pay {{ summary.upi_amount_label }}</p>
-        {% else %}
         <p class="recap-upi-label">Pay {{ summary.upi_amount_label }} by UPI</p>
-        {% endif %}
         <span class="recap-upi-code">
           <img class="recap-upi-qr" src="{{ summary.upi_qr_data_uri }}" width="200" height="200"
                alt="UPI QR code to pay {{ summary.upi_amount_label }}">
         </span>
         <p class="recap-upi-vpa">{{ summary.upi_vpa }}</p>
-        {% if upi_unavailable %}
         <p class="recap-upi-hint">
-          Scan this code with a UPI app on another phone, or copy the UPI ID above and
-          pay from your bank app.
+          Scan the code with any UPI app, or copy the UPI ID above and pay from your
+          bank app.
         </p>
-        {% else %}
-        {# Points at our own route, not straight at upi://, so the press can be
-           counted -- there is no JavaScript here to count it any other way. #}
-        <a class="recap-btn recap-btn--upi" href="{{ upi_url }}" rel="noreferrer">Pay with UPI</a>
-        <p class="recap-upi-hint">
-          Scan the code with any UPI app, or tap the button on the phone your UPI app is on.
-        </p>
-        {% endif %}
       </div>
       {% endif %}
       <a class="recap-btn" href="{{ download_url }}">

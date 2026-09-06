@@ -176,26 +176,6 @@ def build_upi_uri(
     return f"upi://pay?pa={vpa}&{query}"
 
 
-def build_android_intent_uri(uri: str, fallback_url: str) -> str:
-    """The Android ``intent://`` form of a ``upi://pay`` link.
-
-    Chrome on Android resolves this to the system chooser listing every installed UPI
-    app. The point of preferring it over the bare scheme is `browser_fallback_url`:
-    without one, a device with no UPI app installed is a silent dead end, which is a
-    documented failure class inside chat-app webviews -- exactly where a forwarded
-    invoice gets opened.
-
-    No ``package=`` is set, so the chooser keeps listing every app rather than pinning
-    one. Note the host is ``pay``: ``upi://pay`` has host "pay", so the intent form is
-    ``intent://pay?...``, not ``intent://upi/pay?...``.
-    """
-    _, _, query = uri.partition("upi://pay?")
-    return (
-        f"intent://pay?{query}#Intent;scheme=upi;"
-        f"S.browser_fallback_url={quote(fallback_url, safe='')};end"
-    )
-
-
 @dataclass(frozen=True)
 class UpiPaymentRequest:
     """One resolved offer to pay a document by UPI."""

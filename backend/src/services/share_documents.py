@@ -524,10 +524,6 @@ class ShareSummary:
     # above is passed positionally at some construction site, and all four are
     # optional in the real sense too: most documents have no offer to make.
     #
-    # `upi_uri` is carried so the /upi redirect reuses this one resolution instead of
-    # growing a second code path that could disagree with what the page displayed.
-    # The template never renders it -- the button points at our own counting route.
-    upi_uri: str | None = None
     upi_qr_data_uri: str | None = None
     upi_vpa: str | None = None
     upi_amount_label: str | None = None
@@ -537,10 +533,10 @@ def _upi_fields(payment: UpiPaymentRequest | None, currency: str) -> dict:
     """The four ShareSummary fields a UPI offer fills in, or all-None."""
     if payment is None:
         return {}
-    uri = payment.uri()
+    # The intent string is encoded straight into the QR and never surfaces as a link:
+    # the page offers scanning only, so nothing needs to hold on to the URI itself.
     return {
-        "upi_uri": uri,
-        "upi_qr_data_uri": render_qr_png_data_uri(uri),
+        "upi_qr_data_uri": render_qr_png_data_uri(payment.uri()),
         "upi_vpa": payment.vpa,
         "upi_amount_label": _fmt_currency(float(payment.amount), currency),
     }

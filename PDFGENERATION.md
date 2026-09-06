@@ -102,6 +102,10 @@ That distinction is the whole design:
   is unaffected, because the recipient ends up scanning the UPI QR off the page.
 
 The pay-by-UPI offer itself lives on the share page, built by `backend/src/services/upi.py`.
+It is **scan-only**: the page shows a UPI QR and the payee address as text, and no tappable
+`upi://` button. A hand-off button did work on Android, but Paytm met it with "this payment may
+fail as per UPI Risk Policy" and steered the payer to scan a QR instead -- the cost of an
+unsigned intent, which cannot be fixed without an RSA key registered through an acquiring bank.
 
 ### How it is wired
 

@@ -9,7 +9,6 @@ import pytest
 from src.core.config import settings
 from src.services.upi import (
     UPI_MAX_TXN_AMOUNT,
-    build_android_intent_uri,
     build_upi_uri,
     format_amount,
     is_valid_vpa,
@@ -158,21 +157,6 @@ def test_non_ascii_payee_is_dropped_rather_than_bloating_the_payload():
 def test_empty_note_and_ref_are_omitted_not_sent_blank():
     got = params(build_upi_uri(vpa="acme@ybl", payee_name="X", amount=Decimal("1.00")))
     assert "tn" not in got and "tr" not in got
-
-
-def test_android_intent_form_keeps_the_query_and_adds_a_fallback():
-    uri = build_upi_uri(vpa="acme@okaxis", payee_name="Acme", amount=Decimal("5.00"))
-    intent = build_android_intent_uri(uri, "https://example.test/s/tok")
-
-    # Host is `pay`, not `upi/pay` -- upi://pay has host "pay".
-    assert intent.startswith("intent://pay?")
-    assert "scheme=upi;" in intent
-    assert intent.endswith(";end")
-    # No package= pin, so the chooser keeps listing every installed app.
-    assert "package=" not in intent
-    # Encoded, or the ':' and '/' would terminate the intent's parameter list.
-    assert "S.browser_fallback_url=https%3A%2F%2Fexample.test%2Fs%2Ftok" in intent
-    assert "pa=acme@okaxis" in intent
 
 
 # ---------------------------------------------------------------------------

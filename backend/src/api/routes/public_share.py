@@ -32,7 +32,6 @@ from src.core.analytics import client_ip_from_request, track_anonymous
 from src.core.config import settings
 from src.db.session import get_db
 from src.models.share_link import ShareLink
-from src.services.upi import build_android_intent_uri
 from src.services.share_documents import (
     ShareSummary,
     build_share_summary,
@@ -451,10 +450,6 @@ def public_share_page(
     # unknown value is simply reported as-is -- it is a hint about where the reader
     # came from, never a control input.
     src: str = Query(default=""),
-    # Set only by the Android intent fallback above, when no UPI app could take the
-    # hand-off. Like `src`, a hint about how the reader arrived -- never a control
-    # input, and an unrecognised value just reads as "normal arrival".
-    upi: str = Query(default=""),
     db: Session = Depends(get_db),
 ) -> Response:
     if _rate_limited(request):
@@ -497,9 +492,6 @@ def public_share_page(
             # forwarded in a chat. "direct" covers both a forward and a typed URL.
             "entry_source": "qr" if src == "qr" else "direct",
             "has_upi_offer": summary.upi_qr_data_uri is not None,
-            # How often the Android hand-off finds nothing to hand off to. The one
-            # number that says whether the button is pulling its weight.
-            "upi_app_unavailable": upi == "unavailable",
         },
     )
 
@@ -516,8 +508,6 @@ def public_share_page(
         date_label_caption=date_caption,
         amount_caption=amount_caption,
         download_url=f"{base}/pdf?download=1",
-        upi_url=f"{base}/upi",
-        upi_unavailable=(upi == "unavailable"),
         # No document_url or logo_url: the page no longer embeds the document or
         # draws the sender's logo. Both routes still answer on their own — the
         # logo is what a chat app fetches for the og:image below.
@@ -600,90 +590,6 @@ def public_share_whatsapp(
         link,
         request,
         {"placement": link.resource_type if link is not None else "unavailable"},
-    )
-
-    # 302, not 301: a permanent redirect would be cached by the browser and every
-    # later press of the button would skip this route entirely.
-    return RedirectResponse(destination, status_code=302, headers=dict(_PUBLIC_HEADERS))
-
-
-# Android browsers that get an ``intent://`` rather than the bare scheme. Kept
-# deliberately broad: the cost of a false positive is an intent URL on a device that
-# ignores it, while the cost of a false negative is losing the fallback that keeps a
-# phone with no UPI app installed from hitting a silent dead end.
-_ANDROID_MARKER = "android"
-
-
-def _is_android(request: Request) -> bool:
-    return _ANDROID_MARKER in (request.headers.get("user-agent") or "").lower()
-
-
-@router.get("/s/{token}/upi", include_in_schema=False)
-def public_share_upi(
-    token: str,
-    request: Request,
-    db: Session = Depends(get_db),
-) -> Response:
-    """Counts a press of Pay with UPI, then hands the reader to their UPI app.
-
-    The page runs no JavaScript (`script-src 'none'`), so a redirect through our own
-    origin is the only way to know the button was ever pressed.
-
-    Unlike the WhatsApp button next to it, this one REQUIRES the token to resolve.
-    That button's destination is a deployment constant that also has to work on the
-    dead-link page; this one is per-document and does not exist unless the document
-    does. It 404s for a document that is gone, cancelled, or -- the case that actually
-    happens -- settled between the page being rendered and the button being pressed.
-
-    Not an open redirect: `summary.upi_uri` is assembled by `build_upi_uri` out of
-    database columns only. Nothing from the query string, the path beyond the token
-    lookup, or any header reaches it, and the prefix check below states that as an
-    invariant a test can hold us to.
-    """
-    if _rate_limited(request):
-        return _too_many_requests()
-
-    link = _resolve(db, token)
-    if link is None:
-        return _not_found()
-
-    summary = build_share_summary(db, link)
-    if summary is None or not summary.available or not summary.upi_uri:
-        return _not_found()
-
-    destination = summary.upi_uri
-    if not destination.startswith("upi://pay?"):
-        return _not_found()
-
-    if _is_android(request):
-        # THE fallback path. Chrome follows `browser_fallback_url` when nothing on the
-        # device resolves the intent -- i.e. no UPI app installed -- so a tap that
-        # cannot hand over returns to the page instead of failing silently, which is
-        # the documented behaviour inside chat-app webviews where forwarded invoices
-        # get opened.
-        #
-        # It returns to a DIFFERENT state, not the page they left: `upi=unavailable`
-        # says what happened and puts the QR forward, and the #pay fragment scrolls
-        # to it. Landing back on an identical page reads as "the button is broken".
-        #
-        # Note this only fires when the intent is unresolvable. An app that opens and
-        # then errors is invisible to us -- and on iOS and desktop there is no
-        # equivalent signal at all, which is why the QR is never hidden there.
-        #
-        # _mount_prefix is this path minus its last segment, which on THIS route is
-        # already "/s/<token>" -- appending the token again would send them to
-        # /s/<token>/<token>.
-        destination = build_android_intent_uri(
-            destination, f"{_origin(request)}{_mount_prefix(request)}?upi=unavailable#pay"
-        )
-
-    _track_share(
-        "share_upi_clicked",
-        link,
-        request,
-        # No VPA and no party name: this is the tenant's customer, and the event
-        # discipline in core/analytics keeps document contents out of the payload.
-        {"placement": link.resource_type, "platform": "android" if _is_android(request) else "other"},
     )
 
     # 302, not 301: a permanent redirect would be cached by the browser and every

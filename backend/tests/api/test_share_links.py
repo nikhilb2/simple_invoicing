@@ -304,8 +304,7 @@ def test_public_routes_declare_no_auth_dependencies():
         names = {d.call.__name__ for d in route.dependant.dependencies if d.call}
         assert "get_current_user" not in names, path
         assert "get_active_company" not in names, path
-    # Raised when /s/{token}/upi was added: five public routes across two mounts.
-    assert checked >= 10, "expected the public routes on both mounts"
+    assert checked >= 8, "expected the public routes on both mounts"
 
 
 def test_pdf_is_served_inline_by_default_and_attachment_on_download(client, db_session):
@@ -971,86 +970,13 @@ def test_share_page_offers_upi_for_an_unpaid_invoice(client, db_session):
 
     body = client.get(f"/s/{token}").text
     assert "data:image/png;base64," in body
-    assert f"/s/{token}/upi" in body
     assert "acme@okhdfcbank" in body
+    # Scan only. A tappable upi:// hand-off drew a risk warning in Paytm, so the
+    # page must not grow one back by accident.
+    assert "upi://" not in body
+    assert "intent://" not in body
     # Priced at what is outstanding, which for an untouched invoice is the total.
     assert "118.00" in body
-
-
-def test_upi_redirect_hands_over_the_right_payee_and_amount(client, db_session):
-    company = _company(db_session, "Alpha Ltd")
-    _bank_account(db_session, company)
-    ledger = _ledger(db_session, company)
-    invoice = _invoice(db_session, company, ledger)
-    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
-
-    res = client.get(f"/s/{token}/upi", follow_redirects=False)
-    # 302, not 301: a permanent redirect would be cached and every later press of
-    # the button would skip the route that counts it.
-    assert res.status_code == 302
-    location = res.headers["location"]
-    assert location.startswith("upi://pay?pa=acme@okhdfcbank&")
-    assert "am=118.00" in location
-    assert "cu=INR" in location
-    # mam absent is what makes the amount non-editable in the payer's app.
-    assert "mam=" not in location
-
-
-def test_android_gets_an_intent_url_with_a_fallback(client, db_session):
-    company = _company(db_session, "Alpha Ltd")
-    _bank_account(db_session, company)
-    ledger = _ledger(db_session, company)
-    invoice = _invoice(db_session, company, ledger)
-    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
-
-    res = client.get(
-        f"/s/{token}/upi",
-        follow_redirects=False,
-        headers={"user-agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) Chrome/120"},
-    )
-    location = res.headers["location"]
-    assert location.startswith("intent://pay?")
-    assert "scheme=upi;" in location
-    # Without this a phone with no UPI app installed is a silent dead end. It must
-    # land back on the share page itself -- an earlier version built it from the
-    # mount prefix plus the token and sent people to /s/<token>/<token>.
-    assert location.count(token) == 1
-    # The fallback lands on a state that explains itself and anchors at the QR, not
-    # on an identical page -- returning silently reads as "the button is broken".
-    assert f"%2Fs%2F{token}%3Fupi%3Dunavailable%23pay;end" in location
-
-
-def test_the_fallback_state_drops_the_button_and_leads_with_the_qr(client, db_session):
-    company = _company(db_session, "Alpha Ltd")
-    _bank_account(db_session, company)
-    ledger = _ledger(db_session, company)
-    invoice = _invoice(db_session, company, ledger)
-    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
-
-    normal = client.get(f"/s/{token}").text
-    assert f"/s/{token}/upi" in normal
-    assert "No UPI app on this device" not in normal
-
-    # Where Android sends someone whose device had no UPI app to hand off to.
-    fallback = client.get(f"/s/{token}", params={"upi": "unavailable"}).text
-    assert "No UPI app on this device" in fallback
-    # The button is gone: pressing it again would fail exactly the same way.
-    assert f"/s/{token}/upi" not in fallback
-    # What is left is what still works anywhere -- the code and the address.
-    assert "data:image/png;base64," in fallback
-    assert "acme@okhdfcbank" in fallback
-
-
-def test_an_unrecognised_upi_marker_reads_as_a_normal_arrival(client, db_session):
-    company = _company(db_session, "Alpha Ltd")
-    _bank_account(db_session, company)
-    ledger = _ledger(db_session, company)
-    invoice = _invoice(db_session, company, ledger)
-    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
-
-    body = client.get(f"/s/{token}", params={"upi": "../../etc/passwd"}).text
-    assert "No UPI app on this device" not in body
-    assert f"/s/{token}/upi" in body
 
 
 def test_no_upi_offer_once_the_invoice_is_settled(client, db_session):
@@ -1080,10 +1006,8 @@ def test_no_upi_offer_once_the_invoice_is_settled(client, db_session):
     db_session.commit()
 
     body = client.get(f"/s/{token}").text
-    assert f"/s/{token}/upi" not in body
-    # And the button's destination is gone too, for anyone holding a page that was
-    # rendered before the payment landed.
-    assert client.get(f"/s/{token}/upi", follow_redirects=False).status_code == 404
+    assert "data:image/png;base64," not in body
+    assert "by UPI" not in body
 
 
 def test_no_upi_offer_without_a_configured_address(client, db_session):
@@ -1093,8 +1017,7 @@ def test_no_upi_offer_without_a_configured_address(client, db_session):
     invoice = _invoice(db_session, company, ledger)
     token = _create_link(client, company, "invoice", invoice.id).json()["token"]
 
-    assert f"/s/{token}/upi" not in client.get(f"/s/{token}").text
-    assert client.get(f"/s/{token}/upi", follow_redirects=False).status_code == 404
+    assert "data:image/png;base64," not in client.get(f"/s/{token}").text
 
 
 def test_no_upi_offer_when_the_invoice_is_not_in_rupees(client, db_session):
@@ -1106,54 +1029,35 @@ def test_no_upi_offer_when_the_invoice_is_not_in_rupees(client, db_session):
     db_session.commit()
     token = _create_link(client, company, "invoice", invoice.id).json()["token"]
 
-    assert client.get(f"/s/{token}/upi", follow_redirects=False).status_code == 404
+    assert "data:image/png;base64," not in client.get(f"/s/{token}").text
 
 
-def test_upi_route_matches_the_uniform_not_found_for_bad_tokens(client, db_session):
+def test_a_revoked_link_stops_offering_payment(client, db_session):
     company = _company(db_session, "Alpha Ltd")
     _bank_account(db_session, company)
     ledger = _ledger(db_session, company)
     invoice = _invoice(db_session, company, ledger)
     live = _create_link(client, company, "invoice", invoice.id).json()
 
-    unknown = client.get("/s/nope-not-a-token/upi", follow_redirects=False)
-    assert unknown.status_code == 404
+    assert "data:image/png;base64," in client.get(f"/s/{live['token']}").text
 
     client.delete(f"/api/share/{live['id']}", headers=_headers(company))
-    revoked = client.get(f"/s/{live['token']}/upi", follow_redirects=False)
+    revoked = client.get(f"/s/{live['token']}")
+    unknown = client.get("/s/nope-not-a-token")
+    assert revoked.status_code == unknown.status_code == 404
     # Byte-identical to an unknown token: a different answer would tell a scanner
     # its guess had once been real.
-    assert revoked.status_code == 404
     assert revoked.content == unknown.content
 
 
 def test_a_receipt_never_offers_payment(client, db_session):
-    # It is proof money already arrived; a pay-now button on one is a bug.
+    # It is proof money already arrived; a pay-now QR on one is a bug.
     company = _company(db_session, "Alpha Ltd")
     _bank_account(db_session, company)
     ledger = _ledger(db_session, company)
     payment = _payment(db_session, company, ledger)
     token = _create_link(client, company, "payment", payment.id).json()["token"]
 
-    assert f"/s/{token}/upi" not in client.get(f"/s/{token}").text
-    assert client.get(f"/s/{token}/upi", follow_redirects=False).status_code == 404
+    assert "data:image/png;base64," not in client.get(f"/s/{token}").text
 
 
-def test_query_string_cannot_steer_the_redirect(client, db_session):
-    # The destination is assembled from database columns only. If this ever fails,
-    # the route has become an open redirect.
-    company = _company(db_session, "Alpha Ltd")
-    _bank_account(db_session, company)
-    ledger = _ledger(db_session, company)
-    invoice = _invoice(db_session, company, ledger)
-    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
-
-    res = client.get(
-        f"/s/{token}/upi",
-        params={"next": "https://evil.example", "pa": "attacker@okaxis"},
-        follow_redirects=False,
-    )
-    location = res.headers["location"]
-    assert location.startswith("upi://pay?pa=acme@okhdfcbank&")
-    assert "evil.example" not in location
-    assert "attacker@okaxis" not in location
