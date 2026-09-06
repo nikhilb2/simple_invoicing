@@ -35,7 +35,7 @@ def _copy_label(n: int) -> str:
     return f"{n}{suffix} Copy"
 
 
-def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount] | None = None, copy_label: str = "Original", show_sku: bool = True, serials: dict[int, list[str]] | None = None) -> str:
+def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount] | None = None, copy_label: str = "Original", show_sku: bool = True, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "") -> str:
     """Generate HTML for a sales invoice."""
     if invoice_bank_accounts is None:
         invoice_bank_accounts = []
@@ -193,7 +193,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
         else:
             invoice_discount_label = f"<p>Discount: {_fmt_currency(inv_disc_val, currency)} off</p>"
     tax_breakup_rows = _build_pdf_tax_breakup_rows(invoice, currency)
-    payment_details_html = _build_pdf_payment_details_html(invoice_bank_accounts)
+    payment_details_html = _build_pdf_payment_details_html(invoice_bank_accounts, pay_qr_html)
     reference_notes_html = ""
     if invoice.reference_notes:
         reference_notes_html = f"""
@@ -393,6 +393,27 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     overflow-wrap: anywhere;
     word-break: break-word;
   }}
+  .pay-qr {{
+    flex: 0 0 150px;
+    max-width: 170px;
+    text-align: center;
+  }}
+  .pay-qr__title {{
+    font-size: 10px !important;
+    font-weight: 700;
+    color: #1f2937 !important;
+    margin-bottom: 4px !important;
+  }}
+  .pay-qr__img {{
+    /* ~33mm on A4. A printed QR needs roughly 25-30mm to stay scannable, and 108px
+       would sit right on that floor. The PNG is generated well above this size, so
+       it is downsampled here rather than upscaled. */
+    width: 124px;
+    height: 124px;
+    display: block;
+    margin: 0 auto 4px;
+    image-rendering: pixelated;
+  }}
   .invoice-sheet__bank-card-title {{
     font-size: 10px !important;
     font-weight: 700;
@@ -550,17 +571,17 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     return html
 
 
-def _build_multi_copy_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, show_sku: bool = True, serials: dict[int, list[str]] | None = None) -> str:
+def _build_multi_copy_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, show_sku: bool = True, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "") -> str:
     """Generate HTML for multiple copies of an invoice in a single document."""
     if invoice.voucher_type == "purchase":
         return _build_purchase_invoice_html(invoice, products, serials)
     if copies == 1:
-        return _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku, serials=serials)
+        return _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html)
 
     pages = []
     first_html: str | None = None
     for i in range(1, copies + 1):
-        full_html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(i), show_sku=show_sku, serials=serials)
+        full_html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(i), show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html)
         if i == 1:
             first_html = full_html
         body_open_end = full_html.index('<body>') + len('<body>')

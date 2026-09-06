@@ -200,6 +200,7 @@ export type CompanyProfile = {
   additional_company_info: string | null;
   terms: CompanyTermOut[];
   show_sku_on_pdf: boolean;
+  show_pay_qr_on_invoice: boolean;
 };
 
 export type CompanyListItem = {
@@ -235,6 +236,7 @@ export type CompanyProfileUpdate = {
   ifsc_code?: string;
   additional_company_info?: string | null;
   show_sku_on_pdf?: boolean;
+  show_pay_qr_on_invoice?: boolean;
 };
 
 export type CompanyAccountType = 'bank' | 'cash';
@@ -248,6 +250,7 @@ export type CompanyAccount = {
   account_name: string | null;
   account_number: string | null;
   ifsc_code: string | null;
+  upi_vpa: string | null;
   display_on_invoice: boolean;
   opening_balance: number;
   is_active: boolean;
@@ -264,6 +267,7 @@ export type CompanyAccountCreate = {
   account_name?: string;
   account_number?: string;
   ifsc_code?: string;
+  upi_vpa?: string;
   display_on_invoice?: boolean;
   opening_balance?: number;
   is_active?: boolean;
@@ -277,6 +281,7 @@ export type CompanyAccountUpdate = {
   account_name?: string;
   account_number?: string;
   ifsc_code?: string;
+  upi_vpa?: string;
   display_on_invoice?: boolean;
   opening_balance?: number;
   is_active?: boolean;

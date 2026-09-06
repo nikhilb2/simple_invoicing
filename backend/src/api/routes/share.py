@@ -13,7 +13,6 @@ them going through the UI.
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_active_company, get_current_user
@@ -28,32 +27,21 @@ from src.services.share_documents import (
     RESOURCE_INVOICE,
     RESOURCE_PAYMENT,
     RESOURCE_STATEMENT,
-    generate_token,
+    # build_share_url and ensure_live_share_link live in share_documents rather than
+    # here because the invoice PDF renderer needs to mint and address a link too, and
+    # it must not import a route module to do it. Re-exported from this module under
+    # their original names, which is where the rest of the app imports them from.
+    build_share_url,
+    ensure_live_share_link,
+    find_live_share_link,
     get_invoice,
     get_ledger,
     get_payment,
 )
 
+__all__ = ["router", "build_share_url"]
+
 router = APIRouter()
-
-
-def build_share_url(request: Request, token: str) -> str:
-    """Absolute URL for a share token.
-
-    ``PUBLIC_APP_BASE_URL`` is only trusted when it is already an https origin. It
-    defaults to ``http://localhost:5173`` and several tenants (rudra, wf) never set
-    it, so trusting it blindly would paste a localhost URL into a customer's
-    WhatsApp thread. When it is not usable we derive the origin from the request
-    the owner's own browser just made, which is by definition the right host.
-    """
-    configured = (settings.PUBLIC_APP_BASE_URL or "").strip().rstrip("/")
-    if configured.startswith("https://"):
-        return f"{configured}/s/{token}"
-
-    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
-    scheme = forwarded_proto or request.url.scheme
-    host = (request.headers.get("host") or "").strip() or request.url.netloc
-    return f"{scheme}://{host}/s/{token}"
 
 
 def _to_out(link: ShareLink, url: str) -> ShareLinkOut:
@@ -104,18 +92,6 @@ def _validate_resource(db: Session, company_id: int, payload: ShareLinkCreate) -
     raise HTTPException(status_code=400, detail="Unsupported resource_type")
 
 
-def _live_link_query(db: Session, company_id: int, resource_type: str, resource_id: int):
-    return (
-        db.query(ShareLink)
-        .filter(
-            ShareLink.company_id == company_id,
-            ShareLink.resource_type == resource_type,
-            ShareLink.resource_id == resource_id,
-            ShareLink.revoked_at.is_(None),
-        )
-    )
-
-
 @router.post("/", response_model=ShareLinkOut, include_in_schema=False)
 def create_share_link(
     payload: ShareLinkCreate,
@@ -131,58 +107,35 @@ def create_share_link(
     from_date = payload.from_date if payload.resource_type == RESOURCE_STATEMENT else None
     to_date = payload.to_date if payload.resource_type == RESOURCE_STATEMENT else None
 
-    # Idempotent by design: "Share" is a button a user presses twice. Minting a
-    # second live token for the same document would leave two URLs in circulation
-    # and make "revoke" only half work.
-    existing = (
-        _live_link_query(db, company_id, payload.resource_type, payload.resource_id)
-        .filter(ShareLink.from_date == from_date, ShareLink.to_date == to_date)
-        .first()
-    )
-    if existing is not None:
-        return _to_out(existing, build_share_url(request, existing.token))
-
-    link = ShareLink(
-        company_id=company_id,
-        token=generate_token(),
-        resource_type=payload.resource_type,
-        resource_id=payload.resource_id,
+    # Idempotent: "Share" is a button a user presses twice, and a second live token
+    # for one document would leave two URLs in circulation and make "revoke" only
+    # half work. The lookup, the mint and the lost-race recovery all live in
+    # ensure_live_share_link, which the PDF renderer calls too -- one document must
+    # not end up with a different link depending on which surface asked for it.
+    link, created = ensure_live_share_link(
+        db,
+        company_id,
+        payload.resource_type,
+        payload.resource_id,
         from_date=from_date,
         to_date=to_date,
-        view_count=0,
-        created_by_user_id=getattr(current_user, "id", None),
+        user_id=getattr(current_user, "id", None),
     )
-    db.add(link)
-    try:
-        db.commit()
-    except IntegrityError:
-        # Lost a race against a concurrent mint (or hit the partial unique index).
-        # The other writer's link is just as good as ours.
-        db.rollback()
-        existing = (
-            _live_link_query(db, company_id, payload.resource_type, payload.resource_id)
-            .filter(ShareLink.from_date == from_date, ShareLink.to_date == to_date)
-            .first()
+
+    # Only a genuinely new token counts. Handing back a link that already existed --
+    # pressing Share twice, or losing a race -- is not a share being created, and the
+    # browser event this replaces could not tell the difference, so it inflated this
+    # number every time a user reopened the share dialog.
+    if created:
+        track(
+            "share_link_created",
+            distinct_id_for(current_user),
+            {
+                "share_link_id": link.id,
+                "resource_type": link.resource_type,
+                "resource_id": link.resource_id,
+            },
         )
-        if existing is None:
-            raise HTTPException(status_code=500, detail="Could not create share link")
-        return _to_out(existing, build_share_url(request, existing.token))
-
-    db.refresh(link)
-
-    # Only a genuinely new token counts. The two returns above hand back a link
-    # that already existed -- pressing Share twice, or losing a race -- and the
-    # browser event this replaces could not tell the difference, so it inflated
-    # this number every time a user reopened the share dialog.
-    track(
-        "share_link_created",
-        distinct_id_for(current_user),
-        {
-            "share_link_id": link.id,
-            "resource_type": link.resource_type,
-            "resource_id": link.resource_id,
-        },
-    )
     return _to_out(link, build_share_url(request, link.token))
 
 

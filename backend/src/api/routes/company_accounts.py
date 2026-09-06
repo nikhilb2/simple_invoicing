@@ -31,6 +31,9 @@ def create_company_account(
         account_name=payload.account_name.strip() if payload.account_name else None,
         account_number=payload.account_number.strip() if payload.account_number else None,
         ifsc_code=payload.ifsc_code.strip().upper() if payload.ifsc_code else None,
+        # Cash accounts never collect by UPI, so they never carry an address --
+        # the same rule display_on_invoice follows on the line below.
+        upi_vpa=(payload.upi_vpa or None) if payload.account_type == "bank" else None,
         display_on_invoice=payload.display_on_invoice if payload.account_type == "bank" else False,
         opening_balance=payload.opening_balance,
         is_active=payload.is_active,
@@ -92,6 +95,7 @@ def update_company_account(
         account.account_type = payload.account_type
         if account.account_type == "cash":
             account.display_on_invoice = False
+            account.upi_vpa = None
     if payload.display_name is not None:
         account.display_name = payload.display_name
     if payload.bank_name is not None:
@@ -104,6 +108,8 @@ def update_company_account(
         account.account_number = payload.account_number.strip() or None
     if payload.ifsc_code is not None:
         account.ifsc_code = payload.ifsc_code.strip().upper() or None
+    if payload.upi_vpa is not None:
+        account.upi_vpa = (payload.upi_vpa or None) if account.account_type == "bank" else None
     if payload.display_on_invoice is not None:
         account.display_on_invoice = payload.display_on_invoice if account.account_type == "bank" else False
     if payload.opening_balance is not None:

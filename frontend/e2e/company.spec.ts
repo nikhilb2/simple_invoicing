@@ -65,6 +65,7 @@ test.describe('Company Profile', () => {
     await page.fill('#new-account-accno', '987654321098');
     await page.fill('#new-account-name', 'Bank Details Corp');
     await page.fill('#new-account-ifsc', 'ICIC0001234');
+    await page.fill('#new-account-upi', 'bankdetailscorp@okicici');
 
     await page.click('button:has-text("Add account")');
     // This card reports inline rather than through the toast host, so
@@ -72,6 +73,50 @@ test.describe('Company Profile', () => {
     await expect(
       page.locator('.empty-state').filter({ hasText: 'Account added successfully.' }),
     ).toBeVisible({ timeout: 5_000 });
+
+    // The UPI ID is what the pay-by-UPI QR on a shared invoice points at, so it has
+    // to survive the round trip. Stored exactly as typed: UPI leaves resolving the
+    // local part to each bank's own mapper, so unlike IFSC it must not be re-cased.
+    await page.reload();
+    await expect(
+      page.locator('input[id^="account-upi-"]').first(),
+    ).toHaveValue('bankdetailscorp@okicici', { timeout: 5_000 });
+  });
+
+  // Asserts the toggle round-trips in BOTH directions rather than that it starts
+  // off. Every spec in this suite shares one seeded company, so its current value
+  // is whatever the last test left behind; the default belongs in a backend test
+  // (tests/api/test_company_settings.py), which owns a fresh row.
+  //
+  // For the same reason this restores whatever it found at the end. Leaving the
+  // setting off would silently disable pay-online QRs on the shared company for
+  // everything that runs afterwards -- including a human opening the dev app.
+  test('pay-online QR setting round-trips', async ({ authedPage: page }) => {
+    await page.goto('/settings/company');
+    await expect(page.locator('#company-name')).toBeVisible({ timeout: 5_000 });
+
+    const initial = await page.locator('#company-show-pay-qr').isChecked();
+
+    await page.fill('#company-name', 'Pay QR Corp');
+    await page.fill('#company-address', '5 QR Street, Pune');
+    await page.fill('#company-gst', uniqueGstin());
+
+    const saveAndReload = async (enabled: boolean) => {
+      await page.locator('#company-show-pay-qr').setChecked(enabled);
+      await page.click('button:has-text("Save company details")');
+      await expectSuccess(page, 'Company profile saved');
+      await page.reload();
+      const reloaded = page.locator('#company-show-pay-qr');
+      await expect(reloaded).toBeVisible({ timeout: 5_000 });
+      return reloaded;
+    };
+
+    await expect(await saveAndReload(true)).toBeChecked();
+    await expect(await saveAndReload(false)).not.toBeChecked();
+
+    if (initial) {
+      await saveAndReload(true);
+    }
   });
 
   test('persists company data across page reloads', async ({

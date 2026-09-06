@@ -15,7 +15,8 @@ from src.api.routes.public_share import reset_rate_limits
 from src.models.buyer import Buyer as Ledger
 from src.models.company import CompanyProfile
 from src.models.invoice import Invoice, InvoiceItem
-from src.models.payment import Payment
+from src.models.company_account import CompanyAccount
+from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.product import Product
 from src.models.share_link import ShareLink
 from src.models.user import User, UserRole
@@ -933,3 +934,130 @@ def test_user_supplied_names_are_escaped_on_the_public_page(client, db_session):
     assert "<script>alert(1)</script>" not in body
     assert "&lt;script&gt;" in body
     assert "<img src=x>" not in body
+
+
+# ---------------------------------------------------------------------------
+# Pay by UPI
+# ---------------------------------------------------------------------------
+
+def _bank_account(db, company, vpa="acme@okhdfcbank", **overrides):
+    fields = dict(
+        company_id=company.id,
+        account_type="bank",
+        display_name="Main current account",
+        bank_name="HDFC Bank",
+        account_name="Acme Traders",
+        account_number="501000123456",
+        ifsc_code="HDFC0000123",
+        upi_vpa=vpa,
+        display_on_invoice=True,
+        is_active=True,
+    )
+    fields.update(overrides)
+    account = CompanyAccount(**fields)
+    db.add(account)
+    db.commit()
+    db.refresh(account)
+    return account
+
+
+def test_share_page_offers_upi_for_an_unpaid_invoice(client, db_session):
+    company = _company(db_session, "Alpha Ltd")
+    _bank_account(db_session, company)
+    ledger = _ledger(db_session, company)
+    invoice = _invoice(db_session, company, ledger)
+    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
+
+    body = client.get(f"/s/{token}").text
+    assert "data:image/png;base64," in body
+    assert "acme@okhdfcbank" in body
+    # Scan only. A tappable upi:// hand-off drew a risk warning in Paytm, so the
+    # page must not grow one back by accident.
+    assert "upi://" not in body
+    assert "intent://" not in body
+    # Priced at what is outstanding, which for an untouched invoice is the total.
+    assert "118.00" in body
+
+
+def test_no_upi_offer_once_the_invoice_is_settled(client, db_session):
+    company = _company(db_session, "Alpha Ltd")
+    _bank_account(db_session, company)
+    ledger = _ledger(db_session, company)
+    invoice = _invoice(db_session, company, ledger)
+    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
+
+    user = _user(db_session)
+    payment = Payment(
+        company_id=company.id,
+        ledger_id=ledger.id,
+        voucher_type="receipt",
+        amount=Decimal("118.00"),
+        date=datetime(2026, 6, 3, 9, 0, 0),
+        payment_number="RCPT-PAID",
+        mode="upi",
+        created_by=user.id,
+        status="active",
+    )
+    db_session.add(payment)
+    db_session.commit()
+    db_session.add(PaymentInvoiceAllocation(
+        payment_id=payment.id, invoice_id=invoice.id, allocated_amount=Decimal("118.00")
+    ))
+    db_session.commit()
+
+    body = client.get(f"/s/{token}").text
+    assert "data:image/png;base64," not in body
+    assert "by UPI" not in body
+
+
+def test_no_upi_offer_without_a_configured_address(client, db_session):
+    company = _company(db_session, "Alpha Ltd")
+    _bank_account(db_session, company, vpa=None)
+    ledger = _ledger(db_session, company)
+    invoice = _invoice(db_session, company, ledger)
+    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
+
+    assert "data:image/png;base64," not in client.get(f"/s/{token}").text
+
+
+def test_no_upi_offer_when_the_invoice_is_not_in_rupees(client, db_session):
+    company = _company(db_session, "Alpha Ltd")
+    _bank_account(db_session, company)
+    ledger = _ledger(db_session, company)
+    invoice = _invoice(db_session, company, ledger)
+    invoice.company_currency_code = "USD"
+    db_session.commit()
+    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
+
+    assert "data:image/png;base64," not in client.get(f"/s/{token}").text
+
+
+def test_a_revoked_link_stops_offering_payment(client, db_session):
+    company = _company(db_session, "Alpha Ltd")
+    _bank_account(db_session, company)
+    ledger = _ledger(db_session, company)
+    invoice = _invoice(db_session, company, ledger)
+    live = _create_link(client, company, "invoice", invoice.id).json()
+
+    assert "data:image/png;base64," in client.get(f"/s/{live['token']}").text
+
+    client.delete(f"/api/share/{live['id']}", headers=_headers(company))
+    revoked = client.get(f"/s/{live['token']}")
+    unknown = client.get("/s/nope-not-a-token")
+    assert revoked.status_code == unknown.status_code == 404
+    # Byte-identical to an unknown token: a different answer would tell a scanner
+    # its guess had once been real.
+    assert revoked.content == unknown.content
+
+
+def test_a_receipt_never_offers_payment(client, db_session):
+    # It is proof money already arrived; a pay-now QR on one is a bug.
+    company = _company(db_session, "Alpha Ltd")
+    _bank_account(db_session, company)
+    ledger = _ledger(db_session, company)
+    payment = _payment(db_session, company, ledger)
+    token = _create_link(client, company, "payment", payment.id).json()["token"]
+
+    assert "data:image/png;base64," not in client.get(f"/s/{token}").text
+
+

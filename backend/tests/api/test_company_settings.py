@@ -492,3 +492,28 @@ class TestCompanyProfileOutput:
             assert data["additional_company_info"] == "Company tagline"
         finally:
             _restore_user_override(old_override)
+
+
+# ---------------------------------------------------------------------------
+# Pay-online QR opt-in
+# ---------------------------------------------------------------------------
+
+def test_pay_qr_setting_defaults_off_and_round_trips(client, db_session):
+    # Off by default is the whole point: switching it on means printing an invoice
+    # starts creating a publicly reachable link for it, which is a consent decision.
+    old_override = _with_persistent_user_override()
+    try:
+        company_id = _create_company(client, "QR Co", "27AAAAA0000A1Z5")
+        headers = {"X-Company-Id": str(company_id)}
+
+        assert client.get("/api/company/", headers=headers).json()["show_pay_qr_on_invoice"] is False
+
+        payload = _company_payload("QR Co", "27AAAAA0000A1Z5")
+        payload["show_pay_qr_on_invoice"] = True
+        updated = client.put("/api/company/", json=payload, headers=headers)
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["show_pay_qr_on_invoice"] is True
+
+        assert client.get("/api/company/", headers=headers).json()["show_pay_qr_on_invoice"] is True
+    finally:
+        _restore_user_override(old_override)

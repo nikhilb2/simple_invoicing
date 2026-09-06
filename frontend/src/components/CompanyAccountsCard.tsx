@@ -16,6 +16,7 @@ type AccountDraft = {
   account_name: string;
   account_number: string;
   ifsc_code: string;
+  upi_vpa: string;
   display_on_invoice: boolean;
   opening_balance: string;
   is_active: boolean;
@@ -30,11 +31,27 @@ function toDraft(account: CompanyAccount): AccountDraft {
     account_name: account.account_name || '',
     account_number: account.account_number || '',
     ifsc_code: account.ifsc_code || '',
+    upi_vpa: account.upi_vpa || '',
     display_on_invoice: account.display_on_invoice ?? true,
     opening_balance: String(account.opening_balance ?? 0),
     is_active: account.is_active,
   };
 }
+
+// Three things a user cannot work out for themselves, so all three are said:
+//
+//   * UPI settles INR only, and only the first displayed account with an ID is used;
+//   * since NPCI's June 2025 beneficiary-name rule, apps show the name registered at
+//     the bank and explicitly ignore the name in the QR -- so an invoice from "Acme
+//     Consulting" that pays into "RAMESH KUMAR" surprises the payer at exactly the
+//     wrong moment unless they were told;
+//   * a personal or unregistered-merchant address cannot take more than Rs 1,00,000
+//     in one transaction, so larger invoices fall back to the bank details.
+const UPI_HINT =
+  'Shown as a pay-by-UPI option when someone opens a shared invoice, if "Display on invoice PDF" ' +
+  'is on. INR only, and the first displayed account with a UPI ID is the one used. Your customer ' +
+  'sees the name registered on this UPI ID at your bank, not your company name. Amounts over ' +
+  '\u20b91,00,000 cannot be paid by UPI and fall back to the bank details above.';
 
 const EMPTY_CREATE_DRAFT: AccountDraft = {
   account_type: 'bank',
@@ -44,6 +61,7 @@ const EMPTY_CREATE_DRAFT: AccountDraft = {
   account_name: '',
   account_number: '',
   ifsc_code: '',
+  upi_vpa: '',
   display_on_invoice: true,
   opening_balance: '0',
   is_active: true,
@@ -136,6 +154,10 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
       account_name: createDraft.account_name.trim() || undefined,
       account_number: createDraft.account_number.trim() || undefined,
       ifsc_code: createDraft.ifsc_code.trim().toUpperCase() || undefined,
+      // Sent as typed apart from trimming. UPI delegates resolving the local part
+      // to each bank's own mapper and no spec says that lookup is case-insensitive,
+      // so unlike IFSC this must not be upper- or lower-cased.
+      upi_vpa: createDraft.account_type === 'bank' ? createDraft.upi_vpa.trim() || undefined : undefined,
       display_on_invoice: createDraft.account_type === 'bank' ? createDraft.display_on_invoice : false,
       opening_balance: Number(createDraft.opening_balance || '0') || 0,
       is_active: createDraft.is_active,
@@ -175,6 +197,9 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
       account_name: draft.account_name.trim(),
       account_number: draft.account_number.trim(),
       ifsc_code: draft.ifsc_code.trim().toUpperCase(),
+      // '' rather than undefined, so clearing the field actually clears it: the
+      // API skips any key it receives as null/absent.
+      upi_vpa: draft.account_type === 'bank' ? draft.upi_vpa.trim() : '',
       display_on_invoice: draft.account_type === 'bank' ? draft.display_on_invoice : false,
       opening_balance: Number(draft.opening_balance || '0') || 0,
       is_active: draft.is_active,
@@ -257,6 +282,7 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
                             : (current.account_name.trim() || companyName),
                         account_number: nextType === 'cash' ? '' : current.account_number,
                         ifsc_code: nextType === 'cash' ? '' : current.ifsc_code,
+                        upi_vpa: nextType === 'cash' ? '' : current.upi_vpa,
                         display_on_invoice: nextType === 'cash' ? false : current.display_on_invoice,
                       }));
                     }}
@@ -339,6 +365,20 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
                         placeholder="HDFC0001234"
                       />
                     </div>
+                    <div className="field field--full">
+                      <label htmlFor="new-account-upi">UPI ID</label>
+                      <input
+                        id="new-account-upi"
+                        className="input"
+                        value={createDraft.upi_vpa}
+                        onChange={(event) => setCreateDraft((current) => ({ ...current, upi_vpa: event.target.value }))}
+                        placeholder="yourname@okhdfcbank"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                      />
+                      <small className="field-hint">{UPI_HINT}</small>
+                    </div>
                     <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '22px' }}>
                       <input
                         id="new-account-display-on-invoice"
@@ -396,6 +436,7 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
                             account_name: nextType === 'cash' ? '' : draft.account_name,
                             account_number: nextType === 'cash' ? '' : draft.account_number,
                             ifsc_code: nextType === 'cash' ? '' : draft.ifsc_code,
+                            upi_vpa: nextType === 'cash' ? '' : draft.upi_vpa,
                             display_on_invoice: nextType === 'cash' ? false : draft.display_on_invoice,
                           });
                         }}
@@ -479,6 +520,21 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
                             onChange={(event) => patchDraft(account.id, { ifsc_code: event.target.value })}
                             disabled={!isAdmin}
                           />
+                        </div>
+                        <div className="field field--full">
+                          <label htmlFor={`account-upi-${account.id}`}>UPI ID</label>
+                          <input
+                            id={`account-upi-${account.id}`}
+                            className="input"
+                            value={draft.upi_vpa}
+                            onChange={(event) => patchDraft(account.id, { upi_vpa: event.target.value })}
+                            placeholder="yourname@okhdfcbank"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            disabled={!isAdmin}
+                          />
+                          <small className="field-hint">{UPI_HINT}</small>
                         </div>
                         <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '22px' }}>
                           <input

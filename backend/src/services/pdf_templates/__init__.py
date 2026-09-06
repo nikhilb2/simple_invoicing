@@ -2,6 +2,7 @@
 
 from .builders import (
     _amount_in_words_indian,
+    _build_pdf_pay_qr_card_html,
     _build_pdf_payment_details_html,
     _build_pdf_table_colgroup,
     _build_pdf_tax_breakup_rows,
@@ -28,6 +29,7 @@ __all__ = [
     "_build_invoice_html",
     "_build_multi_copy_invoice_html",
     "_build_day_book_html",
+    "_build_pdf_pay_qr_card_html",
     "_build_pdf_payment_details_html",
     "_build_pdf_table_colgroup",
     "_build_pdf_tax_breakup_rows",

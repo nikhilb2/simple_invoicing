@@ -285,6 +285,7 @@ def _build_statement_html(
     closing_balance: float,
     entries: list[LedgerStatementEntry],
     currency: str = "INR",
+    pay_qr_html: str = "",
 ) -> str:
     entry_rows = ""
     for entry in entries:
@@ -468,6 +469,25 @@ def _build_statement_html(
     color: #1a56db;
   }}
   .muted {{ font-size: 8px; color: #9ca3af; }}
+  .pay-qr {{
+    margin-top: 10px;
+    text-align: right;
+  }}
+  .pay-qr__title {{
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6b7280;
+    margin-bottom: 3px;
+  }}
+  .pay-qr__img {{
+    width: 110px;
+    height: 110px;
+    display: inline-block;
+    image-rendering: pixelated;
+  }}
+  .pay-qr__hint {{ font-size: 8px; color: #9ca3af; }}
 </style>
 </head>
 <body>
@@ -532,6 +552,7 @@ def _build_statement_html(
   <section class=\"footer\">
     <p class=\"total-label\">Closing Balance</p>
     <p class=\"total-value\">{_fmt_inr(closing_balance, currency)}</p>
+    {pay_qr_html}
     <p class=\"muted\">Generated on {datetime.utcnow().strftime('%d %b %Y %H:%M UTC')}</p>
   </section>
 </div>

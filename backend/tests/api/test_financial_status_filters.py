@@ -3,6 +3,7 @@ from datetime import date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import Request
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
@@ -318,6 +319,24 @@ def test_day_book_supports_signed_opening_balance_entries(db_session):
     assert entry_by_id[opening_negative.id].credit == pytest.approx(12.0)
 
 
+
+def _bare_request() -> Request:
+    """The minimum ASGI scope a Request needs.
+
+    These tests call the email coroutines directly rather than over HTTP, so nothing
+    builds a request for them. The route only reads it to work out the origin for a
+    share URL, and that path is inactive here (no active company), but the parameter
+    is required and so must be supplied.
+    """
+    return Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/",
+        "headers": [],
+        "query_string": b"",
+    })
+
+
 def test_payment_reminder_ignores_cancelled_documents_and_cancelled_last_payment(db_session):
     user, ledger, _ = _seed_basics(db_session)
     invoice = _add_invoice(db_session, ledger, user, 100, datetime(2026, 1, 5, 10, 0, 0))
@@ -337,6 +356,7 @@ def test_payment_reminder_ignores_cancelled_documents_and_cancelled_last_payment
     ), patch("src.api.routes.email.send_email", new=AsyncMock()) as send_email_mock:
         asyncio.run(send_payment_reminder_email(
             ledger_id=ledger.id,
+            request=_bare_request(),
             payload=None,
             db=db_session,
             current_user=user,

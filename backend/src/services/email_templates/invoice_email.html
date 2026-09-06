@@ -63,6 +63,21 @@
     </tr>
 </table>
 
+{% if share_url %}
+{# A link rather than an embedded QR: the reader is already in something that opens
+   URLs, so a code they would have to scan with a second device is pure friction.
+   Table-wrapped with inline styles because that is what survives Outlook. #}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 20px 0;">
+    <tr>
+        <td align="center" bgcolor="#2c3e50" style="border-radius: 6px;">
+            <a href="{{ share_url }}" style="display: inline-block; padding: 13px 26px; font-size: 15px; font-weight: bold; color: #ffffff; text-decoration: none;">
+                View &amp; pay online
+            </a>
+        </td>
+    </tr>
+</table>
+{% endif %}
+
 <p style="margin: 0 0 16px 0; color: #555555; font-size: 13px;">
     📎 The invoice PDF is attached to this email.
 </p>

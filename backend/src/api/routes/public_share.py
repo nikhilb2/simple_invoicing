@@ -446,6 +446,10 @@ def _resolve(db: Session, token: str) -> ShareLink | None:
 def public_share_page(
     token: str,
     request: Request,
+    # Set to "qr" by the QR printed on invoice PDFs. Nothing else reads it, and an
+    # unknown value is simply reported as-is -- it is a hint about where the reader
+    # came from, never a control input.
+    src: str = Query(default=""),
     db: Session = Depends(get_db),
 ) -> Response:
     if _rate_limited(request):
@@ -481,7 +485,14 @@ def public_share_page(
         "share_page_viewed",
         link,
         request,
-        {"view_count": link.view_count, "is_first_view": link.view_count == 1},
+        {
+            "view_count": link.view_count,
+            "is_first_view": link.view_count == 1,
+            # The only way to tell a scan off a printed invoice from a link somebody
+            # forwarded in a chat. "direct" covers both a forward and a typed URL.
+            "entry_source": "qr" if src == "qr" else "direct",
+            "has_upi_offer": summary.upi_qr_data_uri is not None,
+        },
     )
 
     base = _base_path(request)
@@ -531,7 +542,7 @@ def public_share_pdf(
     if summary is None or not summary.available:
         return _not_found()
 
-    buf = render_share_pdf(db, link)
+    buf = render_share_pdf(db, link, request=request)
 
     disposition = "attachment" if download else "inline"
     headers = {
@@ -609,7 +620,7 @@ def public_share_document_html(
     if summary is None or not summary.available:
         return _not_found()
 
-    html = render_share_document_html(db, link)
+    html = render_share_document_html(db, link, request=request)
     return HTMLResponse(content=html, headers=_html_headers())
 
 

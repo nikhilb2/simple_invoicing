@@ -36,6 +36,7 @@ class CompanyProfileBase(BaseModel):
     ifsc_code: str | None = None
     additional_company_info: str | None = None
     show_sku_on_pdf: bool = False
+    show_pay_qr_on_invoice: bool = False
 
 
 class CompanyProfileUpdate(CompanyProfileBase):

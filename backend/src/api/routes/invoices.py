@@ -2,7 +2,7 @@ import csv
 from io import BytesIO, StringIO
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, joinedload
@@ -29,7 +29,12 @@ from src.services.pdf_templates import (
 )
 from src.services.invoice_processor import InvoiceProcessor
 from src.services.serial_service import SerialManager
-from src.services.share_documents import get_invoice as get_shared_invoice, render_invoice_pdf
+from src.services.share_documents import (
+    RESOURCE_INVOICE,
+    document_share_url,
+    get_invoice as get_shared_invoice,
+    render_invoice_pdf,
+)
 from src.services.series import generate_next_number
 
 router = APIRouter()
@@ -629,17 +634,17 @@ def update_invoice(
 
 
 
-def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None) -> BytesIO:
+def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "") -> BytesIO:
     show_sku = active_company.show_sku_on_pdf if active_company else True
-    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku, serials=serials)
+    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html)
     pdf_bytes = weasyprint.HTML(string=html).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
 
 
-def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None) -> BytesIO:
+def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "") -> BytesIO:
     show_sku = active_company.show_sku_on_pdf if active_company else True
-    html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies, show_sku=show_sku, serials=serials)
+    html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies, show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html)
     pdf_bytes = weasyprint.HTML(string=html).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
@@ -648,6 +653,7 @@ def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], inv
 @router.get("/{invoice_id}/pdf")
 def download_invoice_pdf(
     invoice_id: int,
+    request: Request,
     copies: int = Query(default=1, ge=1, le=10),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -660,7 +666,18 @@ def download_invoice_pdf(
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
 
-    pdf_buffer = render_invoice_pdf(db, active_company.id, invoice_id, copies=copies)
+    # Returns None -- and prints no QR -- unless the company has opted in. When it
+    # has, this mints the invoice's share link if it does not already have one, so
+    # `request` is needed for the origin the printed URL will carry.
+    share_url = None
+    if invoice.status == "active":
+        share_url = document_share_url(
+            db, request, active_company, RESOURCE_INVOICE, invoice_id, user_id=current_user.id
+        )
+
+    pdf_buffer = render_invoice_pdf(
+        db, active_company.id, invoice_id, copies=copies, share_url=share_url
+    )
     filename = f"invoice_{invoice.invoice_number or invoice.id}.pdf"
 
     # The preview pane fetches this endpoint too, so this counts renders rather
