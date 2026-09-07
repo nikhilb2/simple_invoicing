@@ -294,11 +294,12 @@ def _build_statement_html(
         cr = _fmt_inr(entry.credit, currency) if entry.credit > 0 else ""
         ref_number = _e(entry.reference_number) if entry.reference_number else f"#{entry.entry_id}"
         note = f'<span class=\"entry-note\">{_e(entry.notes)}</span>' if entry.notes else ""
+        ref = f' &middot; Ref: {_e(entry.payment_reference)}' if entry.payment_reference else ""
         entry_rows += f"""
         <tr>
           <td>{_e(entry_date)}</td>
           <td>{ref_number}</td>
-          <td>{_e(entry.particulars)}{note}</td>
+          <td>{_e(entry.particulars)}{ref}{note}</td>
           <td class=\"right\">{dr}</td>
           <td class=\"right\">{cr}</td>
         </tr>"""

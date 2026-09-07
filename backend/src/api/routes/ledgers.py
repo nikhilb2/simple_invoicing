@@ -445,6 +445,7 @@ def _build_ledger_statement_data(
             credit=credit,
             account_display_name=payment.account.display_name if payment.account else None,
             account_type=payment.account.account_type if payment.account else None,
+            payment_reference=payment.reference,
             notes=payment.notes,
             invoice_allocations=entry_allocations,
         ))

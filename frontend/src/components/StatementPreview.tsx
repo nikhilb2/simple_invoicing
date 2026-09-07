@@ -181,6 +181,7 @@ export default function StatementPreview({ ledger, statement, company, currencyC
                       <td>{entry.reference_number || `${entry.voucher_type} #${entry.entry_id}`}</td>
                       <td>
                         {entry.particulars}
+                        {entry.payment_reference ? ` \u00b7 Ref: ${entry.payment_reference}` : ''}
                         {entry.notes ? <span className="statement-entry-note">{entry.notes}</span> : null}
                       </td>
                       <td className="right">{entry.debit > 0 ? formatCurrency(entry.debit, currencyCode) : ''}</td>

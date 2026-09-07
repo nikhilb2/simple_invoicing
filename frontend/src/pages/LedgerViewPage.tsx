@@ -919,6 +919,9 @@ export default function LedgerViewPage() {
                             Account: {entry.account_display_name || 'Unallocated'}
                             {entry.account_type ? ` (${entry.account_type})` : ''}
                           </span>
+                          {entry.payment_reference ? (
+                            <span className="table-subtext">Ref: {entry.payment_reference}</span>
+                          ) : null}
                           {entry.notes ? (
                             <span className="voucher-note">
                               <span className="voucher-note__label">Note</span>

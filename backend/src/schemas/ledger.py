@@ -80,6 +80,9 @@ class LedgerStatementEntry(BaseModel):
     credit: float
     account_display_name: str | None = None
     account_type: str | None = None
+    # The cheque no / txn id the user typed on the voucher. Distinct from
+    # reference_number above, which is the voucher's own number.
+    payment_reference: str | None = None
     # Free-text note the user typed on the voucher; surfaced on the statement so
     # it does not stay buried in the receipt.
     notes: str | None = None
