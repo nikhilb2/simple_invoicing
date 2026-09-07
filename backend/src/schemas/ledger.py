@@ -80,6 +80,9 @@ class LedgerStatementEntry(BaseModel):
     credit: float
     account_display_name: str | None = None
     account_type: str | None = None
+    # Free-text note the user typed on the voucher; surfaced on the statement so
+    # it does not stay buried in the receipt.
+    notes: str | None = None
     invoice_allocations: list[LedgerStatementInvoiceAllocation] = Field(default_factory=list)
 
 

@@ -179,7 +179,10 @@ export default function StatementPreview({ ledger, statement, company, currencyC
                     <tr key={`${entry.entry_type}-${entry.entry_id}-${idx}`}>
                       <td>{new Date(entry.date).toLocaleDateString()}</td>
                       <td>{entry.reference_number || `${entry.voucher_type} #${entry.entry_id}`}</td>
-                      <td>{entry.particulars}</td>
+                      <td>
+                        {entry.particulars}
+                        {entry.notes ? <span className="statement-entry-note">{entry.notes}</span> : null}
+                      </td>
                       <td className="right">{entry.debit > 0 ? formatCurrency(entry.debit, currencyCode) : ''}</td>
                       <td className="right">{entry.credit > 0 ? formatCurrency(entry.credit, currencyCode) : ''}</td>
                     </tr>

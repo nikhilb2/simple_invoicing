@@ -919,6 +919,12 @@ export default function LedgerViewPage() {
                             Account: {entry.account_display_name || 'Unallocated'}
                             {entry.account_type ? ` (${entry.account_type})` : ''}
                           </span>
+                          {entry.notes ? (
+                            <span className="voucher-note">
+                              <span className="voucher-note__label">Note</span>
+                              <span className="voucher-note__text">{entry.notes}</span>
+                            </span>
+                          ) : null}
                           {entry.invoice_allocations && entry.invoice_allocations.length > 0 ? (
                             <div className="receipt-allocation-strip">
                               <div className="receipt-allocation-strip__header">

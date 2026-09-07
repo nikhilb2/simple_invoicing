@@ -293,11 +293,12 @@ def _build_statement_html(
         dr = _fmt_inr(entry.debit, currency) if entry.debit > 0 else ""
         cr = _fmt_inr(entry.credit, currency) if entry.credit > 0 else ""
         ref_number = _e(entry.reference_number) if entry.reference_number else f"#{entry.entry_id}"
+        note = f'<span class=\"entry-note\">{_e(entry.notes)}</span>' if entry.notes else ""
         entry_rows += f"""
         <tr>
           <td>{_e(entry_date)}</td>
           <td>{ref_number}</td>
-          <td>{_e(entry.particulars)}</td>
+          <td>{_e(entry.particulars)}{note}</td>
           <td class=\"right\">{dr}</td>
           <td class=\"right\">{cr}</td>
         </tr>"""
@@ -445,11 +446,18 @@ def _build_statement_html(
   tbody td {{
     padding: 6px 8px;
     border-bottom: 1px solid #e5e7eb;
-    vertical-align: middle;
+    vertical-align: top;
   }}
   tbody td.right {{ text-align: right; }}
   tbody tr:last-child td {{
     border-bottom: 2px solid #d1d5db;
+  }}
+  .entry-note {{
+    display: block;
+    margin-top: 2px;
+    font-size: 8px;
+    font-style: italic;
+    color: #6b7280;
   }}
   .footer {{
     margin-top: 8px;

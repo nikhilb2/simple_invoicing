@@ -478,6 +478,7 @@ export type LedgerStatementEntry = {
   credit: number;
   account_display_name?: string | null;
   account_type?: CompanyAccountType | null;
+  notes?: string | null;
   invoice_allocations?: Array<{
     invoice_id: number;
     invoice_number?: string | null;

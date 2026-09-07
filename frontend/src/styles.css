@@ -2286,6 +2286,42 @@ a.invoice-row {
   gap: 8px;
 }
 
+.voucher-note {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(8, 16, 29, 0.56);
+  border: 1px solid rgba(148, 184, 255, 0.14);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.78rem;
+  /* Notes are free text; keep long ones inside the card. */
+  overflow-wrap: anywhere;
+}
+
+.voucher-note__label {
+  color: #c7d7f4;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.voucher-note__text {
+  color: #e9f0ff;
+}
+
+.statement-entry-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  font-style: italic;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .receipt-allocation-strip__header {
   display: flex;
   justify-content: space-between;
