@@ -22,6 +22,10 @@ from src.db.session import engine
 
 
 BACKUP_DIR = Path(os.getenv("BACKUP_DIR", "./backups"))
+# Archive name prefixes. Scheduled backups carry their own so retention can prune
+# them without ever touching one someone made by hand.
+MANUAL_BACKUP_PREFIX = "backup_"
+AUTO_BACKUP_PREFIX = "autobackup_"
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 logger = logging.getLogger(__name__)
 _backup_key_warned = False
@@ -165,11 +169,18 @@ def _run_pg_dump(output_path: Path) -> None:
         raise HTTPException(status_code=500, detail=f"Backup failed: {detail}") from err
 
 
-def create_backup_archive() -> dict:
+def create_backup_archive(file_prefix: str = MANUAL_BACKUP_PREFIX) -> dict:
+    """Dump, encrypt and store one backup archive.
+
+    ``file_prefix`` is what tells a scheduled archive apart from one a person
+    clicked for, and retention pruning keys off it -- see
+    ``src.services.backup_scheduler``. Both kinds list, download and restore
+    identically; the prefix only decides what the scheduler is allowed to delete.
+    """
     ensure_backup_dir()
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    file_name = f"backup_{stamp}.enc"
+    file_name = f"{file_prefix}{stamp}.enc"
     archive_path = BACKUP_DIR / file_name
 
     with TemporaryDirectory() as temp_dir_name:
@@ -203,7 +214,7 @@ def create_backup_archive() -> dict:
         "file_name": file_name,
         "size_bytes": stat.st_size,
         "created_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
-        "migration_head": _build_manifest().migration_head,
+        "migration_head": manifest.migration_head,
     }
 
 

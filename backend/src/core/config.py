@@ -83,6 +83,31 @@ class Settings(BaseSettings):
     SHARE_AD_PHONE: str = "+91 98710 52105"
     SHARE_AD_WHATSAPP: str = "919871052105"
 
+    # --- Automatic backups ---
+    # A nightly pg_dump written to BACKUP_DIR by an in-process scheduler. Defaults
+    # to midnight IST because that is when every deployment of this app is idle.
+    # Note that BACKUP_DIR is container-local and not on a volume, so these are a
+    # convenience copy to download, not an offsite backup -- a pod restart clears them.
+    AUTO_BACKUP_ENABLED: bool = True
+    # 24-hour "HH:MM" in AUTO_BACKUP_TIMEZONE. An unparseable value disables the
+    # scheduler with a warning rather than crash-looping the whole app on boot.
+    AUTO_BACKUP_TIME: str = "00:00"
+    AUTO_BACKUP_TIMEZONE: str = "Asia/Kolkata"
+    # How many scheduler-created archives to keep. Files created by hand from the
+    # Backups page are never pruned -- only ones the scheduler itself wrote.
+    AUTO_BACKUP_KEEP: int = 7
+    # Mail each finished archive to the admins. Gated on an active SMTP config
+    # existing, so a deployment that never set up email simply never sends.
+    AUTO_BACKUP_EMAIL_ENABLED: bool = True
+    # Comma-separated override. Blank means "every admin user", which is the right
+    # default -- the Backups page is admin-only, so those are already the people
+    # trusted with the database.
+    AUTO_BACKUP_EMAIL_TO: str = ""
+    # Cap on the RAW archive size. Base64 inflates an attachment by about a third,
+    # so 15 MB here lands near 20 MB on the wire, under the usual 25 MB cap. Past
+    # this the mail still goes out, just without the attachment.
+    AUTO_BACKUP_EMAIL_MAX_MB: int = 15
+
     # --- UPI ---
     # Kill switch for the pay-by-UPI block on public share pages. Kept separate from
     # SHARE_LINKS_ENABLED because a deployment outside India wants the share pages

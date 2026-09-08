@@ -19,6 +19,7 @@ from src.core.analytics import (
     track_exception,
 )
 from src.core.config import settings
+from src.services.backup_scheduler import start_scheduler, stop_scheduler
 from src.db.base import Base
 from src.db.session import engine
 # Import all models to register them with declarative_base
@@ -75,14 +76,21 @@ run_pending_migrations()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Drains the PostHog queue so events from a pod's last seconds are not lost.
+    """Starts the nightly backup loop, and drains the PostHog queue on the way out.
 
-    Nothing to do on the way up: the analytics client builds itself on first use
-    and is a no-op when unconfigured. Note that ``tests/conftest.py`` builds a
-    bare ``TestClient(app)``, which never runs a lifespan -- fine here, since
-    there is nothing a test needs this to have done.
+    The backup scheduler belongs here rather than at import time because it needs a
+    running event loop, and it is started before yield so the first request is
+    already served by a process that has its timer armed. It never raises: a
+    disabled or misconfigured schedule logs and leaves the app otherwise untouched.
+
+    On the way down, shutting the PostHog queue means events from a pod's last
+    seconds are not lost. Note that ``tests/conftest.py`` builds a bare
+    ``TestClient(app)``, which never runs a lifespan -- fine here, and deliberate
+    for the scheduler: a test suite must not start dumping the database on a timer.
     """
+    start_scheduler()
     yield
+    await stop_scheduler()
     shutdown_analytics()
 
 

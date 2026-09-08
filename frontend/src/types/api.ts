@@ -832,6 +832,21 @@ export type BackupRestoreResponse = {
   applied_migrations: number;
 };
 
+export type BackupScheduleResponse = {
+  enabled: boolean;
+  email_enabled: boolean;
+  schedule_time: string | null;
+  timezone: string | null;
+  keep: number;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_status: 'success' | 'failed' | null;
+  last_file_name: string | null;
+  last_error: string | null;
+  last_email_status: 'sent' | 'skipped' | 'failed' | null;
+  last_email_detail: string | null;
+};
+
 // BOM (Bill of Materials) types
 export type BOMComponent = {
   id: number;

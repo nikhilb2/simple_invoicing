@@ -251,6 +251,58 @@ produces. That header is the whole link between a recording and its events: drop
 it at a proxy and both halves still work, but they no longer line up on one
 timeline.
 
+### Automatic Backup Variables
+
+A nightly `pg_dump` written to `BACKUP_DIR`, alongside the archives created by hand from
+**Settings → Backups**. It defaults to midnight IST, and **every variable here has a
+default** — an existing deployment takes an image with this feature and starts backing up
+nightly without touching its secret.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `AUTO_BACKUP_ENABLED` | `true` | Master switch. With this off, nothing is scheduled and the Backups page says so; creating a backup by hand still works. |
+| `AUTO_BACKUP_TIME` | `00:00` | 24-hour `HH:MM` in `AUTO_BACKUP_TIMEZONE`. An unparseable value turns the scheduler off with an error in the log rather than crash-looping the app. |
+| `AUTO_BACKUP_TIMEZONE` | `Asia/Kolkata` | IANA zone the time is read in. An unknown zone falls back to a fixed UTC+05:30 offset, which is exactly right for IST and wrong for anything else. |
+| `AUTO_BACKUP_KEEP` | `7` | How many scheduled archives to keep. Pruning matches on the `autobackup_` filename prefix, so a backup **you** created is never deleted by retention. `0` disables pruning entirely. |
+| `BACKUP_DIR` | `./backups` | Where archives are written. Read from the process environment, not the settings file. |
+| `AUTO_BACKUP_EMAIL_ENABLED` | `true` | Mail each finished archive to the admins. Does nothing unless SMTP is set up, so this is safe to leave on. |
+| `AUTO_BACKUP_EMAIL_TO` | *(blank)* | Comma-separated recipients. Blank means **every admin user's email address** — the first is the `To`, the rest are `Cc`. |
+| `AUTO_BACKUP_EMAIL_MAX_MB` | `15` | Cap on the **raw** archive size. Base64 inflates an attachment by about a third, so 15 MB lands near 20 MB on the wire, under the usual 25 MB cap. Past this the email still goes out — saying the backup exists and why it is not attached — just without the archive. |
+
+**Emailing the backup.** After each scheduled run the archive is mailed to the admins,
+using the same SMTP configuration as invoice email (**Settings → SMTP**). With no active
+SMTP config nothing is sent and the Backups page says so — that is a normal state, not an
+error. Rows land in `email_logs` with `email_type = automatic_backup`, alongside invoice and
+reminder mail.
+
+The attachment is the encrypted archive exactly as the Backups page serves it, so a mailbox
+holding it does not expose the database: restoring needs a server holding the same
+`BACKUP_ENCRYPTION_KEY`. That is what makes this safe to do unattended — and it is also the
+catch, because an archive mailed out of a deployment whose key is later lost is
+unrecoverable. Keep `BACKUP_ENCRYPTION_KEY` somewhere you will still have it.
+
+Delivery is reported separately from the backup itself, on the page and in
+`GET /api/backups/schedule`. A mail server that is down does not make the archive on disk any
+less real, and the two failures need different fixes.
+
+**These archives are not durable storage.** `BACKUP_DIR` is a path inside the container and
+nothing mounts a volume there, so every archive — scheduled or manual — is gone when the pod
+restarts. Treat the nightly run as a convenience copy to download, not as a disaster-recovery
+plan; for that, mount a `PersistentVolumeClaim` at `BACKUP_DIR` or ship the archives offsite.
+
+The scheduler runs in-process, which assumes **one replica** — the deployments here all set
+`replicas: 1`. Scale one out and every replica dumps at midnight to its own container-local
+disk. That is wasteful rather than destructive, but a scaled-out deployment wants a
+`CronJob` or a Postgres advisory lock around the run instead.
+
+There is deliberately **no catch-up run on startup**. Since a restart clears `BACKUP_DIR`
+anyway, a catch-up rule would fire on every deploy and a crash-looping pod would dump in a
+tight loop. Missing one night after a restart is the cheaper failure.
+
+Progress is visible at **Settings → Backups**: the next scheduled run, whether the last one
+succeeded, and an `Automatic`/`Manual` label on each archive in the list. The same data is
+served by `GET /api/backups/schedule` (admin only).
+
 ### MCP Connector / OAuth Variables
 
 These configure the built-in MCP server and its OAuth 2.1 authorization server, which let

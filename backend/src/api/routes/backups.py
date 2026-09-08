@@ -10,6 +10,7 @@ from src.schemas.backup import (
     BackupCreateResponse,
     BackupPreflightResponse,
     BackupRestoreResponse,
+    BackupScheduleResponse,
     BackupSummary,
 )
 from src.services.backup import (
@@ -19,6 +20,7 @@ from src.services.backup import (
     preflight_restore,
     restore_backup,
 )
+from src.services.backup_scheduler import status as scheduler_status
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -63,6 +65,31 @@ def get_backups(
     _: User = Depends(require_admin_no_session_hold),
 ):
     return list_backups()
+
+
+@router.get("/schedule", response_model=BackupScheduleResponse)
+def get_backup_schedule(
+    _: User = Depends(require_admin_no_session_hold),
+):
+    """Read-only view of the nightly automatic backup schedule.
+
+    The schedule itself is configuration (AUTO_BACKUP_*), not per-tenant state, so
+    there is no PUT here -- this exists purely so the Backups page can tell an admin
+    when the next run is and whether the last one worked."""
+    return BackupScheduleResponse(
+        enabled=scheduler_status.enabled,
+        email_enabled=scheduler_status.email_enabled,
+        schedule_time=scheduler_status.schedule_time,
+        timezone=scheduler_status.timezone_name,
+        keep=scheduler_status.keep,
+        next_run_at=scheduler_status.next_run_at,
+        last_run_at=scheduler_status.last_run_at,
+        last_status=scheduler_status.last_status,
+        last_file_name=scheduler_status.last_file_name,
+        last_error=scheduler_status.last_error,
+        last_email_status=scheduler_status.last_email_status,
+        last_email_detail=scheduler_status.last_email_detail,
+    )
 
 
 @router.get("/{file_name}/download")

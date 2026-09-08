@@ -30,3 +30,22 @@ class BackupRestoreResponse(BaseModel):
     detail: str
     compatibility: str
     applied_migrations: int
+
+
+class BackupScheduleResponse(BaseModel):
+    """State of the nightly automatic backup, for the Backups page to display."""
+
+    enabled: bool
+    email_enabled: bool = False
+    schedule_time: str | None = None
+    timezone: str | None = None
+    keep: int = 0
+    next_run_at: datetime | None = None
+    last_run_at: datetime | None = None
+    last_status: str | None = None
+    last_file_name: str | None = None
+    last_error: str | None = None
+    # Reported apart from last_status: a backup that was written but could not be
+    # mailed is a different problem from one that never got written.
+    last_email_status: str | None = None
+    last_email_detail: str | None = None
