@@ -134,6 +134,16 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
           }}
           secondary={[
             {
+              // Emailing the invoice is one of the two ways it reaches the
+              // customer at all, so it belongs in the row beside Share. Folded
+              // into the overflow menu it stopped being used entirely — nobody
+              // opens a "…" hunting for the thing they came here to do.
+              label: 'Email',
+              icon: <Mail size={16} aria-hidden="true" />,
+              onClick: () => setShowEmailModal(true),
+              title: 'Email invoice',
+            },
+            {
               label: 'Print',
               icon: <Printer size={16} aria-hidden="true" />,
               onClick: handlePrintPdf,
@@ -148,13 +158,6 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
             },
           ]}
           menuExtra={<CopiesStepper value={copies} onChange={setCopies} />}
-          menu={[
-            {
-              label: 'Email invoice',
-              icon: <Mail size={16} aria-hidden="true" />,
-              onClick: () => setShowEmailModal(true),
-            },
-          ]}
           menuOpen={menuOpen}
           onMenuOpenChange={setMenuOpen}
           onClose={onClose}
