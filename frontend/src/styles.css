@@ -7501,6 +7501,13 @@ a.invoice-row {
   border-bottom: 1px solid var(--line);
 }
 
+/* The divider only earns its keep when there are menu actions under it. With
+   Email promoted into the button row the stepper is usually the whole menu. */
+.copies-stepper:last-child {
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+
 .copies-stepper__label {
   font-size: 0.9rem;
   font-weight: 700;
@@ -7561,10 +7568,29 @@ a.invoice-row {
 }
 
 @media (max-width: 640px) {
-  /* Labels are the first thing to go when the row cannot fit; the icons and
-     the tooltips carry the meaning, and Share keeps its label as the primary. */
+  /* The row wraps rather than dropping labels: every action here is one a user
+     came to the preview to perform, and an unlabelled icon is exactly how Email
+     got lost in the first place. */
   .preview-header__actions {
     width: 100%;
     justify-content: space-between;
+  }
+
+  /* `.button-row` stacks into a full-width column on mobile, which is right for
+     a form's buttons and wrong here — it turns a four-action toolbar into a
+     four-row header. These labels are one word, so they pair up two to a line. */
+  .preview-toolbar {
+    /* Leaves room for the close button beside the actions rather than under
+       them: the whole header is competing with the document preview for a
+       phone screen. */
+    flex: 1 1 calc(100% - 50px);
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    width: auto;
+  }
+
+  .preview-toolbar .button:not(.button--icon) {
+    flex: 1 1 calc(50% - 8px);
   }
 }

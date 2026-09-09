@@ -2,6 +2,10 @@ import { ReactNode, useCallback, useEffect, useRef } from 'react';
 import { MoreHorizontal } from 'lucide-react';
 import ModalCloseButton from './ModalCloseButton';
 
+// Stable identity, so the click-outside effect does not resubscribe on every
+// render of a preview that passes no menu handler at all.
+const noop = () => {};
+
 export type PreviewAction = {
   label: string;
   icon: ReactNode;
@@ -19,18 +23,24 @@ type PreviewToolbarProps = {
   /** The one filled button. Everything else is quiet on purpose. */
   primary: PreviewAction;
   /**
-   * Shown as quiet (ghost) buttons beside the primary. Keep to two — past that,
-   * use the menu. They are deliberately not `--secondary`: that variant is a
-   * solid blue gradient, so three filled buttons in a row read as three
+   * Shown as quiet (ghost) buttons beside the primary. Keep to three — past
+   * that, use the menu. They are deliberately not `--secondary`: that variant
+   * is a solid blue gradient, so three filled buttons in a row read as three
    * competing primaries, which is the clutter this component exists to remove.
    */
   secondary?: PreviewAction[];
-  /** Behind the "…" button. Low-frequency actions belong here, not in the row. */
+  /**
+   * Behind the "…" button. Only for actions that are genuinely rare: an
+   * overflow menu is somewhere you look once you already know what is inside
+   * it, so anything a user opens the preview in order to do has to be in the
+   * row instead.
+   */
   menu?: PreviewAction[];
   /** Rendered above the menu items — for a setting rather than an action. */
   menuExtra?: ReactNode;
-  menuOpen: boolean;
-  onMenuOpenChange: (open: boolean) => void;
+  /** Only needed when there is a menu or `menuExtra` to open. */
+  menuOpen?: boolean;
+  onMenuOpenChange?: (open: boolean) => void;
   onClose: () => void;
   closeLabel: string;
 };
@@ -55,8 +65,8 @@ export default function PreviewToolbar({
   secondary = [],
   menu = [],
   menuExtra,
-  menuOpen,
-  onMenuOpenChange,
+  menuOpen = false,
+  onMenuOpenChange = noop,
   onClose,
   closeLabel,
 }: PreviewToolbarProps) {

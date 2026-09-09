@@ -20,15 +20,12 @@ type StatementPreviewProps = {
 export default function StatementPreview({ ledger, statement, company, currencyCode, onClose, onError }: StatementPreviewProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   // The email and share modals stacked on top close themselves on Escape;
   // without this guard the same keypress tears down the preview behind them.
-  // The overflow menu is the same story one level down.
   useEscapeClose(useCallback(() => {
-    if (menuOpen) { setMenuOpen(false); return; }
     if (!showEmailModal && !showShareModal) onClose();
-  }, [menuOpen, showEmailModal, showShareModal, onClose]));
+  }, [showEmailModal, showShareModal, onClose]));
   const companyDetails = [
     company?.gst ? `GST: ${company.gst}` : '',
     company?.phone_number ? `Phone: ${company.phone_number}` : '',
@@ -78,6 +75,14 @@ export default function StatementPreview({ ledger, statement, company, currencyC
           }}
           secondary={[
             {
+              // Same reasoning as the invoice preview: the send action belongs
+              // in the row, not behind an overflow menu nobody opens.
+              label: 'Email',
+              icon: <Mail size={16} aria-hidden="true" />,
+              onClick: () => setShowEmailModal(true),
+              title: 'Email statement',
+            },
+            {
               label: 'Print',
               icon: <Printer size={16} aria-hidden="true" />,
               onClick: () => window.print(),
@@ -90,15 +95,6 @@ export default function StatementPreview({ ledger, statement, company, currencyC
               title: 'Download statement PDF',
             },
           ]}
-          menu={[
-            {
-              label: 'Email statement',
-              icon: <Mail size={16} aria-hidden="true" />,
-              onClick: () => setShowEmailModal(true),
-            },
-          ]}
-          menuOpen={menuOpen}
-          onMenuOpenChange={setMenuOpen}
           onClose={onClose}
           closeLabel="Close statement preview"
         />
