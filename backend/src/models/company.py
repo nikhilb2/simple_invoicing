@@ -29,4 +29,7 @@ class CompanyProfile(Base):
     # Off by default on purpose: switching it on makes printing an invoice mint a
     # publicly reachable share link for it, which is the owner's call to make.
     show_pay_qr_on_invoice = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # Off by default: a tappable upi:// hand-off only goes through cleanly for a
+    # registered merchant UPI ID, and only the owner knows whether theirs is one.
+    show_upi_pay_button = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     terms = relationship("CompanyTerm", back_populates="company", order_by="CompanyTerm.serial_number", cascade="all, delete-orphan")

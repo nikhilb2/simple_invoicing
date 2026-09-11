@@ -37,6 +37,7 @@ class CompanyProfileBase(BaseModel):
     additional_company_info: str | None = None
     show_sku_on_pdf: bool = False
     show_pay_qr_on_invoice: bool = False
+    show_upi_pay_button: bool = False
 
 
 class CompanyProfileUpdate(CompanyProfileBase):

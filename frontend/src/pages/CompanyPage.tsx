@@ -635,6 +635,7 @@ export default function CompanyPage() {
     website: '',
     show_sku_on_pdf: false,
     show_pay_qr_on_invoice: false,
+    show_upi_pay_button: false,
   });
   const [companyId, setCompanyId] = useState<number>(0);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -676,6 +677,7 @@ export default function CompanyPage() {
         website: data.website || '',
         show_sku_on_pdf: data.show_sku_on_pdf || false,
         show_pay_qr_on_invoice: data.show_pay_qr_on_invoice || false,
+        show_upi_pay_button: data.show_upi_pay_button || false,
       });
       setAdditionalInfo(data.additional_company_info || '');
       if (data.logo_data && data.logo_mime_type) {
@@ -712,6 +714,7 @@ export default function CompanyPage() {
         website: form.website.trim(),
         show_sku_on_pdf: form.show_sku_on_pdf,
         show_pay_qr_on_invoice: form.show_pay_qr_on_invoice,
+        show_upi_pay_button: form.show_upi_pay_button,
       };
 
       await api.put<CompanyProfileUpdate>('/company/', payload);
@@ -1005,6 +1008,30 @@ export default function CompanyPage() {
                     invoice creates a shareable link for it; revoking that link later stops the QR on
                     copies already printed from working. Add a UPI ID under Cash &amp; Bank Accounts
                     for the payment option to appear.
+                  </small>
+                </div>
+
+                <div className="field field--full">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                    <input
+                      id="company-show-upi-pay-button"
+                      type="checkbox"
+                      checked={form.show_upi_pay_button}
+                      onChange={(e) => setForm((current) => ({ ...current, show_upi_pay_button: e.target.checked }))}
+                    />
+                    <label htmlFor="company-show-upi-pay-button" style={{ marginBottom: 0, cursor: 'pointer', fontWeight: 500 }}>
+                      Show &ldquo;Pay by UPI&rdquo; button on shared invoices
+                    </label>
+                  </div>
+                  {/* The merchant caveat is the whole reason this is a setting: for a
+                      personal UPI ID the tap-to-pay hand-off draws a risk warning in
+                      apps like Paytm, and nothing here can tell which kind was entered. */}
+                  <small className="field-hint" style={{ marginLeft: '24px' }}>
+                    Adds a tap-to-pay button, with Google Pay, PhonePe and Paytm shortcuts, above the
+                    UPI QR on a shared invoice or statement. Turn this on only if your UPI ID is
+                    registered as a merchant with your UPI provider &mdash; with a personal UPI ID, apps
+                    such as Paytm warn your customer that the payment may fail. The QR keeps working
+                    either way.
                   </small>
                 </div>
 

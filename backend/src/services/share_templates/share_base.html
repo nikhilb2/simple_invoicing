@@ -85,7 +85,7 @@
     -webkit-text-size-adjust: 100%;
     -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 660px; margin: 0 auto; padding: 20px 16px 40px; }
+  .wrap { max-width: 660px; margin: 0 auto; padding: 14px 16px 40px; }
 
   /* ── Document card ───────────────────────────────────────────────────
      Only the unavailable page uses this now; the document page's own summary
@@ -136,7 +136,7 @@
     -webkit-mask-image: radial-gradient(28rem 20rem at 50% 0%, #000 35%, transparent 78%);
   }
 
-  .promo-id { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .promo-id { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
   .promo-mark { flex: none; display: block; border-radius: 9px; }
   .promo-id .name {
     font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: var(--brand-ink);
@@ -229,13 +229,13 @@
      download button in it and the pitch underneath. Rendered only on the
      document page: the unavailable page has no summary. */
   .recap {
-    margin: 0 0 26px; padding: 17px 18px 16px;
+    margin: 0 0 20px; padding: 15px 16px 14px;
     border-radius: 18px;
     background: rgba(9,7,6,.55);
     border: 1px solid rgba(252,251,248,.09);
   }
   .recap-label {
-    display: flex; align-items: center; gap: 8px; margin: 0 0 12px;
+    display: flex; align-items: center; gap: 8px; margin: 0 0 10px;
     font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .18em;
     color: rgba(192,188,175,.75);
     word-break: break-word;
@@ -245,13 +245,17 @@
     background: var(--lime); box-shadow: 0 0 0 3px rgba(156,235,10,.18);
   }
   .recap-doc {
-    margin: 0 0 14px; font-size: 20px; font-weight: 700; letter-spacing: -0.025em;
+    margin: 0 0 10px; font-size: 20px; font-weight: 700; letter-spacing: -0.025em;
     line-height: 1.2; color: var(--brand-ink); word-break: break-word;
   }
+  /* Flex-wrapped rather than a grid with a minimum column width: that minimum put
+     each figure on its own line on a phone, spending most of a screen before the
+     payment block had even started. These sit side by side and wrap only when the
+     values genuinely do not fit. */
   .recap-rows {
-    display: grid; gap: 11px 20px; margin: 0;
-    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 0;
   }
+  .recap-rows > div { max-width: 100%; }
   .recap-rows dt {
     /* Mono for the captions, the way the site sets its technical labels. */
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -259,7 +263,7 @@
     color: rgba(192,188,175,.7);
   }
   .recap-rows dd {
-    margin: 4px 0 0; font-size: 14.5px; font-weight: 600; color: var(--brand-ink);
+    margin: 2px 0 0; font-size: 14.5px; font-weight: 600; color: var(--brand-ink);
     word-break: break-word;
   }
   .recap-rows .figure { font-variant-numeric: tabular-nums; color: var(--lime); }
@@ -278,11 +282,15 @@
   /* Download demotes to an outline once there is a payment block above it, so the
      two do not compete: paying is what the reader came to do. */
   .recap-upi + .recap-btn {
+    margin-top: 12px; padding: 9px 18px; font-size: 14.5px;
     background: transparent; color: var(--brand-ink);
     box-shadow: inset 0 0 0 1px rgba(192,188,175,.28);
   }
+  /* ...and drops its filename line, which tells the reader nothing the button does
+     not, so the product's own panel below still shows on the first screen. */
+  .recap-upi + .recap-btn + .recap-hint { display: none; }
 
-  .recap-upi { margin-top: 18px; text-align: center; scroll-margin-top: 16px; }
+  .recap-upi { margin-top: 14px; text-align: center; scroll-margin-top: 16px; }
   .recap-upi-label {
     margin: 0 0 12px; font-size: 15px; font-weight: 650;
     letter-spacing: -0.01em; color: var(--brand-ink);
@@ -304,8 +312,58 @@
        phone that cannot scan anything at all. */
     user-select: all; word-break: break-all;
   }
+  /* Only for companies that opted in to the button. Solid lime: on the phone the
+     UPI app lives on, tapping is the quickest way to pay. */
+  .recap-btn--upi { margin: 0 0 10px; padding: 13px 18px; background: var(--lime); color: var(--brand-black); }
+  /* White tiles for the same reason the QR sits on one: these logos are drawn for a
+     light ground, and two of them are dark type that would vanish on the panel. One
+     row of three equal tiles, which still fits a 360px phone. */
+  .recap-upi-apps {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+    margin: 0 0 12px; padding: 0; list-style: none;
+  }
+  .upi-app {
+    display: flex; align-items: center; justify-content: center;
+    height: 40px; padding: 0 8px; border-radius: 14px;
+    background: #fff; color: #14120f; text-decoration: none;
+    font-size: 13px; font-weight: 650;
+  }
+  /* Max sizes, not fixed ones, so a wordmark too wide for a narrow tile scales down
+     with its aspect ratio intact instead of being squashed. */
+  .upi-app-logo { display: block; width: auto; height: auto; max-height: 22px; max-width: 100%; }
+  /* A round icon reads smaller than a wordmark of the same height. */
+  .upi-app--phonepe .upi-app-logo { max-height: 28px; }
+  @media (hover: hover) {
+    .upi-app { transition: transform .26s cubic-bezier(.16,1,.3,1); }
+    .upi-app:hover { transform: translateY(-2px); }
+  }
   .recap-upi-hint {
     margin: 10px 2px 0; font-size: 12px; color: rgba(192,188,175,.7);
+  }
+  /* The QR in tap mode: a compact row for paying from a second phone, since on the
+     phone the reader is holding, the button is the way in. The image carries its
+     own quiet zone, so the white tile around it can be thin. */
+  .recap-upi-scan {
+    display: flex; align-items: center; gap: 14px;
+    padding: 8px; border-radius: 16px; text-align: left;
+    background: rgba(252,251,248,.04); border: 1px solid rgba(252,251,248,.08);
+  }
+  .recap-upi-scan .recap-upi-code { flex: none; padding: 3px; border-radius: 10px; }
+  .recap-upi-scan .recap-upi-qr { width: 104px; height: 104px; }
+  .recap-upi-scan-copy { min-width: 0; }
+  .recap-upi-scan-title { margin: 0; font-size: 14px; font-weight: 650; color: var(--brand-ink); }
+  .recap-upi-scan .recap-upi-hint { margin: 2px 0 0; }
+  /* The column beside the code is narrow, so the address is allowed to break after
+     its "@" (the <wbr> in the markup) and only mid-word if one half still does not
+     fit. The base rule's break-all would split it at an arbitrary letter. */
+  .recap-upi-scan .recap-upi-vpa {
+    margin: 6px 0 0; font-size: 13.5px; font-weight: 600; color: var(--brand-ink);
+    word-break: normal; overflow-wrap: anywhere;
+  }
+  /* On a wide screen -- a desktop, where tapping does nothing and scanning is the
+     only way to pay -- the code grows back to a comfortable size. */
+  @media (min-width: 560px) {
+    .recap-upi-scan .recap-upi-qr { width: 150px; height: 150px; }
   }
   .recap-hint {
     margin: 10px 2px 0; font-size: 12px; text-align: center;
@@ -337,7 +395,7 @@
   }
 
   @media (max-width: 400px) {
-    .promo { padding: 24px 20px 20px; }
+    .promo { padding: 20px 18px 20px; }
     .promo h2 { font-size: 24px; }
     .price .amount { font-size: 34px; }
     .cta-primary, .cta-secondary { width: 100%; justify-content: center; }
@@ -387,18 +445,55 @@
         <div><dt>{{ amount_caption }}</dt><dd class="figure">{{ summary.amount_label }}</dd></div>
       </dl>
       {% if summary.upi_qr_data_uri %}
-      {# Scan only, deliberately -- there is no "pay" button beside this.
+      {# The QR is always offered; a tappable button above it is the company's call.
 
-         A tappable upi:// hand-off worked, but Paytm met it with "this payment may
-         fail as per UPI Risk Policy" and steered the payer to scan a QR instead.
-         That friction is the cost of an unsigned intent: signing needs an RSA key
-         registered with an acquiring bank through NPCI, which a self-hosted app
-         cannot get. Scanning carries no such warning, so scanning is the whole
-         offer.
+         For an ordinary personal UPI ID, Paytm meets an upi:// hand-off with "this
+         payment may fail as per UPI Risk Policy" and steers the payer to scan a QR
+         instead. That friction is the cost of an unsigned intent: signing needs an
+         RSA key registered with an acquiring bank through NPCI, which a self-hosted
+         app cannot get. A UPI ID registered as a merchant with its provider goes
+         through cleanly, and only the owner knows which kind they entered -- so the
+         button and its app shortcuts render only when the company has turned on
+         show_upi_pay_button. Scanning draws no warning either way, which is why the
+         QR stays regardless.
 
-         Server-rendered: the page ships no JavaScript, so the QR arrives as a data
-         URI, which is what `img-src 'self' data:` in the CSP is there to allow. #}
-      <div class="recap-upi" id="pay">
+         Server-rendered: the page ships no JavaScript, so the buttons are plain
+         links and the QR arrives as a data URI, which is what `img-src 'self' data:`
+         in the CSP is there to allow. #}
+      <div class="recap-upi{% if summary.upi_uri %} recap-upi--tap{% endif %}" id="pay">
+        {% if summary.upi_uri %}
+        {# Tap mode is laid out to stay short: the amount rides in the button rather
+           than a label above it, and the QR drops to a compact row. A tall payment
+           block pushed the rest of the page off the first screen. #}
+        <a class="recap-btn recap-btn--upi" href="{{ summary.upi_uri }}">Pay {{ summary.upi_amount_label }} by UPI</a>
+        {% if summary.upi_app_links %}
+        <ul class="recap-upi-apps" aria-label="Open in a UPI app">
+          {% for key, label, href in summary.upi_app_links %}
+          <li><a class="upi-app upi-app--{{ key }}" href="{{ href }}">
+            {%- if upi_app_logos and upi_app_logos[key] -%}
+            <img class="upi-app-logo" src="{{ upi_app_logos[key] }}" alt="{{ label }}">
+            {%- else -%}
+            {{ label }}
+            {%- endif -%}
+          </a></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        <div class="recap-upi-scan">
+          <span class="recap-upi-code">
+            <img class="recap-upi-qr" src="{{ summary.upi_qr_data_uri }}" width="104" height="104"
+                 alt="UPI QR code to pay {{ summary.upi_amount_label }}">
+          </span>
+          <div class="recap-upi-scan-copy">
+            <p class="recap-upi-scan-title">Paying from another phone?</p>
+            <p class="recap-upi-hint">Scan this code, or pay to this UPI ID:</p>
+            {# <wbr> adds a break opportunity without adding a character, so copying
+               the address still yields exactly what the payer has to type. #}
+            {% set vpa_local, _, vpa_handle = summary.upi_vpa.partition("@") %}
+            <p class="recap-upi-vpa">{{ vpa_local }}@<wbr>{{ vpa_handle }}</p>
+          </div>
+        </div>
+        {% else %}
         <p class="recap-upi-label">Pay {{ summary.upi_amount_label }} by UPI</p>
         <span class="recap-upi-code">
           <img class="recap-upi-qr" src="{{ summary.upi_qr_data_uri }}" width="200" height="200"
@@ -409,6 +504,7 @@
           Scan the code with any UPI app, or copy the UPI ID above and pay from your
           bank app.
         </p>
+        {% endif %}
       </div>
       {% endif %}
       <a class="recap-btn" href="{{ download_url }}">

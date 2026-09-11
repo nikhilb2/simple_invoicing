@@ -971,16 +971,73 @@ def test_share_page_offers_upi_for_an_unpaid_invoice(client, db_session):
     body = client.get(f"/s/{token}").text
     assert "data:image/png;base64," in body
     assert "acme@okhdfcbank" in body
-    # Scan only. A tappable upi:// hand-off drew a risk warning in Paytm, so the
-    # page must not grow one back by accident.
+    # Scan only unless the company opts in: for a personal UPI ID a tappable upi://
+    # hand-off draws a risk warning in Paytm, so it must never appear by default.
     assert "upi://" not in body
     assert "intent://" not in body
     # Priced at what is outstanding, which for an untouched invoice is the total.
     assert "118.00" in body
 
 
+def test_opted_in_company_gets_a_pay_by_upi_button_and_app_shortcuts(client, db_session):
+    company = _company(db_session, "Alpha Ltd")
+    company.show_upi_pay_button = True
+    db_session.commit()
+    _bank_account(db_session, company)
+    ledger = _ledger(db_session, company)
+    invoice = _invoice(db_session, company, ledger)
+    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
+
+    body = client.get(f"/s/{token}").text
+    # The amount rides in the button itself, priced at what is outstanding.
+    assert 'class="recap-btn recap-btn--upi"' in body
+    assert "118.00 by UPI</a>" in body
+    # Autoescaped, so the & between parameters arrives as &amp; inside the href,
+    # which the browser decodes back before following the link.
+    for prefix in ("upi://pay?", "gpay://upi/pay?", "phonepe://pay?", "paytmmp://pay?"):
+        assert f'href="{prefix}pa=acme@okhdfcbank&amp;' in body
+    # Priced at what is outstanding, and still not editable in the payer's app.
+    assert "am=118.00" in body
+    assert "mam=" not in body
+    # The button supplements the QR, never replaces it.
+    assert "data:image/png;base64," in body
+    # Each shortcut shows its app's logo, inlined because the CSP allows no
+    # third-party image, with the app's name kept as the alt text.
+    for key, label in (("gpay", "Google Pay"), ("phonepe", "PhonePe"), ("paytm", "Paytm")):
+        assert f'class="upi-app upi-app--{key}"' in body
+        assert f'alt="{label}"' in body
+    assert body.count('<img class="upi-app-logo" src="data:image/png;base64,') == 3
+
+
+def test_every_named_upi_app_has_a_logo():
+    # A missing file falls back to a bare text label without failing anything, so
+    # hold the app list and the logo files to each other here.
+    from src.api.routes.public_share import _UPI_APP_LOGOS
+    from src.services.upi import UPI_APP_SCHEMES
+
+    assert set(_UPI_APP_LOGOS) == {key for key, _, _ in UPI_APP_SCHEMES}
+
+
+def test_opting_in_without_a_upi_address_shows_no_button(client, db_session):
+    company = _company(db_session, "Alpha Ltd")
+    company.show_upi_pay_button = True
+    db_session.commit()
+    _bank_account(db_session, company, vpa=None)
+    ledger = _ledger(db_session, company)
+    invoice = _invoice(db_session, company, ledger)
+    token = _create_link(client, company, "invoice", invoice.id).json()["token"]
+
+    body = client.get(f"/s/{token}").text
+    assert "upi://" not in body
+    # The class name alone is in the stylesheet on every page; the element is not.
+    assert 'class="recap-btn recap-btn--upi"' not in body
+
+
 def test_no_upi_offer_once_the_invoice_is_settled(client, db_session):
     company = _company(db_session, "Alpha Ltd")
+    # Opted in, so the button is held to the same rule as the QR.
+    company.show_upi_pay_button = True
+    db_session.commit()
     _bank_account(db_session, company)
     ledger = _ledger(db_session, company)
     invoice = _invoice(db_session, company, ledger)
@@ -1008,6 +1065,7 @@ def test_no_upi_offer_once_the_invoice_is_settled(client, db_session):
     body = client.get(f"/s/{token}").text
     assert "data:image/png;base64," not in body
     assert "by UPI" not in body
+    assert "upi://" not in body
 
 
 def test_no_upi_offer_without_a_configured_address(client, db_session):

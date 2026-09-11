@@ -30,6 +30,8 @@ from src.core.config import settings
 # UPI settles INR and nothing else -- `cu` has exactly one legal value.
 UPI_CURRENCY = "INR"
 
+_UPI_PAY_PREFIX = "upi://pay?"
+
 # The P2P per-transaction ceiling, which is what a personal or P2PM virtual address
 # is subject to. The higher P2M limits (up to Rs 5 lakh under NPCI OC-185B) require
 # "Verified Merchant" status obtained through an acquiring bank, which the people
@@ -173,7 +175,33 @@ def build_upi_uri(
     # `pa` is appended raw. Every character UPI_VPA_RE admits is unreserved under RFC
     # 3986, so there is nothing to escape -- and an address that would need escaping
     # fails validation long before it reaches here.
-    return f"upi://pay?pa={vpa}&{query}"
+    return f"{_UPI_PAY_PREFIX}pa={vpa}&{query}"
+
+
+# The three largest UPI apps, each with the scheme it answers to. A bare upi:// link
+# leaves the choice of app to the OS -- on iOS that is whichever UPI app it picks,
+# with no chooser -- so naming apps lets the payer choose. Each carries exactly the
+# same query as the upi:// intent; only the scheme differs.
+UPI_APP_SCHEMES: tuple[tuple[str, str, str], ...] = (
+    ("gpay", "Google Pay", "gpay://upi/pay?"),
+    ("phonepe", "PhonePe", "phonepe://pay?"),
+    ("paytm", "Paytm", "paytmmp://pay?"),
+)
+
+
+def build_upi_app_links(uri: str) -> tuple[tuple[str, str, str], ...]:
+    """``(key, label, href)`` for each named app, carrying the same payment as `uri`.
+
+    `key` is stable and is what the share page looks the app's logo up by; `label` is
+    the name people read.
+
+    Anything that is not a ``upi://pay`` intent gets no links rather than a rewrite:
+    the query is copied verbatim, so it must already be one this module built.
+    """
+    if not uri.startswith(_UPI_PAY_PREFIX):
+        return ()
+    query = uri[len(_UPI_PAY_PREFIX):]
+    return tuple((key, label, f"{scheme}{query}") for key, label, scheme in UPI_APP_SCHEMES)
 
 
 @dataclass(frozen=True)

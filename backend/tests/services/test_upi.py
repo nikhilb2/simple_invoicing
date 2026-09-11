@@ -9,6 +9,7 @@ import pytest
 from src.core.config import settings
 from src.services.upi import (
     UPI_MAX_TXN_AMOUNT,
+    build_upi_app_links,
     build_upi_uri,
     format_amount,
     is_valid_vpa,
@@ -157,6 +158,29 @@ def test_non_ascii_payee_is_dropped_rather_than_bloating_the_payload():
 def test_empty_note_and_ref_are_omitted_not_sent_blank():
     got = params(build_upi_uri(vpa="acme@ybl", payee_name="X", amount=Decimal("1.00")))
     assert "tn" not in got and "tr" not in got
+
+
+def test_app_links_carry_the_same_payment_under_each_apps_scheme():
+    uri = build_upi_uri(
+        vpa="acme@okaxis", payee_name="Acme & Sons", amount=Decimal("15000.00"), ref="INV-26/0042"
+    )
+    built = build_upi_app_links(uri)
+    links = {label: href for _, label, href in built}
+
+    # The keys are what the share page finds each app's logo by.
+    assert [key for key, _, _ in built] == ["gpay", "phonepe", "paytm"]
+    assert list(links) == ["Google Pay", "PhonePe", "Paytm"]
+    assert links["Google Pay"].startswith("gpay://upi/pay?pa=acme@okaxis&")
+    assert links["PhonePe"].startswith("phonepe://pay?pa=acme@okaxis&")
+    assert links["Paytm"].startswith("paytmmp://pay?pa=acme@okaxis&")
+    # Only the scheme changes: payee, amount and reference are exactly what the
+    # upi:// intent carries, encoding included.
+    for href in links.values():
+        assert params(href) == params(uri)
+
+
+def test_app_links_refuse_anything_but_a_upi_pay_intent():
+    assert build_upi_app_links("https://evil.example/pay?pa=attacker@okaxis") == ()
 
 
 # ---------------------------------------------------------------------------
