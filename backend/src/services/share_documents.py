@@ -43,7 +43,12 @@ from src.models.share_link import ShareLink
 from src.services.invoice_payments import build_invoice_payment_summaries
 from src.services.pdf_templates import _build_multi_copy_invoice_html, _build_statement_html, _fmt_currency
 from src.services.serial_service import SerialManager
-from src.services.upi import UpiPaymentRequest, render_qr_png_data_uri, resolve_upi_payment
+from src.services.upi import (
+    UpiPaymentRequest,
+    build_upi_app_links,
+    render_qr_png_data_uri,
+    resolve_upi_payment,
+)
 
 RESOURCE_INVOICE = "invoice"
 RESOURCE_STATEMENT = "ledger_statement"
@@ -521,25 +526,34 @@ class ShareSummary:
     logo_mime_type: str | None
 
     # The pay-by-UPI offer, or nothing. Appended with defaults because every field
-    # above is passed positionally at some construction site, and all four are
+    # above is passed positionally at some construction site, and all of these are
     # optional in the real sense too: most documents have no offer to make.
-    #
     upi_qr_data_uri: str | None = None
     upi_vpa: str | None = None
     upi_amount_label: str | None = None
+    # The tappable hand-off beside the QR, filled in only when the company has opted
+    # in to the button. `upi_uri` is also the switch the template reads.
+    upi_uri: str | None = None
+    upi_app_links: tuple[tuple[str, str, str], ...] = ()
 
 
-def _upi_fields(payment: UpiPaymentRequest | None, currency: str) -> dict:
-    """The four ShareSummary fields a UPI offer fills in, or all-None."""
+def _upi_fields(payment: UpiPaymentRequest | None, currency: str, *, with_button: bool = False) -> dict:
+    """The ShareSummary fields a UPI offer fills in, or none of them."""
     if payment is None:
         return {}
-    # The intent string is encoded straight into the QR and never surfaces as a link:
-    # the page offers scanning only, so nothing needs to hold on to the URI itself.
-    return {
-        "upi_qr_data_uri": render_qr_png_data_uri(payment.uri()),
+    uri = payment.uri()
+    fields = {
+        "upi_qr_data_uri": render_qr_png_data_uri(uri),
         "upi_vpa": payment.vpa,
         "upi_amount_label": _fmt_currency(float(payment.amount), currency),
     }
+    # Opt-in per company. For an ordinary personal UPI ID an unsigned hand-off draws
+    # Paytm's "may fail as per UPI Risk Policy" warning; a UPI ID registered as a
+    # merchant goes through cleanly. Only the owner knows which kind they entered.
+    if with_button:
+        fields["upi_uri"] = uri
+        fields["upi_app_links"] = build_upi_app_links(uri)
+    return fields
 
 
 def _fmt_date(value: date | datetime | None) -> str:
@@ -564,6 +578,7 @@ def build_share_summary(db: Session, link: ShareLink) -> ShareSummary | None:
     logo_data = company.logo_data if company else None
     logo_mime_type = company.logo_mime_type if company else None
     currency = (company.currency_code if company and company.currency_code else "INR")
+    with_upi_button = bool(company and company.show_upi_pay_button)
 
     if link.resource_type == RESOURCE_INVOICE:
         invoice = get_invoice(db, link.company_id, link.resource_id)
@@ -577,6 +592,7 @@ def build_share_summary(db: Session, link: ShareLink) -> ShareSummary | None:
         upi = _upi_fields(
             invoice_upi_payment(db, invoice, invoice_bank_accounts(db, link.company_id)),
             invoice_currency,
+            with_button=with_upi_button,
         )
         return ShareSummary(
             title=f"{label} {number}",
@@ -621,6 +637,7 @@ def build_share_summary(db: Session, link: ShareLink) -> ShareSummary | None:
                 ref=f"L{ledger.id}",
             ),
             currency,
+            with_button=with_upi_button,
         )
         return ShareSummary(
             title="Account Statement",

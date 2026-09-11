@@ -102,10 +102,17 @@ That distinction is the whole design:
   is unaffected, because the recipient ends up scanning the UPI QR off the page.
 
 The pay-by-UPI offer itself lives on the share page, built by `backend/src/services/upi.py`.
-It is **scan-only**: the page shows a UPI QR and the payee address as text, and no tappable
-`upi://` button. A hand-off button did work on Android, but Paytm met it with "this payment may
-fail as per UPI Risk Policy" and steered the payer to scan a QR instead -- the cost of an
-unsigned intent, which cannot be fixed without an RSA key registered through an acquiring bank.
+By default it is **scan-only**: the page shows a UPI QR and the payee address as text, and no
+tappable `upi://` button. A hand-off button does work on Android, but for an ordinary personal UPI
+ID Paytm meets it with "this payment may fail as per UPI Risk Policy" and steers the payer to scan a
+QR instead -- the cost of an unsigned intent, which cannot be fixed without an RSA key registered
+through an acquiring bank.
+
+A company whose UPI ID is registered as a merchant with its UPI provider can turn on **Show "Pay by
+UPI" button on shared invoices** (`company_profiles.show_upi_pay_button`, off by default). The share
+page then adds a **Pay by UPI** button -- a plain `upi://pay` link -- and Google Pay, PhonePe and
+Paytm shortcuts carrying the same payment under each app's own scheme. The QR stays underneath,
+because scanning works for everyone.
 
 ### How it is wired
 

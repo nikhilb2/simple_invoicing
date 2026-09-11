@@ -119,6 +119,37 @@ test.describe('Company Profile', () => {
     }
   });
 
+  // Same shape as the pay-online QR test above, for the same reasons: round-trip
+  // both ways, then put back whatever was there.
+  test('pay by UPI button setting round-trips', async ({ authedPage: page }) => {
+    await page.goto('/settings/company');
+    await expect(page.locator('#company-name')).toBeVisible({ timeout: 5_000 });
+
+    const toggle = '#company-show-upi-pay-button';
+    const initial = await page.locator(toggle).isChecked();
+
+    await page.fill('#company-name', 'UPI Button Corp');
+    await page.fill('#company-address', '6 UPI Street, Pune');
+    await page.fill('#company-gst', uniqueGstin());
+
+    const saveAndReload = async (enabled: boolean) => {
+      await page.locator(toggle).setChecked(enabled);
+      await page.click('button:has-text("Save company details")');
+      await expectSuccess(page, 'Company profile saved');
+      await page.reload();
+      const reloaded = page.locator(toggle);
+      await expect(reloaded).toBeVisible({ timeout: 5_000 });
+      return reloaded;
+    };
+
+    await expect(await saveAndReload(true)).toBeChecked();
+    await expect(await saveAndReload(false)).not.toBeChecked();
+
+    if (initial) {
+      await saveAndReload(true);
+    }
+  });
+
   test('persists company data across page reloads', async ({
     authedPage: page,
   }) => {

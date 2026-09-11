@@ -57,6 +57,7 @@ def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> Compa
         ifsc_code=payload.ifsc_code.strip().upper() if payload.ifsc_code else None,
         show_sku_on_pdf=payload.show_sku_on_pdf,
         show_pay_qr_on_invoice=payload.show_pay_qr_on_invoice,
+        show_upi_pay_button=payload.show_upi_pay_button,
     )
     db.add(profile)
     db.commit()
@@ -126,6 +127,7 @@ def _company_to_out(company: CompanyProfile) -> CompanyProfileOut:
         additional_company_info=company.additional_company_info,
         show_sku_on_pdf=company.show_sku_on_pdf,
         show_pay_qr_on_invoice=company.show_pay_qr_on_invoice,
+        show_upi_pay_button=company.show_upi_pay_button,
         terms=[
             CompanyTermOut(
                 id=t.id,
@@ -264,6 +266,7 @@ def upsert_company_profile(
     profile.additional_company_info = payload.additional_company_info
     profile.show_sku_on_pdf = payload.show_sku_on_pdf
     profile.show_pay_qr_on_invoice = payload.show_pay_qr_on_invoice
+    profile.show_upi_pay_button = payload.show_upi_pay_button
     db.commit()
     db.refresh(profile)
 

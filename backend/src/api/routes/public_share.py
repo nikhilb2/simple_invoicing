@@ -50,6 +50,22 @@ _jinja_env = Environment(
     autoescape=select_autoescape(["html", "xml"]),
 )
 
+# Logos for the UPI app shortcuts, keyed by file stem to match the keys in
+# upi.UPI_APP_SCHEMES. Inlined as data URIs: the CSP admits no third-party image, and
+# a ~1 KB PNG inline costs less than a second request on a slow connection. Read once
+# at import; a missing file only drops that logo, and its shortcut falls back to text.
+_UPI_APP_LOGO_DIR = _TEMPLATES_DIR / "upi_apps"
+
+
+def _load_upi_app_logos() -> dict[str, str]:
+    return {
+        path.stem: "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+        for path in sorted(_UPI_APP_LOGO_DIR.glob("*.png"))
+    }
+
+
+_UPI_APP_LOGOS = _load_upi_app_logos()
+
 
 # ---------------------------------------------------------------------------
 # Response headers
@@ -492,6 +508,7 @@ def public_share_page(
             # forwarded in a chat. "direct" covers both a forward and a typed URL.
             "entry_source": "qr" if src == "qr" else "direct",
             "has_upi_offer": summary.upi_qr_data_uri is not None,
+            "has_upi_button": summary.upi_uri is not None,
         },
     )
 
@@ -508,6 +525,7 @@ def public_share_page(
         date_label_caption=date_caption,
         amount_caption=amount_caption,
         download_url=f"{base}/pdf?download=1",
+        upi_app_logos=_UPI_APP_LOGOS,
         # No document_url or logo_url: the page no longer embeds the document or
         # draws the sender's logo. Both routes still answer on their own — the
         # logo is what a chat app fetches for the og:image below.

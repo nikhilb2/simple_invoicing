@@ -201,6 +201,7 @@ export type CompanyProfile = {
   terms: CompanyTermOut[];
   show_sku_on_pdf: boolean;
   show_pay_qr_on_invoice: boolean;
+  show_upi_pay_button: boolean;
 };
 
 export type CompanyListItem = {
@@ -237,6 +238,7 @@ export type CompanyProfileUpdate = {
   additional_company_info?: string | null;
   show_sku_on_pdf?: boolean;
   show_pay_qr_on_invoice?: boolean;
+  show_upi_pay_button?: boolean;
 };
 
 export type CompanyAccountType = 'bank' | 'cash';

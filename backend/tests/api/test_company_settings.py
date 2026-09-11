@@ -517,3 +517,24 @@ def test_pay_qr_setting_defaults_off_and_round_trips(client, db_session):
         assert client.get("/api/company/", headers=headers).json()["show_pay_qr_on_invoice"] is True
     finally:
         _restore_user_override(old_override)
+
+
+def test_upi_pay_button_setting_defaults_off_and_round_trips(client, db_session):
+    # Off by default: the tappable hand-off only goes through cleanly for a UPI ID
+    # registered as a merchant, and nothing here can tell which kind was entered.
+    old_override = _with_persistent_user_override()
+    try:
+        company_id = _create_company(client, "UPI Button Co", "27AAAAA0000A1Z5")
+        headers = {"X-Company-Id": str(company_id)}
+
+        assert client.get("/api/company/", headers=headers).json()["show_upi_pay_button"] is False
+
+        payload = _company_payload("UPI Button Co", "27AAAAA0000A1Z5")
+        payload["show_upi_pay_button"] = True
+        updated = client.put("/api/company/", json=payload, headers=headers)
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["show_upi_pay_button"] is True
+
+        assert client.get("/api/company/", headers=headers).json()["show_upi_pay_button"] is True
+    finally:
+        _restore_user_override(old_override)
