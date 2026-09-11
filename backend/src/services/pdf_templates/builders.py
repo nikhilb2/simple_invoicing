@@ -266,18 +266,17 @@ def _build_pdf_tax_breakup_rows(invoice: Invoice, currency: str) -> str:
 def _build_pdf_pay_qr_card_html(share_url: str, qr_data_uri: str) -> str:
     """The "Pay online" card: a QR of this document's own share page.
 
-    Sits in the same flex row as the bank cards, so it wraps with them and needs no
-    layout of its own. 124px is roughly 33mm on A4 -- above the ~25-30mm floor a
-    printed QR needs to stay scannable, which 108px would sit right on top of.
+    124px is roughly 33mm on A4 -- above the ~25-30mm floor a printed QR needs to
+    stay scannable, which 108px would sit right on top of.
     """
     if not share_url or not qr_data_uri:
         return ""
 
-    # Carries both class names on purpose. `invoice-sheet__bank-card` makes it sit in
-    # the invoice's flex row of bank cards; `pay-qr` is the shared hook that the
-    # statement stylesheet -- which knows nothing about bank cards -- styles instead.
+    # `pay-qr` is the shared hook: the invoice stylesheet docks it into the payment
+    # panel beside the bank accounts, and the statement stylesheet -- which knows
+    # nothing about bank accounts -- styles it on its own.
     return (
-        '<div class="invoice-sheet__bank-card pay-qr">'
+        '<div class="pay-qr">'
         '<p class="pay-qr__title">Pay online</p>'
         f'<img class="pay-qr__img" src="{_e(qr_data_uri)}" alt="Scan to pay online" />'
         '<p class="pay-qr__hint">Scan to view this document and pay by UPI</p>'
@@ -293,22 +292,26 @@ def _build_pdf_payment_details_html(
     if not invoice_bank_accounts and not pay_qr_html:
         return '<p class="muted-text">No bank account marked to display on invoice.</p>'
 
-    blocks: list[str] = []
-    for account in invoice_bank_accounts:
-        blocks.append(
-            (
-                '<div class="invoice-sheet__bank-card">'
-                f"<p>Bank: {_e(account.bank_name) or 'N/A'}</p>"
-                f"<p>Branch: {_e(account.branch_name) or 'N/A'}</p>"
-                f"<p>Account Name: {_e(account.account_name) or 'N/A'}</p>"
-                f"<p>A/C No: {_e(account.account_number) or 'N/A'}</p>"
-                f"<p>IFSC: {_e(account.ifsc_code) or 'N/A'}</p>"
-                "</div>"
-            )
-        )
+    accounts = "".join(
+        '<div class="invoice-sheet__bank-account">'
+        '<table class="invoice-sheet__bank-rows">'
+        f"<tr><th>Bank</th><td>{_e(account.bank_name) or 'N/A'}</td></tr>"
+        f"<tr><th>Branch</th><td>{_e(account.branch_name) or 'N/A'}</td></tr>"
+        f"<tr><th>Account name</th><td>{_e(account.account_name) or 'N/A'}</td></tr>"
+        f"<tr><th>A/C no.</th><td class=\"invoice-sheet__bank-key\">{_e(account.account_number) or 'N/A'}</td></tr>"
+        f"<tr><th>IFSC</th><td class=\"invoice-sheet__bank-key\">{_e(account.ifsc_code) or 'N/A'}</td></tr>"
+        "</table>"
+        "</div>"
+        for account in invoice_bank_accounts
+    )
+    if not accounts:
+        return f'<div class="invoice-sheet__pay-panel invoice-sheet__pay-panel--qr-only">{pay_qr_html}</div>'
 
-    # The QR goes last so the account details a customer might type by hand stay
-    # first on the page; it is a card in the same row, so it wraps with them.
-    blocks.append(pay_qr_html)
-
-    return f'<div class="invoice-sheet__bank-cards">{"".join(blocks)}</div>'
+    # The QR docks on the right so the account details a customer might type by hand
+    # are read first; the accounts stack beside it, filling the height the QR sets.
+    return (
+        '<div class="invoice-sheet__pay-panel">'
+        f'<div class="invoice-sheet__pay-accounts">{accounts}</div>'
+        f"{pay_qr_html}"
+        "</div>"
+    )

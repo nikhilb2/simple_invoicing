@@ -359,50 +359,93 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
   .invoice-sheet__table tbody tr:last-child td {{
     border-bottom: 2px solid #d1d5db;
   }}
+  .invoice-sheet__table tbody tr {{
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }}
+  /* Payment details sit beside the totals instead of in a band of their own below
+     them: that band left the footer's left half blank and was what pushed a
+     7-line invoice onto a second page. The footer also moves as one piece, so a
+     page break can never strand the "Payment details" heading from its content. */
   .invoice-sheet__footer {{
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 24px;
     margin-top: 8px;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }}
-  .invoice-sheet__bank-section {{
-    margin-top: 14px;
-    border-top: 1px solid #e5e7eb;
-    padding-top: 10px;
+  .invoice-sheet__payment {{
+    flex: 1 1 auto;
+    min-width: 0;
   }}
-  .invoice-sheet__bank-section p {{
-    font-size: 9px;
-    color: #4b5563;
-    margin-bottom: 1px;
+  .invoice-sheet__payment .eyebrow {{
+    margin-bottom: 5px;
   }}
-  .invoice-sheet__bank-cards {{
+  /* Bank accounts and the QR share one panel, so they read as one block of
+     "how to pay" rather than two boxes of unequal height with a gap between. */
+  .invoice-sheet__pay-panel {{
     display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
     align-items: stretch;
-  }}
-  .invoice-sheet__bank-card {{
-    flex: 1 1 240px;
-    max-width: 320px;
     border: 1px solid #e5e7eb;
-    border-radius: 10px;
+    border-radius: 8px;
     background: #f9fafb;
-    padding: 10px 12px;
   }}
-  .invoice-sheet__bank-card p {{
-    white-space: normal;
+  .invoice-sheet__pay-panel--qr-only {{
+    max-width: 150px;
+  }}
+  .invoice-sheet__pay-accounts {{
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 9px 12px;
+  }}
+  .invoice-sheet__bank-account + .invoice-sheet__bank-account {{
+    margin-top: 7px;
+    padding-top: 7px;
+    border-top: 1px dashed #d1d5db;
+  }}
+  .invoice-sheet__bank-rows {{
+    width: 100%;
+    border-collapse: collapse;
+  }}
+  .invoice-sheet__bank-rows th {{
+    width: 64px;
+    padding: 1px 8px 1px 0;
+    text-align: left;
+    vertical-align: top;
+    font-size: 8px;
+    font-weight: 500;
+    color: #6b7280;
+  }}
+  .invoice-sheet__bank-rows td {{
+    padding: 1px 0;
+    font-size: 9px;
+    color: #1f2937;
     overflow-wrap: anywhere;
-    word-break: break-word;
+  }}
+  /* The two values a payer copies by hand. */
+  .invoice-sheet__bank-key {{
+    font-weight: 700;
+    letter-spacing: 0.03em;
   }}
   .pay-qr {{
-    flex: 0 0 150px;
-    max-width: 170px;
+    flex: 0 0 148px;
+    padding: 8px 10px 9px;
     text-align: center;
+    background: #ffffff;
+    border-left: 1px solid #e5e7eb;
+    border-radius: 0 8px 8px 0;
+  }}
+  .invoice-sheet__pay-panel--qr-only .pay-qr {{
+    border-left: 0;
+    border-radius: 8px;
   }}
   .pay-qr__title {{
-    font-size: 10px !important;
+    font-size: 10px;
     font-weight: 700;
-    color: #1f2937 !important;
-    margin-bottom: 4px !important;
+    color: #1f2937;
+    margin-bottom: 4px;
   }}
   .pay-qr__img {{
     /* ~33mm on A4. A printed QR needs roughly 25-30mm to stay scannable, and 108px
@@ -414,14 +457,13 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     margin: 0 auto 4px;
     image-rendering: pixelated;
   }}
-  .invoice-sheet__bank-card-title {{
-    font-size: 10px !important;
-    font-weight: 700;
-    color: #1f2937 !important;
-    margin-bottom: 4px !important;
+  .pay-qr__hint {{
+    font-size: 8px;
+    color: #6b7280;
+    line-height: 1.35;
   }}
   .invoice-sheet__totals {{
-    min-width: 240px;
+    flex: 0 0 230px;
     text-align: right;
   }}
   .invoice-sheet__totals p {{
@@ -484,6 +526,8 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     border-top: 1px solid #e5e7eb;
     margin-top: 16px;
     padding-top: 10px;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }}
   .invoice-sheet__terms-list {{
     margin: 4px 0 0 0;
@@ -545,6 +589,10 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
   </section>
 
   <section class="invoice-sheet__footer">
+    <div class="invoice-sheet__payment">
+      <p class="eyebrow">Payment details</p>
+      {payment_details_html}
+    </div>
     <div class="invoice-sheet__totals">
       <p class="eyebrow">Tax breakup</p>
       <p>Taxable: {_fmt_currency(float(invoice.taxable_amount or 0), currency)}</p>
@@ -557,11 +605,6 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
       <p class="invoice-amount-words">{_amount_in_words_indian(float(invoice.total_amount), currency)}</p>
       <p class="muted-text">Authorized by {_e(invoice.company_name) or 'Billing company'}</p>
     </div>
-  </section>
-
-  <section class="invoice-sheet__bank-section">
-    <p class="eyebrow">Payment details</p>
-    {payment_details_html}
   </section>
 
   {terms_html}
