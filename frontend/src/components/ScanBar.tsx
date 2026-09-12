@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ClipboardList, LoaderCircle, ScanLine, Volume2, VolumeX } from 'lucide-react';
 import { getApiErrorMessage } from '../api/client';
 import { scanCode } from '../features/serials/api';
+import { freshCadence, noteScanInput, type ScanCadence } from '../features/serials/scanCadence';
 import type { Serial } from '../features/serials/types';
 import type { Product } from '../types/api';
 import { readInvoiceComposerPrefs, updateInvoiceComposerPrefs } from '../utils/invoiceComposerPrefs.ts';
@@ -87,6 +88,7 @@ export default function ScanBar({ mode, onResolve, target = null, inputRef, disa
   const busyRef = useRef(false);
   const queueRef = useRef<string[]>([]);
   const captureRef = useRef('');
+  const cadenceRef = useRef<ScanCadence>(freshCadence(0));
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const entryIdRef = useRef(0);
@@ -249,10 +251,15 @@ export default function ScanBar({ mode, onResolve, target = null, inputRef, disa
 
   function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
     const value = event.target.value;
+    cadenceRef.current = noteScanInput(cadenceRef.current, code.length, value.length, Date.now());
     setCode(value);
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    /* Fallback for scanners configured with no Enter suffix. Withheld once the
+       characters are arriving slowly enough to have been typed: the pause
+       between a person's keystrokes is not the end of the code, and submitting
+       on one looks up a prefix and reports the serial missing. */
+    if (!cadenceRef.current.machineSpeed) return;
     if (value.trim().length < MIN_AUTO_SUBMIT_LENGTH) return;
-    // Fallback for scanners configured with no Enter suffix.
     silenceTimerRef.current = setTimeout(() => submit(value), SILENCE_MS);
   }
 
@@ -289,8 +296,11 @@ export default function ScanBar({ mode, onResolve, target = null, inputRef, disa
       }
       if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
         event.preventDefault();
+        const previousLength = captureRef.current.length;
         captureRef.current += event.key;
+        cadenceRef.current = noteScanInput(cadenceRef.current, previousLength, captureRef.current.length, Date.now());
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        if (!cadenceRef.current.machineSpeed) return;
         if (captureRef.current.trim().length >= MIN_AUTO_SUBMIT_LENGTH) {
           silenceTimerRef.current = setTimeout(flushCapture, SILENCE_MS);
         }
