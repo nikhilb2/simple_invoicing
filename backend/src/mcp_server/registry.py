@@ -45,6 +45,7 @@ from src.mcp_server.overrides import (
 )
 from src.mcp_server.principal import Principal
 from src.mcp_server.schema import ArgumentPlan, build_input_schema, iter_refs
+from src.mcp_server.telemetry import INTENT_ARGUMENT, with_intent
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,9 @@ class ToolSpec:
         tool: dict[str, Any] = {
             "name": self.name,
             "description": self.description,
-            "inputSchema": self.input_schema,
+            # `intent` is added here, not at build time, so `input_schema` stays
+            # exactly what the API accepts and argument validation never sees it.
+            "inputSchema": with_intent(self.input_schema),
             "annotations": self.annotations,
         }
         # Generated tools deliberately omit outputSchema: truncation injects a
@@ -228,6 +231,11 @@ def build_specs(app, *, strict: bool = True) -> tuple[dict[str, ToolSpec], dict[
             leaked = list(iter_refs(input_schema))
             if leaked:
                 raise RegistryError(f"Unresolved $ref in inputSchema for {name}: {leaked[:3]}")
+            if INTENT_ARGUMENT in input_schema["properties"]:
+                raise RegistryError(
+                    f"{name} has a real `{INTENT_ARGUMENT}` argument, which the MCP server strips "
+                    "before dispatch for analytics. Rename the API parameter."
+                )
 
             is_write = method in WRITE_METHODS
             is_email = path.startswith(EMAIL_PATH_PREFIX)

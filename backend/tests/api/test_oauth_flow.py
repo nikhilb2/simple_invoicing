@@ -281,6 +281,8 @@ def test_full_authorization_code_flow(client, db_session, admin_user):
     # The grant is bound to exactly one company, stamped at consent time.
     assert principal.company_id == company.id
     assert principal.client_id == client_id
+    # What PostHog's mcp_tool_called reports as the connected MCP client.
+    assert principal.client_name == "Claude"
     assert "invoicing:read" in principal.scopes
 
 

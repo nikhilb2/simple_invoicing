@@ -35,6 +35,8 @@ class Principal:
     company_id: int | None
     scopes: frozenset[str]
     client_id: str | None = None
+    # The name the MCP client registered under ("Claude", "Cursor", ...).
+    client_name: str | None = None
 
     def has_scope(self, scope: str) -> bool:
         return scope in self.scopes
@@ -133,6 +135,7 @@ async def resolve_principal(request) -> Principal:
             company_id=oauth_principal.company_id,
             scopes=frozenset(oauth_principal.scopes or ()),
             client_id=getattr(oauth_principal, "client_id", None),
+            client_name=getattr(oauth_principal, "client_name", None),
         )
 
     return principal

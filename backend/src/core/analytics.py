@@ -23,8 +23,9 @@ own exceptions and logs at debug level.
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 from src.core.config import settings
 
@@ -51,6 +52,13 @@ _client_kind: ContextVar[str] = ContextVar("posthog_client_kind", default="api")
 # address PostHog would otherwise see is this pod's, and a datacentre in
 # Frankfurt is not where the invoice was written.
 _client_ip: ContextVar[Optional[str]] = ContextVar("posthog_client_ip", default=None)
+
+# The MCP tool in flight, and the reason the model gave for calling it. Set by
+# the MCP server around one tool call. The dispatcher re-enters this app in the
+# same task, so the route handler that ends up capturing `invoice_created` sees
+# them too -- which is what lets an MCP-made invoice name the tool that made it.
+_mcp_tool: ContextVar[Optional[str]] = ContextVar("posthog_mcp_tool", default=None)
+_mcp_intent: ContextVar[Optional[str]] = ContextVar("posthog_mcp_intent", default=None)
 
 
 def _get_client():
@@ -101,6 +109,26 @@ def bind_request(
     _session_id.set(session_id or None)
     _client_kind.set(client_kind)
     _client_ip.set(client_ip or None)
+
+
+@contextmanager
+def mcp_tool_context(tool: str, intent: Optional[str] = None) -> Iterator[None]:
+    """Attributes every event captured inside the block to one MCP tool call.
+
+    Reset on the way out, so the next message in a JSON-RPC batch does not
+    inherit the previous call's tool.
+    """
+    tokens = (
+        _client_kind.set("mcp"),
+        _mcp_tool.set(tool),
+        _mcp_intent.set(intent or None),
+    )
+    try:
+        yield
+    finally:
+        _mcp_intent.reset(tokens[2])
+        _mcp_tool.reset(tokens[1])
+        _client_kind.reset(tokens[0])
 
 
 def client_ip_from_request(request) -> Optional[str]:
@@ -179,6 +207,13 @@ def track(
     payload = dict(properties or {})
 
     payload.setdefault("client", _client_kind.get())
+
+    mcp_tool = _mcp_tool.get()
+    if mcp_tool:
+        payload.setdefault("mcp_tool", mcp_tool)
+        intent = _mcp_intent.get()
+        if intent:
+            payload.setdefault("mcp_intent", intent)
 
     session_id = _session_id.get()
     if session_id:

@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from src.core.config import settings
-from src.models.oauth import OAuthToken
+from src.models.oauth import OAuthClient, OAuthToken
 from src.models.user import User
 
 ACCESS_TOKEN_PREFIX = "sio_at_"
@@ -63,6 +63,7 @@ class OAuthPrincipal:
     company_id: int | None
     scopes: frozenset[str]
     client_id: str
+    client_name: str | None = None
 
 
 def now_utc() -> datetime:
@@ -223,6 +224,11 @@ def resolve_bearer(token: str, db: Session) -> OAuthPrincipal | None:
         company_id=row.company_id,
         scopes=frozenset(parse_scope(row.scope)),
         client_id=row.client_id,
+        client_name=(
+            db.query(OAuthClient.client_name)
+            .filter(OAuthClient.client_id == row.client_id)
+            .scalar()
+        ),
     )
 
     row.last_used_at = now_utc()

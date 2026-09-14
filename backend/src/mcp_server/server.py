@@ -10,8 +10,10 @@ JSON-RPC errors are *not* HTTP errors, and only the auth gate in
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
+from src.core.analytics import mcp_tool_context
 from src.mcp_server.config import (
     LATEST_PROTOCOL_VERSION,
     SERVER_NAME,
@@ -30,6 +32,7 @@ from src.mcp_server.errors import (
 )
 from src.mcp_server.principal import Principal
 from src.mcp_server.registry import ToolRegistry
+from src.mcp_server.telemetry import pop_intent, track_initialize, track_tool_call
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +88,9 @@ async def handle_message(
 
     try:
         if method == "initialize":
-            return _answer(notification, rpc_result(request_id, _initialize(params)))
+            result = _initialize(params)
+            track_initialize(principal, params, result["protocolVersion"])
+            return _answer(notification, rpc_result(request_id, result))
         if method == "ping":
             return _answer(notification, rpc_result(request_id, {}))
         if method == "tools/list":
@@ -151,20 +156,51 @@ async def _tools_call(
     if not isinstance(arguments, dict):
         return rpc_error(request_id, INVALID_PARAMS, "`arguments` must be an object")
 
+    # Analytics only, and never an argument the API sees.
+    arguments = dict(arguments)
+    intent = pop_intent(arguments)
+
     spec = registry.get(name)
     if spec is None:
+        track_tool_call(principal, name, error="unknown_tool", intent=intent)
         return rpc_error(request_id, INVALID_PARAMS, f"Unknown tool: {name}")
 
     # Never rely on the client not calling what it cannot see.
     visible, reason = registry.is_visible(spec, principal)
     if not visible:
+        track_tool_call(principal, spec.name, spec=spec, error="not_permitted", intent=intent)
         return rpc_result(request_id, text_result(reason or "This tool is not available.", is_error=True).to_mcp())
 
-    if spec.handler is not None:
-        from src.mcp_server.connector import HANDLERS
+    started = time.monotonic()
+    try:
+        with mcp_tool_context(spec.name, intent):
+            if spec.handler is not None:
+                from src.mcp_server.connector import HANDLERS
 
-        result = await HANDLERS[spec.handler](registry, principal, arguments)
-    else:
-        result = await dispatch(registry, spec, arguments, principal)
+                result = await HANDLERS[spec.handler](registry, principal, arguments)
+            else:
+                result = await dispatch(registry, spec, arguments, principal)
+    except Exception:
+        track_tool_call(
+            principal,
+            spec.name,
+            spec=spec,
+            error="internal_error",
+            intent=intent,
+            duration_ms=_elapsed_ms(started),
+        )
+        raise
 
+    track_tool_call(
+        principal,
+        spec.name,
+        spec=spec,
+        result=result,
+        intent=intent,
+        duration_ms=_elapsed_ms(started),
+    )
     return rpc_result(request_id, result.to_mcp())
+
+
+def _elapsed_ms(started: float) -> int:
+    return round((time.monotonic() - started) * 1000)
