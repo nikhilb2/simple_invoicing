@@ -19,6 +19,12 @@ function respond(config: InternalAxiosRequestConfig, status: number): AxiosRespo
   return { data: {}, status, statusText: String(status), headers: {}, config };
 }
 
+/** What axios rejects the refresh call with when the server answers `status`. */
+function refreshFailure(status: number) {
+  const config = { headers: {} } as InternalAxiosRequestConfig;
+  return new AxiosError(`Request failed with status code ${status}`, 'ERR_BAD_RESPONSE', config, null, respond(config, status));
+}
+
 beforeEach(() => {
   store = { token: 'old-access', refresh_token: 'old-refresh' };
   vi.stubGlobal('localStorage', {
@@ -56,14 +62,32 @@ describe('refresh interceptor and the native bridge', () => {
     ]);
   });
 
-  it('posts logout once when the refresh fails, however many requests were waiting', async () => {
-    vi.spyOn(axios, 'post').mockRejectedValue(new Error('refresh rejected'));
+  it.each([401, 403])(
+    'posts logout once when the refresh token is rejected with %i, however many requests were waiting',
+    async (status) => {
+      vi.spyOn(axios, 'post').mockRejectedValue(refreshFailure(status));
 
-    const results = await Promise.allSettled([api.get('/a'), api.get('/b')]);
+      const results = await Promise.allSettled([api.get('/a'), api.get('/b')]);
 
-    expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected']);
+      expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected']);
+      expect(store).toEqual({});
+      expect(sentMessages()).toEqual([{ type: 'logout' }]);
+    },
+  );
+
+  it.each([
+    ['a network error', new AxiosError('Network Error', AxiosError.ERR_NETWORK)],
+    ['a timeout', new AxiosError('timeout exceeded', AxiosError.ECONNABORTED)],
+    ['a 500', refreshFailure(500)],
+    ['a 503', refreshFailure(503)],
+  ])('clears the tokens but does not post logout when the refresh fails with %s', async (_, failure) => {
+    vi.spyOn(axios, 'post').mockRejectedValue(failure);
+
+    await expect(api.get('/anything')).rejects.toBeInstanceOf(AxiosError);
+
+    // Web behaviour is unchanged; the app keeps its pair and re-injects it.
     expect(store).toEqual({});
-    expect(sentMessages()).toEqual([{ type: 'logout' }]);
+    expect(postMessage).not.toHaveBeenCalled();
   });
 
   it('does not post again for a 401 once the session is already gone', async () => {

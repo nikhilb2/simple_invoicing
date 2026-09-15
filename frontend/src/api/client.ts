@@ -78,15 +78,21 @@ api.interceptors.response.use(
           postToNative({ type: 'tokens', accessToken: nextAccessToken, refreshToken: nextRefreshToken });
           return nextAccessToken;
         })
-        .catch(() => {
+        .catch((refreshError) => {
           localStorage.removeItem('token');
           localStorage.removeItem('refresh_token');
-          // With both tokens gone the session is over, so the mobile app goes
-          // back to its native login. Concurrent 401s share this one refresh,
-          // so this posts once. The no-refresh-token branch above deliberately
-          // does not post: it is only reached once a session has already ended
-          // (here, or through logout), and would repeat for every later 401.
-          postToNative({ type: 'logout' });
+          // The mobile app is sent back to its native login only when the
+          // server actually rejected the refresh token. A network error, timeout
+          // or 5xx says nothing about the token, and the app re-injects its
+          // stored pair on the next launch, which is what should happen then.
+          // Concurrent 401s share this one refresh, so this posts once. The
+          // no-refresh-token branch above deliberately does not post: it is only
+          // reached once a session has already ended, and would repeat for
+          // every later 401.
+          const refreshStatus = axios.isAxiosError(refreshError) ? refreshError.response?.status : undefined;
+          if (refreshStatus === 401 || refreshStatus === 403) {
+            postToNative({ type: 'logout' });
+          }
           return null;
         })
         .finally(() => {
