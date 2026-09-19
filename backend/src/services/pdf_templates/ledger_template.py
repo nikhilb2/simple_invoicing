@@ -292,7 +292,11 @@ def _build_statement_html(
         entry_date = entry.date.strftime("%d %b %Y") if entry.date else "N/A"
         dr = _fmt_inr(entry.debit, currency) if entry.debit > 0 else ""
         cr = _fmt_inr(entry.credit, currency) if entry.credit > 0 else ""
-        ref_number = _e(entry.reference_number) if entry.reference_number else f"#{entry.entry_id}"
+        ref_number = (
+            _e(entry.reference_number)
+            if entry.reference_number
+            else f"{_e(entry.voucher_type)} #{entry.entry_id}".strip()
+        )
         note = f'<span class=\"entry-note\">{_e(entry.notes)}</span>' if entry.notes else ""
         ref = f' &middot; Ref: {_e(entry.payment_reference)}' if entry.payment_reference else ""
         entry_rows += f"""
@@ -309,9 +313,13 @@ def _build_statement_html(
     company_gst = f"GST: {_e(company.gst)}" if company and company.gst else ""
     company_phone = f"Phone: {_e(company.phone_number)}" if company and company.phone_number else ""
     company_details = " &middot; ".join(p for p in [company_gst, company_phone] if p)
+    company_email = f"Email: {_e(company.email)}" if company and company.email else ""
+    company_website = f"Web: {_e(company.website)}" if company and company.website else ""
+    company_contact = " &middot; ".join(p for p in [company_email, company_website] if p)
     ledger_gst = f"GST: {_e(ledger.gst)}" if ledger.gst else ""
     ledger_phone = f"Phone: {_e(ledger.phone_number)}" if ledger.phone_number else ""
-    ledger_details = " &middot; ".join(p for p in [ledger_gst, ledger_phone] if p)
+    ledger_email = _e(ledger.email) if ledger.email else ""
+    ledger_details = " &middot; ".join(p for p in [ledger_gst, ledger_phone, ledger_email] if p)
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -507,6 +515,7 @@ def _build_statement_html(
       <h3>{company_name}</h3>
       <p>{company_address}</p>
       <p>{company_details}</p>
+      <p>{company_contact}</p>
     </div>
     <div class=\"sheet__meta\">
       <span class=\"badge\">Ledger Statement</span>

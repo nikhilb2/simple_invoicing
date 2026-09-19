@@ -633,7 +633,7 @@ export default function LedgerViewPage() {
             {ledger.email ? ` · ${ledger.email}` : ''}
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div className="page-hero__actions">
           <button
             type="button"
             className="button button--ghost"
@@ -894,11 +894,20 @@ export default function LedgerViewPage() {
           <div className="summary-box">
             <p className="eyebrow">Tally-style summary</p>
             <p className="summary-box__value">{statement ? formatCurrency(statement.closing_balance, activeCurrencyCode) : formatCurrency(0, activeCurrencyCode)}</p>
-            <p className="muted-text">
-              Opening {statement ? formatCurrency(statement.opening_balance, activeCurrencyCode) : formatCurrency(0, activeCurrencyCode)} · Debit{' '}
-              {statement ? formatCurrency(statement.period_debit, activeCurrencyCode) : formatCurrency(0, activeCurrencyCode)} · Credit{' '}
-              {statement ? formatCurrency(statement.period_credit, activeCurrencyCode) : formatCurrency(0, activeCurrencyCode)}
-            </p>
+            <dl className="muted-text summary-box__breakdown">
+              <div className="summary-box__stat">
+                <dt>Opening</dt>
+                <dd>{formatCurrency(statement ? statement.opening_balance : 0, activeCurrencyCode)}</dd>
+              </div>
+              <div className="summary-box__stat">
+                <dt>Debit</dt>
+                <dd>{formatCurrency(statement ? statement.period_debit : 0, activeCurrencyCode)}</dd>
+              </div>
+              <div className="summary-box__stat">
+                <dt>Credit</dt>
+                <dd>{formatCurrency(statement ? statement.period_credit : 0, activeCurrencyCode)}</dd>
+              </div>
+            </dl>
           </div>
 
           <div className="invoice-list">
@@ -998,7 +1007,7 @@ export default function LedgerViewPage() {
                         Edit Ledger
                       </button>
                     ) : (
-                      <div style={{ display: 'flex', gap: '4px' }}>
+                      <div className="invoice-row__actions-group">
                         <button
                           type="button"
                           className="button button--ghost button--small"

@@ -2339,6 +2339,10 @@ a.invoice-row {
   color: #e9f0ff;
   font-size: 0.78rem;
   font-weight: 800;
+  /* The strip sits inside .invoice-row__meta, which breaks anywhere so that
+     emails and references stay in their track. A currency figure must not:
+     let the title beside it take the narrowness instead. */
+  white-space: nowrap;
 }
 
 .receipt-allocation-strip__chips {
@@ -2408,6 +2412,13 @@ a.invoice-row {
   gap: 8px;
   justify-content: flex-end;
   flex-wrap: wrap;
+}
+
+/* Buttons that act on the same voucher — view its receipt, edit it, cancel it —
+   and so sit tighter to each other than to anything else in the actions strip. */
+.invoice-row__actions-group {
+  display: flex;
+  gap: 4px;
 }
 
 .invoice-row__aside {
@@ -2490,6 +2501,30 @@ a.invoice-row {
   /* Currency strings have no spaces, so at 2rem in a narrow grid track they
      overflow the box instead of wrapping. */
   overflow-wrap: anywhere;
+}
+
+/* The opening/debit/credit figures behind the headline balance. One sentence
+   with middots while there is room for one, because that is how the figures are
+   spoken; the middots are drawn by the list so the labels stay real markup. */
+.summary-box__breakdown {
+  margin: 12px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.summary-box__stat {
+  display: flex;
+  gap: 6px;
+}
+
+.summary-box__stat + .summary-box__stat::before {
+  content: '·';
+}
+
+.summary-box__stat dt,
+.summary-box__stat dd {
+  margin: 0;
 }
 
 .login-page {
@@ -3764,6 +3799,22 @@ a.invoice-row {
     grid-template-columns: 1fr;
   }
 
+  /* The selector has to repeat the `:has()` from the wide layout, ugly as that
+     is. A media query adds no specificity, so a plain `.invoice-row` here loses
+     to `.invoice-row:has(> .invoice-row__actions)` and the row keeps its three
+     desktop tracks on a phone — actions off the screen edge, meta text crushed
+     onto the price. Simplify this back to one selector and that returns. */
+  .invoice-row:has(> .invoice-row__actions) {
+    grid-template-columns: 1fr;
+  }
+
+  /* Collapsed to one column, the price and the actions are full-width rows of
+     their own rather than a right-hand column, so they read left-aligned with
+     the meta above them. */
+  .invoice-row > .invoice-row__price {
+    text-align: left;
+  }
+
   .opening-balance-group {
     grid-template-columns: 1fr;
   }
@@ -3806,6 +3857,45 @@ a.invoice-row {
 
   .invoice-row__actions .button {
     flex: 1 1 auto;
+  }
+
+  /* The grouped buttons are nested a level deeper, so the rule above stretches
+     them inside the group but leaves the group itself content-sized. */
+  .invoice-row__actions-group {
+    flex: 1 1 auto;
+  }
+
+  /* A whole chip — invoice number, status pill and amount — is wider than a
+     phone-width row, and the strip scrolls on its own axis rather than letting
+     it spill, so the amount is simply cut off. Let the chip take two lines. */
+  .receipt-allocation-chip {
+    flex-wrap: wrap;
+    white-space: normal;
+    border-radius: 14px;
+  }
+
+  /* One sentence's worth of figures no longer fits on a phone: run as prose it
+     wraps mid-amount and the last label falls off the end. Stacked as rows, the
+     label stays with its figure and every one of them is readable. */
+  .summary-box__breakdown {
+    display: grid;
+    gap: 6px;
+  }
+
+  .summary-box__stat {
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  /* Stacked, the figures form a column of their own; the extra weight is what
+     tells that column apart from the labels facing it. */
+  .summary-box__stat dd {
+    color: #e6edfa;
+    font-weight: 600;
+  }
+
+  .summary-box__stat + .summary-box__stat::before {
+    content: none;
   }
 
   .button-row {
@@ -5149,8 +5239,8 @@ a.invoice-row {
 /* ── Ledger master (/ledgers) ─────────────────────────────────────── */
 
 /* The hero's trailing cluster — the count chip and the create button. It was
-   an inline `display:flex` on the element; named here so both hero rows in the
-   ledger routes wrap the same way on a narrow page. */
+   an inline `display:flex` on the element; named here so every hero row in the
+   ledger routes wraps the same way on a narrow page. */
 .page-hero__actions {
   display: flex;
   align-items: center;
