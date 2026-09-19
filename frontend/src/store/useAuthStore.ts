@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import api from '../api/client';
 import { identifyUser, resetAnalyticsUser } from '../lib/analytics';
+import { postToNative } from '../lib/nativeBridge';
 import type { AuthToken, UserProfile } from '../types/api';
 
 function decodeEmailFromToken(token: string | null) {
@@ -65,6 +66,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const res = await api.post<AuthToken>('/auth/login', { email, password });
     localStorage.setItem('token', res.data.access_token);
     localStorage.setItem('refresh_token', res.data.refresh_token);
+    postToNative({ type: 'tokens', accessToken: res.data.access_token, refreshToken: res.data.refresh_token });
     const identifiedEmail = decodeEmailFromToken(res.data.access_token);
     set({
       token: res.data.access_token,
@@ -93,6 +95,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('active_company_id');
+    // The mobile app holds its own copy of the tokens; this is what sends it
+    // back to its native login screen instead of reloading us signed in.
+    postToNative({ type: 'logout' });
     set({ token: null, userEmail: null, userRole: null });
   },
 }));

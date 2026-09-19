@@ -1,5 +1,6 @@
 import axios, { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import { getSessionId } from '../lib/analytics';
+import { postToNative } from '../lib/nativeBridge';
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -72,11 +73,26 @@ api.interceptors.response.use(
 
           localStorage.setItem('token', nextAccessToken);
           localStorage.setItem('refresh_token', nextRefreshToken);
+          // Refresh tokens rotate, so the mobile app's stored pair is dead the
+          // moment this one lands; it has to be told the new one.
+          postToNative({ type: 'tokens', accessToken: nextAccessToken, refreshToken: nextRefreshToken });
           return nextAccessToken;
         })
-        .catch(() => {
+        .catch((refreshError) => {
           localStorage.removeItem('token');
           localStorage.removeItem('refresh_token');
+          // The mobile app is sent back to its native login only when the
+          // server actually rejected the refresh token. A network error, timeout
+          // or 5xx says nothing about the token, and the app re-injects its
+          // stored pair on the next launch, which is what should happen then.
+          // Concurrent 401s share this one refresh, so this posts once. The
+          // no-refresh-token branch above deliberately does not post: it is only
+          // reached once a session has already ended, and would repeat for
+          // every later 401.
+          const refreshStatus = axios.isAxiosError(refreshError) ? refreshError.response?.status : undefined;
+          if (refreshStatus === 401 || refreshStatus === 403) {
+            postToNative({ type: 'logout' });
+          }
           return null;
         })
         .finally(() => {
