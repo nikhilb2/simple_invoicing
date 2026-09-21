@@ -325,14 +325,16 @@ def _share_route(request: Request) -> str:
 # as direct traffic. These tags are the only thing that identifies a visitor who
 # came from a shared document; utm_content says which kind of document it was.
 _AD_UTM = (
-    ("utm_source", "share_page"),
     ("utm_medium", "referral"),
     ("utm_campaign", "document_share"),
 )
 
 
-def _tag_ad_website(website: str, placement: str) -> str:
-    """`website` with the campaign tags appended, preserving any query it has."""
+def _tag_ad_website(website: str, placement: str, source: str = "share_page") -> str:
+    """`website` with the campaign tags appended, preserving any query it has.
+
+    `source` separates the share page from the emails that carry the same block.
+    """
     if not website:
         return ""
 
@@ -343,6 +345,7 @@ def _tag_ad_website(website: str, placement: str) -> str:
     if any(key.startswith("utm_") for key, _ in query):
         return website
 
+    query.append(("utm_source", source))
     query.extend(_AD_UTM)
     query.append(("utm_content", placement))
     return urlunsplit(parts._replace(query=urlencode(query)))
@@ -365,7 +368,11 @@ def _split_domain_label(label: str) -> tuple[str, str, str]:
     return name[:-1], name[-1], f".{rest}"
 
 
-def _ad_context(placement: str, whatsapp_click_url: str | None = None) -> dict:
+def ad_context(
+    placement: str,
+    whatsapp_click_url: str | None = None,
+    source: str = "share_page",
+) -> dict:
     """Everything the Simple Invoicings block renders.
 
     `placement` is what the reader was looking at — the resource type, or
@@ -377,6 +384,9 @@ def _ad_context(placement: str, whatsapp_click_url: str | None = None) -> dict:
     instead of straight at wa.me. The page runs no JavaScript at all
     (`script-src 'none'`), so a redirect is the only way to know the button was
     ever pressed; the redirect still lands on the same wa.me URL.
+
+    `source` becomes `utm_source`: "share_page" here, "email" when the outgoing
+    emails reuse this block in their footer.
 
     Every field degrades independently: blank the phone and that button goes,
     blank the chips and the row goes, blank the price and that line goes, blank
@@ -396,7 +406,7 @@ def _ad_context(placement: str, whatsapp_click_url: str | None = None) -> dict:
         "brand_name": settings.SHARE_AD_BRAND_NAME,
         "headline": settings.SHARE_AD_HEADLINE,
         "tagline": settings.SHARE_AD_TAGLINE,
-        "website": _tag_ad_website(website, placement),
+        "website": _tag_ad_website(website, placement, source),
         "website_label": label,
         # The label again, cut into the three pieces the "powered by" line sets
         # separately. Kept beside the whole label so anything that just wants
@@ -443,7 +453,7 @@ def _render_unavailable(request: Request) -> HTMLResponse:
     """
     html = _jinja_env.get_template("share_unavailable.html").render(
         page_title="Document unavailable",
-        ad=_ad_context("unavailable", f"{_mount_prefix(request)}/{_NO_TOKEN}/whatsapp"),
+        ad=ad_context("unavailable", f"{_mount_prefix(request)}/{_NO_TOKEN}/whatsapp"),
     )
     return HTMLResponse(content=html, status_code=404, headers=_html_headers())
 
@@ -537,7 +547,7 @@ def public_share_page(
             # Absolute, because a crawler will not resolve a relative og:image.
             "image": f"{origin}{base}/logo" if summary.logo_data else None,
         },
-        ad=_ad_context(link.resource_type, f"{base}/whatsapp"),
+        ad=ad_context(link.resource_type, f"{base}/whatsapp"),
     )
     return HTMLResponse(content=html, headers=_html_headers())
 

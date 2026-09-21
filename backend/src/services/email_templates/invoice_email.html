@@ -11,78 +11,37 @@
     items_count     (int)         — Number of line items on the invoice
     currency        (str)         — Currency symbol. Default: "₹"
     message         (str|None)    — Optional custom message from the sender
+    share_url       (str|None)    — Public share page for this invoice; drives the button
 #}
 {% extends "base.html" %}
+{% import "_macros.html" as ui %}
 
 {% block title %}Invoice {{ invoice_number }}{% endblock %}
 
 {% block content %}
-<h2 style="color: #2c3e50; margin-top: 0; margin-bottom: 20px; font-size: 20px;">Invoice {{ invoice_number }}</h2>
+{{ ui.letter(buyer_name, message,
+             "Please find attached invoice " ~ invoice_number ~ " for your reference. The summary is below.") }}
 
-<p style="margin: 0 0 16px 0;">Dear <strong>{{ buyer_name }}</strong>,</p>
+{% set total = (currency | default("₹")) ~ total_amount %}
+{% set items = [
+    ("Billed to", buyer_name, None),
+    ("Invoice date", invoice_date, None),
+] %}
+{% if due_date %}{% set items = items + [("Due date", due_date, "alert")] %}{% endif %}
+{% set items = items + [("Items", items_count ~ " item" ~ ("" if items_count == 1 else "s"), None)] %}
 
-{% if message %}
-<p style="margin: 0 0 16px 0;">{{ message }}</p>
-{% else %}
-<p style="margin: 0 0 16px 0;">
-    Please find attached invoice <strong>{{ invoice_number }}</strong> for your reference.
-    Kindly review the details below.
-</p>
-{% endif %}
-
-<!-- Invoice Summary Table -->
-<table width="100%" cellpadding="0" cellspacing="0" border="0"
-       style="border-collapse: collapse; margin: 24px 0; border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden;">
-    <tr style="background-color: #f8f9fa;">
-        <td style="padding: 10px 16px; font-size: 13px; color: #555555; font-weight: bold; width: 50%; border-bottom: 1px solid #e0e0e0;">Invoice Number</td>
-        <td style="padding: 10px 16px; font-size: 14px; color: #333333; border-bottom: 1px solid #e0e0e0;">{{ invoice_number }}</td>
-    </tr>
-    <tr>
-        <td style="padding: 10px 16px; font-size: 13px; color: #555555; font-weight: bold; border-bottom: 1px solid #e0e0e0;">Invoice Date</td>
-        <td style="padding: 10px 16px; font-size: 14px; color: #333333; border-bottom: 1px solid #e0e0e0;">{{ invoice_date }}</td>
-    </tr>
-    {% if due_date %}
-    <tr style="background-color: #f8f9fa;">
-        <td style="padding: 10px 16px; font-size: 13px; color: #555555; font-weight: bold; border-bottom: 1px solid #e0e0e0;">Due Date</td>
-        <td style="padding: 10px 16px; font-size: 14px; color: #c0392b; font-weight: bold; border-bottom: 1px solid #e0e0e0;">{{ due_date }}</td>
-    </tr>
+{% call ui.recap("Invoice from " ~ (company_name or "us"), "Invoice " ~ invoice_number) %}
+    {{ ui.amount("Total amount", total) }}
+    {{ ui.rows(items) }}
+    {% if share_url %}
+    {# A link rather than an embedded QR: the reader is already in something that
+       opens URLs, so a code they would scan with a second device is friction. #}
+    {{ ui.button(share_url, "View & pay online") }}
+    {{ ui.hint("The invoice PDF is attached to this email.") }}
+    {% else %}
+    <p style="margin: 2px 0 0 0; font-size: 12.5px; color: #a29d91;">The invoice PDF is attached to this email.</p>
     {% endif %}
-    <tr {% if not due_date %}style="background-color: #f8f9fa;"{% endif %}>
-        <td style="padding: 10px 16px; font-size: 13px; color: #555555; font-weight: bold; border-bottom: 1px solid #e0e0e0;">Billed To</td>
-        <td style="padding: 10px 16px; font-size: 14px; color: #333333; border-bottom: 1px solid #e0e0e0;">{{ buyer_name }}</td>
-    </tr>
-    <tr {% if due_date %}style="background-color: #f8f9fa;"{% endif %}>
-        <td style="padding: 10px 16px; font-size: 13px; color: #555555; font-weight: bold; border-bottom: 1px solid #e0e0e0;">Items</td>
-        <td style="padding: 10px 16px; font-size: 14px; color: #333333; border-bottom: 1px solid #e0e0e0;">{{ items_count }} item{% if items_count != 1 %}s{% endif %}</td>
-    </tr>
-    <tr style="background-color: #2c3e50;">
-        <td style="padding: 12px 16px; font-size: 14px; color: #ffffff; font-weight: bold;">Total Amount</td>
-        <td style="padding: 12px 16px; font-size: 16px; color: #ffffff; font-weight: bold;">
-            {{ currency | default("₹") }}{{ total_amount }}
-        </td>
-    </tr>
-</table>
+{% endcall %}
 
-{% if share_url %}
-{# A link rather than an embedded QR: the reader is already in something that opens
-   URLs, so a code they would have to scan with a second device is pure friction.
-   Table-wrapped with inline styles because that is what survives Outlook. #}
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 20px 0;">
-    <tr>
-        <td align="center" bgcolor="#2c3e50" style="border-radius: 6px;">
-            <a href="{{ share_url }}" style="display: inline-block; padding: 13px 26px; font-size: 15px; font-weight: bold; color: #ffffff; text-decoration: none;">
-                View &amp; pay online
-            </a>
-        </td>
-    </tr>
-</table>
-{% endif %}
-
-<p style="margin: 0 0 16px 0; color: #555555; font-size: 13px;">
-    📎 The invoice PDF is attached to this email.
-</p>
-
-<p style="margin: 0;">
-    If you have any questions regarding this invoice, please don't hesitate to contact us.
-</p>
+{{ ui.closing("If you have any questions about this invoice, just reply to this email.") }}
 {% endblock %}

@@ -1,52 +1,122 @@
 {#
   base.html — Shared layout for all email templates.
 
+  The share page's brand treatment carried into the inbox: one warm near-black
+  panel with a lime glow top-left and a magenta glow bottom-right, the document
+  the reader came for inset near the top of it, and the Simple Invoicings pitch
+  underneath.
+
+  Email is not a browser, so none of the share page's CSS survives as written.
+  Gmail strips SVG, Outlook drops gradients, border-radius and background images,
+  and hardly any client does background-clip:text. Everything below is therefore
+  inline-styled tables, and every gradient sits on top of a solid `bgcolor` that
+  says the same thing on its own. A client that keeps nothing but `bgcolor` still
+  gets a dark panel, lime figures and a white button.
+
   Variables:
-    company_name   (str)  — Sender company name shown in the header. Default: "Your Company"
-    company_email  (str)  — Contact email shown in the footer. Default: omitted
-    company_phone  (str)  — Contact phone shown in the footer. Default: omitted
-    company_address (str) — Mailing address shown in the footer. Default: omitted
+    company_name    (str)  — Sender company name, shown in the recap label and the footer.
+    company_email   (str)  — Contact email shown in the footer. Default: omitted
+    company_phone   (str)  — Contact phone shown in the footer. Default: omitted
+    company_address (str)  — Mailing address shown in the footer. Default: omitted
+    ad              (dict) — public_share.ad_context(). Undefined or ad.enabled false
+                             (a white-label deployment) drops the brand mark, the pitch
+                             and the "powered by" line; the styling stays.
+    preheader       (str)  — Inbox preview text. Default: omitted
+
+  Blocks: title, preheader, content, pitch, footer.
 #}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    {# The panel is already dark. Declaring both schemes stops Apple Mail from
+       "helpfully" inverting it. Gmail ignores these and inverts regardless; see
+       the `u + .body` rule below. #}
+    <meta name="color-scheme" content="light dark">
+    <meta name="supported-color-schemes" content="light dark">
     <title>{% block title %}Email{% endblock %}</title>
+    {# Progressive only: clients that drop <style> keep the 600px layout, which
+       already shrinks to fit because every table is width 100% under a max-width. #}
+    <style>
+        @media only screen and (max-width: 480px) {
+            .si-panel { padding: 22px 18px 20px 18px !important; }
+            .si-recap { padding: 16px 14px 14px 14px !important; }
+            .si-amount { font-size: 30px !important; }
+            .si-headline { font-size: 23px !important; }
+            .si-cell { display: block !important; width: 100% !important; padding: 0 0 10px 0 !important; }
+        }
+        a { text-decoration: none; }
+
+        /* Gmail only: it swaps the doctype for a <u></u>, so `u + .body` matches
+           nowhere else. In dark mode its iOS app inverts every colour except
+           background images, so a gradient panel stayed dark while the text on it
+           was flipped to dark too and vanished. Without the gradients Gmail inverts
+           the panel and its text together: a light card in dark mode, and a flat
+           dark panel in light mode. */
+        u + .body .si-panel,
+        u + .body .si-cta { background-image: none !important; }
+    </style>
 </head>
-<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333333; background-color: #f4f4f4; margin: 0; padding: 0;">
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f4f4f4;">
+<body class="body" style="margin: 0; padding: 0; background-color: #f5f3ef; color: #14120f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 16px; line-height: 1.5; -webkit-text-size-adjust: 100%;">
+    {% block preheader %}{% if preheader %}
+    <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #f5f3ef;">{{ preheader }}&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;</div>
+    {% endif %}{% endblock %}
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f5f3ef" style="background-color: #f5f3ef;">
         <tr>
-            <td align="center" style="padding: 20px 10px;">
-                <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    <!-- Header -->
+            <td align="center" style="padding: 24px 12px 32px 12px;">
+                <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 100%; max-width: 600px;">
+
+                    {# ── The panel ─────────────────────────────────────────────── #}
                     <tr>
-                        <td style="background-color: #2c3e50; color: #ffffff; padding: 30px 20px; text-align: center;">
-                            {% block header %}
-                            <h1 style="font-size: 24px; font-weight: bold; margin: 0; color: #ffffff;">
-                                {{ company_name | default("Your Company") }}
-                            </h1>
+                        <td class="si-panel" bgcolor="#181311"
+                            style="padding: 28px 26px 24px 26px; border-radius: 28px; border: 1px solid #362b26; color: #fcfbf8;
+                                   background-color: #181311;
+                                   background-image: radial-gradient(circle at 0% 0%, rgba(156,235,10,0.26), rgba(156,235,10,0) 55%), radial-gradient(circle at 100% 100%, rgba(249,36,164,0.26), rgba(249,36,164,0) 55%), linear-gradient(180deg, #1e1815 0%, #0f0c0a 76%);">
+
+                            {# Brand row. A table-drawn mark, not an image: SVG is stripped by
+                               Gmail and a hosted PNG is blocked by default in most clients. #}
+                            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 18px 0;">
+                                <tr>
+                                    {% if ad and ad.enabled %}
+                                    <td width="30" height="30" align="center" valign="middle" bgcolor="#9ceb0a"
+                                        style="width: 30px; height: 30px; border-radius: 9px; background-color: #9ceb0a; background-image: linear-gradient(135deg, #ffcc33 0%, #9ceb0a 100%);">
+                                        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+                                            <tr>
+                                                <td width="13" height="16" align="center" valign="middle" bgcolor="#0f0c0a"
+                                                    style="width: 13px; height: 16px; border-radius: 2px; background-color: #0f0c0a; color: #9ceb0a; font-size: 10px; font-weight: 800; line-height: 16px; mso-line-height-rule: exactly;">&#10003;</td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                    <td style="padding-left: 10px; font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: #fcfbf8;">{{ ad.brand_name }}</td>
+                                    {% else %}
+                                    <td style="font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: #fcfbf8;">{{ company_name | default("Your Company") }}</td>
+                                    {% endif %}
+                                </tr>
+                            </table>
+
+                            {% block content %}{% endblock %}
+
+                            {% block pitch %}
+                            {% if ad and ad.enabled %}
+                            {% include "_pitch.html" %}
+                            {% endif %}
                             {% endblock %}
                         </td>
                     </tr>
 
-                    <!-- Content -->
+                    {# ── The sender, under the panel ─────────────────────────────
+                       Off the panel on purpose: this is the business's own contact
+                       card, not the brand's. #}
                     <tr>
-                        <td style="padding: 30px 20px;">
-                            {% block content %}{% endblock %}
-                        </td>
-                    </tr>
-
-                    <!-- Footer -->
-                    <tr>
-                        <td style="background-color: #ecf0f1; color: #7f8c8d; padding: 20px; text-align: center; font-size: 12px; border-top: 1px solid #bdc3c7;">
+                        <td align="center" style="padding: 20px 16px 0 16px; font-size: 12.5px; line-height: 1.6; color: #7c766b;">
                             {% block footer %}
-                            <p style="margin: 0;">
-                                <strong>{{ company_name | default("Your Company") }}</strong><br>
-                                {% if company_email %}Email: {{ company_email }}<br>{% endif %}
-                                {% if company_phone %}Phone: {{ company_phone }}<br>{% endif %}
-                                {% if company_address %}{{ company_address }}{% endif %}
-                            </p>
+                            <strong style="color: #4a463f;">{{ company_name | default("Your Company") }}</strong><br>
+                            {% if company_email %}<a href="mailto:{{ company_email }}" style="color: #7c766b; text-decoration: underline;">{{ company_email }}</a><br>{% endif %}
+                            {% if company_phone %}{{ company_phone }}<br>{% endif %}
+                            {% if company_address %}{{ company_address }}{% endif %}
                             {% endblock %}
                         </td>
                     </tr>

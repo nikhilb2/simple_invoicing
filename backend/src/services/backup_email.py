@@ -138,6 +138,9 @@ async def email_backup_archive(
             attached=attached,
             skip_reason=skip_reason,
             keep=settings.AUTO_BACKUP_KEEP,
+            # Just the mark: backup_email.html blanks the pitch block, so the rest of
+            # the share page's ad context would go unused.
+            ad={"enabled": settings.SHARE_AD_ENABLED, "brand_name": settings.SHARE_AD_BRAND_NAME},
             **_company_context(db),
         )
 

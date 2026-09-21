@@ -13,6 +13,7 @@ from src.core.analytics import distinct_id_for, track
 from src.api.routes.invoices import _build_invoice_pdf
 from src.services.serial_service import SerialManager
 from src.api.routes.ledgers import _build_ledger_statement_data, _build_statement_html
+from src.api.routes.public_share import ad_context
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
 from src.models.company import CompanyProfile
@@ -177,6 +178,7 @@ async def send_invoice_email(
         items_count=len(invoice.items or []),
         currency=_symbol(currency_code),
         message=payload.message,
+        ad=ad_context("email_invoice", source="email"),
         # A link, not an embedded QR: the reader is already in something that can
         # open a URL, and a QR they would have to scan with a second device is
         # friction. It also keeps this path clear of inline-image MIME entirely.
@@ -284,6 +286,7 @@ async def send_ledger_statement_email(
         balance=_fmt(statement_data.closing_balance),
         currency=_symbol(currency_code),
         message=payload.message,
+        ad=ad_context("email_statement", source="email"),
     )
 
     safe_name = ledger.name.replace(" ", "_").replace("/", "_")[:30]
@@ -432,6 +435,7 @@ async def send_payment_reminder_email(
         message=payload.message,
         unpaid_invoices=unpaid_invoices,
         share_url=share_url,
+        ad=ad_context("email_reminder", source="email"),
     )
 
     subject = payload.subject or f"Payment Reminder \u2014 {ledger.name}"
@@ -580,6 +584,7 @@ async def send_due_reminders(
             message=payload.message,
             unpaid_invoices=outstanding_list,
             share_url=share_url,
+            ad=ad_context("email_reminder", source="email"),
         )
 
         subject = f"Payment Reminder \u2014 {ledger_name}"

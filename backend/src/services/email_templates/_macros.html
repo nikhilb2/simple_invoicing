@@ -1,0 +1,84 @@
+{#
+  _macros.html — Building blocks shared by the email templates.
+
+  Import with `{% import "_macros.html" as ui %}`. Each one is the email version of
+  a piece of the share page's panel; the class names they mirror are noted beside
+  them so the two can be kept in step.
+#}
+
+{# Greeting and the sender's own words, set on the panel above the document.
+   `message` is the user's free text; autoescape keeps it inert. #}
+{% macro letter(name, message, fallback) -%}
+<p style="margin: 0 0 12px 0; font-size: 15px; color: #fcfbf8;">Dear <strong>{{ name }}</strong>,</p>
+<p style="margin: 0 0 20px 0; font-size: 15px; line-height: 1.6; color: #c0bcaf;">{% if message %}{{ message }}{% else %}{{ fallback }}{% endif %}</p>
+{%- endmacro %}
+
+{# .recap — the inset block holding what the reader came for.
+   Solid #0d0a09 is the share page's rgba(9,7,6,.55) flattened onto the panel, since
+   Outlook ignores alpha. #}
+{% macro recap(label, title, subtitle=None) -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 4px 0;">
+    <tr>
+        <td class="si-recap" bgcolor="#0d0a09" style="padding: 18px 18px 16px 18px; border-radius: 18px; border: 1px solid #2a2320; background-color: #0d0a09;">
+            <p style="margin: 0 0 10px 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.18em; color: #a29d91;">
+                <span style="color: #9ceb0a; font-size: 12px;">&#9679;</span>&nbsp; {{ label }}
+            </p>
+            <p style="margin: 0 0 {{ '4px' if subtitle else '14px' }} 0; font-size: 20px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.25; color: #fcfbf8;">{{ title }}</p>
+            {% if subtitle %}<p style="margin: 0 0 14px 0; font-size: 13px; color: #a29d91;">{{ subtitle }}</p>{% endif %}
+            {{ caller() }}
+        </td>
+    </tr>
+</table>
+{%- endmacro %}
+
+{# .recap-rows — captions in mono, values beside them. `rows` is a list of
+   (caption, value, style) where style is "figure" (lime, the money), "alert"
+   (pink, something overdue) or None. Two columns so a phone still reads them
+   in order; the class stacks them under 480px where <style> survives. #}
+{% macro rows(items) -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+    {% for batch in items | batch(2) %}
+    <tr>
+        {% for caption, value, style in batch %}
+        <td class="si-cell" width="50%" valign="top" style="width: 50%; padding: 0 12px 12px 0;">
+            <p style="margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: #a29d91;">{{ caption }}</p>
+            <p style="margin: 3px 0 0 0; font-size: 15px; font-weight: 600; word-break: break-word;
+                      color: {{ '#9ceb0a' if style == 'figure' else ('#ff6fc6' if style == 'alert' else '#fcfbf8') }};">{{ value }}</p>
+        </td>
+        {% endfor %}
+        {% if batch | length == 1 %}<td class="si-cell" width="50%" style="width: 50%;">&nbsp;</td>{% endif %}
+    </tr>
+    {% endfor %}
+</table>
+{%- endmacro %}
+
+{# The one big number: the amount the reader owes or is being billed. #}
+{% macro amount(caption, value, note=None) -%}
+<p style="margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: #a29d91;">{{ caption }}</p>
+<p class="si-amount" style="margin: 4px 0 {{ '4px' if note else '14px' }} 0; font-size: 34px; font-weight: 800; letter-spacing: -0.035em; line-height: 1.1; color: #9ceb0a;">{{ value }}</p>
+{% if note %}<p style="margin: 0 0 14px 0; font-size: 12.5px; color: #a29d91;">{{ note }}</p>{% endif %}
+{%- endmacro %}
+
+{# .recap-btn — the reader's own action, so it is solid warm white rather than the
+   brand gradient, exactly as on the share page. Full width, bulletproof: the
+   colour sits on the <td> so Outlook paints it even though it ignores the <a>'s. #}
+{% macro button(url, label) -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 6px 0 0 0;">
+    <tr>
+        <td align="center" bgcolor="#fcfbf8" style="border-radius: 999px; background-color: #fcfbf8;">
+            <a href="{{ url }}" target="_blank" rel="noopener noreferrer"
+               style="display: block; padding: 14px 18px; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; color: #0f0c0a; text-decoration: none; text-align: center;">{{ label }}</a>
+        </td>
+    </tr>
+</table>
+{%- endmacro %}
+
+{# .recap-hint — the quiet line under the button. #}
+{% macro hint(text) -%}
+<p style="margin: 12px 0 0 0; font-size: 12.5px; text-align: center; color: #a29d91;">{{ text }}</p>
+{%- endmacro %}
+
+{# Closing line on the panel, after the document. #}
+{% macro closing(text) -%}
+<p style="margin: 20px 0 0 0; font-size: 14px; line-height: 1.6; color: #c0bcaf;">{{ text }}</p>
+{%- endmacro %}
