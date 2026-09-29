@@ -69,6 +69,16 @@ def _pre_discount_taxable(item: InvoiceItem, *, tax_inclusive: bool) -> Decimal:
     return _money(unit_price * quantity)
 
 
+def item_discount_amount(item: InvoiceItem, *, tax_inclusive: bool) -> Decimal:
+    """Recover one line's discount amount from its stored taxable amount."""
+    discount = _pre_discount_taxable(item, tax_inclusive=tax_inclusive) - _dec(item.taxable_amount)
+    # A stored taxable above the reconstruction would mean the write path
+    # changed shape; clamp rather than report a negative discount.
+    if discount <= 0:
+        return Decimal("0.00")
+    return _money(discount)
+
+
 def _item_discount_totals(db: Session, invoice_ids: list[int], tax_inclusive_by_invoice: dict[int, bool]) -> dict[int, Decimal]:
     """Sum per-line discounts for each invoice.
 
@@ -91,9 +101,7 @@ def _item_discount_totals(db: Session, invoice_ids: list[int], tax_inclusive_by_
     totals: dict[int, Decimal] = {}
     for item in items:
         tax_inclusive = tax_inclusive_by_invoice.get(item.invoice_id, False)
-        discount = _pre_discount_taxable(item, tax_inclusive=tax_inclusive) - _dec(item.taxable_amount)
-        # A stored taxable above the reconstruction would mean the write path
-        # changed shape; clamp rather than report a negative discount.
+        discount = item_discount_amount(item, tax_inclusive=tax_inclusive)
         if discount <= 0:
             continue
         totals[item.invoice_id] = totals.get(item.invoice_id, Decimal("0")) + discount
@@ -101,7 +109,7 @@ def _item_discount_totals(db: Session, invoice_ids: list[int], tax_inclusive_by_
     return {invoice_id: _money(total) for invoice_id, total in totals.items()}
 
 
-def _invoice_discount_amount(invoice: Invoice) -> Decimal:
+def invoice_discount_amount(invoice: Invoice) -> Decimal:
     """Recover the invoice-level discount by inverting the processor's totals.
 
     ``_apply_totals`` ends with ``total_amount = raw_total + round_off`` in both
@@ -141,7 +149,7 @@ def build_invoice_discount_totals(
     summaries: dict[int, InvoiceDiscountSummary] = {}
     for invoice in invoices:
         item_total = item_totals.get(invoice.id, Decimal("0.00"))
-        invoice_discount = _invoice_discount_amount(invoice)
+        invoice_discount = invoice_discount_amount(invoice)
         summaries[invoice.id] = InvoiceDiscountSummary(
             invoice_id=invoice.id,
             item_discount_total=item_total,

@@ -5,6 +5,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from src.models.company_account import CompanyAccount
 from src.models.invoice import Invoice, InvoiceItem
+from src.services.invoice_discounts import invoice_discount_amount, item_discount_amount
 
 
 def _money(value: Decimal) -> Decimal:
@@ -35,6 +36,30 @@ def _fmt_currency(value: float, currency_code: str | None = None) -> str:
 def _fmt_rate(value: float) -> str:
     """Format a percentage rate without trailing zeros."""
     return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def _build_item_discount_html(item: InvoiceItem, currency: str | None, *, tax_inclusive: bool) -> str:
+    """Muted sub-line under a product naming its discount and the amount it took off."""
+    raw_value = float(item.discount_value or 0)
+    if not item.discount_type or raw_value <= 0:
+        return ""
+    amount = float(item_discount_amount(item, tax_inclusive=tax_inclusive))
+    if item.discount_type == "percentage":
+        label = f"Disc: {_fmt_rate(raw_value)}% (-{_fmt_currency(amount, currency)})"
+    else:
+        label = f"Disc: {_fmt_currency(amount, currency)} off"
+    return f"<br><span class=\"muted-text\">{label}</span>"
+
+
+def _build_invoice_discount_html(invoice: Invoice, currency: str | None) -> str:
+    """Totals-box line naming the invoice-level discount and the amount it took off."""
+    raw_value = float(invoice.discount_value or 0)
+    if not invoice.discount_type or raw_value <= 0:
+        return ""
+    amount = _fmt_currency(float(invoice_discount_amount(invoice)), currency)
+    if invoice.discount_type == "percentage":
+        return f"<p>Discount ({_fmt_rate(raw_value)}%): -{amount}</p>"
+    return f"<p>Discount: -{amount}</p>"
 
 
 def _amount_in_words_indian(amount: float, currency_code: str | None = None) -> str:
