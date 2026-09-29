@@ -5,6 +5,8 @@ from src.models.invoice import Invoice
 from src.models.product import Product
 
 from .builders import (
+    _build_invoice_discount_html,
+    _build_item_discount_html,
     _amount_in_words_indian,
     _build_pdf_payment_details_html,
     _build_pdf_table_colgroup,
@@ -13,7 +15,6 @@ from .builders import (
     _build_pdf_tax_row_cells,
     _e,
     _fmt_currency,
-    _fmt_rate,
     _pdf_display_quantity,
     _pdf_display_unit,
     _pdf_unit_price,
@@ -70,14 +71,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
         quantity_display = _pdf_display_quantity(item.quantity, getattr(prod, "allow_decimal", None) if prod else None)
         tax_row_cells = _build_pdf_tax_row_cells(item, currency, interstate_supply)
 
-        # Item-level discount display
-        item_discount_html = ""
-        raw_item_discount = float(item.discount_value or 0)
-        if item.discount_type and raw_item_discount > 0:
-            if item.discount_type == "percentage":
-                item_discount_html = f"<br><span class=\"muted-text\">Disc: {_fmt_rate(raw_item_discount)}%</span>"
-            else:
-                item_discount_html = f"<br><span class=\"muted-text\">Disc: {_fmt_currency(raw_item_discount, currency)} off</span>"
+        item_discount_html = _build_item_discount_html(item, currency, tax_inclusive=tax_inclusive)
 
         item_serials_html = _build_item_serials_html(serials_map.get(item.product_id))
 
@@ -183,15 +177,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     round_off_html = (
         f'<p>Round off: {_fmt_currency(round_off_amount, currency)}</p>' if show_round_off else ''
     )
-    # Invoice-level discount display
-    invoice_discount_label = ""
-    inv_disc_type = invoice.discount_type
-    inv_disc_val = float(invoice.discount_value or 0)
-    if inv_disc_type and inv_disc_val > 0:
-        if inv_disc_type == "percentage":
-            invoice_discount_label = f"<p>Discount: {_fmt_rate(inv_disc_val)}%</p>"
-        else:
-            invoice_discount_label = f"<p>Discount: {_fmt_currency(inv_disc_val, currency)} off</p>"
+    invoice_discount_label = _build_invoice_discount_html(invoice, currency)
     tax_breakup_rows = _build_pdf_tax_breakup_rows(invoice, currency)
     payment_details_html = _build_pdf_payment_details_html(invoice_bank_accounts, pay_qr_html)
     reference_notes_html = ""

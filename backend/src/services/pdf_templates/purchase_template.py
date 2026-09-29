@@ -5,6 +5,8 @@ from src.models.invoice import Invoice
 from src.models.product import Product
 
 from .builders import (
+    _build_invoice_discount_html,
+    _build_item_discount_html,
     _build_pdf_payment_details_html,
     _build_pdf_table_colgroup,
     _build_pdf_tax_breakup_rows,
@@ -76,12 +78,15 @@ def _build_purchase_invoice_html(
         unit = _e(_pdf_display_unit(getattr(prod, "unit", None) if prod else None))
         quantity_display = _pdf_display_quantity(item.quantity, getattr(prod, "allow_decimal", None) if prod else None)
         tax_row_cells = _build_pdf_tax_row_cells(item, currency, interstate_supply)
+
+        item_discount_html = _build_item_discount_html(item, currency, tax_inclusive=tax_inclusive)
+
         item_serials_html = _build_item_serials_html(serials_map.get(item.product_id))
 
         item_rows += f"""
         <tr>
           <td>{idx}</td>
-          <td>{product_cell_html}{item_serials_html}</td>
+          <td>{product_cell_html}{item_discount_html}{item_serials_html}</td>
           <td>{sku}</td>
           <td>{hsn}</td>
           <td class="right">{quantity_display}</td>
@@ -138,6 +143,7 @@ def _build_purchase_invoice_html(
     round_off_html = (
         f'<p>Round off: {_fmt_currency(round_off_amount, currency)}</p>' if show_round_off else ''
     )
+    invoice_discount_label = _build_invoice_discount_html(invoice, currency)
     tax_breakup_rows = _build_pdf_tax_breakup_rows(invoice, currency)
 
     html = f"""<!DOCTYPE html>
@@ -358,6 +364,7 @@ def _build_purchase_invoice_html(
       <p>Taxable: {_fmt_currency(float(invoice.taxable_amount or 0), currency)}</p>
       {tax_breakup_rows}
       <p>Total tax: {_fmt_currency(float(invoice.total_tax_amount or 0), currency)}</p>
+      {invoice_discount_label}
       {round_off_html}
       <p class="eyebrow" style="margin-top: 10px;">Total due</p>
       <p class="invoice-sheet__total-value">{_fmt_currency(float(invoice.total_amount), currency)}</p>
