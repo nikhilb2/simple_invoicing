@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -132,3 +133,70 @@ class ProfitLossReport(BaseModel):
     monthly_rows: list[ProfitLossMonthlyRow]
     customer_rows: list[ProfitLossCustomerRow]
     totals: ProfitLossTotals
+
+
+# --- Product performance ---------------------------------------------------
+# All money is ex-GST. Revenue/spend are line taxable_amount less each line's
+# share of any invoice-level discount, less active credit notes (outward for
+# sales, inward for purchases). Cost is the period's weighted average purchase
+# price, else the product's current purchase_price (cost_basis tells which);
+# when neither exists every cost-derived field is null.
+
+CostBasis = Literal["purchases", "current_price"]
+
+
+class ProductPerformanceRow(BaseModel):
+    product_id: int
+    name: str
+    sku: str | None = None
+    units_sold: float  # gross, before returns
+    units_returned: float  # from active outward "return" credit notes
+    net_units_sold: float
+    units_bought: float  # gross, before purchase returns
+    units_purchase_returned: float  # from active inward "return" notes
+    net_units_bought: float
+    average_selling_price: float | None = None  # sales_value / units_sold
+    average_buying_price: float | None = None  # unit cost used for COGS
+    cost_basis: CostBasis | None = None  # None when there is no cost at all
+    sales_value: float  # gross sales, ex-GST, net of all discounts
+    return_value: float  # outward credit notes (returns and price credits)
+    revenue: float  # sales_value - return_value
+    purchase_value: float
+    purchase_return_value: float  # inward credit notes
+    purchase_spend: float  # purchase_value - purchase_return_value
+    cogs: float | None = None  # net_units_sold * average_buying_price
+    gross_profit: float | None = None  # revenue - cogs
+    margin_pct: float | None = None  # gross_profit / revenue * 100
+    profit_per_unit: float | None = None  # gross_profit / net_units_sold
+    current_stock: float | None = None  # None when the product isn't stock-tracked
+
+
+class ProductPerformanceTotals(BaseModel):
+    product_count: int
+    units_sold: float
+    units_returned: float
+    net_units_sold: float
+    units_bought: float
+    units_purchase_returned: float
+    net_units_bought: float
+    sales_value: float
+    return_value: float
+    revenue: float
+    purchase_value: float
+    purchase_return_value: float
+    purchase_spend: float
+    costed_revenue: float  # revenue of rows with a known cost
+    cogs: float  # over costed rows only
+    gross_profit: float  # over costed rows only
+    margin_pct: float | None = None  # gross_profit / costed_revenue * 100
+    uncosted_product_count: int  # rows excluded from profit totals
+    current_price_product_count: int  # rows costed at the current purchase price
+
+
+class ProductPerformanceReport(BaseModel):
+    currency_code: str
+    period: ReportPeriod
+    sort_by: str
+    sort_dir: str
+    rows: list[ProductPerformanceRow]
+    totals: ProductPerformanceTotals

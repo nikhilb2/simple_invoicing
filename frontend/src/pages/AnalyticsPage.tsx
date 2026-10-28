@@ -5,16 +5,18 @@ import { useFY } from '../context/FYContext';
 import type { AnalyticsFilters as Filters, VoucherType } from '../features/analytics/types';
 import AnalyticsFilters from './analytics/AnalyticsFilters';
 import MonthlySalesTab from './analytics/MonthlySalesTab';
+import ProductPerformanceTab from './analytics/ProductPerformanceTab';
 import ProductSalesTab from './analytics/ProductSalesTab';
 import ProfitLossTab from './analytics/ProfitLossTab';
 
-type TabId = 'month-wise' | 'product-wise' | 'profit-loss';
+type TabId = 'month-wise' | 'product-wise' | 'profit-loss' | 'product-performance';
 
 const TABS: TabItem<TabId>[] = [
   { id: 'month-wise', label: 'Month-wise Sales' },
   { id: 'product-wise', label: 'Product-wise Sales' },
   // Profit & Loss is built but hidden for now — re-add this entry to expose it.
   // { id: 'profit-loss', label: 'Profit & Loss' },
+  { id: 'product-performance', label: 'Product performance' },
 ];
 
 const TAB_IDS = TABS.map((t) => t.id);
@@ -111,7 +113,9 @@ export default function AnalyticsPage() {
         onChange={onFiltersChange}
         onReset={onResetFilters}
         canReset={isFiltered}
-        showProductFilter={tab === 'product-wise' || tab === 'profit-loss'}
+        showProductFilter={tab === 'product-wise' || tab === 'profit-loss' || tab === 'product-performance'}
+        // Product performance reports sales and purchases side by side.
+        showVoucherType={tab !== 'product-performance'}
       />
 
       <Tabs
@@ -125,6 +129,7 @@ export default function AnalyticsPage() {
         {tab === 'month-wise' && <MonthlySalesTab filters={filters} />}
         {tab === 'product-wise' && <ProductSalesTab filters={filters} />}
         {tab === 'profit-loss' && <ProfitLossTab filters={filters} />}
+        {tab === 'product-performance' && <ProductPerformanceTab filters={filters} />}
       </TabPanel>
     </div>
   );

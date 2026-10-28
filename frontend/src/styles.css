@@ -4628,6 +4628,32 @@ a.invoice-row {
   white-space: nowrap;
 }
 
+/* Product performance: a second, quieter line under a cell's main figure. */
+.product-performance__sku,
+.product-performance__sub {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Marks a row costed at today's purchase price because the period had no
+   purchases of it — its margin is an estimate, not what the goods cost. */
+.product-performance__basis {
+  display: block;
+  width: fit-content;
+  margin-left: auto;
+  margin-top: 2px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--warning);
+  font-size: 0.66rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: help;
+}
+
 .chart-frame {
   background: var(--bg-card);
   border: 1px solid var(--line);

@@ -107,6 +107,7 @@ NAME_OVERRIDES: dict[tuple[str, str], str] = {
     # financial years
     ("PUT", "/api/financial-years/{fy_id}/activate"): "financial_years_activate",
     # analytics / dashboard
+    ("GET", "/api/analytics/product-performance"): "analytics_product_performance",
     ("GET", "/api/analytics/profit-loss"): "analytics_profit_loss",
     ("GET", "/api/analytics/profit-loss/csv"): "analytics_profit_loss_csv",
     ("GET", "/api/analytics/sales-by-month"): "analytics_sales_by_month",
@@ -196,6 +197,10 @@ DESCRIPTION_OVERRIDES: dict[tuple[str, str], str] = {
     ("GET", "/api/company/companies"): "List the companies this user can act for.",
     # reporting
     ("GET", "/api/dashboard/metrics"): "Headline dashboard metrics: sales, receivables, stock value and recent activity.",
+    ("GET", "/api/analytics/product-performance"): (
+        "Per-product units sold/bought, returns, ex-GST revenue and purchase spend, average "
+        "selling and buying price, COGS, gross profit and margin over a date range."
+    ),
     ("GET", "/api/analytics/profit-loss"): "Profit and loss statement for a date range.",
     ("GET", "/api/analytics/sales-by-month"): "Monthly sales totals over a date range.",
     ("GET", "/api/analytics/sales-by-product"): "Sales totals grouped by product over a date range.",

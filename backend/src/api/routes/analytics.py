@@ -1,5 +1,6 @@
 import csv
 from datetime import date, timedelta
+from decimal import Decimal
 from io import BytesIO, StringIO
 from typing import Literal
 
@@ -16,6 +17,9 @@ from src.schemas.analytics import (
     MonthlySalesReport,
     MonthlySalesRow,
     MonthlySalesTotals,
+    ProductPerformanceReport,
+    ProductPerformanceRow,
+    ProductPerformanceTotals,
     ProductSalesReport,
     ProductSalesRow,
     ProductSalesTotals,
@@ -29,6 +33,7 @@ from src.schemas.analytics import (
 from src.services.analytics_reports import (
     average_of,
     build_monthly_sales_report,
+    build_product_performance_report,
     build_product_sales_report,
     build_profit_loss_report,
     month_label,
@@ -41,6 +46,25 @@ router = APIRouter()
 VoucherType = Literal["sales", "purchase"]
 SortBy = Literal["quantity", "revenue", "name", "stock"]
 SortDir = Literal["asc", "desc"]
+# Mirrors analytics_reports.PRODUCT_PERFORMANCE_SORTS (a Literal can't be built
+# from a runtime tuple and still document itself in OpenAPI).
+PerformanceSortBy = Literal[
+    "name",
+    "units_sold",
+    "units_returned",
+    "net_units_sold",
+    "units_bought",
+    "net_units_bought",
+    "average_selling_price",
+    "average_buying_price",
+    "revenue",
+    "purchase_spend",
+    "cogs",
+    "gross_profit",
+    "margin_pct",
+    "profit_per_unit",
+    "current_stock",
+]
 
 
 def _resolve_period(
@@ -511,6 +535,57 @@ def get_profit_loss(
         period=period,
         ledger_id=ledger_id,
         product_id=product_id,
+    )
+
+
+def _decimals_to_floats(record: dict) -> dict:
+    """Builders keep Decimal to avoid float drift; convert at the schema boundary.
+    None (an undefined average or an unknown cost) passes through untouched."""
+    return {key: float(value) if isinstance(value, Decimal) else value for key, value in record.items()}
+
+
+@router.get("/product-performance", response_model=ProductPerformanceReport)
+def get_product_performance(
+    financial_year_id: int | None = Query(None),
+    from_date: date | None = Query(None),
+    to_date: date | None = Query(None),
+    ledger_id: int | None = Query(None),
+    product_id: int | None = Query(None),
+    sort_by: PerformanceSortBy = Query("revenue"),
+    sort_dir: SortDir = Query("desc"),
+    limit: int | None = Query(None, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Per-product sales, purchases, returns and margin. Sales and purchases
+    are both reported, so unlike the other reports there is no voucher_type."""
+    period = _resolve_period(
+        db,
+        company_id=active_company.id,
+        financial_year_id=financial_year_id,
+        from_date=from_date,
+        to_date=to_date,
+    )
+    data = build_product_performance_report(
+        db,
+        company_id=active_company.id,
+        from_date=period.from_date,
+        to_date=period.to_date,
+        ledger_id=ledger_id,
+        product_id=product_id,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        limit=limit,
+    )
+
+    return ProductPerformanceReport(
+        currency_code=active_company.currency_code or "USD",
+        period=period,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        rows=[ProductPerformanceRow(**_decimals_to_floats(row)) for row in data.rows],
+        totals=ProductPerformanceTotals(**_decimals_to_floats(data.totals)),
     )
 
 

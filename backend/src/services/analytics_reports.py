@@ -16,11 +16,16 @@ from decimal import Decimal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
 from src.services.gst_tax_service import money as _money
-from src.services.invoice_discounts import build_invoice_discount_totals
+from src.services.invoice_discounts import (
+    apportion_invoice_discount,
+    build_invoice_discount_totals,
+    invoice_discount_amount,
+)
 
 MONTHS_IN_TREND = 12
 _MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -496,6 +501,385 @@ def build_profit_loss_report(
         customer_rows=customer_rows,
         totals=totals,
     )
+
+
+# --- Product performance ----------------------------------------------------
+
+PRODUCT_PERFORMANCE_SORTS = (
+    "name",
+    "units_sold",
+    "units_returned",
+    "net_units_sold",
+    "units_bought",
+    "net_units_bought",
+    "average_selling_price",
+    "average_buying_price",
+    "revenue",
+    "purchase_spend",
+    "cogs",
+    "gross_profit",
+    "margin_pct",
+    "profit_per_unit",
+    "current_stock",
+)
+
+COST_BASIS_PURCHASES = "purchases"
+COST_BASIS_CURRENT_PRICE = "current_price"
+
+
+@dataclass
+class ProductPerformanceData:
+    rows: list[dict]
+    totals: dict
+
+
+def _ratio(numerator: Decimal, denominator: Decimal) -> Decimal | None:
+    """Rounded ``numerator / denominator``; None (not 0) when undefined."""
+    if not denominator:
+        return None
+    return _money(numerator / denominator)
+
+
+def _discounted_invoice_lines(
+    db: Session,
+    *,
+    company_id: int,
+    voucher_type: str,
+    from_date: date,
+    to_date: date,
+    ledger_id: int | None,
+    product_id: int | None,
+) -> list[tuple[int, Decimal, Decimal]]:
+    """``(product_id, quantity, taxable net of invoice discount)`` per line.
+
+    Every line of every in-scope invoice is fetched, even under a product
+    filter, because the invoice-level discount is apportioned across *all* of
+    an invoice's lines; dropping the other lines first would hand the filtered
+    product the whole discount. The product filter narrows the invoice set in
+    SQL and the lines in Python afterwards.
+
+    Only the columns needed are selected — a full ``Invoice`` row carries the
+    company logo snapshot, which is far too heavy to load per invoice here.
+    """
+    start, end = _date_bounds(from_date, to_date)
+    query = (
+        db.query(
+            Invoice.id,
+            Invoice.taxable_amount,
+            Invoice.total_tax_amount,
+            Invoice.round_off_amount,
+            Invoice.total_amount,
+            InvoiceItem.product_id,
+            InvoiceItem.quantity,
+            InvoiceItem.taxable_amount.label("line_taxable"),
+        )
+        .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
+        .filter(
+            Invoice.company_id == company_id,
+            Invoice.status == "active",
+            Invoice.voucher_type == voucher_type,
+            Invoice.invoice_date >= start,
+            Invoice.invoice_date <= end,
+        )
+    )
+    if ledger_id is not None:
+        query = query.filter(Invoice.ledger_id == ledger_id)
+    if product_id is not None:
+        containing = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id)
+        query = query.filter(Invoice.id.in_(containing))
+
+    by_invoice: dict[int, list] = {}
+    for row in query.order_by(Invoice.id, InvoiceItem.id).all():
+        by_invoice.setdefault(row.id, []).append(row)
+
+    lines: list[tuple[int, Decimal, Decimal]] = []
+    for invoice_rows in by_invoice.values():
+        header = invoice_rows[0]  # every row repeats the invoice's own columns
+        taxables = [Decimal(str(row.line_taxable or 0)) for row in invoice_rows]
+        shares = apportion_invoice_discount(
+            taxables,
+            # invoice_discount_amount only reads the four total columns, all
+            # of which the row carries under the same names.
+            invoice_discount=invoice_discount_amount(header),
+            invoice_tax=Decimal(str(header.total_tax_amount or 0)),
+        )
+        for row, taxable, share in zip(invoice_rows, taxables, shares):
+            if product_id is not None and row.product_id != product_id:
+                continue
+            lines.append((row.product_id, Decimal(str(row.quantity or 0)), taxable - share))
+    return lines
+
+
+def _credit_note_lines(
+    db: Session,
+    *,
+    company_id: int,
+    from_date: date,
+    to_date: date,
+    ledger_id: int | None,
+    product_id: int | None,
+):
+    """Active credit/debit note lines in the period, dated by ``created_at``.
+
+    Strict company equality on the note header: unlike
+    :mod:`src.services.credit_note_reporting`, a NULL-company note must not
+    leak into every company's figures on a reporting surface.
+    """
+    start, end = _date_bounds(from_date, to_date)
+    query = (
+        db.query(
+            CreditNote.direction,
+            CreditNote.credit_note_type,
+            CreditNoteItem.product_id,
+            CreditNoteItem.quantity,
+            CreditNoteItem.taxable_amount,
+        )
+        .join(CreditNote, CreditNoteItem.credit_note_id == CreditNote.id)
+        .filter(
+            CreditNote.company_id == company_id,
+            CreditNote.status == "active",
+            CreditNote.created_at >= start,
+            CreditNote.created_at <= end,
+            CreditNoteItem.product_id.isnot(None),
+        )
+    )
+    if ledger_id is not None:
+        query = query.filter(CreditNote.ledger_id == ledger_id)
+    if product_id is not None:
+        query = query.filter(CreditNoteItem.product_id == product_id)
+    return query.all()
+
+
+def _purchase_unit_costs(lines: list[tuple[int, Decimal, Decimal]]) -> dict[int, Decimal]:
+    """Weighted average ex-GST unit cost per product from purchase lines.
+
+    Kept unrounded: it is multiplied by unit counts for COGS, and rounding the
+    unit cost first would scale a sub-paisa error by the quantity.
+    """
+    spend: dict[int, Decimal] = {}
+    units: dict[int, Decimal] = {}
+    for pid, qty, taxable in lines:
+        spend[pid] = spend.get(pid, Decimal("0")) + taxable
+        units[pid] = units.get(pid, Decimal("0")) + qty
+    return {pid: spend[pid] / units[pid] for pid in spend if units[pid]}
+
+
+def build_product_performance_report(
+    db: Session,
+    *,
+    company_id: int,
+    from_date: date,
+    to_date: date,
+    ledger_id: int | None = None,
+    product_id: int | None = None,
+    sort_by: str = "revenue",
+    sort_dir: str = "desc",
+    limit: int | None = None,
+) -> ProductPerformanceData:
+    """Per-product sales, purchases, returns and margin for a period.
+
+    Money is ex-GST throughout. Revenue and purchase spend start from line
+    ``taxable_amount`` (already net of line discounts), less each line's share
+    of any invoice-level discount (see
+    :func:`~src.services.invoice_discounts.apportion_invoice_discount`), less
+    active credit notes: outward notes reduce sales, inward (supplier) notes
+    reduce purchases. Every credit note type reduces value; only ``return``
+    notes move units, because a ``discount`` or ``adjustment`` note sends no
+    goods back (the credit note service only touches stock for returns).
+
+    Cost: the weighted average ex-GST purchase price over the period
+    (``cost_basis="purchases"``), falling back to the product's current
+    ``purchase_price`` when it had no purchases in the period
+    (``cost_basis="current_price"``). With neither, the cost is unknown and
+    every cost-derived field is None rather than a misleading full margin.
+    COGS is net units sold x that cost, so returned units take their cost back
+    out. The average cost ignores the ledger filter — what a product cost does
+    not depend on which customer it was later sold to — while units bought and
+    spend shown on the row do honour it.
+
+    Totals cover the returned rows (after ``limit``), like the product sales
+    report. Profit totals only cover rows with a known cost, and the margin is
+    taken over those rows' revenue so uncosted revenue can't dilute it.
+    """
+    sales_lines = _discounted_invoice_lines(
+        db, company_id=company_id, voucher_type="sales", from_date=from_date,
+        to_date=to_date, ledger_id=ledger_id, product_id=product_id,
+    )
+    purchase_lines = _discounted_invoice_lines(
+        db, company_id=company_id, voucher_type="purchase", from_date=from_date,
+        to_date=to_date, ledger_id=ledger_id, product_id=product_id,
+    )
+    cost_lines = purchase_lines
+    if ledger_id is not None:
+        cost_lines = _discounted_invoice_lines(
+            db, company_id=company_id, voucher_type="purchase", from_date=from_date,
+            to_date=to_date, ledger_id=None, product_id=product_id,
+        )
+    unit_costs = _purchase_unit_costs(cost_lines)
+    note_lines = _credit_note_lines(
+        db, company_id=company_id, from_date=from_date, to_date=to_date,
+        ledger_id=ledger_id, product_id=product_id,
+    )
+
+    zero = Decimal("0")
+    fields = (
+        "units_sold", "units_returned", "units_bought", "units_purchase_returned",
+        "sales_value", "return_value", "purchase_value", "purchase_return_value",
+    )
+    acc: dict[int, dict[str, Decimal]] = {}
+
+    def bucket(pid: int) -> dict[str, Decimal]:
+        if pid not in acc:
+            acc[pid] = {field: zero for field in fields}
+        return acc[pid]
+
+    for pid, qty, taxable in sales_lines:
+        entry = bucket(pid)
+        entry["units_sold"] += qty
+        entry["sales_value"] += taxable
+    for pid, qty, taxable in purchase_lines:
+        entry = bucket(pid)
+        entry["units_bought"] += qty
+        entry["purchase_value"] += taxable
+    for direction, note_type, pid, qty, taxable in note_lines:
+        entry = bucket(pid)
+        units = Decimal(str(qty or 0)) if note_type == "return" else zero
+        value = Decimal(str(taxable or 0))
+        # A NULL direction predates the column; every such note was outward.
+        if direction == "inward":
+            entry["units_purchase_returned"] += units
+            entry["purchase_return_value"] += value
+        else:
+            entry["units_returned"] += units
+            entry["return_value"] += value
+
+    if not acc:
+        return ProductPerformanceData(rows=[], totals=_performance_totals([]))
+
+    products = {
+        product.id: product
+        for product in db.query(
+            Product.id, Product.name, Product.sku, Product.maintain_inventory, Product.purchase_price,
+        ).filter(Product.id.in_(list(acc))).all()
+    }
+    stock_map = {
+        pid: Decimal(str(qty or 0))
+        for pid, qty in db.query(Inventory.product_id, Inventory.quantity)
+        .filter(Inventory.company_id == company_id, Inventory.product_id.in_(list(acc)))
+        .all()
+    }
+
+    rows: list[dict] = []
+    for pid, entry in acc.items():
+        product = products.get(pid)
+        if product is None:  # defensive: a line pointing at a deleted product
+            continue
+
+        net_units_sold = entry["units_sold"] - entry["units_returned"]
+        net_units_bought = entry["units_bought"] - entry["units_purchase_returned"]
+        sales_value = _money(entry["sales_value"])
+        return_value = _money(entry["return_value"])
+        revenue = _money(sales_value - return_value)
+        purchase_value = _money(entry["purchase_value"])
+        purchase_return_value = _money(entry["purchase_return_value"])
+        purchase_spend = _money(purchase_value - purchase_return_value)
+
+        unit_cost = unit_costs.get(pid)
+        cost_basis: str | None = COST_BASIS_PURCHASES
+        if unit_cost is None:
+            current = Decimal(str(product.purchase_price or 0))
+            unit_cost, cost_basis = (current, COST_BASIS_CURRENT_PRICE) if current > 0 else (None, None)
+
+        cogs = gross_profit = margin_pct = profit_per_unit = None
+        if unit_cost is not None:
+            cogs = _money(net_units_sold * unit_cost)
+            gross_profit = _money(revenue - cogs)
+            margin_pct = _ratio(gross_profit * 100, revenue)
+            profit_per_unit = _ratio(gross_profit, net_units_sold)
+
+        rows.append({
+            "product_id": pid,
+            "name": product.name,
+            "sku": product.sku,
+            "units_sold": entry["units_sold"],
+            "units_returned": entry["units_returned"],
+            "net_units_sold": net_units_sold,
+            "units_bought": entry["units_bought"],
+            "units_purchase_returned": entry["units_purchase_returned"],
+            "net_units_bought": net_units_bought,
+            # Averages are over gross (pre-return) lines: they describe the
+            # prices actually transacted, and stay defined when everything
+            # sold in the period also came back.
+            "average_selling_price": _ratio(sales_value, entry["units_sold"]),
+            "average_buying_price": _money(unit_cost) if unit_cost is not None else None,
+            "cost_basis": cost_basis,
+            "sales_value": sales_value,
+            "return_value": return_value,
+            "revenue": revenue,
+            "purchase_value": purchase_value,
+            "purchase_return_value": purchase_return_value,
+            "purchase_spend": purchase_spend,
+            "cogs": cogs,
+            "gross_profit": gross_profit,
+            "margin_pct": margin_pct,
+            "profit_per_unit": profit_per_unit,
+            "current_stock": stock_map.get(pid, zero) if product.maintain_inventory else None,
+        })
+
+    _sort_performance_rows(rows, sort_by=sort_by, sort_dir=sort_dir)
+    if limit is not None:
+        rows = rows[:limit]
+
+    return ProductPerformanceData(rows=rows, totals=_performance_totals(rows))
+
+
+def _sort_performance_rows(rows: list[dict], *, sort_by: str, sort_dir: str) -> None:
+    """Sort in place; rows whose key is None sort last in both directions."""
+    if sort_by not in PRODUCT_PERFORMANCE_SORTS:
+        raise ValueError(f"Unsupported sort field: {sort_by}")
+    reverse = sort_dir == "desc"
+
+    # Name first, so ties on the real key fall back to a stable, readable order.
+    rows.sort(key=lambda row: (row["name"] or "").lower())
+    if sort_by == "name":
+        if reverse:
+            rows.reverse()
+        return
+
+    present = [row for row in rows if row[sort_by] is not None]
+    missing = [row for row in rows if row[sort_by] is None]
+    present.sort(key=lambda row: row[sort_by], reverse=reverse)
+    rows[:] = present + missing
+
+
+def _performance_totals(rows: list[dict]) -> dict:
+    def total(field: str, subset: list[dict] | None = None) -> Decimal:
+        return sum((row[field] for row in (rows if subset is None else subset)), Decimal("0"))
+
+    costed = [row for row in rows if row["cogs"] is not None]
+    costed_revenue = total("revenue", costed)
+    gross_profit = total("gross_profit", costed)
+    return {
+        "product_count": len(rows),
+        "units_sold": total("units_sold"),
+        "units_returned": total("units_returned"),
+        "net_units_sold": total("net_units_sold"),
+        "units_bought": total("units_bought"),
+        "units_purchase_returned": total("units_purchase_returned"),
+        "net_units_bought": total("net_units_bought"),
+        "sales_value": total("sales_value"),
+        "return_value": total("return_value"),
+        "revenue": total("revenue"),
+        "purchase_value": total("purchase_value"),
+        "purchase_return_value": total("purchase_return_value"),
+        "purchase_spend": total("purchase_spend"),
+        "costed_revenue": costed_revenue,
+        "cogs": total("cogs", costed),
+        "gross_profit": gross_profit,
+        "margin_pct": _ratio(gross_profit * 100, costed_revenue),
+        "uncosted_product_count": len(rows) - len(costed),
+        "current_price_product_count": sum(1 for row in rows if row["cost_basis"] == COST_BASIS_CURRENT_PRICE),
+    }
 
 
 def _distinct_invoice_count(
