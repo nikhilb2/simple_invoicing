@@ -1263,8 +1263,7 @@ def download_ledger_statement_pdf(
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
 
     buf = render_statement_pdf(db, company_id, ledger_id, from_date, to_date)
-    safe_name = ledger.name.replace(" ", "_").replace("/", "_")[:30]
-    filename = f"statement_{safe_name}_{from_date}_{to_date}.pdf"
+    filename = _statement_filename(ledger, from_date, to_date, "pdf")
 
     return StreamingResponse(
         buf,

@@ -200,3 +200,16 @@ def test_statement_csv_is_404_for_an_unknown_or_other_company_ledger(client, db_
     assert unknown.json()["detail"] == "Ledger 999 not found"
     assert other_company.status_code == 404
     assert other_company.json()["detail"] == "Ledger 2 not found"
+
+
+def test_statement_pdf_downloads_for_a_non_latin_ledger_name(client, db_session):
+    # This used to be a 500: the raw name went into a latin-1 response header.
+    _seed_statement(db_session, ledger_name="श्री Traders")
+
+    response = client.get("/api/ledgers/1/statement/pdf", params=PERIOD)
+
+    assert response.status_code == 200, response.text
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="statement_Traders_2026-04-01_2026-04-30.pdf"'
+    )
+    assert response.content.startswith(b"%PDF")
