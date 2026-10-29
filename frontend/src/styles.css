@@ -362,16 +362,62 @@ textarea {
 }
 
 .page-header__shortcut-hint {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
   font-size: 0.75rem;
   color: var(--muted);
+  cursor: pointer;
 }
 
-.page-header__shortcut-hint kbd {
+.page-header__shortcut-hint:hover {
+  color: var(--text);
+}
+
+.page-header__shortcut-hint kbd,
+.shortcut-cheat-sheet kbd {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 1px 5px;
   font-size: 0.7rem;
+}
+
+.shortcut-cheat-sheet {
+  max-width: 440px;
+}
+
+.shortcut-cheat-sheet:focus {
+  outline: none;
+}
+
+.shortcut-cheat-sheet__list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.shortcut-cheat-sheet__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.shortcut-cheat-sheet__row dd {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.shortcut-cheat-sheet__footer {
+  margin: 16px 0 0;
+  font-size: 0.85rem;
+}
+
+.shortcut-cheat-sheet__footer a {
+  color: var(--accent);
 }
 
 .page-frame,

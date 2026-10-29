@@ -4,23 +4,13 @@ import { useShortcuts } from '../context/ShortcutsContext';
 import { ACTION_KEYS, ACTION_LABELS, DEFAULT_SHORTCUTS, type ActionKey } from '../utils/shortcutDefaults';
 import StatusToasts from '../components/StatusToasts';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { normalizeCombo } from '../utils/keyboard';
 
 // Keys that should be ignored when recording (lone modifiers / lock keys)
 const MODIFIER_KEYS = new Set([
   'Control', 'Shift', 'Alt', 'Meta',
   'CapsLock', 'NumLock', 'ScrollLock', 'Tab',
 ]);
-
-function normalizeCombo(e: KeyboardEvent): string {
-  const parts: string[] = [];
-  if (e.ctrlKey) parts.push('Ctrl');
-  if (e.shiftKey) parts.push('Shift');
-  if (e.altKey) parts.push('Alt');
-  if (e.metaKey) parts.push('Meta');
-  const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
-  parts.push(key);
-  return parts.join('+');
-}
 
 export default function KeyboardShortcutsPage() {
   const { shortcutsMap, refetchShortcuts } = useShortcuts();

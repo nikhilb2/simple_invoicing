@@ -4,15 +4,17 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { NAV_SHORTCUTS, resolveDocumentTitle } from '../config/navigation';
 import { useShortcuts } from '../context/ShortcutsContext';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import { isCheatSheetKey } from '../utils/keyboard';
 import { useMarketplaceSync } from '../features/marketplace/useMarketplaceSync';
 import { useSidebarStore } from '../store/useSidebarStore';
 import Sidebar from './Sidebar';
 import InvoiceCancelDialog from './InvoiceCancelDialog';
+import ShortcutCheatSheet from './ShortcutCheatSheet';
 import UpdateAvailableToast from './UpdateAvailableToast';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const { registerAction } = useShortcuts();
+  const { registerAction, shortcutsMap } = useShortcuts();
   const navigate = useNavigate();
   const collapsed = useSidebarStore((state) => state.collapsed);
 
@@ -33,6 +35,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     );
     return () => cleanups.forEach(fn => fn());
   }, [registerAction, navigate]);
+
+  const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
+  const closeCheatSheet = useCallback(() => setCheatSheetOpen(false), []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || !isCheatSheetKey(e, Object.values(shortcutsMap))) return;
+      // A dialog that is already open keeps the keyboard; this one included.
+      if (document.querySelector('[aria-modal="true"]')) return;
+      e.preventDefault();
+      setCheatSheetOpen(true);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [shortcutsMap]);
 
   useEffect(() => {
     document.title = `${resolveDocumentTitle(location.pathname)} | Simple Invoicing`;
@@ -63,9 +80,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <span className="sidebar-toggle__bar" />
             <span className="sidebar-toggle__bar" />
           </button>
-          <div className="page-header__shortcut-hint">
+          <button
+            type="button"
+            className="page-header__shortcut-hint"
+            onClick={() => setCheatSheetOpen(true)}
+          >
             Press <kbd>?</kbd> for shortcuts
-          </div>
+          </button>
         </header>
 
         <motion.main
@@ -78,6 +99,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {children}
         </motion.main>
       </div>
+      {cheatSheetOpen && <ShortcutCheatSheet onClose={closeCheatSheet} />}
       <InvoiceCancelDialog />
       <UpdateAvailableToast />
     </div>
