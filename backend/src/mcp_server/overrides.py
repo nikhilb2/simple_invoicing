@@ -73,6 +73,7 @@ NAME_OVERRIDES: dict[tuple[str, str], str] = {
     ("GET", "/api/ledgers/tax-ledger/gstr1/summary"): "gstr1_summary",
     ("GET", "/api/ledgers/tax-ledger/gstr1/validate"): "gstr1_validate",
     ("GET", "/api/ledgers/{ledger_id}/statement/pdf"): "ledgers_download_statement_pdf",
+    ("GET", "/api/ledgers/{ledger_id}/statement/csv"): "ledgers_download_statement_csv",
     ("GET", "/api/ledgers/{ledger_id}/addresses/"): "ledgers_list_addresses",
     ("POST", "/api/ledgers/{ledger_id}/addresses/"): "ledgers_create_address",
     ("PUT", "/api/ledgers/{ledger_id}/addresses/{address_id}"): "ledgers_update_address",

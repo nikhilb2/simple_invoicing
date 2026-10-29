@@ -72,6 +72,7 @@ ledgers_day_book_csv	GET	/api/ledgers/day-book/csv
 ledgers_day_book_pdf	GET	/api/ledgers/day-book/pdf
 ledgers_delete	DELETE	/api/ledgers/{ledger_id}
 ledgers_delete_address	DELETE	/api/ledgers/{ledger_id}/addresses/{address_id}
+ledgers_download_statement_csv	GET	/api/ledgers/{ledger_id}/statement/csv
 ledgers_download_statement_pdf	GET	/api/ledgers/{ledger_id}/statement/pdf
 ledgers_get	GET	/api/ledgers/{ledger_id}
 ledgers_get_statement	GET	/api/ledgers/{ledger_id}/statement
