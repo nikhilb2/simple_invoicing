@@ -5,15 +5,14 @@ unknown-id 404, company isolation, role behavior, and unauthenticated
 access, using the shared TestClient + db_session fixtures from
 tests/conftest.py.
 
-Note on roles: unlike the invoice-series routes, the financial-year
-routes carry no role gate in code, only authentication. The role test
-below therefore asserts the actual behavior: a non-admin authenticated
-user can create and activate a financial year.
+Roles (issue #493): creating and activating a financial year is admin-only,
+like the invoice-series routes, while any logged-in user can list them.
 """
 
 from contextlib import contextmanager
 from datetime import date
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app_main import app
@@ -204,17 +203,71 @@ def test_activate_other_company_year_returns_404(client, db_session):
     assert response.status_code == 404, response.text
 
 
-def test_non_admin_user_can_create_and_activate(client, db_session):
+@pytest.mark.parametrize("role", [UserRole.manager, UserRole.staff])
+def test_non_admin_cannot_create_a_financial_year(client, db_session, role):
+    _seed_company(db_session, 1, "Company A")
+
+    with as_role(role):
+        response = client.post("/api/financial-years/", json=_create_payload())
+
+    assert response.status_code == 403, response.text
+    assert db_session.query(FinancialYear).count() == 0
+    assert db_session.query(InvoiceSeries).count() == 0
+
+
+@pytest.mark.parametrize("role", [UserRole.manager, UserRole.staff])
+def test_non_admin_cannot_activate_a_financial_year(client, db_session, role):
+    _seed_company(db_session, 1, "Company A")
+    _seed_fy(
+        db_session,
+        1,
+        1,
+        "FY 2025-26",
+        date(2025, 4, 1),
+        date(2026, 3, 31),
+        is_active=True,
+    )
+    _seed_fy(
+        db_session, 2, 1, "FY 2026-27", date(2026, 4, 1), date(2027, 3, 31)
+    )
+
+    with as_role(role):
+        response = client.put("/api/financial-years/2/activate")
+
+    assert response.status_code == 403, response.text
+    db_session.expire_all()
+    states = {
+        fy.id: fy.is_active
+        for fy in db_session.query(FinancialYear).order_by(FinancialYear.id).all()
+    }
+    assert states == {1: True, 2: False}
+
+
+@pytest.mark.parametrize("role", [UserRole.manager, UserRole.staff])
+def test_non_admin_can_still_list_financial_years(client, db_session, role):
     _seed_company(db_session, 1, "Company A")
     _seed_fy(
         db_session, 1, 1, "FY 2025-26", date(2025, 4, 1), date(2026, 3, 31)
     )
 
-    with as_role(UserRole.staff):
+    with as_role(role):
+        response = client.get("/api/financial-years/")
+
+    assert response.status_code == 200, response.text
+    assert [item["label"] for item in response.json()] == ["FY 2025-26"]
+
+
+def test_admin_can_create_and_activate(client, db_session):
+    _seed_company(db_session, 1, "Company A")
+
+    with as_role(UserRole.admin):
         created = client.post("/api/financial-years/", json=_create_payload())
         assert created.status_code == 201, created.text
-        activated = client.put("/api/financial-years/1/activate")
+        activated = client.put(
+            f"/api/financial-years/{created.json()['id']}/activate"
+        )
         assert activated.status_code == 200, activated.text
+        assert activated.json()["is_active"] is True
 
 
 def test_unauthenticated_request_gets_401(db_session):
