@@ -1,6 +1,8 @@
 import csv
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
+from decimal import Decimal
 from io import BytesIO, StringIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -1267,6 +1269,88 @@ def download_ledger_statement_pdf(
     return StreamingResponse(
         buf,
         media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _statement_filename(ledger: Ledger, from_date: date, to_date: date, extension: str) -> str:
+    """The download name for a ledger statement.
+
+    Response headers are encoded as latin-1, so a ledger named in Devanagari (or
+    any other non-Latin script) made the download fail with a 500. A quote in the
+    name would also end the quoted filename early. Only plain ASCII survives.
+    """
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", ledger.name).strip("_")[:30] or f"ledger_{ledger.id}"
+    return f"statement_{safe_name}_{from_date}_{to_date}.{extension}"
+
+
+def _statement_balance_cells(balance: Decimal) -> list[str]:
+    """A balance as an unsigned amount and its side, the way a ledger prints it.
+
+    Dr means the party owes us; Cr means we owe them (the same reading as the
+    shared statement page).
+    """
+    if balance == 0:
+        return ["0.00", ""]
+    return [f"{abs(balance):.2f}", "Dr" if balance > 0 else "Cr"]
+
+
+@router.get("/{ledger_id}/statement/csv")
+def download_ledger_statement_csv(
+    ledger_id: int,
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    company_id = getattr(active_company, "id", None)
+    if from_date > to_date:
+        raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
+
+    ledger = _get_ledger_or_404(db, ledger_id, company_id)
+    # The same builder as the JSON statement and the PDF, so all three agree.
+    statement_data = _build_ledger_statement_data(db, ledger, from_date, to_date, company_id=company_id)
+
+    csv_buffer = StringIO(newline="")
+    writer = csv.writer(csv_buffer)
+    writer.writerow(["Date", "Voucher Type", "Reference", "Particulars", "Debit", "Credit", "Balance", "Dr/Cr"])
+
+    # The running balance is summed in Decimal. In floats a settled account does
+    # not come back to zero (0.10 + 0.20 - 0.30 leaves 5.5e-17), and that residue
+    # would print as "0.00 Cr".
+    balance = Decimal(str(statement_data.opening_balance))
+    writer.writerow([from_date.isoformat(), "", "", "Opening Balance", "", "", *_statement_balance_cells(balance)])
+
+    for entry in statement_data.entries:
+        balance += Decimal(str(entry.debit)) - Decimal(str(entry.credit))
+        writer.writerow([
+            entry.date.date().isoformat(),
+            entry.voucher_type,
+            entry.reference_number or "",
+            entry.particulars,
+            f"{entry.debit:.2f}" if entry.debit > 0 else "",
+            f"{entry.credit:.2f}" if entry.credit > 0 else "",
+            *_statement_balance_cells(balance),
+        ])
+
+    writer.writerow([])
+    writer.writerow([
+        "",
+        "",
+        "",
+        "Totals",
+        f"{statement_data.period_debit:.2f}",
+        f"{statement_data.period_credit:.2f}",
+        *_statement_balance_cells(Decimal(f"{statement_data.closing_balance:.2f}")),
+    ])
+
+    csv_bytes = csv_buffer.getvalue().encode("utf-8-sig")
+    filename = _statement_filename(ledger, from_date, to_date, "csv")
+
+    return StreamingResponse(
+        BytesIO(csv_bytes),
+        media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
