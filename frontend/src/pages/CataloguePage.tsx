@@ -93,6 +93,7 @@ export default function CataloguePage() {
   const [rowError, setRowError] = useState('');
 
   const [formRow, setFormRow] = useState<CatalogueRow | null>(null);
+  const [formTemplate, setFormTemplate] = useState<CatalogueRow | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [adjustRow, setAdjustRow] = useState<CatalogueRow | null>(null);
   const [serialsRow, setSerialsRow] = useState<CatalogueRow | null>(null);
@@ -412,6 +413,7 @@ export default function CataloguePage() {
             className="button button--primary"
             onClick={() => {
               setFormRow(null);
+              setFormTemplate(null);
               setFormOpen(true);
             }}
           >
@@ -533,6 +535,7 @@ export default function CataloguePage() {
                 label: 'Add first product',
                 onClick: () => {
                   setFormRow(null);
+                  setFormTemplate(null);
                   setFormOpen(true);
                 },
               }}
@@ -561,6 +564,12 @@ export default function CataloguePage() {
               onConfigureBom={(row) => setBomTarget({ id: row.id, name: row.name })}
               onOpenFullEdit={(row) => {
                 setFormRow(row);
+                setFormTemplate(null);
+                setFormOpen(true);
+              }}
+              onDuplicate={(row) => {
+                setFormRow(null);
+                setFormTemplate(row);
                 setFormOpen(true);
               }}
               onDelete={setDeleteRow}
@@ -583,6 +592,7 @@ export default function CataloguePage() {
       {formOpen ? (
         <ProductFormModal
           row={formRow}
+          template={formTemplate}
           onCancel={() => setFormOpen(false)}
           onSaved={(message) => {
             setFormOpen(false);
