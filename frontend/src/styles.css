@@ -399,6 +399,13 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+/* An inline validation message under a field, shown before the form is sent. */
+.field-error {
+  color: var(--danger);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 .ledger-contact-link {
   color: var(--accent);
   text-decoration: underline;

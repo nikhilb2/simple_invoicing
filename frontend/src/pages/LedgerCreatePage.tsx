@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import type { Ledger, LedgerCreate } from '../types/api';
+import { GSTIN_LENGTH, describeGstin, gstinError, normalizeGstinInput } from '../utils/gstin';
 import {
   applyOpeningBalanceSide,
   openingBalanceMagnitude,
@@ -20,6 +21,9 @@ export default function   LedgerCreatePage() {
   const [loading, setLoading] = useState(!!editingLedgerId);
   const [error, setError] = useState('');
   const [openingBalanceSide, setOpeningBalanceSide] = useState<OpeningBalanceSide>('debit');
+  // A half-typed GSTIN is not wrong yet, so the error waits for all 15
+  // characters or for the user to leave the field.
+  const [gstTouched, setGstTouched] = useState(false);
   const [form, setForm] = useState<LedgerCreate>({
     name: '',
     address: '',
@@ -70,6 +74,11 @@ export default function   LedgerCreatePage() {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (gstinError(form.gst)) {
+      setGstTouched(true);
+      document.getElementById('ledger-gst')?.focus();
+      return;
+    }
     try {
       setSubmitting(true);
       setError('');
@@ -77,7 +86,7 @@ export default function   LedgerCreatePage() {
       const payload: LedgerCreate = {
         name: form.name.trim(),
         address: form.address.trim(),
-        gst: form.gst.trim().toUpperCase(),
+        gst: normalizeGstinInput(form.gst),
         opening_balance: form.opening_balance,
         phone_number: form.phone_number.trim(),
         email: form.email.trim(),
@@ -102,6 +111,9 @@ export default function   LedgerCreatePage() {
       setSubmitting(false);
     }
   }
+
+  const gstError = gstTouched || form.gst.length >= GSTIN_LENGTH ? gstinError(form.gst) : null;
+  const gstDetails = describeGstin(form.gst);
 
   if (loading) {
     return (
@@ -178,13 +190,23 @@ export default function   LedgerCreatePage() {
                     id="ledger-gst"
                     className="input"
                     value={form.gst}
-                    onChange={(e) => setForm((c) => ({ ...c, gst: e.target.value }))}
+                    onChange={(e) => setForm((c) => ({ ...c, gst: normalizeGstinInput(e.target.value) }))}
+                    onBlur={() => setGstTouched(true)}
                     placeholder="27ABCDE1234F1Z0"
-                    pattern="^$|[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z][A-Za-z0-9]Z[A-Za-z0-9]$"
-                    title="Enter a valid 15-character GSTIN (e.g. 27ABCDE1234F1Z0), or leave blank"
-                    maxLength={15}
+                    maxLength={GSTIN_LENGTH}
+                    aria-invalid={gstError ? true : undefined}
+                    aria-describedby={gstError ? 'ledger-gst-hint ledger-gst-error' : 'ledger-gst-hint'}
                   />
-                  <small className="field-hint">Optional. If entered, format must be 27ABCDE1234F1Z0.</small>
+                  <small id="ledger-gst-hint" className="field-hint">
+                    {gstDetails
+                      ? `PAN ${gstDetails.pan} · State code ${gstDetails.stateCode}`
+                      : 'Optional. If entered, format must be 27ABCDE1234F1Z0.'}
+                  </small>
+                  {gstError ? (
+                    <small id="ledger-gst-error" className="field-error" role="alert">
+                      {gstError}
+                    </small>
+                  ) : null}
                 </div>
                 <div className="field field--full">
                   <label htmlFor="ledger-opening-balance">Opening balance</label>
