@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Lock } from 'lucide-react';
+import ConfirmDialog from './ConfirmDialog';
 import ModalCloseButton from './ModalCloseButton';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
@@ -8,6 +9,7 @@ import { useFY } from '../context/FYContext';
 import formatCurrency from '../utils/formatting';
 import { formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../utils/invoiceDueDate.ts';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../utils/invoiceTax';
+import { invoiceDraftSnapshot } from '../utils/invoiceDraft';
 import ProductCombobox from './ProductCombobox';
 import LedgerCombobox from './LedgerCombobox';
 import SerialChips from '../pages/invoices/components/SerialChips';
@@ -63,6 +65,8 @@ export default function CreateInvoiceModal({
   const [submitting, setSubmitting] = useState(false);
   const [currencyCode, setCurrencyCode] = useState('INR');
   const [companyGst, setCompanyGst] = useState<string | null>(null);
+  const [pristineSnapshot, setPristineSnapshot] = useState<string | null>(null);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,303 +215,349 @@ export default function CreateInvoiceModal({
     }
   }
 
-  useEscapeClose(onClose);
+  const draftSnapshot = invoiceDraftSnapshot({
+    ledgerId: selectedLedgerId,
+    voucherType,
+    taxInclusive,
+    invoiceDate,
+    dueDateMode,
+    dueDate,
+    dueDateDays,
+    referenceNotes,
+    items,
+  });
+
+  // The pristine form is the one the load leaves behind, with the first ledger
+  // and product already filled in, so those defaults don't count as edits.
+  useEffect(() => {
+    if (!loading && pristineSnapshot === null) setPristineSnapshot(draftSnapshot);
+  }, [loading, pristineSnapshot, draftSnapshot]);
+
+  const isDirty = pristineSnapshot !== null && draftSnapshot !== pristineSnapshot;
+
+  /* Every way out of the modal (backdrop, Escape, Close, Cancel) comes through
+     here, so an edited invoice is never thrown away by a stray click. A
+     successful save closes through onCreated and is not asked about. */
+  const requestClose = useCallback(() => {
+    if (isDirty) setConfirmingDiscard(true);
+    else onClose();
+  }, [isDirty, onClose]);
+
+  // The confirm dialog closes itself on Escape; without this guard the same
+  // keypress would also reach the modal behind it.
+  useEscapeClose(useCallback(() => {
+    if (!confirmingDiscard) requestClose();
+  }, [confirmingDiscard, requestClose]));
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="create-invoice-modal-title" onClick={onClose}>
-      <div className="modal-panel modal-panel--invoice-preview" onClick={(e) => e.stopPropagation()}>
-        <div className="panel__header">
-          <div>
-            <p className="eyebrow">Quick create</p>
-            <h2 id="create-invoice-modal-title" className="nav-panel__title">Create invoice</h2>
+    <>
+      <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="create-invoice-modal-title" onClick={requestClose}>
+        <div className="modal-panel modal-panel--invoice-preview" onClick={(e) => e.stopPropagation()}>
+          <div className="panel__header">
+            <div>
+              <p className="eyebrow">Quick create</p>
+              <h2 id="create-invoice-modal-title" className="nav-panel__title">Create invoice</h2>
+            </div>
+            <div className="button-row">
+              <div className="status-chip">Total {formatCurrency(totalAmount, currencyCode)}</div>
+              <ModalCloseButton onClick={requestClose} label="Close create invoice" />
+            </div>
           </div>
-          <div className="button-row">
-            <div className="status-chip">Total {formatCurrency(totalAmount, currencyCode)}</div>
-            <ModalCloseButton onClick={onClose} label="Close create invoice" />
-          </div>
-        </div>
 
-        {loading ? (
-          <div className="empty-state">Loading form data...</div>
-        ) : (
-          <form className="stack" onSubmit={(e) => void handleSubmit(e)}>
-            <div className="field-grid">
-              <div className="field">
-                <label htmlFor="modal-inv-voucher-type">Voucher type</label>
-                <select
-                  id="modal-inv-voucher-type"
-                  className="select"
-                  value={voucherType}
-                  onChange={(e) => setVoucherType(e.target.value as 'sales' | 'purchase')}
-                >
-                  <option value="sales">Sales</option>
-                  <option value="purchase">Purchase</option>
-                </select>
-              </div>
+          {loading ? (
+            <div className="empty-state">Loading form data...</div>
+          ) : (
+            <form className="stack" onSubmit={(e) => void handleSubmit(e)}>
+              <div className="field-grid">
+                <div className="field">
+                  <label htmlFor="modal-inv-voucher-type">Voucher type</label>
+                  <select
+                    id="modal-inv-voucher-type"
+                    className="select"
+                    value={voucherType}
+                    onChange={(e) => setVoucherType(e.target.value as 'sales' | 'purchase')}
+                  >
+                    <option value="sales">Sales</option>
+                    <option value="purchase">Purchase</option>
+                  </select>
+                </div>
 
-              <div className="field">
-                <label htmlFor="modal-inv-ledger">Ledger</label>
-                <LedgerCombobox
-                  id="modal-inv-ledger"
-                  ledgers={ledgers}
-                  value={selectedLedgerId}
-                  onChange={setSelectedLedgerId}
-                  required
-                  disabled={!!preselectedLedgerId}
-                />
-              </div>
+                <div className="field">
+                  <label htmlFor="modal-inv-ledger">Ledger</label>
+                  <LedgerCombobox
+                    id="modal-inv-ledger"
+                    ledgers={ledgers}
+                    value={selectedLedgerId}
+                    onChange={setSelectedLedgerId}
+                    required
+                    disabled={!!preselectedLedgerId}
+                  />
+                </div>
 
-              <div className="field">
-                <label htmlFor="modal-inv-date">Invoice date</label>
-                <input
-                  id="modal-inv-date"
-                  className="input"
-                  type="date"
-                  value={invoiceDate}
-                  onChange={(e) => setInvoiceDate(e.target.value)}
-                  required
-                />
-                {isDateOutsideFY && activeFY ? (
-                  <p className="field-warning">
-                    ⚠️ This date is outside the active financial year ({activeFY.label}). The invoice will still be created.
-                  </p>
+                <div className="field">
+                  <label htmlFor="modal-inv-date">Invoice date</label>
+                  <input
+                    id="modal-inv-date"
+                    className="input"
+                    type="date"
+                    value={invoiceDate}
+                    onChange={(e) => setInvoiceDate(e.target.value)}
+                    required
+                  />
+                  {isDateOutsideFY && activeFY ? (
+                    <p className="field-warning">
+                      ⚠️ This date is outside the active financial year ({activeFY.label}). The invoice will still be created.
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="field">
+                  <label htmlFor="modal-inv-due-mode">Due date</label>
+                  <select
+                    id="modal-inv-due-mode"
+                    className="select"
+                    value={dueDateMode}
+                    onChange={(e) => setDueDateMode(e.target.value as DueDateMode)}
+                  >
+                    <option value="none">No due date</option>
+                    <option value="exact">Choose exact date</option>
+                    <option value="days">Set days from invoice date</option>
+                  </select>
+                </div>
+
+                {dueDateMode === 'exact' ? (
+                  <div className="field">
+                    <label htmlFor="modal-inv-due-date">Exact due date</label>
+                    <input
+                      id="modal-inv-due-date"
+                      className="input"
+                      type="date"
+                      value={dueDate}
+                      min={invoiceDate || undefined}
+                      onChange={(e) => setDueDate(e.target.value)}
+                    />
+                  </div>
+                ) : null}
+
+                {dueDateMode === 'days' ? (
+                  <div className="field">
+                    <label htmlFor="modal-inv-due-days">Days from invoice date</label>
+                    <input
+                      id="modal-inv-due-days"
+                      className="input"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={dueDateDays}
+                      onChange={(e) => setDueDateDays(e.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                ) : null}
+
+                {voucherType === 'sales' ? (
+                  <div className="field" style={{ gridColumn: '1 / -1' }}>
+                    <label htmlFor="modal-inv-reference-notes">Reference Notes</label>
+                    <input
+                      id="modal-inv-reference-notes"
+                      className="input"
+                      type="text"
+                      value={referenceNotes}
+                      onChange={(e) => setReferenceNotes(e.target.value)}
+                      placeholder="PO number or customer reference"
+                    />
+                  </div>
                 ) : null}
               </div>
 
-              <div className="field">
-                <label htmlFor="modal-inv-due-mode">Due date</label>
-                <select
-                  id="modal-inv-due-mode"
-                  className="select"
-                  value={dueDateMode}
-                  onChange={(e) => setDueDateMode(e.target.value as DueDateMode)}
-                >
-                  <option value="none">No due date</option>
-                  <option value="exact">Choose exact date</option>
-                  <option value="days">Set days from invoice date</option>
-                </select>
+              {dueDateMode !== 'none' ? (
+                <p className="muted-text" style={{ margin: 0 }}>
+                  {resolvedDueDate
+                    ? `Resolved due date: ${formatInvoiceDateLabel(resolvedDueDate)}`
+                    : 'Select a valid due date or enter the number of days from the invoice date.'}
+                </p>
+              ) : null}
+
+              <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 0 }}>
+                <input
+                  id="modal-inv-tax-inclusive"
+                  type="checkbox"
+                  checked={taxInclusive}
+                  onChange={(e) => setTaxInclusive(e.target.checked)}
+                />
+                <label htmlFor="modal-inv-tax-inclusive" style={{ marginBottom: 0, cursor: 'pointer' }}>
+                  Prices include GST
+                </label>
               </div>
 
-              {dueDateMode === 'exact' ? (
-                <div className="field">
-                  <label htmlFor="modal-inv-due-date">Exact due date</label>
-                  <input
-                    id="modal-inv-due-date"
-                    className="input"
-                    type="date"
-                    value={dueDate}
-                    min={invoiceDate || undefined}
-                    onChange={(e) => setDueDate(e.target.value)}
-                  />
-                </div>
-              ) : null}
-
-              {dueDateMode === 'days' ? (
-                <div className="field">
-                  <label htmlFor="modal-inv-due-days">Days from invoice date</label>
-                  <input
-                    id="modal-inv-due-days"
-                    className="input"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={dueDateDays}
-                    onChange={(e) => setDueDateDays(e.target.value)}
-                    placeholder="0"
-                  />
-                </div>
-              ) : null}
-
-              {voucherType === 'sales' ? (
-                <div className="field" style={{ gridColumn: '1 / -1' }}>
-                  <label htmlFor="modal-inv-reference-notes">Reference Notes</label>
-                  <input
-                    id="modal-inv-reference-notes"
-                    className="input"
-                    type="text"
-                    value={referenceNotes}
-                    onChange={(e) => setReferenceNotes(e.target.value)}
-                    placeholder="PO number or customer reference"
-                  />
-                </div>
-              ) : null}
-            </div>
-
-            {dueDateMode !== 'none' ? (
-              <p className="muted-text" style={{ margin: 0 }}>
-                {resolvedDueDate
-                  ? `Resolved due date: ${formatInvoiceDateLabel(resolvedDueDate)}`
-                  : 'Select a valid due date or enter the number of days from the invoice date.'}
-              </p>
-            ) : null}
-
-            <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 0 }}>
-              <input
-                id="modal-inv-tax-inclusive"
-                type="checkbox"
-                checked={taxInclusive}
-                onChange={(e) => setTaxInclusive(e.target.checked)}
-              />
-              <label htmlFor="modal-inv-tax-inclusive" style={{ marginBottom: 0, cursor: 'pointer' }}>
-                Prices include GST
-              </label>
-            </div>
-
-            <div className="stack">
-              {items.map((item, index) => {
-                const selectedProduct = products.find((p) => p.id === Number(item.productId));
-                const selectedUnit = selectedProduct?.unit || 'Pieces';
-                const allowDecimalQuantity = Boolean(selectedProduct?.allow_decimal);
-                const tracked = Boolean(selectedProduct?.track_serials);
-                const quantityValue = tracked ? String(item.serials.length) : item.quantity;
-                const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
-                const gstRate = selectedProduct?.gst_rate || 0;
-                let lineTotal: number;
-                let taxAmount: number;
-                if (taxInclusive) {
-                  let baseLineTotal = unitPrice * Number(quantityValue || 0);
-                  let baseTaxableAmount = baseLineTotal / (1 + gstRate / 100);
-                  // Apply item-level discount
-                  if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
-                    const discVal = Number(item.discount_value);
-                    let discAmount = 0;
-                    if (item.discount_type === 'percentage') {
-                      discAmount = baseTaxableAmount * discVal / 100;
+              <div className="stack">
+                {items.map((item, index) => {
+                  const selectedProduct = products.find((p) => p.id === Number(item.productId));
+                  const selectedUnit = selectedProduct?.unit || 'Pieces';
+                  const allowDecimalQuantity = Boolean(selectedProduct?.allow_decimal);
+                  const tracked = Boolean(selectedProduct?.track_serials);
+                  const quantityValue = tracked ? String(item.serials.length) : item.quantity;
+                  const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
+                  const gstRate = selectedProduct?.gst_rate || 0;
+                  let lineTotal: number;
+                  let taxAmount: number;
+                  if (taxInclusive) {
+                    let baseLineTotal = unitPrice * Number(quantityValue || 0);
+                    let baseTaxableAmount = baseLineTotal / (1 + gstRate / 100);
+                    // Apply item-level discount
+                    if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
+                      const discVal = Number(item.discount_value);
+                      let discAmount = 0;
+                      if (item.discount_type === 'percentage') {
+                        discAmount = baseTaxableAmount * discVal / 100;
+                      } else {
+                        discAmount = Math.min(discVal, baseTaxableAmount);
+                      }
+                      const discountedTaxable = baseTaxableAmount - discAmount;
+                      lineTotal = discountedTaxable * (1 + gstRate / 100);
+                      taxAmount = lineTotal - discountedTaxable;
                     } else {
-                      discAmount = Math.min(discVal, baseTaxableAmount);
+                      lineTotal = baseLineTotal;
+                      taxAmount = lineTotal - baseTaxableAmount;
                     }
-                    const discountedTaxable = baseTaxableAmount - discAmount;
-                    lineTotal = discountedTaxable * (1 + gstRate / 100);
-                    taxAmount = lineTotal - discountedTaxable;
                   } else {
-                    lineTotal = baseLineTotal;
-                    taxAmount = lineTotal - baseTaxableAmount;
-                  }
-                } else {
-                  const baseTaxableAmount = unitPrice * Number(quantityValue || 0);
-                  // Apply item-level discount
-                  if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
-                    const discVal = Number(item.discount_value);
-                    let discAmount = 0;
-                    if (item.discount_type === 'percentage') {
-                      discAmount = baseTaxableAmount * discVal / 100;
+                    const baseTaxableAmount = unitPrice * Number(quantityValue || 0);
+                    // Apply item-level discount
+                    if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
+                      const discVal = Number(item.discount_value);
+                      let discAmount = 0;
+                      if (item.discount_type === 'percentage') {
+                        discAmount = baseTaxableAmount * discVal / 100;
+                      } else {
+                        discAmount = Math.min(discVal, baseTaxableAmount);
+                      }
+                      const discountedTaxable = baseTaxableAmount - discAmount;
+                      taxAmount = discountedTaxable * gstRate / 100;
+                      lineTotal = discountedTaxable + taxAmount;
                     } else {
-                      discAmount = Math.min(discVal, baseTaxableAmount);
+                      taxAmount = baseTaxableAmount * gstRate / 100;
+                      lineTotal = baseTaxableAmount + taxAmount;
                     }
-                    const discountedTaxable = baseTaxableAmount - discAmount;
-                    taxAmount = discountedTaxable * gstRate / 100;
-                    lineTotal = discountedTaxable + taxAmount;
-                  } else {
-                    taxAmount = baseTaxableAmount * gstRate / 100;
-                    lineTotal = baseTaxableAmount + taxAmount;
                   }
-                }
 
-                return (
-                  <div key={item.id} className="line-item">
-                    <div className="field">
-                      <label htmlFor={`modal-inv-product-${item.id}`}>Line {index + 1}</label>
-                      <ProductCombobox
-                        id={`modal-inv-product-${item.id}`}
-                        products={products}
-                        value={item.productId}
-                        onChange={(productId, newProduct) => {
-                          updateItem(item.id, 'productId', productId);
-                          updateItem(item.id, 'unit_price', String(newProduct.price));
-                        }}
-                        required
-                      />
-                    </div>
-
-                    <div className="field">
-                      <label htmlFor={`modal-inv-qty-${item.id}`}>
-                        Qty ({selectedUnit})
-                        {tracked ? <Lock size={11} className="field__lock" aria-hidden="true" /> : null}
-                      </label>
-                      <input
-                        id={`modal-inv-qty-${item.id}`}
-                        className="input"
-                        type="number"
-                        min={allowDecimalQuantity ? '0.001' : '1'}
-                        step={allowDecimalQuantity ? '0.001' : '1'}
-                        value={quantityValue}
-                        disabled={tracked}
-                        title={tracked ? 'Quantity follows the serial numbers' : undefined}
-                        onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
-                        required
-                      />
-                    </div>
-
-                    <div className="field">
-                      <label htmlFor={`modal-inv-price-${item.id}`}>{taxInclusive ? 'Amount (incl. GST)' : 'Price'}</label>
-                      <input
-                        id={`modal-inv-price-${item.id}`}
-                        className="input"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={item.unit_price}
-                        onChange={(e) => updateItem(item.id, 'unit_price', e.target.value)}
-                        placeholder={selectedProduct ? String(selectedProduct.price) : '0.00'}
-                      />
-                    </div>
-
-                    <div className="line-item__price">
-                      {formatCurrency(lineTotal, currencyCode)}
-                      <div className="table-subtext">
-                        {formatInvoiceTaxBreakdown({
-                          gstRate,
-                          taxAmount,
-                          currencyCode,
-                          interstateSupply: composerInterstateSupply,
-                        })}
-                      </div>
-                    </div>
-                    <button type="button" className="button button--danger" onClick={() => removeItem(item.id)} title={`Remove line item ${index + 1}`} aria-label={`Remove line item ${index + 1}`}>Remove</button>
-                      {tracked ? (
-                        <div className="field field--full serial-line">
-                          <SerialChips
-                            value={item.serials}
-                            onChange={(serials) => setLineSerials(item.id, serials)}
-                            productId={Number(item.productId) || null}
-                            mode={voucherType === 'purchase' ? 'purchase' : 'sales'}
-                            idPrefix={`modal-inv-line-${item.id}`}
-                          />
-                          {item.serials.length === 0 ? (
-                            <p className="serial-line__message">
-                              This product is serial tracked — add at least one serial before saving.
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : null}
-                      <div className="field field--full">
-                        <label htmlFor={`modal-inv-description-${item.id}`}>Description (optional)</label>
-                        <textarea
-                          id={`modal-inv-description-${item.id}`}
-                          className="input"
-                          rows={1}
-                          value={item.description}
-                          onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                          placeholder="Serial number, batch code, or item notes"
+                  return (
+                    <div key={item.id} className="line-item">
+                      <div className="field">
+                        <label htmlFor={`modal-inv-product-${item.id}`}>Line {index + 1}</label>
+                        <ProductCombobox
+                          id={`modal-inv-product-${item.id}`}
+                          products={products}
+                          value={item.productId}
+                          onChange={(productId, newProduct) => {
+                            updateItem(item.id, 'productId', productId);
+                            updateItem(item.id, 'unit_price', String(newProduct.price));
+                          }}
+                          required
                         />
                       </div>
-                  </div>
-                );
-              })}
-            </div>
 
-            <div className="button-row">
-              <button type="button" className="button button--ghost" onClick={addItem} disabled={products.length === 0} title="Add line item" aria-label="Add line item">
-                Add line item
-              </button>
-              <button type="button" className="button button--secondary" onClick={onClose} title="Cancel invoice creation" aria-label="Cancel invoice creation">Cancel</button>
-              <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId || hasEmptyTrackedLine} title="Create invoice" aria-label="Create invoice">
-                {submitting ? 'Creating invoice...' : 'Create invoice'}
-              </button>
-            </div>
-          </form>
-        )}
+                      <div className="field">
+                        <label htmlFor={`modal-inv-qty-${item.id}`}>
+                          Qty ({selectedUnit})
+                          {tracked ? <Lock size={11} className="field__lock" aria-hidden="true" /> : null}
+                        </label>
+                        <input
+                          id={`modal-inv-qty-${item.id}`}
+                          className="input"
+                          type="number"
+                          min={allowDecimalQuantity ? '0.001' : '1'}
+                          step={allowDecimalQuantity ? '0.001' : '1'}
+                          value={quantityValue}
+                          disabled={tracked}
+                          title={tracked ? 'Quantity follows the serial numbers' : undefined}
+                          onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
+                          required
+                        />
+                      </div>
+
+                      <div className="field">
+                        <label htmlFor={`modal-inv-price-${item.id}`}>{taxInclusive ? 'Amount (incl. GST)' : 'Price'}</label>
+                        <input
+                          id={`modal-inv-price-${item.id}`}
+                          className="input"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={item.unit_price}
+                          onChange={(e) => updateItem(item.id, 'unit_price', e.target.value)}
+                          placeholder={selectedProduct ? String(selectedProduct.price) : '0.00'}
+                        />
+                      </div>
+
+                      <div className="line-item__price">
+                        {formatCurrency(lineTotal, currencyCode)}
+                        <div className="table-subtext">
+                          {formatInvoiceTaxBreakdown({
+                            gstRate,
+                            taxAmount,
+                            currencyCode,
+                            interstateSupply: composerInterstateSupply,
+                          })}
+                        </div>
+                      </div>
+                      <button type="button" className="button button--danger" onClick={() => removeItem(item.id)} title={`Remove line item ${index + 1}`} aria-label={`Remove line item ${index + 1}`}>Remove</button>
+                        {tracked ? (
+                          <div className="field field--full serial-line">
+                            <SerialChips
+                              value={item.serials}
+                              onChange={(serials) => setLineSerials(item.id, serials)}
+                              productId={Number(item.productId) || null}
+                              mode={voucherType === 'purchase' ? 'purchase' : 'sales'}
+                              idPrefix={`modal-inv-line-${item.id}`}
+                            />
+                            {item.serials.length === 0 ? (
+                              <p className="serial-line__message">
+                                This product is serial tracked — add at least one serial before saving.
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        <div className="field field--full">
+                          <label htmlFor={`modal-inv-description-${item.id}`}>Description (optional)</label>
+                          <textarea
+                            id={`modal-inv-description-${item.id}`}
+                            className="input"
+                            rows={1}
+                            value={item.description}
+                            onChange={(e) => updateItem(item.id, 'description', e.target.value)}
+                            placeholder="Serial number, batch code, or item notes"
+                          />
+                        </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="button-row">
+                <button type="button" className="button button--ghost" onClick={addItem} disabled={products.length === 0} title="Add line item" aria-label="Add line item">
+                  Add line item
+                </button>
+                <button type="button" className="button button--secondary" onClick={requestClose} title="Cancel invoice creation" aria-label="Cancel invoice creation">Cancel</button>
+                <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId || hasEmptyTrackedLine} title="Create invoice" aria-label="Create invoice">
+                  {submitting ? 'Creating invoice...' : 'Create invoice'}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
       </div>
-    </div>
+
+      {confirmingDiscard ? (
+        <ConfirmDialog
+          title="Discard this invoice?"
+          message="Your changes will be lost."
+          confirmText="Discard"
+          cancelText="Keep editing"
+          danger
+          onConfirm={onClose}
+          onCancel={() => setConfirmingDiscard(false)}
+        />
+      ) : null}
+    </>
   );
 }
