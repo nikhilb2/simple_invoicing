@@ -19,6 +19,10 @@ import { useFY } from '../context/FYContext';
  * transformed ancestor becomes the containing block for position:fixed
  * descendants, so an inline .modal-overlay would slide off-screen with the
  * drawer instead of covering the viewport.
+ *
+ * Switching and creating a financial year are admin-only on the backend (the
+ * active year is shared by everyone in the company), so other roles see the
+ * active year as plain text instead of a dropdown that would only return 403.
  */
 
 function fyFromStartYear(year: number) {
@@ -31,7 +35,7 @@ function fyFromStartYear(year: number) {
 }
 
 export default function SidebarFYSwitcher() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isAdmin } = useAuth();
   const showCompanySwitcher = isAuthenticated;
   const { activeFY, fyList, switchFY, createFY } = useFY();
 
@@ -61,94 +65,104 @@ export default function SidebarFYSwitcher() {
         {showCompanySwitcher && <CompanySelector />}
 
         <p className="sidebar__group-label" style={{ marginBottom: '6px' }}>Financial Year</p>
-        <div ref={fyDropdownRef} style={{ position: 'relative' }}>
-          <button
-            className="button button--ghost"
-            data-testid="fy-switcher"
-            style={{ width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-            onClick={() => setFyDropdownOpen((v) => !v)}
-            aria-haspopup="listbox"
-            aria-expanded={fyDropdownOpen}
+        {!isAdmin ? (
+          <p
+            data-testid="fy-current"
+            title="Only an admin can switch or add financial years"
+            style={{ margin: 0, padding: '0.5rem 0.75rem', fontSize: '0.875rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
           >
-            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {activeFY ? activeFY.label : 'No active FY'}
-            </span>
-            <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>▾</span>
-          </button>
-          {fyDropdownOpen && (
-            <div
-              role="listbox"
-              style={{
-                position: 'absolute',
-                left: 0,
-                right: 0,
-                top: 'calc(100% + 4px)',
-                background: 'var(--bg-card-strong)',
-                border: '1px solid var(--line-strong)',
-                borderRadius: '0.5rem',
-                boxShadow: '0 4px 24px rgba(0,0,0,0.45)',
-                zIndex: 100,
-                overflow: 'hidden',
-                color: 'var(--text)',
-              }}
+            {activeFY ? activeFY.label : 'No active FY'}
+          </p>
+        ) : (
+          <div ref={fyDropdownRef} style={{ position: 'relative' }}>
+            <button
+              className="button button--ghost"
+              data-testid="fy-switcher"
+              style={{ width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              onClick={() => setFyDropdownOpen((v) => !v)}
+              aria-haspopup="listbox"
+              aria-expanded={fyDropdownOpen}
             >
-              {fyList.length === 0 && (
-                <p style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', opacity: 0.6 }}>No financial years</p>
-              )}
-              {fyList.map((fy) => (
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {activeFY ? activeFY.label : 'No active FY'}
+              </span>
+              <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>▾</span>
+            </button>
+            {fyDropdownOpen && (
+              <div
+                role="listbox"
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  top: 'calc(100% + 4px)',
+                  background: 'var(--bg-card-strong)',
+                  border: '1px solid var(--line-strong)',
+                  borderRadius: '0.5rem',
+                  boxShadow: '0 4px 24px rgba(0,0,0,0.45)',
+                  zIndex: 100,
+                  overflow: 'hidden',
+                  color: 'var(--text)',
+                }}
+              >
+                {fyList.length === 0 && (
+                  <p style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', opacity: 0.6 }}>No financial years</p>
+                )}
+                {fyList.map((fy) => (
+                  <button
+                    key={fy.id}
+                    role="option"
+                    aria-selected={fy.is_active}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '0.5rem 0.75rem',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontWeight: fy.is_active ? 700 : 400,
+                      fontSize: '0.875rem',
+                      color: 'inherit',
+                    }}
+                    onClick={() => {
+                      switchFY(fy.id);
+                      setFyDropdownOpen(false);
+                    }}
+                  >
+                    <span style={{ width: '1rem' }}>{fy.is_active ? '✓' : ''}</span>
+                    {fy.label}
+                  </button>
+                ))}
+                <hr style={{ margin: '0.25rem 0', border: 'none', borderTop: '1px solid var(--line)' }} />
                 <button
-                  key={fy.id}
-                  role="option"
-                  aria-selected={fy.is_active}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
+                    display: 'block',
                     width: '100%',
                     textAlign: 'left',
                     padding: '0.5rem 0.75rem',
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',
-                    fontWeight: fy.is_active ? 700 : 400,
                     fontSize: '0.875rem',
                     color: 'inherit',
+                    fontWeight: 500,
                   }}
                   onClick={() => {
-                    switchFY(fy.id);
                     setFyDropdownOpen(false);
+                    setNewFYStartYear('');
+                    setNewFYError('');
+                    setNewFYModalOpen(true);
                   }}
                 >
-                  <span style={{ width: '1rem' }}>{fy.is_active ? '✓' : ''}</span>
-                  {fy.label}
+                  + New FY
                 </button>
-              ))}
-              <hr style={{ margin: '0.25rem 0', border: 'none', borderTop: '1px solid var(--line)' }} />
-              <button
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  textAlign: 'left',
-                  padding: '0.5rem 0.75rem',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: '0.875rem',
-                  color: 'inherit',
-                  fontWeight: 500,
-                }}
-                onClick={() => {
-                  setFyDropdownOpen(false);
-                  setNewFYStartYear('');
-                  setNewFYError('');
-                  setNewFYModalOpen(true);
-                }}
-              >
-                + New FY
-              </button>
-            </div>
-          )}
-        </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* New FY Modal — portalled; see the note at the top of this file. */}
