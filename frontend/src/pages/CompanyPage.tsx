@@ -205,6 +205,7 @@ function AdditionalInfoSection({
 
       <textarea
         className="textarea"
+        aria-label="Additional company information"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         placeholder={`Example:
@@ -339,6 +340,7 @@ function TermsAndConditionsCard({ companyId }: { companyId: number }) {
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
         <input
           className="input"
+          aria-label="New invoice term"
           value={newTermContent}
           onChange={(e) => setNewTermContent(e.target.value)}
           placeholder="Add a new term..."
@@ -365,6 +367,7 @@ function TermsAndConditionsCard({ companyId }: { companyId: number }) {
                 <div>
                   <textarea
                     className="textarea"
+                    aria-label={`Edit term ${term.serial_number}`}
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
                     rows={2}

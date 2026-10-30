@@ -178,6 +178,7 @@ export default function MarketplaceBrowsePage() {
                 <input
                   className="input marketplace-toolbar__search"
                   type="search"
+                  aria-label="Search marketplace listings"
                   placeholder="Search titles and descriptions…"
                   value={filters.q}
                   onChange={(event) => setQuery(event.target.value)}
