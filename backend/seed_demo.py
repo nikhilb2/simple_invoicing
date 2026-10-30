@@ -29,7 +29,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import text
 
 from src.db.base import Base
-from src.db.session import SessionLocal, engine
+from src.db.session import SessionLocal, migration_engine as engine
 from src.models.buyer import Buyer
 from src.models.company import CompanyProfile
 from src.models.company_account import CompanyAccount

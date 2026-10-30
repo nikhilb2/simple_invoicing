@@ -4,7 +4,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 
 from src.core.config import settings
-from src.core.security import decode_token
+from src.core.security import decode_token, session_revoked
 from src.db.session import SessionLocal
 from src.models.user import User, UserRole
 from src.services.company_access import is_platform_admin
@@ -45,7 +45,8 @@ def require_admin_no_session_hold(token: str = Depends(oauth2_scheme)) -> User:
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.email == email).first()
-        if not user:
+        # The same session rules as get_current_user.
+        if not user or user.is_active is False or session_revoked(user.sessions_valid_after, payload):
             raise credentials_exception
         # A backup is a pg_dump of the whole database -- every tenant's data in
         # shared hosting -- so there only the platform operators may touch it.

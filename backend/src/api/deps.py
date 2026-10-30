@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from src.core.config import settings
 from src.core.security import decode_token, session_revoked
 from src.db.session import get_db
+from src.db.tenant_context import set_tenant_context
 from src.models.company import CompanyProfile
 from src.models.user import User, UserRole
 from src.services.company_access import (
@@ -37,15 +38,21 @@ def _authenticate_api_key(token: str, db: Session) -> User | None:
 
     # key_prefix is the first 12 chars of the raw key
     key_prefix = token[:12]
-    candidates = (
-        db.query(ApiKey)
-        .filter(
-            ApiKey.key_prefix == key_prefix,
-            ApiKey.is_active.is_(True),
-            ApiKey.expires_at > datetime.now(timezone.utc),
+    # No company is known yet, so in shared hosting the api_keys policy admits
+    # only the keys carrying this prefix -- which the caller already holds.
+    set_tenant_context(db, api_key_prefix=key_prefix)
+    try:
+        candidates = (
+            db.query(ApiKey)
+            .filter(
+                ApiKey.key_prefix == key_prefix,
+                ApiKey.is_active.is_(True),
+                ApiKey.expires_at > datetime.now(timezone.utc),
+            )
+            .all()
         )
-        .all()
-    )
+    finally:
+        set_tenant_context(db, api_key_prefix=None)
     for candidate in candidates:
         try:
             matches = decrypt_value(candidate.key_encrypted) == token
@@ -158,11 +165,32 @@ def _company_forbidden() -> HTTPException:
     return HTTPException(status_code=403, detail="You do not have access to this company")
 
 
+def act_for_company(db: Session, company: CompanyProfile, user: User | None = None) -> CompanyProfile:
+    """Make ``company`` the tenant for the rest of this session, and return it.
+
+    Every row a shared-hosting query sees is filtered by row-level security to
+    this company (src/db/tenant_context.py), from this transaction on and in
+    every later one -- a handler's mid-request commit does not lose it.
+    """
+    set_tenant_context(db, company_id=company.id, user_id=getattr(user, "id", None))
+    return company
+
+
 def get_active_company(
     request: Request = None,  # type: ignore[assignment]
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     requested_company_id: int | None = Depends(get_requested_company_id),
+) -> CompanyProfile:
+    company = _resolve_active_company(request, db, current_user, requested_company_id)
+    return act_for_company(db, company, current_user)
+
+
+def _resolve_active_company(
+    request: Request | None,
+    db: Session,
+    current_user: User,
+    requested_company_id: int | None,
 ) -> CompanyProfile:
     shared = settings.is_shared_hosting
     user_state = inspect(current_user)

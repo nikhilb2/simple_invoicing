@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from src.api.deps import (
     API_KEY_COMPANY_ATTR,
+    act_for_company,
     company_required_error,
     get_active_company,
     get_current_user,
@@ -257,6 +258,9 @@ def create_company_profile(
     # One transaction: a company without its admin membership would be
     # unreachable in shared hosting, so the two are created together or not at all.
     profile = _create_company_profile(db, payload)
+    # The rows seeded below (and the terms read back) belong to the new company,
+    # so that is the tenant row-level security must see from here on.
+    act_for_company(db, profile, current_user)
     if inspect(current_user).persistent:
         add_membership(db, current_user, profile, UserRole.admin)
     if shared:

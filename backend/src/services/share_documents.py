@@ -50,6 +50,7 @@ from src.services.upi import (
     resolve_upi_payment,
 )
 from src.services.company_access import company_scope
+from src.db.tenant_context import set_tenant_context
 
 RESOURCE_INVOICE = "invoice"
 RESOURCE_STATEMENT = "ledger_statement"
@@ -74,11 +75,18 @@ def resolve_share_link(db: Session, token: str) -> ShareLink | None:
     """Live links only. A revoked link is indistinguishable from a nonexistent one."""
     if not token:
         return None
-    return (
+    # A public page has no signed-in user and so no company yet. In shared
+    # hosting the share_links policy admits exactly the row this token names;
+    # once found, the link's own company becomes the tenant every later query
+    # (document, items, ledger, payments) is held to by row-level security.
+    set_tenant_context(db, share_token=token)
+    link = (
         db.query(ShareLink)
         .filter(ShareLink.token == token, ShareLink.revoked_at.is_(None))
         .first()
     )
+    set_tenant_context(db, company_id=link.company_id if link is not None else None)
+    return link
 
 
 # ---------------------------------------------------------------------------

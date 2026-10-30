@@ -386,7 +386,8 @@ image with it and changes nothing.
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `DEPLOYMENT_MODE` | `single_tenant` | `single_tenant`: every user reaches every company with their global role, as always. `shared_hosting`: a user reaches only the companies they are a member of, the membership role is what counts, and public signup becomes possible. Any other value refuses to boot. |
-| `MIGRATION_DATABASE_URL` | *(blank)* | DSN used for the DDL that runs on boot. Shared hosting connects as a non-owner role so that row-level security applies to it, and that role cannot create tables. Blank means migrate with `DATABASE_URL`. |
+| `MIGRATION_DATABASE_URL` | *(blank)* | The **owner** DSN. Used, in either mode, for everything that must not be filtered by row-level security: `create_all` and the migrations on boot (and `migrate.py`, `reset_db.py`, `seed_admin.py`), `pg_dump` and restore on the Backups page and the nightly backup, and the backup email in shared hosting. Shared hosting's `DATABASE_URL` is a non-owner role so that row-level security applies to it, and that role cannot create tables. Blank means `DATABASE_URL` does all of it, as every single-tenant deployment always has. See *Row-level security* below. |
+| `RLS_BOOT_CHECK` | `true` | Shared hosting only. Refuse to boot when the `DATABASE_URL` role would not be constrained by row-level security (see below). Set `false` **only** to run shared hosting locally against a superuser; never in a deployment. |
 | `PLATFORM_SMTP_HOST` | *(blank)* | Mail server for account-lifecycle mail only — address verification and password reset. Separate from the per-company SMTP settings in **Settings → SMTP**. **Blank disables email/password signup** (see below). |
 | `PLATFORM_SMTP_PORT` | `587` | Port on `PLATFORM_SMTP_HOST`. |
 | `PLATFORM_SMTP_USERNAME` | *(blank)* | SMTP login. |
@@ -414,6 +415,38 @@ image with it and changes nothing.
 `GET /api/auth/config` reports what is on (`password_signup_enabled`,
 `password_reset_enabled`, and the enabled `providers`), and the login page shows its links and
 buttons from that.
+
+#### Row-level security (shared hosting)
+
+In shared hosting every tenant's rows are in one database, so on top of the application's
+own company checks, Postgres row-level security (RLS) keeps each request inside one company:
+
+- On boot, as the `MIGRATION_DATABASE_URL` owner, the API enables RLS with a
+  `si_tenant_isolation` policy on every business table with a `company_id` (invoices, ledgers,
+  products, inventory, payments, credit notes, financial years, series, share links, API keys,
+  marketplace tables, …) and on their child tables (`invoice_items`, `credit_note_items`,
+  `credit_note_invoice_refs`, `payment_invoice_allocations`, `marketplace_order_items`). The
+  exact list, and why `users`, `company_memberships`, `company_profiles`, the OAuth tables,
+  `global_settings`, `smtp_configs`, `user_shortcuts` and `_migrations` are deliberately left
+  out, is in `backend/src/db/rls.py`. It is idempotent and a no-op on an up-to-date database.
+  Single-tenant databases never get RLS enabled, and RLS is never `FORCE`d, so the owner
+  always sees every row.
+- Each request sets the company it acts for as the transaction-local setting
+  `app.company_id` (and `app.user_id`), re-applied at the start of every transaction, so a
+  commit mid-request keeps it and a pooled connection never carries it into another request.
+  With no company set, a protected table returns no rows and refuses every write.
+- **Boot check.** The API then connects as `DATABASE_URL` and **refuses to start** with
+  `Refusing to start in shared_hosting: …` if that role is a superuser, has `BYPASSRLS`, owns
+  (or is a member of the owner of) any protected table, lacks
+  `SELECT/INSERT/UPDATE/DELETE` on a table or `USAGE` on a sequence, or if RLS is off on a
+  protected table. Each of those either silently disables every policy or breaks the app. On
+  success it logs `✓ Row-level security enforced for database role '<role>'`.
+- **Grants.** Nothing in the code grants privileges. Tables and sequences that migrations
+  create later reach the app role only through `ALTER DEFAULT PRIVILEGES FOR ROLE <owner>`,
+  set up once as the si-common deployment README describes. A restore (Backups page) runs as
+  the owner and recreates the tables, so it relies on the same default privileges.
+- **Cross-company jobs.** `pg_dump`, restore and the backup email use the owner. Marketplace
+  `sync-all` stays on the app role and acts as each company in turn.
 
 #### `PUBLIC_APP_BASE_URL` and sign-in
 

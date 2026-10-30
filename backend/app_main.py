@@ -23,11 +23,15 @@ from src.core.analytics import (
 from src.core.config import settings
 from src.services.backup_scheduler import start_scheduler, stop_scheduler
 from src.db.base import Base
-from src.db.session import engine
+from src.db.rls import check_app_role_or_raise, ensure_row_level_security
+from src.db.session import engine, migration_engine
 # Import all models to register them with declarative_base
 import src.models  # noqa: F401
 
-Base.metadata.create_all(bind=engine)
+# DDL runs as the owner (MIGRATION_DATABASE_URL, else DATABASE_URL). In shared
+# hosting the app's own role cannot create tables, and must not own them: an
+# owner is not constrained by row-level security.
+Base.metadata.create_all(bind=migration_engine)
 
 
 def run_pending_migrations() -> None:
@@ -36,7 +40,7 @@ def run_pending_migrations() -> None:
     if not migrations_dir.exists():
         return
 
-    with engine.begin() as conn:
+    with migration_engine.begin() as conn:
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS _migrations (
                 id SERIAL PRIMARY KEY,
@@ -74,6 +78,32 @@ def run_pending_migrations() -> None:
 
 
 run_pending_migrations()
+
+
+def secure_shared_hosting_database() -> None:
+    """Shared hosting: make sure RLS is on, then refuse to boot if it cannot bite.
+
+    The first step runs as the owner and is a no-op on an up-to-date database
+    (src/db/rls.py). The second runs as the APP role and raises -- stopping the
+    process -- when that role is a superuser, has BYPASSRLS, owns a protected
+    table, or lacks its grants: in each case the policies would be silently off
+    or the app broken, and tenants would only be kept apart by application code.
+    """
+    if not settings.is_shared_hosting:
+        return
+    with migration_engine.begin() as conn:
+        for statement in ensure_row_level_security(conn):
+            print(f"  ▸ {statement.split(' USING ')[0]}")
+    if not settings.RLS_BOOT_CHECK:
+        print("⚠ RLS_BOOT_CHECK is off: the app role is NOT checked against row-level security.")
+        return
+    with engine.connect() as conn:
+        check_app_role_or_raise(conn)
+        role = conn.execute(text("SELECT current_user")).scalar()
+    print(f"✓ Row-level security enforced for database role {role!r}.")
+
+
+secure_shared_hosting_database()
 
 
 @asynccontextmanager

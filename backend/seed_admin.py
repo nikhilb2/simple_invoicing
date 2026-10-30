@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from src.db.session import SessionLocal
 from src.db.base import Base
-from src.db.session import engine
+from src.db.session import migration_engine as engine
 from src.models.user import User, UserRole
 from src.core.security import get_password_hash
 

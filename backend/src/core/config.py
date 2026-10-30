@@ -130,7 +130,14 @@ class Settings(BaseSettings):
     # DSN used to run DDL on boot. Shared hosting connects as a non-owner role so
     # that row-level security applies to it, and that role cannot create tables.
     # Unset means migrate with DATABASE_URL, as every single-tenant deployment does.
+    # Also used for the jobs that must see every row: pg_dump, restore, and the
+    # automatic-backup email (see src/db/session.py).
     MIGRATION_DATABASE_URL: str | None = None
+    # Shared hosting refuses to boot when DATABASE_URL's role would bypass
+    # row-level security (superuser, BYPASSRLS, or owner of a protected table),
+    # because then every policy is silently off. Turn this off ONLY to run shared
+    # hosting locally against a superuser; never in a real deployment.
+    RLS_BOOT_CHECK: bool = True
 
     # Platform mailer for account-lifecycle mail only (address verification,
     # password reset). Separate from the per-company SMTP config stored in the
