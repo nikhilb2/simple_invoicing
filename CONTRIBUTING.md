@@ -108,7 +108,20 @@ cd frontend && npm test -- --run
 ```
 
 The first command starts Vitest in watch mode; use the second for a single run.
+
 Frontend CI runs the suite before the production build.
+
+#### Writing frontend tests
+
+Frontend tests run in a plain Node environment, with no DOM. Do not write tests that require `document`, `window` events, user clicks, or `useEffect`.
+
+* Test pure functions directly; extract component logic into `utils/` when needed.
+* For markup, use `renderToString` or `renderToStaticMarkup` from `react-dom/server` and assert on the HTML output. Effects do not run during server rendering.
+* Use Vitest fake timers (`vi.useFakeTimers()` and `vi.setSystemTime()`) for date- or time-dependent logic.
+* For timezone-sensitive tests, run `TZ=Asia/Kolkata npm test -- --run <file>` from `frontend/`.
+* Hooks and effects cannot be unit tested in this Node-only setup. Extract testable logic or describe the manual check in your PR.
+* Examples: [SearchInput.test.tsx](frontend/src/components/SearchInput.test.tsx), [dateRanges.test.ts](frontend/src/utils/dateRanges.test.ts), and [gstin.test.ts](frontend/src/utils/gstin.test.ts).
+
 
 ### Frontend E2E
 
