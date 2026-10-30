@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator
 from typing import List, Literal, Optional
 from src.schemas.ledger import LedgerOut
 from src.schemas.ledger_address import ShippingAddressInline
+from src.core.validation import normalize_hsn_sac
 
 
 def _validate_discount_value(
@@ -44,8 +45,13 @@ class InvoiceItemCreate(BaseModel):
     # Per-line overrides of the product master. Marketplace purchases must book the
     # SELLER's rate and HSN — if the buyer's local product carries a different rate,
     # the two legally-linked invoices would disagree on tax. None = use the product.
-    gst_rate: float | None = None
+    gst_rate: float | None = Field(default=None, ge=0, le=100)
     hsn_sac: str | None = None
+
+    @field_validator("hsn_sac")
+    @classmethod
+    def validate_hsn_sac(cls, value: str | None) -> str | None:
+        return normalize_hsn_sac(value)
     # One code per unit on a serial-tracked product; the count must equal
     # quantity. None / [] on any other product.
     serial_numbers: list[str] | None = None

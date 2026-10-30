@@ -36,6 +36,43 @@ def test_percentage_line_discount_over_100_rejected():
     assert "discount_value" in str(excinfo.value)
 
 
+
+@pytest.mark.parametrize("gst_rate", [-5, 101, -100])
+def test_invoice_line_gst_rate_outside_zero_to_100_rejected(gst_rate):
+    with pytest.raises(ValidationError) as excinfo:
+        _item(gst_rate=gst_rate)
+    assert "gst_rate" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("gst_rate", [0, 18, 100])
+def test_invoice_line_gst_rate_in_range_accepted(gst_rate):
+    assert _item(gst_rate=gst_rate).gst_rate == gst_rate
+
+
+def test_invoice_line_gst_rate_override_can_be_omitted():
+    assert _item().gst_rate is None
+
+
+@pytest.mark.parametrize("hsn_sac", ["123", "12345", "12AB", "1234567", "123456789"])
+def test_invalid_invoice_line_hsn_sac_rejected(hsn_sac):
+    with pytest.raises(ValidationError) as excinfo:
+        _item(hsn_sac=hsn_sac)
+    assert "hsn_sac" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("hsn_sac", ["8482", "123456", "12345678"])
+def test_valid_invoice_line_hsn_sac_accepted(hsn_sac):
+    assert _item(hsn_sac=hsn_sac).hsn_sac == hsn_sac
+
+
+def test_invoice_line_hsn_sac_is_normalized():
+    assert _item(hsn_sac=" 8482 ").hsn_sac == "8482"
+
+
+@pytest.mark.parametrize("hsn_sac", [None, "", "   "])
+def test_invoice_line_hsn_sac_can_be_omitted(hsn_sac):
+    assert _item(hsn_sac=hsn_sac).hsn_sac is None
+
 def test_negative_unit_price_rejected():
     with pytest.raises(ValidationError) as excinfo:
         _item(unit_price=-5)
