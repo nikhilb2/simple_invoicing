@@ -376,6 +376,45 @@ trusting it blindly would paste a localhost URL into a customer's chat. When it 
 https origin the backend derives the origin from the request the owner's own browser made
 (`X-Forwarded-Proto` and `Host`).
 
+### Deployment Mode / Public Signup Variables
+
+These turn a deployment into the shared, public instance where people register
+themselves. **Every variable here has a default**, and the defaults are exactly the
+per-customer behaviour from before this feature existed: an existing deployment takes an
+image with it and changes nothing.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DEPLOYMENT_MODE` | `single_tenant` | `single_tenant`: every user reaches every company with their global role, as always. `shared_hosting`: a user reaches only the companies they are a member of, the membership role is what counts, and public signup becomes possible. Any other value refuses to boot. |
+| `MIGRATION_DATABASE_URL` | *(blank)* | DSN used for the DDL that runs on boot. Shared hosting connects as a non-owner role so that row-level security applies to it, and that role cannot create tables. Blank means migrate with `DATABASE_URL`. |
+| `PLATFORM_SMTP_HOST` | *(blank)* | Mail server for account-lifecycle mail only — address verification and password reset. Separate from the per-company SMTP settings in **Settings → SMTP**. **Blank disables email/password signup** (see below). |
+| `PLATFORM_SMTP_PORT` | `587` | Port on `PLATFORM_SMTP_HOST`. |
+| `PLATFORM_SMTP_USERNAME` | *(blank)* | SMTP login. |
+| `PLATFORM_SMTP_PASSWORD` | *(blank)* | SMTP password. Keep it in the secret, not the env file in git. |
+| `PLATFORM_SMTP_FROM_EMAIL` | *(blank)* | `From` address on verification and reset mail. |
+| `PLATFORM_SMTP_FROM_NAME` | `Simple Invoicing` | Display name beside it. |
+| `PLATFORM_SMTP_USE_STARTTLS` | `true` | Upgrade the connection with STARTTLS. |
+| `OAUTH_GOOGLE_CLIENT_ID` | *(blank)* | "Continue with Google". The provider is offered only when both the id and the secret are set. |
+| `OAUTH_GOOGLE_CLIENT_SECRET` | *(blank)* | Secret for the client above. |
+| `MAX_COMPANIES_PER_USER` | `3` | Shared hosting only: how many companies one user may create. Single-tenant deployments keep the global company limit. |
+
+**What is on in which mode:**
+
+- **Email/password signup** needs `DEPLOYMENT_MODE=shared_hosting` **and**
+  `PLATFORM_SMTP_HOST`. Registering people who can never receive their verification mail is
+  worse than not registering them, so with shared hosting and no host the API still boots,
+  keeps signup off, and logs a `Signup disabled` warning on startup. Existing users can
+  still sign in.
+- **Google sign-in** for users who already exist works in either mode once both
+  `OAUTH_GOOGLE_*` values are set.
+- **Google signup** of new users needs shared hosting plus both `OAUTH_GOOGLE_*` values.
+  Google proves the address itself, so it does not need platform SMTP.
+
+The Google OAuth client's authorised redirect URI is
+`<PUBLIC_APP_BASE_URL>/api/auth/oauth/google/callback` — for local development
+`http://localhost:5174/api/auth/oauth/google/callback`, which the Vite dev proxy forwards to
+the backend.
+
 ### Database Variables (Docker Compose)
 
 | Variable | Purpose |

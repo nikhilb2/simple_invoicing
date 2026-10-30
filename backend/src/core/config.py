@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+from typing import Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
@@ -119,10 +120,60 @@ class Settings(BaseSettings):
     # and has no use at all for the payment offer.
     UPI_QR_ENABLED: bool = True
 
+    # --- Deployment mode / public signup ---
+    # "single_tenant" is every per-customer deployment: one company set per
+    # database, every user reaches every company, global roles apply -- exactly
+    # the behaviour from before this setting existed. "shared_hosting" is the one
+    # public instance: a user reaches only the companies they are a member of,
+    # the membership role is what counts, and people can register themselves.
+    DEPLOYMENT_MODE: Literal["single_tenant", "shared_hosting"] = "single_tenant"
+    # DSN used to run DDL on boot. Shared hosting connects as a non-owner role so
+    # that row-level security applies to it, and that role cannot create tables.
+    # Unset means migrate with DATABASE_URL, as every single-tenant deployment does.
+    MIGRATION_DATABASE_URL: str | None = None
+
+    # Platform mailer for account-lifecycle mail only (address verification,
+    # password reset). Separate from the per-company SMTP config stored in the
+    # database: a person who is registering has no company yet to send from.
+    PLATFORM_SMTP_HOST: str | None = None
+    PLATFORM_SMTP_PORT: int = 587
+    PLATFORM_SMTP_USERNAME: str | None = None
+    PLATFORM_SMTP_PASSWORD: str | None = None
+    PLATFORM_SMTP_FROM_EMAIL: str | None = None
+    PLATFORM_SMTP_FROM_NAME: str = "Simple Invoicing"
+    PLATFORM_SMTP_USE_STARTTLS: bool = True
+
+    # Sign in with Google. Both must be set for the provider to be offered.
+    OAUTH_GOOGLE_CLIENT_ID: str | None = None
+    OAUTH_GOOGLE_CLIENT_SECRET: str | None = None
+
+    # Shared hosting only: how many companies one user may create. Single-tenant
+    # deployments keep the global cap in global_settings.max_companies.
+    MAX_COMPANIES_PER_USER: int = 3
+
     @property
     def MCP_RESOURCE_URI(self) -> str:
         """Canonical RFC 8707 resource identifier for the MCP endpoint."""
         return f"{self.PUBLIC_API_BASE_URL.rstrip('/')}/mcp"
+
+    @property
+    def is_shared_hosting(self) -> bool:
+        return self.DEPLOYMENT_MODE == "shared_hosting"
+
+    @property
+    def password_signup_enabled(self) -> bool:
+        """Email + password registration needs somewhere to send the verification mail."""
+        return self.is_shared_hosting and bool(self.PLATFORM_SMTP_HOST)
+
+    @property
+    def google_auth_enabled(self) -> bool:
+        """Google login for existing users. Works in either mode."""
+        return bool(self.OAUTH_GOOGLE_CLIENT_ID and self.OAUTH_GOOGLE_CLIENT_SECRET)
+
+    @property
+    def google_signup_enabled(self) -> bool:
+        """Creating new users through Google. Google proves the address, so no SMTP needed."""
+        return self.is_shared_hosting and self.google_auth_enabled
 
     @model_validator(mode="after")
     def validate_smtp_key_in_production(self):
@@ -158,6 +209,24 @@ class Settings(BaseSettings):
                 "⚠️  MCP disabled: " + " and ".join(bad) + " must be set to the "
                 "public https:// origin(s) of this deployment. The app is running "
                 "normally; MCP and OAuth endpoints are not mounted."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def warn_signup_disabled_without_platform_smtp(self):
+        """Boot, but say so, when shared hosting has no platform mailer.
+
+        Registering people who can never receive their verification mail is worse
+        than not registering them, so password signup stays off until
+        PLATFORM_SMTP_HOST is set. Like the MCP check above, this degrades rather
+        than refusing to boot: existing users can still sign in and work.
+        """
+        if self.is_shared_hosting and not self.PLATFORM_SMTP_HOST:
+            logger.warning(
+                "⚠️  Signup disabled: DEPLOYMENT_MODE=shared_hosting but "
+                "PLATFORM_SMTP_HOST is not set, so verification mail cannot be "
+                "sent. Email/password registration is off; the app is otherwise "
+                "running normally."
             )
         return self
 
