@@ -6,11 +6,15 @@ from src.core.config import settings
 from src.models.company import CompanyProfile
 from src.models.company_membership import CompanyMembership
 from src.models.user import User, UserRole
+from src.models.buyer import Buyer
 from src.services.company_access import (
     accessible_company_ids,
     add_membership,
     can_access_company,
     company_role,
+    company_scope,
+    is_platform_admin,
+    legacy_default_company,
 )
 
 
@@ -108,3 +112,57 @@ def test_add_membership_is_idempotent_and_updates_role(db_session, shared_hostin
     assert first.id == second.id
     assert db_session.query(CompanyMembership).count() == 1
     assert company_role(db_session, user, company.id) == UserRole.manager
+
+
+def _ledger(db, name: str, company_id: int | None) -> Buyer:
+    ledger = Buyer(name=name, address="", gst="", phone_number="", company_id=company_id)
+    db.add(ledger)
+    db.commit()
+    return ledger
+
+
+def _scoped_names(db, company_id):
+    return sorted(
+        name for (name,) in db.query(Buyer.name).filter(company_scope(Buyer.company_id, company_id))
+    )
+
+
+def test_company_scope_keeps_legacy_null_rows_in_single_tenant(db_session, single_tenant):
+    a, b = _company(db_session, "A"), _company(db_session, "B")
+    _ledger(db_session, "own", a.id)
+    _ledger(db_session, "other", b.id)
+    _ledger(db_session, "legacy", None)
+
+    assert _scoped_names(db_session, a.id) == ["legacy", "own"]
+
+
+def test_company_scope_drops_null_rows_in_shared_hosting(db_session, shared_hosting):
+    a, b = _company(db_session, "A"), _company(db_session, "B")
+    _ledger(db_session, "own", a.id)
+    _ledger(db_session, "other", b.id)
+    _ledger(db_session, "legacy", None)
+
+    assert _scoped_names(db_session, a.id) == ["own"]
+    # No company at all matches nothing, rather than "company_id IS NULL".
+    assert _scoped_names(db_session, None) == []
+
+
+def test_platform_admin_is_an_allowlist_and_empty_means_nobody(db_session, monkeypatch):
+    admin = _user(db_session, "Ops@Example.com", UserRole.admin)
+
+    monkeypatch.setattr(settings, "PLATFORM_ADMIN_EMAILS", "")
+    assert is_platform_admin(admin) is False
+
+    monkeypatch.setattr(settings, "PLATFORM_ADMIN_EMAILS", " someone@example.com , ops@example.com ")
+    assert is_platform_admin(admin) is True
+
+
+def test_legacy_default_company_only_exists_in_single_tenant(db_session, monkeypatch):
+    first = _company(db_session, "First")
+    _company(db_session, "Second")
+
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "single_tenant")
+    assert legacy_default_company(db_session).id == first.id
+
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "shared_hosting")
+    assert legacy_default_company(db_session) is None
