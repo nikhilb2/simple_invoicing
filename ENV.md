@@ -444,7 +444,9 @@ own company checks, Postgres row-level security (RLS) keeps each request inside 
 - **Grants.** Nothing in the code grants privileges. Tables and sequences that migrations
   create later reach the app role only through `ALTER DEFAULT PRIVILEGES FOR ROLE <owner>`,
   set up once as the si-common deployment README describes. A restore (Backups page) runs as
-  the owner and recreates the tables, so it relies on the same default privileges.
+  the owner and recreates the tables, so it relies on the same default privileges. It also
+  first ends every other database session, which belong to the app role: unless the owner is
+  a superuser it needs `GRANT pg_signal_backend TO <owner>` (or membership of the app role).
 - **Cross-company jobs.** `pg_dump`, restore and the backup email use the owner. Marketplace
   `sync-all` stays on the app role and acts as each company in turn.
 

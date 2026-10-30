@@ -151,6 +151,9 @@ def ensure_row_level_security(conn) -> list[str]:
         return []
 
     tables = protected_tables()
+    # Replicas boot together: serialise them, so the second one to get here
+    # sees the first one's policies instead of failing on "already exists".
+    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('si_tenant_isolation'))"))
     rows = conn.execute(
         text(
             "SELECT c.relname, c.relrowsecurity FROM pg_class c "

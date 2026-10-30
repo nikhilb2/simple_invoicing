@@ -454,6 +454,13 @@ def _terminate_other_db_sessions(env: dict[str, str]) -> None:
     except subprocess.CalledProcessError as err:
         detail = (err.stderr or err.stdout or "failed to terminate active DB sessions").strip()
         logger.error(f"terminate sessions failed: {detail}")
+        if "permission denied to terminate" in detail:
+            # Shared hosting: the owner restores, but the open sessions belong
+            # to the app role, and a non-superuser may only end its own.
+            detail += (
+                " -- the MIGRATION_DATABASE_URL role must be allowed to end the app's "
+                "sessions: GRANT pg_signal_backend TO <owner role>"
+            )
         raise HTTPException(status_code=500, detail=f"Restore failed: {detail}") from err
 
 

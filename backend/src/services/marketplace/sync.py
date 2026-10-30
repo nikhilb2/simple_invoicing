@@ -752,6 +752,9 @@ def drain_all(db: Session, **kwargs) -> list[SyncResultOut]:
             for (company_id,) in db.query(CompanyProfile.id).order_by(CompanyProfile.id.asc()).all()
         ]
         for company_id in company_ids:
+            # Nothing of the previous company may be left pending: committed
+            # under the next company's context it would match no rows.
+            db.rollback()
             set_tenant_context(db, company_id=company_id, user_id=None)
             connections = (
                 db.query(MarketplaceConnection)
@@ -764,6 +767,7 @@ def drain_all(db: Session, **kwargs) -> list[SyncResultOut]:
             )
             results.extend(drain(db, connection, **kwargs) for connection in connections)
     finally:
+        db.rollback()
         set_tenant_context(
             db,
             company_id=previous.get("company_id"),

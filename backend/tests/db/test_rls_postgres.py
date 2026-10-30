@@ -476,6 +476,33 @@ def test_marketplace_drain_all_walks_each_company(two_tenants):
         session.close()
 
 
+def test_drain_all_never_commits_one_companys_leftovers_under_the_next(two_tenants, monkeypatch):
+    from src.models.marketplace import MarketplaceConnection
+    from src.schemas.marketplace import SyncResultOut
+    from src.services.marketplace import sync as sync_service
+
+    db, a, b = two_tenants
+    with db.OwnerSession() as owner:
+        for company in (a["company"], b["company"]):
+            owner.add(MarketplaceConnection(company_id=company, status="connected", base_url="https://m.example"))
+        owner.commit()
+
+    def sloppy_drain(session, connection, **kwargs):
+        # drain commits as it goes (the sync lock first of all) ...
+        session.commit()
+        # ... and a posting pass that swallowed an error can leave a change pending.
+        connection.display_name = "left pending"
+        return SyncResultOut(company_id=connection.company_id, cursor=0)
+
+    monkeypatch.setattr(sync_service, "drain", sloppy_drain)
+    session = db.AppSession()
+    try:
+        results = sync_service.drain_all(session)
+    finally:
+        session.close()
+    assert sorted(r.company_id for r in results) == sorted([a["company"], b["company"]])
+
+
 # ---------------------------------------------------------------------------
 # The shared-hosting boot check
 # ---------------------------------------------------------------------------
