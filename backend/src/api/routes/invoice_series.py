@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from src.api.deps import require_roles
+from src.api.deps import require_company_role
 from src.db.session import get_db
 from src.models.company import CompanyProfile
 from src.models.invoice_series import InvoiceSeries
@@ -18,7 +18,7 @@ router = APIRouter()
 def list_invoice_series(
     financial_year_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_company_role(UserRole.admin)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     q = db.query(InvoiceSeries).filter(InvoiceSeries.company_id == active_company.id)
@@ -32,7 +32,7 @@ def update_invoice_series(
     series_id: int,
     payload: InvoiceSeriesUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_company_role(UserRole.admin)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     series = db.query(InvoiceSeries).filter(

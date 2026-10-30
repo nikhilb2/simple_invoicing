@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.models.buyer import Buyer as Ledger
@@ -16,6 +16,7 @@ from src.services.serial_service import SerialManager
 from src.services.series import generate_next_number
 from src.services.gst_tax_service import money as _money, is_interstate_supply as _is_interstate
 from src.services.inventory_service import InventoryManager
+from src.services.company_access import company_scope
 
 
 def _return_note(credit_note_number: str) -> str:
@@ -48,7 +49,7 @@ def _change_inventory_quantity(
 ) -> None:
     inventory_query = db.query(Inventory).filter(Inventory.product_id == product_id)
     if company_id is not None:
-        inventory_query = inventory_query.filter(or_(Inventory.company_id == company_id, Inventory.company_id.is_(None)))
+        inventory_query = inventory_query.filter(company_scope(Inventory.company_id, company_id))
     inventory = inventory_query.first()
     if not inventory:
         inventory = Inventory(product_id=product_id, quantity=0, company_id=company_id)
@@ -64,7 +65,7 @@ def _recompute_credit_status(invoice_id: int, db: Session, company_id: int | Non
     """Recalculate and persist credit_status for a single invoice."""
     invoice_query = db.query(Invoice).filter(Invoice.id == invoice_id)
     if company_id is not None:
-        invoice_query = invoice_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+        invoice_query = invoice_query.filter(company_scope(Invoice.company_id, company_id))
     invoice = invoice_query.first()
     if not invoice:
         return
@@ -81,7 +82,7 @@ def _recompute_credit_status(invoice_id: int, db: Session, company_id: int | Non
         )
     )
     if company_id is not None:
-        result_query = result_query.filter(or_(CN.company_id == company_id, CN.company_id.is_(None)))
+        result_query = result_query.filter(company_scope(CN.company_id, company_id))
     result = result_query.scalar()
     credited_total = Decimal(str(result or 0))
     # line_total includes tax, so compare against total_amount (which also
@@ -107,7 +108,7 @@ def create_credit_note(
     # ── 1. Validate ledger ───────────────────────────────────────────────────
     ledger_query = db.query(Ledger).filter(Ledger.id == payload.ledger_id)
     if company_id is not None:
-        ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+        ledger_query = ledger_query.filter(company_scope(Ledger.company_id, company_id))
     ledger = ledger_query.first()
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {payload.ledger_id} not found")
@@ -115,7 +116,7 @@ def create_credit_note(
     # ── 2. Validate all invoices belong to this ledger ───────────────────────
     invoices_query = db.query(Invoice).filter(Invoice.id.in_(payload.invoice_ids))
     if company_id is not None:
-        invoices_query = invoices_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+        invoices_query = invoices_query.filter(company_scope(Invoice.company_id, company_id))
     invoices = invoices_query.all()
     found_ids = {inv.id for inv in invoices}
     missing = set(payload.invoice_ids) - found_ids
@@ -173,7 +174,7 @@ def create_credit_note(
         )
         if company_id is not None:
             duplicate_query = duplicate_query.filter(
-                or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None))
+                company_scope(CreditNote.company_id, company_id)
             )
         duplicate = duplicate_query.first()
         if duplicate:
@@ -228,7 +229,7 @@ def create_credit_note(
                 )
             )
             if company_id is not None:
-                already_credited_query = already_credited_query.filter(or_(CN.company_id == company_id, CN.company_id.is_(None)))
+                already_credited_query = already_credited_query.filter(company_scope(CN.company_id, company_id))
             already_credited = already_credited_query.scalar() or 0
 
             original_qty = invoice_item_map[cn_item.invoice_item_id].quantity
@@ -361,7 +362,7 @@ def create_credit_note(
         for cn_item, item_data in zip(payload.items, built_items):
             product_query = db.query(Product).filter(Product.id == item_data["product_id"])
             if company_id is not None:
-                product_query = product_query.filter(or_(Product.company_id == company_id, Product.company_id.is_(None)))
+                product_query = product_query.filter(company_scope(Product.company_id, company_id))
             product = product_query.first()
             if not product:
                 raise HTTPException(status_code=404, detail=f"Product {item_data['product_id']} not found")
@@ -435,7 +436,7 @@ def create_credit_note(
 def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -> CreditNoteOut:
     query = db.query(CreditNote).filter(CreditNote.id == cn_id)
     if company_id is not None:
-        query = query.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
+        query = query.filter(company_scope(CreditNote.company_id, company_id))
     cn = query.first()
     if not cn:
         raise HTTPException(status_code=404, detail="Credit note not found")
@@ -460,7 +461,7 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
             if item.product_id and item.quantity:
                 product_query = db.query(Product).filter(Product.id == item.product_id)
                 if company_id is not None:
-                    product_query = product_query.filter(or_(Product.company_id == company_id, Product.company_id.is_(None)))
+                    product_query = product_query.filter(company_scope(Product.company_id, company_id))
                 product = product_query.first()
                 if not product:
                     raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")

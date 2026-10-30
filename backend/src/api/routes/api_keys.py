@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from src.api.deps import get_active_company, get_current_user, require_roles
+from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.core.security import decrypt_value, encrypt_value
 from src.db.session import get_db
 from src.models.api_key import ApiKey
@@ -36,7 +36,7 @@ def verify_api_key(
 def create_api_key(
     payload: ApiKeyCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin)),
+    current_user: User = Depends(require_company_role(UserRole.admin)),
     company: CompanyProfile = Depends(get_active_company),
 ):
     raw_key = _generate_raw_key()
@@ -72,7 +72,7 @@ def create_api_key(
 @router.get("/", response_model=list[ApiKeyResponse], summary="List API keys", description="Admin only, newest first.")
 def list_api_keys(
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_company_role(UserRole.admin)),
     company: CompanyProfile = Depends(get_active_company),
 ):
     keys = (
@@ -88,7 +88,7 @@ def list_api_keys(
 def delete_api_key(
     key_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_company_role(UserRole.admin)),
     company: CompanyProfile = Depends(get_active_company),
 ):
     api_key = (

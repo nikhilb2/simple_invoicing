@@ -11,13 +11,14 @@ import logging
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import case, or_
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from src.models.inventory import Inventory
 from src.models.marketplace import MarketplaceConnection, MarketplaceListing
 from src.models.product import Product
 from src.services.marketplace.client import MarketplaceError
+from src.services.company_access import company_scope
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ def local_quantity(db: Session, company_id: int, product_id: int) -> Decimal:
         db.query(Inventory)
         .filter(
             Inventory.product_id == product_id,
-            or_(Inventory.company_id == company_id, Inventory.company_id.is_(None)),
+            company_scope(Inventory.company_id, company_id),
         )
         .order_by(case((Inventory.company_id == company_id, 0), else_=1))
         .first()

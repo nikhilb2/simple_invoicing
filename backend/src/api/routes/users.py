@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -6,7 +8,7 @@ from src.db.session import get_db
 from src.models.user import User, UserRole
 from src.schemas.user import UserCreate, UserOut
 from src.core.security import get_password_hash
-from src.api.deps import require_roles
+from src.api.deps import require_platform_admin
 
 router = APIRouter()
 
@@ -16,13 +18,15 @@ router = APIRouter()
 def create_user(
     payload: UserCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_platform_admin(UserRole.admin)),
 ):
     user = User(
         email=payload.email,
         full_name=payload.full_name,
         hashed_password=get_password_hash(payload.password),
         role=payload.role,
+        # An operator vouches for the address they typed; nothing to verify.
+        email_verified_at=datetime.now(timezone.utc),
     )
     db.add(user)
     try:
@@ -40,6 +44,6 @@ def create_user(
 @router.get("/", response_model=list[UserOut])
 def list_users(
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_platform_admin(UserRole.admin, UserRole.manager)),
 ):
     return db.query(User).all()

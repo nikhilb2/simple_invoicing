@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from src.api.deps import get_active_company, get_current_user, require_roles
+from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.db.session import get_db
 from src.models.company import CompanyProfile
 from src.models.financial_year import FinancialYear
@@ -88,7 +88,7 @@ def list_financial_years(
 def create_financial_year(
     payload: FinancialYearCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_company_role(UserRole.admin)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     existing = db.query(FinancialYear).filter(
@@ -143,7 +143,7 @@ def create_financial_year(
 def activate_financial_year(
     fy_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_company_role(UserRole.admin)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     fy = activate_fy(db, fy_id, company_id=active_company.id)

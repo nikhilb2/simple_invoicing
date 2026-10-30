@@ -25,7 +25,7 @@ from src.schemas.product import (
     ProductWithInventoryOut,
     ProductWithInventoryUpdate,
 )
-from src.api.deps import get_active_company, get_current_user, require_roles
+from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.core.analytics import distinct_id_for, track
 from src.services.serial_service import SerialManager
 
@@ -45,7 +45,7 @@ def _plural(count: int, noun: str) -> str:
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     if not 0 <= payload.gst_rate <= 100:
@@ -188,7 +188,7 @@ def update_product(
     product_id: int,
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     if not 0 <= payload.gst_rate <= 100:
@@ -324,7 +324,7 @@ def _backfill_serials(
 def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     product = db.query(Product).filter(Product.id == product_id, Product.company_id == active_company.id).first()
@@ -557,7 +557,7 @@ def update_product_with_inventory(
     product_id: int,
     payload: ProductWithInventoryUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Update product fields and optionally inventory quantity in one call."""
@@ -751,7 +751,7 @@ def export_products_csv(
 async def import_products_csv(
     file: UploadFile = FastAPIFile(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Import products from CSV — upsert by Item Code (SKU).

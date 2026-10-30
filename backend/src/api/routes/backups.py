@@ -3,9 +3,11 @@ from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 
+from src.core.config import settings
 from src.core.security import decode_token
 from src.db.session import SessionLocal
 from src.models.user import User, UserRole
+from src.services.company_access import is_platform_admin
 from src.schemas.backup import (
     BackupCreateResponse,
     BackupPreflightResponse,
@@ -45,7 +47,12 @@ def require_admin_no_session_hold(token: str = Depends(oauth2_scheme)) -> User:
         user = db.query(User).filter(User.email == email).first()
         if not user:
             raise credentials_exception
-        if getattr(user, "role", None) != UserRole.admin:
+        # A backup is a pg_dump of the whole database -- every tenant's data in
+        # shared hosting -- so there only the platform operators may touch it.
+        if settings.is_shared_hosting:
+            if not is_platform_admin(user):
+                raise HTTPException(status_code=403, detail="Insufficient permissions")
+        elif getattr(user, "role", None) != UserRole.admin:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         return user
     finally:

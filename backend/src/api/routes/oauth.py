@@ -46,6 +46,7 @@ from src.schemas.oauth import (
     RevokeGrantResponse,
     ScopeDescription,
 )
+from src.services.company_access import accessible_company_ids, can_access_company
 from src.services.oauth.clients import (
     RegistrationError,
     authenticate_client,
@@ -331,13 +332,19 @@ def get_authorize_request(
         return _oauth_error("invalid_client", "Unknown client", 404)
 
     granted = _filter_scopes_to_user(parse_scope(auth_request.scope), current_user)
-    companies = db.query(CompanyProfile).order_by(
+    # Only the companies this user can reach: the grant is bound to the one
+    # they pick, and listing the rest would leak other tenants' names.
+    company_query = db.query(CompanyProfile)
+    allowed_ids = accessible_company_ids(db, current_user)
+    if allowed_ids is not None:
+        company_query = company_query.filter(CompanyProfile.id.in_(allowed_ids))
+    companies = company_query.order_by(
         CompanyProfile.name.asc(), CompanyProfile.id.asc()
     ).all()
 
     default_company_id = current_user.active_company_id
-    if default_company_id is None and companies:
-        default_company_id = companies[0].id
+    if default_company_id not in {c.id for c in companies}:
+        default_company_id = companies[0].id if companies else None
 
     return AuthorizationRequestInfo(
         request_id=auth_request.request_id,
@@ -399,7 +406,7 @@ def authorize_decision(
     company_id = payload.company_id if payload.company_id is not None else current_user.active_company_id
     company = (
         db.query(CompanyProfile).filter(CompanyProfile.id == company_id).first()
-        if company_id is not None
+        if company_id is not None and can_access_company(db, current_user, company_id)
         else None
     )
     if company is None:

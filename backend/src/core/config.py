@@ -150,6 +150,12 @@ class Settings(BaseSettings):
     # Shared hosting only: how many companies one user may create. Single-tenant
     # deployments keep the global cap in global_settings.max_companies.
     MAX_COMPANIES_PER_USER: int = 3
+    # Shared hosting only: comma-separated emails of the people who run the
+    # deployment. They alone reach the surfaces that span every tenant -- backups
+    # (a pg_dump of the whole database), the SMTP config, the user list and
+    # marketplace sync-all. Empty means nobody. Single-tenant deployments ignore
+    # it and keep their usual admin role checks.
+    PLATFORM_ADMIN_EMAILS: str = ""
 
     @property
     def MCP_RESOURCE_URI(self) -> str:

@@ -28,7 +28,6 @@ from io import BytesIO
 
 import weasyprint
 from fastapi import HTTPException, Request
-from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -50,6 +49,7 @@ from src.services.upi import (
     render_qr_png_data_uri,
     resolve_upi_payment,
 )
+from src.services.company_access import company_scope
 
 RESOURCE_INVOICE = "invoice"
 RESOURCE_STATEMENT = "ledger_statement"
@@ -212,7 +212,7 @@ def get_ledger(db: Session, company_id: int, ledger_id: int) -> Ledger | None:
     return (
         db.query(Ledger)
         .filter(Ledger.id == ledger_id)
-        .filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+        .filter(company_scope(Ledger.company_id, company_id))
         .first()
     )
 
@@ -221,7 +221,7 @@ def get_payment(db: Session, company_id: int, payment_id: int, *, active_only: b
     filters = [Payment.id == payment_id]
     if active_only:
         filters.append(Payment.status == "active")
-    filters.append(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+    filters.append(company_scope(Payment.company_id, company_id))
     return (
         db.query(Payment)
         .options(
@@ -243,7 +243,7 @@ def get_credit_note(db: Session, company_id: int, credit_note_id: int) -> Credit
             joinedload(CreditNote.items).joinedload(CreditNoteItem.invoice_item),
         )
         .filter(CreditNote.id == credit_note_id)
-        .filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
+        .filter(company_scope(CreditNote.company_id, company_id))
         .first()
     )
 

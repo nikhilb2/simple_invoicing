@@ -39,6 +39,7 @@ from src.schemas.invoice import InvoiceCreate, InvoiceItemCreate
 from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.inventory_service import InventoryManager
 from src.services.invoice_processor import InvoiceProcessor
+from src.services.company_access import company_scope
 
 logger = logging.getLogger(__name__)
 
@@ -240,7 +241,7 @@ def resolve_seller_product(
             db.query(Product)
             .filter(
                 Product.id == item.product_id,
-                or_(Product.company_id == connection.company_id, Product.company_id.is_(None)),
+                company_scope(Product.company_id, connection.company_id),
             )
             .first()
         )
