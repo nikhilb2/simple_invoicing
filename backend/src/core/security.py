@@ -36,7 +36,11 @@ def decrypt_value(ciphertext: str) -> str:
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
+def verify_password(plain_password: str, hashed_password: str | None) -> bool:
+    # An account created through Google has no password. Treat it exactly like
+    # a wrong one, so login cannot tell an attacker which accounts those are.
+    if not hashed_password:
+        return False
     return pwd_context.verify(plain_password, hashed_password)
 
 

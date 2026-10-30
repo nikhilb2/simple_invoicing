@@ -15,6 +15,11 @@ class UserOut(BaseModel):
     full_name: str
     role: UserRole
     active_company_id: int | None = None
+    # Read from the User properties of the same names. has_password is False for
+    # a Google-only account, which is how the app knows to offer "set a password"
+    # rather than "change password".
+    has_password: bool = False
+    email_verified: bool = False
 
     class Config:
         from_attributes = True
