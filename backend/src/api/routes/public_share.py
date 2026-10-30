@@ -18,8 +18,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-import threading
-import time
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -28,8 +26,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 
-from src.core.analytics import client_ip_from_request, track_anonymous
+from src.core.analytics import track_anonymous
 from src.core.config import settings
+from src.core.rate_limit import TokenBucket, client_ip
 from src.db.session import get_db
 from src.models.share_link import ShareLink
 from src.services.share_documents import (
@@ -97,43 +96,23 @@ def _html_headers() -> dict[str, str]:
 # Rate limiting
 # ---------------------------------------------------------------------------
 
-# In-process token bucket, PER REPLICA — two pods means two buckets and twice the
-# allowance. That is fine for what this is: WeasyPrint rendering is expensive
-# enough that an unauthenticated URL triggering it is a cheap DoS lever, and this
-# raises the cost of pulling it without pretending to be a real distributed limit.
+# PER REPLICA, like every bucket in src/core/rate_limit.py. WeasyPrint rendering
+# is expensive enough that an unauthenticated URL triggering it is a cheap DoS
+# lever, and this raises the cost of pulling it.
 _RATE_CAPACITY = 60.0
 _RATE_REFILL_PER_SECOND = 1.0
 _RATE_MAX_TRACKED_IPS = 20_000
 
-_rate_buckets: dict[str, tuple[float, float]] = {}
-_rate_lock = threading.Lock()
+_rate_bucket = TokenBucket(_RATE_CAPACITY, _RATE_REFILL_PER_SECOND, max_keys=_RATE_MAX_TRACKED_IPS)
 
 
 def reset_rate_limits() -> None:
     """Test hook — the buckets are module state and must not leak between tests."""
-    with _rate_lock:
-        _rate_buckets.clear()
-
-
-def _client_ip(request: Request) -> str:
-    # Shared with the analytics path so a bucket and a location are always keyed
-    # to the same address.
-    return client_ip_from_request(request) or "unknown"
+    _rate_bucket.reset()
 
 
 def _rate_limited(request: Request) -> bool:
-    ip = _client_ip(request)
-    now = time.monotonic()
-    with _rate_lock:
-        if len(_rate_buckets) > _RATE_MAX_TRACKED_IPS:
-            _rate_buckets.clear()
-        tokens, last = _rate_buckets.get(ip, (_RATE_CAPACITY, now))
-        tokens = min(_RATE_CAPACITY, tokens + (now - last) * _RATE_REFILL_PER_SECOND)
-        if tokens < 1.0:
-            _rate_buckets[ip] = (tokens, now)
-            return True
-        _rate_buckets[ip] = (tokens - 1.0, now)
-        return False
+    return _rate_bucket.hit(client_ip(request))
 
 
 def _too_many_requests() -> Response:

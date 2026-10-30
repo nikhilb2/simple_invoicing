@@ -60,3 +60,13 @@ def setup_db():
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
+
+@pytest.fixture(autouse=True)
+def _reset_auth_module_state():
+    # Login and signup rate limits are in-process token buckets: module state
+    # that, left alone, lets the login tests in one file spend the next's allowance.
+    from src.core.rate_limit import reset_all_rate_limits
+
+    reset_all_rate_limits()
+    yield
+    reset_all_rate_limits()
