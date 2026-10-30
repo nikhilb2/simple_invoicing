@@ -4,7 +4,9 @@ from passlib.context import CryptContext
 from src.core.config import settings
 import base64
 import hashlib
+import hmac
 import logging
+import secrets
 from cryptography.fernet import Fernet
 
 logger = logging.getLogger(__name__)
@@ -59,8 +61,9 @@ def create_access_token(
         expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     # extra_claims lets the MCP dispatcher mark its short-lived internal tokens
     # ({"src": "mcp", "tool": ...}) for audit. get_current_user reads only sub/type,
-    # so extra claims never affect authentication.
-    to_encode = {"sub": subject, "exp": expire, "type": "access", **(extra_claims or {})}
+    # so extra claims never affect authentication -- and they are spread FIRST so
+    # that no caller can ever pass a "type" or "sub" that overrides the real one.
+    to_encode = {**(extra_claims or {}), "sub": subject, "exp": expire, "type": "access"}
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
@@ -78,3 +81,68 @@ def decode_token(token: str) -> dict:
         return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
     except JWTError as exc:
         raise JWTError("Invalid token") from exc
+
+
+# ---------------------------------------------------------------------------
+# Single-purpose tokens: email verification and password reset
+# ---------------------------------------------------------------------------
+#
+# Same signing key and algorithm as the session tokens, told apart by "type".
+# Every reader checks the type it expects, in both directions: get_current_user
+# and /auth/refresh accept only "access" and "refresh", and the verify and reset
+# endpoints accept only their own. A token minted for one purpose is therefore
+# useless for every other, even though all of them carry a "sub".
+
+VERIFY_EMAIL_TOKEN_TYPE = "verify"
+RESET_PASSWORD_TOKEN_TYPE = "reset"
+VERIFY_EMAIL_TOKEN_TTL = timedelta(hours=24)
+RESET_PASSWORD_TOKEN_TTL = timedelta(hours=1)
+
+
+def create_purpose_token(subject: str, token_type: str, expires_delta: timedelta, claims: dict | None = None) -> str:
+    if token_type in ("access", "refresh"):
+        raise ValueError("Session tokens are minted by create_access_token / create_refresh_token")
+    expire = datetime.utcnow() + expires_delta
+    to_encode = {**(claims or {}), "sub": subject, "exp": expire, "type": token_type}
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def decode_purpose_token(token: str, token_type: str) -> dict:
+    """Decode and require `type == token_type`. Raises JWTError on any mismatch."""
+    payload = decode_token(token)
+    if payload.get("type") != token_type or not payload.get("sub"):
+        raise JWTError("Wrong token type")
+    return payload
+
+
+def password_fingerprint(hashed_password: str | None) -> str:
+    """A short, keyed fingerprint of the current password hash, or "none".
+
+    Embedded in a reset token so the token dies the moment the password changes --
+    including by being reset with that very token. Keyed with SECRET_KEY so the
+    claim, which anyone holding the token can read, says nothing about the hash.
+    """
+    if not hashed_password:
+        return "none"
+    digest = hmac.new(settings.SECRET_KEY.encode(), hashed_password.encode(), hashlib.sha256)
+    return digest.hexdigest()[:32]
+
+
+def fingerprint_matches(expected: str | None, hashed_password: str | None) -> bool:
+    return bool(expected) and hmac.compare_digest(str(expected), password_fingerprint(hashed_password))
+
+
+# A real bcrypt hash of a random string, verified against when the account does
+# not exist or has no password, so a login for an unknown address costs the same
+# bcrypt round as one for a real address and timing does not tell them apart.
+_DUMMY_PASSWORD_HASH: str | None = None
+
+
+def verify_password_constant_time(plain_password: str, hashed_password: str | None) -> bool:
+    global _DUMMY_PASSWORD_HASH
+    if hashed_password:
+        return verify_password(plain_password, hashed_password)
+    if _DUMMY_PASSWORD_HASH is None:
+        _DUMMY_PASSWORD_HASH = pwd_context.hash(secrets.token_urlsafe(32))
+    pwd_context.verify(plain_password, _DUMMY_PASSWORD_HASH)
+    return False
