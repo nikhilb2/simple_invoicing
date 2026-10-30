@@ -1,4 +1,5 @@
 import argparse
+from datetime import datetime, timezone
 
 from src.db.session import SessionLocal
 from src.db.base import Base
@@ -36,6 +37,10 @@ def main():
             full_name=args.name,
             hashed_password=get_password_hash(args.password),
             role=UserRole.admin,
+            # Created by whoever runs the deployment, so the address is taken as
+            # proven: shared hosting refuses sign-in to unverified accounts.
+            email_verified_at=datetime.now(timezone.utc),
+            is_active=True,
         )
         db.add(user)
         db.commit()
