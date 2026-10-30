@@ -311,7 +311,7 @@ Claude, ChatGPT and other MCP clients connect to this instance.
 | Variable | Development | Production | Purpose | Required |
 |----------|-------------|-----------|---------|----------|
 | `PUBLIC_API_BASE_URL` | `http://localhost:8000` | `https://<your-host>` | Public origin of this API. Doubles as the **OAuth issuer** and the base of the canonical MCP resource URI (`<base>/mcp`). | ✓ when MCP enabled |
-| `PUBLIC_APP_BASE_URL` | `http://localhost:5173` | `https://<your-host>` | Public origin of the web app. Used for the OAuth consent redirect and for `search`/`fetch` citation links. | ✓ when MCP enabled |
+| `PUBLIC_APP_BASE_URL` | `http://localhost:5173` | `https://<your-host>` | Public origin of the web app. Used for the OAuth consent redirect and for `search`/`fetch` citation links — and for the links in verification and reset mail and the Google sign-in redirect URI (see *Deployment Mode / Public Signup Variables*). | ✓ when MCP, signup or Google sign-in is enabled |
 | `MCP_ENABLED` | `true` | `true` | Mounts the `/mcp` endpoint and the OAuth discovery documents. | |
 | `MCP_WRITE_ENABLED` | `false` | `false` | **Kill switch.** With this off, write tools are neither listed nor callable — even for a token that was granted `invoicing:write`. Turn it on deliberately. | |
 | `MCP_DEFAULT_PROFILE` | `core` | `core` | `core` exposes a curated tool set; `all` exposes every generated tool. Clients can also request a profile in the connector URL. | |
@@ -394,7 +394,7 @@ image with it and changes nothing.
 | `PLATFORM_SMTP_FROM_EMAIL` | *(blank)* | `From` address on verification and reset mail. |
 | `PLATFORM_SMTP_FROM_NAME` | `Simple Invoicing` | Display name beside it. |
 | `PLATFORM_SMTP_USE_STARTTLS` | `true` | Upgrade the connection with STARTTLS. |
-| `OAUTH_GOOGLE_CLIENT_ID` | *(blank)* | "Continue with Google". The provider is offered only when both the id and the secret are set. |
+| `OAUTH_GOOGLE_CLIENT_ID` | *(blank)* | "Continue with Google". The provider is offered only when both the id and the secret are set. See *Setting up the Google OAuth client* below. |
 | `OAUTH_GOOGLE_CLIENT_SECRET` | *(blank)* | Secret for the client above. |
 | `MAX_COMPANIES_PER_USER` | `3` | Shared hosting only: how many companies one user may create. Single-tenant deployments keep the global company limit. |
 
@@ -410,10 +410,64 @@ image with it and changes nothing.
 - **Google signup** of new users needs shared hosting plus both `OAUTH_GOOGLE_*` values.
   Google proves the address itself, so it does not need platform SMTP.
 
-The Google OAuth client's authorised redirect URI is
-`<PUBLIC_APP_BASE_URL>/api/auth/oauth/google/callback` — for local development
-`http://localhost:5174/api/auth/oauth/google/callback`, which the Vite dev proxy forwards to
-the backend.
+**Password reset** (`Forgot password?`) needs only `PLATFORM_SMTP_HOST`, in either mode.
+`GET /api/auth/config` reports what is on (`password_signup_enabled`,
+`password_reset_enabled`, and the enabled `providers`), and the login page shows its links and
+buttons from that.
+
+#### `PUBLIC_APP_BASE_URL` and sign-in
+
+Every link in verification and reset mail (`<PUBLIC_APP_BASE_URL>/verify-email?token=…`,
+`/reset-password?token=…`) and both ends of Google sign-in are built from
+`PUBLIC_APP_BASE_URL`, so on a deployment that uses either it must be the exact public origin
+of the web app — scheme, host and any port, no trailing path. Its default,
+`http://localhost:5173`, is wrong for anyone not on that port: set it to
+`http://localhost:5174` in your local `backend/.env.development` if that is where Vite runs.
+
+The OAuth redirect URI is on the **web app's** origin, not the API's:
+`<PUBLIC_APP_BASE_URL>/api/auth/oauth/google/callback`. `/api` is same-origin with the app
+everywhere — the Vite dev proxy forwards `^/api/` to the backend, and the ingress routes `/api`
+to it in production — and that matters: the OAuth state lives in a `SameSite=Lax` cookie
+(`si_oauth_state`, signed with a key derived from `SECRET_KEY`, 10 minutes, `Secure` when
+`ENVIRONMENT=production`) set on the way out, and it only comes back if the callback is on the
+same site. A redirect URI on another origin fails every sign-in with `?error=oauth_failed`.
+
+#### Setting up the Google OAuth client
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), pick or create a project.
+2. **APIs & Services → OAuth consent screen**: user type *External*, fill in the app name,
+   support email and the app's domain, and add the scopes `openid`, `.../auth/userinfo.email`
+   and `.../auth/userinfo.profile` (no sensitive scopes are used, so no verification review).
+   Publish the app when you are ready for anyone to sign in; while it is in *Testing* only the
+   listed test users can.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**, application type
+   *Web application*.
+4. **Authorised redirect URIs** — one per origin the app is served from, exactly:
+   - local development: `http://localhost:5174/api/auth/oauth/google/callback`
+   - production: `https://app.respawn.in/api/auth/oauth/google/callback`
+     (generally `<PUBLIC_APP_BASE_URL>/api/auth/oauth/google/callback`)
+
+   *Authorised JavaScript origins* can stay empty: the browser never calls Google from
+   script, it is a full-page redirect.
+5. Copy the client ID and secret into `OAUTH_GOOGLE_CLIENT_ID` and `OAUTH_GOOGLE_CLIENT_SECRET`
+   (the secret goes in the k8s secret, never in git), and restart the backend.
+
+Google proves the address itself: a Google sign-in whose ID token does not say
+`email_verified: true` is refused, an existing account with the same address is linked to the
+Google identity on first sign-in, and a new person gets an account only where Google signup is
+on (shared hosting).
+
+#### Rate limits
+
+Login, register, resend-verification, forgot-password and the OAuth code exchange are
+rate-limited by client IP and by email, and answer `429` with `Retry-After` past the limit.
+The buckets are held in each process's memory, so the limits are **per replica** — two pods
+allow twice as much. The client IP is the left-most `X-Forwarded-For` entry, as for share-link
+analytics: right behind Traefik with its default `forwardedHeaders` settings, which replace a
+client-sent header with the address Traefik saw. If the load balancer in front of Traefik
+rewrites the source address (for example a `Service` with `externalTrafficPolicy: Cluster`),
+every caller looks like the same IP and shares one login allowance; use
+`externalTrafficPolicy: Local` or the PROXY protocol on the shared instance.
 
 ### Database Variables (Docker Compose)
 
