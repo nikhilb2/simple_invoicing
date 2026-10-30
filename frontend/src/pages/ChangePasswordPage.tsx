@@ -1,4 +1,6 @@
 import { FormEvent, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { fetchMe } from '../api/auth';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import type { ChangePasswordRequest, ChangePasswordResponse } from '../types/api';
@@ -6,6 +8,11 @@ import type { ChangePasswordRequest, ChangePasswordResponse } from '../types/api
 const MIN_PASSWORD_LENGTH = 8;
 
 export default function ChangePasswordPage() {
+  const queryClient = useQueryClient();
+  // A Google-only account has no password yet, so there is no current one to
+  // ask for. Assume it has one until /auth/me says otherwise.
+  const meQuery = useQuery({ queryKey: ['auth-me'], queryFn: fetchMe, retry: false });
+  const hasPassword = meQuery.data?.has_password ?? true;
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -38,7 +45,7 @@ export default function ChangePasswordPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!currentPassword || !newPassword || !confirmPassword) {
+    if ((hasPassword && !currentPassword) || !newPassword || !confirmPassword) {
       setError('All password fields are required');
       setSuccess(undefined);
       return;
@@ -56,22 +63,22 @@ export default function ChangePasswordPage() {
       return;
     }
 
-    if (currentPassword === newPassword) {
+    if (hasPassword && currentPassword === newPassword) {
       setError('New password must be different from current password');
       setSuccess(undefined);
       return;
     }
 
-    const payload: ChangePasswordRequest = {
-      current_password: currentPassword,
-      new_password: newPassword,
-    };
+    const payload: ChangePasswordRequest = hasPassword
+      ? { current_password: currentPassword, new_password: newPassword }
+      : { new_password: newPassword };
 
     try {
       setSubmitting(true);
       setError(undefined);
       const response = await api.post<ChangePasswordResponse>('/auth/change-password', payload);
-      setSuccess(response.data.detail || 'Password updated successfully');
+      setSuccess(response.data.detail || (hasPassword ? 'Password updated successfully' : 'Password set successfully'));
+      await queryClient.invalidateQueries({ queryKey: ['auth-me'] });
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
@@ -88,7 +95,7 @@ export default function ChangePasswordPage() {
       <section className="page-hero">
         <div>
           <p className="eyebrow">Settings</p>
-          <h1 className="page-title">Change password</h1>
+          <h1 className="page-title">{hasPassword ? 'Change password' : 'Set a password'}</h1>
           <p className="section-copy">Keep your account secure with a stronger password and quick inline validation before saving.</p>
         </div>
       </section>
@@ -106,12 +113,13 @@ export default function ChangePasswordPage() {
             <div className="change-password-card__header">
               <div>
                 <p className="change-password-card__eyebrow">Account security</p>
-                <h2 className="change-password-card__title">Update your password</h2>
+                <h2 className="change-password-card__title">{hasPassword ? 'Update your password' : 'Set a password'}</h2>
               </div>
               <span className="change-password-card__badge">Recommended every 90 days</span>
             </div>
 
             <div className="field-grid">
+              {hasPassword ? (
               <div className="field field--full">
                 <label htmlFor="current-password">Current password</label>
                 <div className="change-password-input-wrap">
@@ -134,6 +142,11 @@ export default function ChangePasswordPage() {
                   </button>
                 </div>
               </div>
+              ) : (
+                <p className="section-copy">
+                  You signed in with a provider, so this account has no password yet. Set one to also sign in with your email.
+                </p>
+              )}
 
               <div className="field field--full">
                 <label htmlFor="new-password">New password</label>
@@ -194,7 +207,7 @@ export default function ChangePasswordPage() {
             <div className="form-action-bar">
               <p className="form-action-bar__meta">After updating, use the new password on your next login.</p>
               <button className="button button--primary" type="submit" disabled={submitting}>
-                {submitting ? 'Updating password...' : 'Update password'}
+                {submitting ? 'Saving password...' : hasPassword ? 'Update password' : 'Set password'}
               </button>
             </div>
           </form>

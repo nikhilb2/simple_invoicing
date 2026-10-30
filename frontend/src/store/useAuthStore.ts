@@ -25,6 +25,8 @@ type AuthState = {
   setToken: (token: string | null) => void;
   setUserRole: (role: UserProfile['role'] | null) => void;
   hydrateUserRole: () => Promise<void>;
+  /** Stores a token pair however it was obtained (password login, OAuth exchange). */
+  setSession: (tokens: AuthToken) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 };
@@ -62,14 +64,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  login: async (email: string, password: string) => {
-    const res = await api.post<AuthToken>('/auth/login', { email, password });
-    localStorage.setItem('token', res.data.access_token);
-    localStorage.setItem('refresh_token', res.data.refresh_token);
-    postToNative({ type: 'tokens', accessToken: res.data.access_token, refreshToken: res.data.refresh_token });
-    const identifiedEmail = decodeEmailFromToken(res.data.access_token);
+  setSession: async (tokens: AuthToken) => {
+    localStorage.setItem('token', tokens.access_token);
+    localStorage.setItem('refresh_token', tokens.refresh_token);
+    postToNative({ type: 'tokens', accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
+    const identifiedEmail = decodeEmailFromToken(tokens.access_token);
     set({
-      token: res.data.access_token,
+      token: tokens.access_token,
       userEmail: identifiedEmail,
     });
 
@@ -83,6 +84,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     await get().hydrateUserRole();
+  },
+
+  login: async (email: string, password: string) => {
+    const res = await api.post<AuthToken>('/auth/login', { email, password });
+    await get().setSession(res.data);
   },
 
   logout: () => {

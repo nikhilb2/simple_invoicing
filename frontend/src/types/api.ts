@@ -741,10 +741,32 @@ export type UserProfile = {
   full_name: string;
   role: 'admin' | 'manager' | 'staff';
   active_company_id: number | null;
+  has_password: boolean;
+  email_verified: boolean;
+};
+
+export type AuthProvider = {
+  id: string;
+  name: string;
+};
+
+export type AuthConfig = {
+  password_signup_enabled: boolean;
+  providers: AuthProvider[];
+};
+
+export type RegisterRequest = {
+  email: string;
+  password: string;
+  full_name: string;
+};
+
+export type DetailResponse = {
+  detail: string;
 };
 
 export type ChangePasswordRequest = {
-  current_password: string;
+  current_password?: string;
   new_password: string;
 };
 

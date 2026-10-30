@@ -66,4 +66,28 @@ describe('auth store and the native bridge', () => {
     expect(storageWhenPosted).toEqual({});
     expect(useAuthStore.getState().token).toBeNull();
   });
+
+  it('setSession stores the pair, tells the native bridge and records the active company', async () => {
+    api.defaults.adapter = async (config): Promise<AxiosResponse> => ({
+      data: { role: 'staff', active_company_id: 7 },
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+    });
+
+    await useAuthStore.getState().setSession({ access_token: 'a2', refresh_token: 'r2', token_type: 'bearer' });
+
+    expect(store).toMatchObject({ token: 'a2', refresh_token: 'r2', active_company_id: '7' });
+    expect(sentMessages()).toEqual([{ type: 'tokens', accessToken: 'a2', refreshToken: 'r2' }]);
+    expect(useAuthStore.getState()).toMatchObject({ token: 'a2', userRole: 'staff' });
+  });
+
+  it('setSession clears a stale active company when the user has none', async () => {
+    store.active_company_id = '99';
+
+    await useAuthStore.getState().setSession({ access_token: 'a3', refresh_token: 'r3', token_type: 'bearer' });
+
+    expect(store.active_company_id).toBeUndefined();
+  });
 });

@@ -904,6 +904,29 @@ export default function InvoicesPage() {
             ) : null}
           </div>
 
+          {composerQuery.data && (ledgers.length === 0 || products.length === 0) ? (
+            <div className="empty-state stack" data-testid="invoice-first-run" style={{ marginBottom: '1rem' }}>
+              <strong>Add your first customer / product</strong>
+              <p className="muted-text" style={{ margin: 0 }}>
+                An invoice needs a customer ledger and at least one product. Add what is missing to get started.
+              </p>
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                {ledgers.length === 0 ? (
+                  <button type="button" className="button button--primary" onClick={openLedgerCreateModal}>
+                    <Plus size={13} />
+                    Add a customer
+                  </button>
+                ) : null}
+                {products.length === 0 ? (
+                  <button type="button" className="button button--primary" onClick={openProductCreateModal}>
+                    <Plus size={13} />
+                    Add a product
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           <form className="stack" onSubmit={handleSubmitInvoice}>
             <div className="field-grid">
               <div className="field">

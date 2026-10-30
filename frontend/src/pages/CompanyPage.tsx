@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import api, { getApiErrorMessage } from '../api/client';
+import { useQueryClient } from '@tanstack/react-query';
+import axios from 'axios';
+import api, { getApiErrorCode, getApiErrorMessage } from '../api/client';
 import { createTerm, deleteTerm, removeLogo, updateTerm, uploadLogo } from '../api/company';
 import StatusToasts from '../components/StatusToasts';
 import { useAuth } from '../context/AuthContext';
@@ -624,6 +626,7 @@ function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLEl
 
 export default function CompanyPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const { isAdmin } = useAuth();
   const seriesSectionRef = useRef<HTMLElement>(null);
@@ -641,6 +644,9 @@ export default function CompanyPage() {
     show_upi_pay_button: false,
   });
   const [companyId, setCompanyId] = useState<number>(0);
+  // True when the server says this user has no company at all (409
+  // company_required), so saving has to create one rather than update one.
+  const [noCompany, setNoCompany] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [additionalInfo, setAdditionalInfo] = useState('');
   const [loading, setLoading] = useState(true);
@@ -666,6 +672,7 @@ export default function CompanyPage() {
       setError('');
       const response = await api.get<CompanyProfile>('/company/');
       const data = response.data;
+      setNoCompany(false);
       if (initialSetupRequired === null) {
         setInitialSetupRequired(!isCompanyConfigured(data));
       }
@@ -689,7 +696,15 @@ export default function CompanyPage() {
         setLogoUrl(null);
       }
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to load company profile'));
+      if (axios.isAxiosError(err) && err.response?.status === 409 && getApiErrorCode(err) === 'company_required') {
+        setNoCompany(true);
+        setCompanyId(0);
+        if (initialSetupRequired === null) {
+          setInitialSetupRequired(true);
+        }
+      } else {
+        setError(getApiErrorMessage(err, 'Unable to load company profile'));
+      }
     } finally {
       setLoading(false);
     }
@@ -720,8 +735,18 @@ export default function CompanyPage() {
         show_upi_pay_button: form.show_upi_pay_button,
       };
 
-      await api.put<CompanyProfileUpdate>('/company/', payload);
-      setSuccess('Company profile saved. New invoices will now show this as billing company.');
+      if (noCompany) {
+        // First company for this user: the creator becomes its admin and the
+        // new company becomes their active one.
+        const created = await api.post<CompanyProfile>('/company/companies', payload);
+        localStorage.setItem('active_company_id', String(created.data.id));
+        await queryClient.invalidateQueries({ queryKey: ['company-setup-required'] });
+        await queryClient.invalidateQueries({ queryKey: ['sidebar-companies'] });
+        setSuccess('Company created. New invoices will now show this as billing company.');
+      } else {
+        await api.put<CompanyProfileUpdate>('/company/', payload);
+        setSuccess('Company profile saved. New invoices will now show this as billing company.');
+      }
       if (initialSetupRequired && payload.name) {
         setShowFirstSetupPrompt(true);
       }
@@ -856,7 +881,7 @@ export default function CompanyPage() {
       ) : null}
 
       {/* -------- Branding Section (Logo + Additional Info) -------- */}
-      {!loading && (
+      {!loading && !noCompany && (
         <section className="content-grid content-grid--single">
           <article className="panel stack" style={{ gap: '24px' }}>
             <LogoUploadCard logoUrl={logoUrl} onLogoChanged={loadCompanyProfile} />
@@ -1070,7 +1095,7 @@ export default function CompanyPage() {
           <TermsAndConditionsCard companyId={companyId} />
         )}
 
-        <InvoiceSeriesCard sectionRef={seriesSectionRef} />
+        {!noCompany && <InvoiceSeriesCard sectionRef={seriesSectionRef} />}
       </section>
     </div>
   );

@@ -4,6 +4,9 @@ import { postToNative } from '../lib/nativeBridge';
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
 
+/** The API root, for the few URLs the browser navigates to rather than fetches. */
+export const apiBaseURL = baseURL;
+
 const api = axios.create({
   baseURL,
   timeout: 10000,
@@ -120,6 +123,10 @@ export function getApiErrorMessage(error: unknown, fallback = 'Something went wr
     if (typeof detail === 'string') {
       return detail;
     }
+    // Coded errors carry {code, message}; show the message.
+    if (typeof detail?.message === 'string') {
+      return detail.message;
+    }
   }
 
   if (error instanceof Error && error.message) {
@@ -127,6 +134,17 @@ export function getApiErrorMessage(error: unknown, fallback = 'Something went wr
   }
 
   return fallback;
+}
+
+/** The machine code of a `detail: {code, message}` error, if the response has one. */
+export function getApiErrorCode(error: unknown): string | null {
+  if (axios.isAxiosError(error)) {
+    const code = error.response?.data?.detail?.code;
+    if (typeof code === 'string') {
+      return code;
+    }
+  }
+  return null;
 }
 
 /**

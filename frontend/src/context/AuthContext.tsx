@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useShallow } from 'zustand/shallow';
-import type { UserProfile } from '../types/api';
+import type { AuthToken, UserProfile } from '../types/api';
 import { useAuthStore } from '../store/useAuthStore';
 
 type AuthContextType = {
@@ -9,6 +9,7 @@ type AuthContextType = {
   userRole: UserProfile['role'] | null;
   isAdmin: boolean;
   isAuthenticated: boolean;
+  setSession: (tokens: AuthToken) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 };
@@ -36,6 +37,7 @@ export function useAuth() {
     token: s.token,
     userEmail: s.userEmail,
     userRole: s.userRole,
+    setSession: s.setSession,
     login: s.login,
     logout: s.logout,
   })));

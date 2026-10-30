@@ -5,11 +5,17 @@ import { MotionConfig } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { FYProvider } from './context/FYContext';
 import { ShortcutsProvider } from './context/ShortcutsContext';
+import axios from 'axios';
 import api from './api/client';
 import type { CompanyProfile } from './types/api';
 import { isCompanyConfigured } from './utils/companySetup';
 import { loginPathWithNext, sanitizeNextPath } from './utils/nextPath';
 import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import VerifyEmailPage from './pages/VerifyEmailPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import OAuthCallbackPage from './pages/OAuthCallbackPage';
 import DashboardPage from './pages/DashboardPage';
 import CataloguePage from './pages/CataloguePage';
 import ProduceItemsPage from './pages/ProduceItemsPage';
@@ -94,6 +100,14 @@ function AdminOnly({ children }: { children: React.ReactNode }) {
   return children;
 }
 
+function isCompanyRequiredError(error: unknown): boolean {
+  return (
+    axios.isAxiosError(error) &&
+    error.response?.status === 409 &&
+    error.response.data?.detail?.code === 'company_required'
+  );
+}
+
 function CompanyRequired({ children }: { children: React.ReactNode }) {
   const companyQuery = useQuery({
     queryKey: ['company-setup-required'],
@@ -106,6 +120,13 @@ function CompanyRequired({ children }: { children: React.ReactNode }) {
 
   if (companyQuery.isLoading) {
     return <div className="empty-state">Loading company profile...</div>;
+  }
+
+  // A 409 company_required is the server saying this user has no company yet
+  // (shared hosting never auto-creates one). Any other failure still lets the
+  // user through, as before.
+  if (isCompanyRequiredError(companyQuery.error)) {
+    return <Navigate to="/settings/company?setup=required" replace />;
   }
 
   if (companyQuery.error) {
@@ -195,6 +216,11 @@ function AppRoutes() {
           </PublicOnly>
         }
       />
+      <Route path="/register" element={<PublicOnly><RegisterPage /></PublicOnly>} />
+      <Route path="/verify-email" element={<PublicOnly><VerifyEmailPage /></PublicOnly>} />
+      <Route path="/forgot-password" element={<PublicOnly><ForgotPasswordPage /></PublicOnly>} />
+      <Route path="/reset-password" element={<PublicOnly><ResetPasswordPage /></PublicOnly>} />
+      <Route path="/auth/callback" element={<PublicOnly><OAuthCallbackPage /></PublicOnly>} />
       {/* Mid-flow from an external MCP client. Deliberately outside Layout and
           CompanyRequired: the visitor is answering one question, and a company
           setup redirect here would strand the pending authorization request. */}
