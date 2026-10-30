@@ -22,9 +22,11 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
+from src.core.config import settings
 from src.core.validation import normalize_gstin
 from src.models.buyer import Buyer as Ledger
 from src.models.company import CompanyProfile
+from src.models.company_membership import CompanyMembership
 from src.models.invoice import Invoice
 from src.models.marketplace import (
     MarketplaceConnection,
@@ -380,7 +382,21 @@ def _resolve_posting_user(db: Session, connection: MarketplaceConnection) -> int
         user = db.query(User).filter(User.id == connection.created_by_user_id).first()
         if user:
             return user.id
-    admin = db.query(User).filter(User.role == UserRole.admin).order_by(User.id.asc()).first()
+    if settings.is_shared_hosting:
+        # The lowest-id global admin is some other tenant's user here; the
+        # invoice must be owned by an admin of this company.
+        admin = (
+            db.query(User)
+            .join(CompanyMembership, CompanyMembership.user_id == User.id)
+            .filter(
+                CompanyMembership.company_id == connection.company_id,
+                CompanyMembership.role == UserRole.admin,
+            )
+            .order_by(CompanyMembership.id.asc())
+            .first()
+        )
+    else:
+        admin = db.query(User).filter(User.role == UserRole.admin).order_by(User.id.asc()).first()
     if admin:
         return admin.id
     raise PostingError("no_posting_user", "No user available to own the invoice")

@@ -190,11 +190,13 @@ def create_credit_note(
 
     # ── 3. Load invoice items and validate quantity limits ───────────────────
     item_ids = [it.invoice_item_id for it in payload.items]
-    invoice_items = (
-        db.query(InvoiceItem)
-        .filter(InvoiceItem.id.in_(item_ids))
-        .all()
-    )
+    item_query = db.query(InvoiceItem).filter(InvoiceItem.id.in_(item_ids))
+    if company_id is not None:
+        # Another company's item is "not found", not "belongs to another invoice".
+        item_query = item_query.join(Invoice, Invoice.id == InvoiceItem.invoice_id).filter(
+            company_scope(Invoice.company_id, company_id)
+        )
+    invoice_items = item_query.all()
     invoice_item_map = {ii.id: ii for ii in invoice_items}
 
     missing_items = set(item_ids) - set(invoice_item_map)

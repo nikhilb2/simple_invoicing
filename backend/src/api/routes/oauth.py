@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from src.api.deps import get_current_user
+from src.api.deps import get_session_user
 from src.core.config import settings
 from src.db.session import get_db
 from src.models.company import CompanyProfile
@@ -315,7 +315,7 @@ def authorize(request: Request, db: Session = Depends(get_db)):
 def get_authorize_request(
     request_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_session_user),
 ):
     auth_request = (
         db.query(OAuthAuthRequest).filter(OAuthAuthRequest.request_id == request_id).first()
@@ -376,7 +376,7 @@ def get_authorize_request(
 def authorize_decision(
     payload: AuthorizationDecisionRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_session_user),
 ):
     auth_request = (
         db.query(OAuthAuthRequest)
@@ -675,7 +675,7 @@ async def revoke(request: Request, db: Session = Depends(get_db)):
 @router.get("/grants", response_model=list[GrantResponse], include_in_schema=False)
 def list_grants(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_session_user),
 ):
     rows = (
         db.query(OAuthToken)
@@ -693,10 +693,16 @@ def list_grants(
         .filter(OAuthClient.client_id.in_({row.client_id for row in live}))
         .all()
     }
+    # Only name companies the user can still reach; a grant for one they have
+    # since left keeps showing (so it can be revoked) but without the name.
+    grant_company_ids = {row.company_id for row in live if row.company_id}
+    allowed_ids = accessible_company_ids(db, current_user)
+    if allowed_ids is not None:
+        grant_company_ids &= allowed_ids
     companies = {
         c.id: c
         for c in db.query(CompanyProfile)
-        .filter(CompanyProfile.id.in_({row.company_id for row in live if row.company_id}))
+        .filter(CompanyProfile.id.in_(grant_company_ids))
         .all()
     }
 
@@ -734,7 +740,7 @@ def list_grants(
 def revoke_grant(
     client_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_session_user),
 ):
     rows = (
         db.query(OAuthToken)

@@ -513,6 +513,26 @@ def test_api_key_is_pinned_to_its_company(client, tenants):
         assert elsewhere.status_code == 403, elsewhere.text
 
 
+def test_api_key_cannot_take_account_actions_beyond_its_company(client, db_session, tenants, act_as):
+    # A second company for A, which the key (issued in A's first) must not reach.
+    act_as(tenants.user_a)
+    other = _ok(client.post("/api/company/companies", json=_company_payload("Alpha Two")))["id"]
+
+    bearer = {"Authorization": f"Bearer {tenants.api_key['raw_key']}"}
+    with _real_auth():
+        listed = client.get("/api/company/companies", headers=bearer)
+        assert [c["id"] for c in _ok(listed)] == [tenants.company_a]
+
+        assert client.post(f"/api/company/select/{other}", headers=bearer).status_code == 403
+        created = client.post("/api/company/companies", json=_company_payload("Via Key"), headers=bearer)
+        assert created.status_code == 403, created.text
+        # The OAuth consent flow would otherwise mint a token for any of A's companies.
+        consent = client.get("/api/oauth/authorize/request/anything", headers=bearer)
+        assert consent.status_code == 403, consent.text
+        grants = client.get("/api/oauth/grants", headers=bearer)
+        assert grants.status_code == 403, grants.text
+
+
 def test_api_key_stops_working_when_its_creator_loses_the_company(client, db_session, tenants):
     db_session.query(CompanyMembership).filter(
         CompanyMembership.user_id == tenants.user_a.id,

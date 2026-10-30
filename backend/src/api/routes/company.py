@@ -1,15 +1,18 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, inspect
 from sqlalchemy.orm import Session
 
 from pydantic import BaseModel
 
 from src.api.deps import (
+    API_KEY_COMPANY_ATTR,
     company_required_error,
     get_active_company,
     get_current_user,
+    get_requested_company_id,
+    get_session_user,
     require_company_role,
 )
 from src.api.routes.financial_years import _seed_series_for_fy
@@ -204,6 +207,10 @@ def list_companies(
     query = db.query(CompanyProfile)
     allowed_ids = accessible_company_ids(db, current_user)
     if allowed_ids is not None:
+        # An si_ key sees only the company it was issued for.
+        pinned_id = getattr(current_user, API_KEY_COMPANY_ATTR, None)
+        if pinned_id is not None:
+            allowed_ids = allowed_ids & {pinned_id}
         query = query.filter(CompanyProfile.id.in_(allowed_ids))
     companies = query.order_by(CompanyProfile.name.asc(), CompanyProfile.id.asc()).all()
     return [
@@ -222,7 +229,7 @@ def list_companies(
 def create_company_profile(
     payload: CompanyProfileUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_session_user),
 ):
     shared = settings.is_shared_hosting
     if shared:
@@ -287,7 +294,7 @@ def get_company_creation_capability(
 def select_active_company(
     company_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_session_user),
 ):
     if not can_access_company(db, current_user, company_id):
         raise HTTPException(status_code=403, detail="You do not have access to this company")
@@ -309,11 +316,23 @@ def select_active_company(
 @router.get("", response_model=CompanyProfileOut, include_in_schema=False)
 @router.get("/", response_model=CompanyProfileOut)
 def get_company_profile(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    requested_company_id: int | None = Depends(get_requested_company_id),
 ):
+    # Single tenant has always ignored X-Company-Id here, and a stale header
+    # must not end in the blank-company fallback below. Shared hosting honours
+    # it so an MCP grant bound to one company reads that company's profile.
+    if not settings.is_shared_hosting:
+        requested_company_id = None
     try:
-        company = get_active_company(db=db, current_user=current_user, requested_company_id=None)
+        company = get_active_company(
+            request=request,
+            db=db,
+            current_user=current_user,
+            requested_company_id=requested_company_id,
+        )
         return _company_to_out(company)
     except HTTPException as exc:
         if exc.status_code != 404:
@@ -484,8 +503,8 @@ def remove_logo(
 def list_terms(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    company: CompanyProfile = Depends(get_active_company),
 ):
-    company = get_active_company(db=db, current_user=current_user, requested_company_id=None)
     terms = (
         db.query(CompanyTerm)
         .filter(CompanyTerm.company_id == company.id)

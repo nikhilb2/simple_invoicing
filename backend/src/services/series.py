@@ -3,6 +3,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from src.core.config import settings
 from src.models.financial_year import FinancialYear
 from src.models.invoice_series import InvoiceSeries
 from src.services.company_access import company_scope
@@ -82,6 +83,11 @@ def generate_next_number(
     overlap), the counter is advanced until a free number is found. Numbers are
     unique per company, so another company's documents never cause a skip.
     """
+    if company_id is None and settings.is_shared_hosting:
+        # Without a company every lookup below would pick any tenant's series
+        # and advance its counter.
+        raise ValueError("generate_next_number requires a company_id in shared hosting")
+
     series = None
 
     if financial_year_id is not None:

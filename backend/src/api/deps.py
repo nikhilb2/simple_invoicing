@@ -111,6 +111,19 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
+def get_session_user(current_user: User = Depends(get_current_user)) -> User:
+    """The signed-in person, for account-level actions an `si_` key must not take.
+
+    A key is pinned to one company inside get_active_company, but a route that
+    only asks for the user would otherwise act as the key's creator everywhere:
+    approve an OAuth grant for another of their companies, list or switch
+    companies, create new ones. In shared hosting those need a real session.
+    """
+    if settings.is_shared_hosting and getattr(current_user, API_KEY_COMPANY_ATTR, None) is not None:
+        raise HTTPException(status_code=403, detail="API keys cannot be used for this action")
+    return current_user
+
+
 def get_requested_company_id(x_company_id: str | None = Header(default=None, alias="X-Company-Id")) -> int | None:
     if x_company_id is None:
         return None
