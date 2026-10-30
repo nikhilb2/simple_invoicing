@@ -48,10 +48,11 @@ from src.core.security import (
     fingerprint_matches,
     get_password_hash,
     password_fingerprint,
+    session_revoked,
     verify_password,
     verify_password_constant_time,
 )
-from src.api.deps import get_current_user
+from src.api.deps import get_current_user, get_session_user
 from src.core.analytics import distinct_id_for, track
 from src.services import auth_providers, platform_mail
 
@@ -436,21 +437,10 @@ def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
     # A deactivated account stops getting new tokens, and so does a session that
     # began before the password was reset; access tokens already out run out
     # within ACCESS_TOKEN_EXPIRE_MINUTES.
-    if not user or not user.is_active or _session_revoked(user, decoded):
+    if not user or not user.is_active or session_revoked(user.sessions_valid_after, decoded):
         raise credentials_exception
 
     return _issue_tokens(user)
-
-
-def _session_revoked(user: User, claims: dict) -> bool:
-    cutoff = user.sessions_valid_after
-    if cutoff is None:
-        return False
-    if cutoff.tzinfo is None:  # SQLite hands TIMESTAMPTZ back naive, in UTC
-        cutoff = cutoff.replace(tzinfo=timezone.utc)
-    issued_at = claims.get("iat")
-    # A refresh token from before iat was added cannot show it is newer.
-    return not isinstance(issued_at, (int, float)) or issued_at < int(cutoff.timestamp())
 
 
 @router.get("/me", response_model=UserOut)
@@ -480,7 +470,9 @@ def change_password(
     payload: ChangePasswordRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    # An `si_` key acts as its creator inside one company; it must never be able
+    # to replace the creator's password, which would outlive the key itself.
+    current_user: User = Depends(get_session_user),
 ):
     user = db.query(User).filter(User.email == current_user.email).first()
     if not user:

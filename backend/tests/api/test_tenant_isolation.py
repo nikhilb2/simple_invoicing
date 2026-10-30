@@ -533,6 +533,21 @@ def test_api_key_cannot_take_account_actions_beyond_its_company(client, db_sessi
         assert grants.status_code == 403, grants.text
 
 
+def test_api_key_cannot_change_its_creators_password(client, db_session, tenants):
+    bearer = {"Authorization": f"Bearer {tenants.api_key['raw_key']}"}
+    with _real_auth():
+        response = client.post(
+            "/api/auth/change-password",
+            json={"current_password": "whatever-it-is", "new_password": "Takeover@123"},
+            headers=bearer,
+        )
+    # 403 from the session guard, before the current password is even checked.
+    assert response.status_code == 403, response.text
+    db_session.expire_all()
+    user_a = db_session.query(User).filter(User.id == tenants.user_a.id).one()
+    assert user_a.hashed_password == "not-a-real-hash"
+
+
 def test_api_key_stops_working_when_its_creator_loses_the_company(client, db_session, tenants):
     db_session.query(CompanyMembership).filter(
         CompanyMembership.user_id == tenants.user_a.id,

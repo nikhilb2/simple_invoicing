@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from src.core.config import settings
@@ -60,10 +60,19 @@ def create_access_token(
     else:
         expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     # extra_claims lets the MCP dispatcher mark its short-lived internal tokens
-    # ({"src": "mcp", "tool": ...}) for audit. get_current_user reads only sub/type,
-    # so extra claims never affect authentication -- and they are spread FIRST so
-    # that no caller can ever pass a "type" or "sub" that overrides the real one.
-    to_encode = {**(extra_claims or {}), "sub": subject, "exp": expire, "type": "access"}
+    # ({"src": "mcp", "tool": ...}) for audit. get_current_user reads only
+    # sub/type/iat, so extra claims never affect authentication -- and they are
+    # spread FIRST so that no caller can ever pass a "type", "sub" or "iat" that
+    # overrides the real one.
+    # iat lets get_current_user refuse a token issued before a password reset
+    # (User.sessions_valid_after), the same check /auth/refresh makes.
+    to_encode = {
+        **(extra_claims or {}),
+        "sub": subject,
+        "exp": expire,
+        "iat": datetime.utcnow(),
+        "type": "access",
+    }
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
@@ -76,6 +85,23 @@ def create_refresh_token(subject: str, expires_delta: timedelta | None = None) -
     # (User.sessions_valid_after).
     to_encode = {"sub": subject, "exp": expire, "iat": datetime.utcnow(), "type": "refresh"}
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def session_revoked(sessions_valid_after: datetime | None, claims: dict) -> bool:
+    """Whether a session token was issued before the account's session cutoff.
+
+    ``sessions_valid_after`` is set when every existing session must end (a
+    password reset). NULL means none ever has, so a token passes whether or not
+    it carries an ``iat``; once a cutoff exists, a token with no ``iat`` -- one
+    minted before the claim was added -- cannot show it is newer and is refused.
+    """
+    if sessions_valid_after is None:
+        return False
+    cutoff = sessions_valid_after
+    if cutoff.tzinfo is None:  # SQLite hands TIMESTAMPTZ back naive, in UTC
+        cutoff = cutoff.replace(tzinfo=timezone.utc)
+    issued_at = claims.get("iat")
+    return not isinstance(issued_at, (int, float)) or issued_at < int(cutoff.timestamp())
 
 
 def decode_token(token: str) -> dict:

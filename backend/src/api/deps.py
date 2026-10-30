@@ -5,7 +5,7 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from src.core.config import settings
-from src.core.security import decode_token
+from src.core.security import decode_token, session_revoked
 from src.db.session import get_db
 from src.models.company import CompanyProfile
 from src.models.user import User, UserRole
@@ -107,6 +107,10 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
     user = db.query(User).filter(User.email == email).first()
     if not user:
+        raise credentials_exception
+    # A deactivated account, or a token from before a password reset, is done
+    # now -- not when the access token happens to expire.
+    if user.is_active is False or session_revoked(user.sessions_valid_after, payload):
         raise credentials_exception
     return user
 
