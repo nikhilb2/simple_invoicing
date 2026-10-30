@@ -32,6 +32,9 @@ class ProviderSpec:
     signup_allowed: Callable[[Settings], bool]
     # Keyword arguments for OAuth.register.
     register_kwargs: Callable[[Settings], dict]
+    # claims_options for the ID token. Authlib checks signature, exp and nonce
+    # itself, and iss only by default -- the audience it checks only when told.
+    id_token_claims: Callable[[Settings], dict]
 
 
 PROVIDERS: dict[str, ProviderSpec] = {
@@ -44,8 +47,8 @@ PROVIDERS: dict[str, ProviderSpec] = {
             "client_id": s.OAUTH_GOOGLE_CLIENT_ID,
             "client_secret": s.OAUTH_GOOGLE_CLIENT_SECRET,
             # OIDC discovery: Authlib fetches the endpoints and the signing keys
-            # from here, and checks the ID token's signature, iss, aud, exp and
-            # nonce against them in authorize_access_token.
+            # from here, and checks the ID token's signature, exp and nonce
+            # against them in authorize_access_token; iss and aud are below.
             "server_metadata_url": GOOGLE_DISCOVERY_URL,
             "client_kwargs": {
                 "scope": "openid email profile",
@@ -53,6 +56,12 @@ PROVIDERS: dict[str, ProviderSpec] = {
                 # back is useless without the verifier held in our session cookie.
                 "code_challenge_method": "S256",
             },
+        },
+        id_token_claims=lambda s: {
+            # Google documents both spellings of its issuer.
+            "iss": {"essential": True, "values": ["https://accounts.google.com", "accounts.google.com"]},
+            # A token Google minted for some other app must not sign anyone in here.
+            "aud": {"essential": True, "value": s.OAUTH_GOOGLE_CLIENT_ID},
         },
     ),
 }

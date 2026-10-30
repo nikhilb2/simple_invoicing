@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import logging
 import re
 import secrets
@@ -127,10 +128,13 @@ def _now() -> datetime:
 # Every login attempt counts against the IP. Generous, because an office or a
 # mobile carrier puts many honest people behind one address.
 _LOGIN_BY_IP = TokenBucket(capacity=30, refill_per_second=0.5)
-# Only FAILED attempts count against the account, so a stranger hammering an
-# address slows the guessing down without spending its owner's allowance on
-# their own correct password.
-_LOGIN_FAILURES_BY_EMAIL = TokenBucket(capacity=10, refill_per_second=1 / 60)
+# Only FAILED attempts count against an account, so a correct password costs
+# nothing. Two buckets: a tight one per (address, IP), which is what stops one
+# source guessing, and a loose one per address across all IPs, which caps a
+# distributed guess without letting one stranger lock the owner out -- ten wrong
+# guesses from the attacker's IP block that IP for that address, not the owner.
+_LOGIN_FAILURES_BY_EMAIL_IP = TokenBucket(capacity=10, refill_per_second=1 / 60)
+_LOGIN_FAILURES_BY_EMAIL = TokenBucket(capacity=100, refill_per_second=1 / 30)
 # register, resend-verification and forgot-password all send mail, so they share
 # one allowance per address: this is what stops the API being used to bury a
 # stranger's inbox.
@@ -154,8 +158,16 @@ def _limit_mail_request(request: Request, email: str) -> None:
 
 def _verify_token_for(user: User) -> str:
     # The address rides along so a token minted before an address change cannot
-    # verify the new one.
-    return create_purpose_token(str(user.id), VERIFY_EMAIL_TOKEN_TYPE, VERIFY_EMAIL_TOKEN_TTL, {"email": user.email})
+    # verify the new one. So does the password fingerprint: a link only ever
+    # confirms the password that was set when it was sent, so re-registering
+    # (which replaces that password) kills every earlier link -- including one a
+    # stranger triggered by registering this address first.
+    return create_purpose_token(
+        str(user.id),
+        VERIFY_EMAIL_TOKEN_TYPE,
+        VERIFY_EMAIL_TOKEN_TTL,
+        {"email": user.email, "pwd": password_fingerprint(user.hashed_password)},
+    )
 
 
 def _reset_token_for(user: User) -> str:
@@ -204,13 +216,16 @@ def auth_config():
 @router.post("/login", response_model=Token)
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
     email = normalize_email(payload.email)
-    if _LOGIN_BY_IP.hit(client_ip(request)) or _LOGIN_FAILURES_BY_EMAIL.blocked(email):
+    ip = client_ip(request)
+    email_ip = f"{email}|{ip}"
+    if _LOGIN_BY_IP.hit(ip) or _LOGIN_FAILURES_BY_EMAIL_IP.blocked(email_ip) or _LOGIN_FAILURES_BY_EMAIL.blocked(email):
         raise _too_many()
 
     user = find_user_by_email(db, payload.email)
     # verify_password_constant_time spends one bcrypt round even when there is no
     # account or no password, so how long this takes says nothing about which.
     if not verify_password_constant_time(payload.password, user.hashed_password if user else None):
+        _LOGIN_FAILURES_BY_EMAIL_IP.hit(email_ip)
         _LOGIN_FAILURES_BY_EMAIL.hit(email)
         # Without this, a spike in failed sign-ins looks exactly like people
         # simply not showing up. The reason separates "wrong password, tell
@@ -276,12 +291,19 @@ def register(
 
     existing = find_user_by_email(db, email)
     if existing is not None:
-        # An unverified account gets a fresh link, to the address on the account
-        # and never to the one just typed. Its password is NOT replaced: whoever
-        # registered second has proven nothing, and swapping the password under a
-        # pending verification would let them own the account the moment its real
-        # owner clicks the link. A forgotten password goes through reset instead.
+        # A verified account is left exactly as it is.
+        #
+        # An unverified one is still only a claim nobody has proven, so the
+        # newest registration replaces it: its password and name, and -- because
+        # links are bound to the password -- every link sent before. Keeping the
+        # first password instead would hand the account to whoever registered an
+        # address first: the real owner signs up, gets a link, clicks it, and has
+        # confirmed the stranger's password rather than their own. The fresh link
+        # goes to the address on the account, never to the one just typed.
         if existing.is_active and not existing.email_verified:
+            existing.hashed_password = hashed_password
+            existing.full_name = payload.full_name.strip() or existing.email
+            db.commit()
             background_tasks.add_task(platform_mail.send_verification_email, existing.email, _verify_token_for(existing))
         return accepted
 
@@ -315,8 +337,10 @@ def register(
 
 @router.post("/verify-email", response_model=DetailResponse, include_in_schema=False)
 def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)):
-    user, _ = _user_from_purpose_token(db, payload.token, VERIFY_EMAIL_TOKEN_TYPE)
+    user, claims = _user_from_purpose_token(db, payload.token, VERIFY_EMAIL_TOKEN_TYPE)
     if not user.email_verified:
+        if not fingerprint_matches(claims.get("pwd"), user.hashed_password):
+            raise _error(400, "invalid_token", "This link is invalid or has expired.")
         user.email_verified_at = _now()
         db.commit()
         track("email_verified", distinct_id_for(user), {"method": "link"})
@@ -358,7 +382,7 @@ def forgot_password(
         # Sent to the address stored on the account, never to the one typed: the
         # lookup ignores case, and a reset link must only ever reach the inbox
         # that owns the account.
-        background_tasks.add_task(platform_mail.send_password_reset_email, user.email, user.full_name, _reset_token_for(user))
+        background_tasks.add_task(platform_mail.send_password_reset_email, user.email, _reset_token_for(user))
     return {"detail": "If that address has an account, a link to reset its password is on its way."}
 
 
@@ -375,6 +399,9 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     # The link arrived in that inbox, so the address is proven too.
     if not user.email_verified:
         user.email_verified_at = _now()
+    # A reset is what someone does when they think their password is known to
+    # somebody else, so every session signed in before it stops refreshing.
+    user.sessions_valid_after = _now()
     db.commit()
     return {"detail": "Your password has been reset. You can sign in with it now."}
 
@@ -406,12 +433,24 @@ def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
         raise credentials_exception
 
     user = db.query(User).filter(User.email == email).first()
-    # A deactivated account stops getting new tokens; the ones it holds run out
+    # A deactivated account stops getting new tokens, and so does a session that
+    # began before the password was reset; access tokens already out run out
     # within ACCESS_TOKEN_EXPIRE_MINUTES.
-    if not user or not user.is_active:
+    if not user or not user.is_active or _session_revoked(user, decoded):
         raise credentials_exception
 
     return _issue_tokens(user)
+
+
+def _session_revoked(user: User, claims: dict) -> bool:
+    cutoff = user.sessions_valid_after
+    if cutoff is None:
+        return False
+    if cutoff.tzinfo is None:  # SQLite hands TIMESTAMPTZ back naive, in UTC
+        cutoff = cutoff.replace(tzinfo=timezone.utc)
+    issued_at = claims.get("iat")
+    # A refresh token from before iat was added cannot show it is newer.
+    return not isinstance(issued_at, (int, float)) or issued_at < int(cutoff.timestamp())
 
 
 @router.get("/me", response_model=UserOut)
@@ -419,9 +458,27 @@ def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+def _signed_in_interactively(request: Request) -> bool:
+    """Whether the caller holds a session token from a real sign-in.
+
+    get_current_user also accepts company API keys and MCP_API_TOKEN, and the MCP
+    dispatcher mints its own access tokens marked "src". None of those is the
+    account's owner sitting at a browser, so none may set its first password.
+    """
+    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return False
+    try:
+        claims = decode_token(token)
+    except JWTError:
+        return False
+    return claims.get("type") == "access" and "src" not in claims
+
+
 @router.post("/change-password", response_model=ChangePasswordResponse)
 def change_password(
     payload: ChangePasswordRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -430,7 +487,11 @@ def change_password(
         raise HTTPException(status_code=404, detail="User not found")
 
     # An account made through Google has no password to confirm; this is how it
-    # sets its first one. Everyone else proves the current one.
+    # sets its first one -- but only from a real signed-in session, never from an
+    # API key, which would otherwise turn a scoped credential into a permanent
+    # password. Everyone else proves the current one.
+    if not user.has_password and not _signed_in_interactively(request):
+        raise HTTPException(status_code=403, detail="Sign in to set a password for this account")
     if user.has_password:
         if not payload.current_password or not verify_password(payload.current_password, user.hashed_password):
             raise HTTPException(status_code=400, detail="Current password is incorrect")
@@ -461,6 +522,12 @@ def change_password(
 #   4. The SPA POSTs the code to /oauth/exchange and gets the usual Token.
 
 _OAUTH_NEXT_SESSION_KEY = "oauth_next"
+# sha256 of the one-time code, kept in the same browser's session cookie, so the
+# code can only be exchanged by the browser that went through the flow. Without
+# it an attacker could finish a sign-in to THEIR account, stop at the redirect,
+# and send the /auth/callback?code=... link to a victim, who would then be
+# working -- entering customers, bank details -- inside the attacker's account.
+_OAUTH_CODE_SESSION_KEY = "oauth_code"
 _OAUTH_CODE_TTL = timedelta(seconds=60)
 # Anything a browser might reinterpret: control characters (stripped from URLs by
 # browsers, so "/\t/evil.com" becomes "//evil.com") and backslashes (treated as
@@ -578,8 +645,10 @@ def _resolve_oauth_user(db: Session, provider: str, userinfo: dict) -> tuple[Use
             if settings.is_shared_hosting:
                 # Whoever set this password never proved the address -- anyone
                 # can register someone else's. Keeping it would let that person
-                # sign in to the account its real owner is about to fill.
+                # sign in to the account its real owner is about to fill, or
+                # keep a session they already started with it.
                 user.hashed_password = None
+                user.sessions_valid_after = _now()
         db.add(UserIdentity(user_id=user.id, provider=provider, provider_subject=subject, email=email))
         db.commit()
         return user, False
@@ -643,15 +712,17 @@ def _complete_oauth(db: Session, provider: str, userinfo: dict) -> tuple[str | N
 @router.get("/oauth/{provider}/callback", include_in_schema=False)
 async def oauth_callback(provider: str, request: Request, db: Session = Depends(get_db)):
     client = auth_providers.get_client(provider)
-    if client is None:
+    spec = auth_providers.get_spec(provider)
+    if client is None or spec is None:
         raise HTTPException(status_code=404, detail="Not Found")
 
     next_path = safe_next_path(request.session.pop(_OAUTH_NEXT_SESSION_KEY, "/"))
     try:
         # Raises on a missing or mismatched state (CSRF / replay), on the user
         # declining consent (?error=...), on a failed code exchange, and on an ID
-        # token whose signature, issuer, audience, expiry or nonce is wrong.
-        token = await client.authorize_access_token(request)
+        # token whose signature, issuer, expiry or nonce is wrong -- or whose
+        # audience is not our client id, which Authlib checks only when told to.
+        token = await client.authorize_access_token(request, claims_options=spec.id_token_claims(settings))
     except Exception:
         logger.warning("OAuth callback failed for provider %s", provider, exc_info=True)
         return _login_error("oauth_failed")
@@ -666,6 +737,7 @@ async def oauth_callback(provider: str, request: Request, db: Session = Depends(
     code, error = await run_in_threadpool(_complete_oauth, db, provider, dict(userinfo))
     if error:
         return _login_error(error)
+    request.session[_OAUTH_CODE_SESSION_KEY] = _hash_code(code)
     return _app_redirect("/auth/callback", code=code, next=next_path)
 
 
@@ -676,6 +748,10 @@ def oauth_exchange(payload: OAuthExchangeRequest, request: Request, db: Session 
 
     invalid = _error(400, "invalid_code", "This sign-in link is invalid or has expired.")
     code_hash = _hash_code(payload.code)
+    # Same-origin POST, so the SameSite=Lax state cookie is sent with it.
+    expected = request.session.pop(_OAUTH_CODE_SESSION_KEY, None)
+    if not isinstance(expected, str) or not hmac.compare_digest(expected, code_hash):
+        raise invalid
     now = _now()
     # Claimed with one conditional UPDATE, so two requests racing with the same
     # code cannot both see it unused: exactly one gets rowcount 1.

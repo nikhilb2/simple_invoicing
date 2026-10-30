@@ -110,10 +110,10 @@ def send_verification_email(to: str, token: str) -> None:
     )
 
 
-def send_password_reset_email(to: str, full_name: str, token: str) -> None:
+def send_password_reset_email(to: str, token: str) -> None:
     _send(
         to,
         "Reset your password",
         "reset_password",
-        {"name": full_name, "action_url": app_link("/reset-password", token=token), "valid_for": "1 hour"},
+        {"action_url": app_link("/reset-password", token=token), "valid_for": "1 hour"},
     )

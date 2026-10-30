@@ -262,7 +262,7 @@ def test_register_existing_verified_address_answers_the_same_and_changes_nothing
     assert db_session.query(User).count() == 2
 
 
-def test_register_existing_unverified_gets_fresh_link_without_password_change(client, db_session, shared, outbox):
+def test_register_existing_unverified_replaces_the_unproven_claim(client, db_session, shared, outbox):
     _user(db_session, email="pending@example.com", password="First@1234", verified=False)
 
     response = _register(client, email="PENDING@example.com", password="Second@1234")
@@ -272,7 +272,32 @@ def test_register_existing_unverified_gets_fresh_link_without_password_change(cl
     assert msg["To"] == "pending@example.com"
     user = db_session.query(User).one()
     db_session.refresh(user)
-    assert verify_password("First@1234", user.hashed_password)
+    assert verify_password("Second@1234", user.hashed_password)
+
+
+def test_pre_registered_address_cannot_be_hijacked_through_the_owners_own_link(client, db_session, shared, outbox):
+    # A stranger registers the owner's address first, and the owner gets that link.
+    _register(client, email="owner@example.com", password="Attacker@123")
+    strangers_link = _link_token(outbox[-1], "/verify-email")
+    # The owner then signs up themselves and gets a link of their own.
+    _register(client, email="owner@example.com", password="Owner@12345")
+    owners_link = _link_token(outbox[-1], "/verify-email")
+
+    # The stranger's link died when the owner's registration replaced the password.
+    assert client.post("/api/auth/verify-email", json={"token": strangers_link}).status_code == 400
+    assert client.post("/api/auth/verify-email", json={"token": owners_link}).status_code == 200
+    assert client.post("/api/auth/login", json={"email": "owner@example.com", "password": "Attacker@123"}).status_code == 401
+    assert client.post("/api/auth/login", json={"email": "owner@example.com", "password": "Owner@12345"}).status_code == 200
+
+
+def test_verify_link_dies_when_the_password_changes(client, db_session, shared, outbox):
+    _register(client, email="owner@example.com")
+    link = _link_token(outbox[-1], "/verify-email")
+    user = db_session.query(User).one()
+    user.hashed_password = get_password_hash("Changed@1234")
+    db_session.commit()
+
+    assert client.post("/api/auth/verify-email", json={"token": link}).status_code == 400
 
 
 def test_register_matches_legacy_mixed_case_address(client, db_session, shared, outbox):
@@ -312,8 +337,12 @@ def test_verify_email_rejects_garbage(client, shared):
 
 
 def test_verify_email_rejects_expired_token(client, db_session, shared):
+    from src.core.security import password_fingerprint
+
     user = _user(db_session, verified=False)
-    token = create_purpose_token(str(user.id), "verify", timedelta(seconds=-5), {"email": user.email})
+    token = create_purpose_token(
+        str(user.id), "verify", timedelta(seconds=-5), {"email": user.email, "pwd": password_fingerprint(user.hashed_password)}
+    )
 
     response = client.post("/api/auth/verify-email", json={"token": token})
 
@@ -556,6 +585,24 @@ def test_unknown_address_still_costs_a_bcrypt_round(client, monkeypatch):
     assert calls, "an unknown address must not skip the password check"
 
 
+def test_reset_password_ends_existing_sessions(client, db_session, shared, outbox):
+    _user(db_session, email="owner@example.com", password="OldPass@123")
+    hijacked = client.post("/api/auth/login", json={"email": "owner@example.com", "password": "OldPass@123"}).json()
+    # Refresh tokens carry whole-second iat; step past the second they were issued in.
+    import time as _time
+
+    _time.sleep(1.1)
+    client.post("/api/auth/forgot-password", json={"email": "owner@example.com"})
+    token = _link_token(outbox[0], "/reset-password")
+    client.post("/api/auth/reset-password", json={"token": token, "new_password": "NewPass@456"})
+
+    stale = client.post("/api/auth/refresh", json={"refresh_token": hijacked["refresh_token"]})
+    fresh = client.post("/api/auth/login", json={"email": "owner@example.com", "password": "NewPass@456"}).json()
+
+    assert stale.status_code == 401
+    assert client.post("/api/auth/refresh", json={"refresh_token": fresh["refresh_token"]}).status_code == 200
+
+
 def test_refresh_is_refused_for_an_inactive_account(client, db_session):
     user = _user(db_session, active=False)
 
@@ -572,12 +619,37 @@ def test_change_password_without_current_sets_first_password(client, db_session)
     # conftest's current user is test@example.com.
     _user(db_session, email="test@example.com", password=None)
 
-    response = client.post("/api/auth/change-password", json={"new_password": "FirstPass@1"})
+    response = client.post(
+        "/api/auth/change-password",
+        json={"new_password": "FirstPass@1"},
+        headers={"Authorization": f"Bearer {create_access_token('test@example.com')}"},
+    )
 
     assert response.status_code == 200
     user = db_session.query(User).one()
     db_session.refresh(user)
     assert verify_password("FirstPass@1", user.hashed_password)
+
+
+@pytest.mark.parametrize(
+    "credential",
+    [
+        "si_live_0123456789abcdef",  # a company API key
+        "static-mcp-token",  # MCP_API_TOKEN
+        create_access_token("test@example.com", extra_claims={"src": "mcp", "tool": "x"}),
+        None,
+    ],
+)
+def test_first_password_needs_a_real_sign_in(client, db_session, credential):
+    _user(db_session, email="test@example.com", password=None)
+    headers = {"Authorization": f"Bearer {credential}"} if credential else {}
+
+    response = client.post("/api/auth/change-password", json={"new_password": "FirstPass@1"}, headers=headers)
+
+    assert response.status_code == 403
+    user = db_session.query(User).one()
+    db_session.refresh(user)
+    assert user.hashed_password is None
 
 
 def test_change_password_still_requires_current_when_one_exists(client, db_session):
@@ -604,29 +676,63 @@ def test_login_is_rate_limited_per_ip(client, frozen_clock):
     assert client.post("/api/auth/login", json={"email": "x@example.com", "password": "y"}).status_code == 429
 
 
-def test_failed_logins_are_limited_per_email_even_across_ips(client, db_session, frozen_clock):
+def test_failed_logins_from_one_ip_lock_that_ip_out_of_that_account(client, db_session, frozen_clock):
     _user(db_session)
-    for i in range(10):
-        response = client.post(
-            "/api/auth/login",
-            json={"email": "owner@example.com", "password": "Wrong@0000"},
-            headers={"X-Forwarded-For": f"198.51.100.{i}"},
-        )
+    attacker = {"X-Forwarded-For": "198.51.100.7"}
+    for _ in range(10):
+        response = client.post("/api/auth/login", json={"email": "owner@example.com", "password": "Wrong@0000"}, headers=attacker)
         assert response.status_code == 401
 
     blocked = client.post(
+        "/api/auth/login", json={"email": "OWNER@example.com", "password": "GoodPass@123"}, headers=attacker
+    )
+    owner = client.post(
         "/api/auth/login",
-        json={"email": "OWNER@example.com", "password": "GoodPass@123"},
+        json={"email": "owner@example.com", "password": "GoodPass@123"},
         headers={"X-Forwarded-For": "203.0.113.99"},
     )
 
     assert blocked.status_code == 429
     assert blocked.json()["detail"]["code"] == "rate_limited"
     assert blocked.headers["Retry-After"]
-
-    # The allowance comes back with time.
+    # The stranger's guessing does not lock the owner out.
+    assert owner.status_code == 200
+    # And the allowance comes back with time.
     frozen_clock[0] += 120
-    assert client.post("/api/auth/login", json={"email": "owner@example.com", "password": "GoodPass@123"}).status_code == 200
+    assert client.post("/api/auth/login", json={"email": "owner@example.com", "password": "GoodPass@123"}, headers=attacker).status_code == 200
+
+
+def test_failed_logins_are_capped_per_email_across_ips(client, db_session, frozen_clock):
+    _user(db_session)
+    for i in range(100):
+        response = client.post(
+            "/api/auth/login",
+            json={"email": "owner@example.com", "password": "Wrong@0000"},
+            headers={"X-Forwarded-For": f"10.0.{i // 250}.{i % 250}"},
+        )
+        assert response.status_code == 401
+
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "owner@example.com", "password": "Wrong@0000"},
+        headers={"X-Forwarded-For": "203.0.113.200"},
+    )
+    assert response.status_code == 429
+
+
+def test_flooding_the_bucket_table_does_not_unblock_a_key(frozen_clock):
+    from src.core.rate_limit import TokenBucket
+
+    bucket = TokenBucket(capacity=2, refill_per_second=0.001, max_keys=100)
+    bucket.hit("victim")
+    bucket.hit("victim")
+    assert bucket.blocked("victim")
+
+    for i in range(1000):
+        bucket.hit(f"junk-{i}")
+
+    assert bucket.blocked("victim")
+    assert len(bucket._buckets) <= 200
 
 
 def test_successful_logins_do_not_spend_the_email_allowance(client, db_session):

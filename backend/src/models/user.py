@@ -24,6 +24,10 @@ class User(Base):
     email_verified_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    # Refresh tokens issued before this stop working. Set by a password reset and
+    # when Google sign-in drops a password nobody proved: the moments someone
+    # else may be holding a session.
+    sessions_valid_after = Column(DateTime(timezone=True), nullable=True)
 
     @property
     def has_password(self) -> bool:

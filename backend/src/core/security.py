@@ -72,7 +72,9 @@ def create_refresh_token(subject: str, expires_delta: timedelta | None = None) -
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode = {"sub": subject, "exp": expire, "type": "refresh"}
+    # iat lets /auth/refresh refuse a session that began before a password reset
+    # (User.sessions_valid_after).
+    to_encode = {"sub": subject, "exp": expire, "iat": datetime.utcnow(), "type": "refresh"}
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 

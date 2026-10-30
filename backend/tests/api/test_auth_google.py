@@ -260,6 +260,21 @@ def test_existing_password_user_is_linked_by_verified_email(client, db_session, 
     assert _find(events, "user_signed_up") == []
 
 
+def test_linking_an_unverified_account_ends_the_squatters_sessions(client, db_session, monkeypatch, google):
+    from src.core.security import create_refresh_token
+
+    # Single tenant lets the unverified squatter sign in; shared hosting drops
+    # the password on link, and must end that session too.
+    squatter = _user(db_session, email="person@gmail.com", password="Squatter@123", verified=False)
+    held = create_refresh_token(squatter.email)
+    time.sleep(1.1)
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "shared_hosting")
+
+    _sign_in(client)
+
+    assert client.post("/api/auth/refresh", json={"refresh_token": held}).status_code == 401
+
+
 def test_linking_an_unverified_account_verifies_it_and_drops_the_unproven_password(client, db_session, shared, google):
     # Someone registered this address without ever proving it. Google now proves
     # it belongs to the person signing in; the stranger's password must not survive.
@@ -389,6 +404,21 @@ def test_code_lives_sixty_seconds_and_is_stored_hashed(client, db_session, share
     assert timedelta(seconds=55) < expires - before <= timedelta(seconds=65)
 
 
+def test_code_only_works_in_the_browser_that_signed_in(client, db_session, shared, google):
+    from fastapi.testclient import TestClient
+    from app_main import app
+
+    # The attacker signs in to their own account and stops at the redirect...
+    _, query = _query(_sign_in(client))
+    # ...then gets a victim's browser, which never went through the flow, to
+    # exchange the code.
+    victim = TestClient(app)
+    response = victim.post("/api/auth/oauth/exchange", json={"code": query["code"]})
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "invalid_code"
+
+
 def test_unknown_code_is_invalid(client):
     response = client.post("/api/auth/oauth/exchange", json={"code": "never-issued"})
 
@@ -443,6 +473,7 @@ def test_real_authlib_round_trip_checks_state_nonce_and_pkce(client, db_session,
 
     async def fake_parse_id_token(token, nonce, claims_options=None, claims_cls=None, leeway=120):
         seen["nonce"] = nonce
+        seen["claims_options"] = claims_options
         return {"sub": "real-sub", "email": "real@gmail.com", "email_verified": True, "name": "Real"}
 
     monkeypatch.setattr(real_google, "fetch_access_token", fake_fetch_access_token)
@@ -476,6 +507,9 @@ def test_real_authlib_round_trip_checks_state_nonce_and_pkce(client, db_session,
     assert seen["fetch"]["code"] == "the-code"
     assert seen["fetch"]["code_verifier"]  # PKCE verifier came back out of the cookie
     assert seen["fetch"]["redirect_uri"] == f"{APP}/api/auth/oauth/google/callback"
+    # The ID token must be for OUR client id, from Google's issuer.
+    assert seen["claims_options"]["aud"] == {"essential": True, "value": settings.OAUTH_GOOGLE_CLIENT_ID}
+    assert "https://accounts.google.com" in seen["claims_options"]["iss"]["values"]
 
     # The same state cannot be replayed.
     replay = client.get(f"/api/auth/oauth/google/callback?code=the-code&state={state}", follow_redirects=False)

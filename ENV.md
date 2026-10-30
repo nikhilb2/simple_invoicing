@@ -431,6 +431,9 @@ to it in production — and that matters: the OAuth state lives in a `SameSite=L
 (`si_oauth_state`, signed with a key derived from `SECRET_KEY`, 10 minutes, `Secure` when
 `ENVIRONMENT=production`) set on the way out, and it only comes back if the callback is on the
 same site. A redirect URI on another origin fails every sign-in with `?error=oauth_failed`.
+The same cookie also binds the one-time code the callback hands the SPA to the browser that
+signed in, so the SPA must call the API on its own origin (`VITE_API_BASE_URL=/api`, the
+default) for `POST /api/auth/oauth/exchange` to carry it.
 
 #### Setting up the Google OAuth client
 
