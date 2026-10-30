@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from src.models.financial_year import FinancialYear
 from src.models.invoice_series import InvoiceSeries
+from src.services.company_access import company_scope
 
 
 def _format_number(
@@ -31,6 +32,32 @@ def _format_number(
         return f"{series.prefix}{sep}{seq_str}{suffix}"
 
 
+def _number_taken(db: Session, voucher_type: str, number: str, company_id: Optional[int]) -> bool:
+    """Whether ``number`` is already used by a document of this voucher type.
+
+    Looks in the table the number will actually be stored in -- credit and debit
+    notes live in credit_notes, not invoices -- and only inside the company,
+    because that is what the (company_id, number) unique constraints enforce.
+    With no company (single-tenant callers only) the check stays global.
+    """
+    # Import here to avoid circular imports
+    from src.models.credit_note import CreditNote  # noqa: PLC0415
+    from src.models.invoice import Invoice  # noqa: PLC0415
+    from src.models.payment import Payment  # noqa: PLC0415
+
+    if voucher_type == "payment":
+        model, column = Payment, Payment.payment_number
+    elif voucher_type in ("credit_note", "debit_note"):
+        model, column = CreditNote, CreditNote.credit_note_number
+    else:
+        model, column = Invoice, Invoice.invoice_number
+
+    query = db.query(model.id).filter(column == number)
+    if company_id is not None:
+        query = query.filter(company_scope(model.company_id, company_id))
+    return query.first() is not None
+
+
 def generate_next_number(
     db: Session,
     voucher_type: str,
@@ -50,45 +77,21 @@ def generate_next_number(
     active FY's series so the user only needs to configure one place.  The
     sequence counter and FY label always come from the target FY.
 
-    If the generated number already exists in the invoices, payments or
-    credit_notes table (e.g. due to a previous rolled-back transaction or a
-    cross-FY / cross-company series overlap), the counter is advanced until a
-    unique number is found.
+    If the generated number is already used by this company's documents of the
+    same kind (e.g. due to a previous rolled-back transaction or cross-FY series
+    overlap), the counter is advanced until a free number is found. Numbers are
+    unique per company, so another company's documents never cause a skip.
     """
-    # Import here to avoid circular imports
-    from src.models.invoice import Invoice  # noqa: PLC0415
-    from src.models.payment import Payment  # noqa: PLC0415
-    from src.models.credit_note import CreditNote  # noqa: PLC0415
-
-    def _number_taken(db: Session, voucher_type: str, number: str) -> bool:
-        """Check whether `number` already exists in the voucher's table.
-
-        Credit and supplier (debit) notes both persist into the credit_notes
-        table under one global unique credit_note_number, so they check there
-        rather than against invoices.
-        """
-        if voucher_type == "payment":
-            existing = db.query(Payment.id).filter(Payment.payment_number == number).first()
-        elif voucher_type in ("credit_note", "debit_note"):
-            existing = db.query(CreditNote.id).filter(CreditNote.credit_note_number == number).first()
-        else:
-            existing = db.query(Invoice.id).filter(Invoice.invoice_number == number).first()
-        return existing is not None
-
     series = None
 
     if financial_year_id is not None:
-        series = (
-            db.query(InvoiceSeries)
-            .filter(
-                InvoiceSeries.voucher_type == voucher_type,
-                InvoiceSeries.financial_year_id == financial_year_id,
-            )
-            .with_for_update()
-            .first()
+        series_query = db.query(InvoiceSeries).filter(
+            InvoiceSeries.voucher_type == voucher_type,
+            InvoiceSeries.financial_year_id == financial_year_id,
         )
-        if series is not None and company_id is not None and series.company_id != company_id:
-            series = None
+        if company_id is not None:
+            series_query = series_query.filter(InvoiceSeries.company_id == company_id)
+        series = series_query.with_for_update().first()
 
     if series is None:
         # Fallback: NULL financial_year_id row (legacy / backward compat)
@@ -100,16 +103,16 @@ def generate_next_number(
             )
         )
         if company_id is not None:
-            fallback_query = fallback_query.filter(InvoiceSeries.company_id == company_id)
+            fallback_query = fallback_query.filter(company_scope(InvoiceSeries.company_id, company_id))
         series = fallback_query.with_for_update().first()
 
     if not series:
         # No series configured — fall back to a simple INV-NNNNNN sequence,
-        # skipping any numbers already used so repeats (e.g. duplicating an
-        # invoice) don't collide on the unique invoice_number constraint.
+        # skipping any numbers this company already used so repeats (e.g.
+        # duplicating an invoice) don't collide on the unique number constraint.
         for seq in range(1_000_000):
             number = f"INV-{seq:06d}"
-            if not _number_taken(db, voucher_type, number):
+            if not _number_taken(db, voucher_type, number, company_id):
                 return number
         return f"INV-{int(datetime.utcnow().timestamp())}"
 
@@ -122,16 +125,13 @@ def generate_next_number(
         active_financial_year_id is not None
         and active_financial_year_id != financial_year_id
     ):
-        active_series = (
-            db.query(InvoiceSeries)
-            .filter(
-                InvoiceSeries.voucher_type == voucher_type,
-                InvoiceSeries.financial_year_id == active_financial_year_id,
-            )
-            .first()
+        active_series_query = db.query(InvoiceSeries).filter(
+            InvoiceSeries.voucher_type == voucher_type,
+            InvoiceSeries.financial_year_id == active_financial_year_id,
         )
-        if active_series is not None and company_id is not None and active_series.company_id != company_id:
-            active_series = None
+        if company_id is not None:
+            active_series_query = active_series_query.filter(InvoiceSeries.company_id == company_id)
+        active_series = active_series_query.first()
         if active_series is not None:
             format_series = active_series
 
@@ -145,14 +145,14 @@ def generate_next_number(
                 FinancialYear.id == fy_id_for_label
             ).first()
 
-    # Advance the counter, skipping any numbers already present in the DB.
+    # Advance the counter, skipping any numbers this company already used.
     # This guards against rollback-caused repeats and cross-FY series collisions.
     MAX_SKIP = 1000
     for _ in range(MAX_SKIP):
         seq = series.next_sequence
         series.next_sequence = seq + 1
         number = _format_number(format_series, seq, linked_fy, invoice_date)
-        if not _number_taken(db, voucher_type, number):
+        if not _number_taken(db, voucher_type, number, company_id):
             return number
 
     # Extremely unlikely: return a timestamped fallback so creation still succeeds

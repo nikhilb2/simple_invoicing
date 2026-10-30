@@ -3,6 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_active_company, get_current_user, require_company_role
+from src.core.config import settings
 from src.db.session import get_db
 from src.models.company import CompanyProfile
 from src.models.financial_year import FinancialYear
@@ -50,7 +51,10 @@ def _seed_series_for_fy(db: Session, new_fy_id: int, company_id: int | None = No
         .all()
     )
     if company_id is not None:
-        source_rows = [row for row in source_rows if row.company_id in (None, company_id)]
+        # A NULL-company row is a legacy single-tenant template; in shared
+        # hosting it belongs to nobody, so only the company's own rows count.
+        allowed_owners = {company_id} if settings.is_shared_hosting else {None, company_id}
+        source_rows = [row for row in source_rows if row.company_id in allowed_owners]
     source_by_type = {row.voucher_type: row for row in source_rows}
 
     for voucher_type, default_config in DEFAULT_SERIES_CONFIGS.items():

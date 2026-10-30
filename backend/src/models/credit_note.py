@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Numeric, Date, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Numeric, Date, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.db.base import Base
@@ -6,9 +6,13 @@ from src.db.base import Base
 
 class CreditNote(Base):
     __tablename__ = "credit_notes"
+    # Unique per company, like invoice numbers (see Invoice.__table_args__).
+    __table_args__ = (
+        UniqueConstraint("company_id", "credit_note_number", name="uq_credit_notes_company_credit_note_number"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    credit_note_number = Column(String, nullable=False, unique=True, index=True)
+    credit_note_number = Column(String, nullable=False, index=True)
     company_id = Column(Integer, ForeignKey("company_profiles.id"), nullable=True, index=True)
     ledger_id = Column(Integer, ForeignKey("buyers.id"), nullable=False)
     financial_year_id = Column(Integer, ForeignKey("financial_years.id"), nullable=True)
