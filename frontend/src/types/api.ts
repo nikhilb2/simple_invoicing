@@ -743,6 +743,9 @@ export type UserProfile = {
   active_company_id: number | null;
   has_password: boolean;
   email_verified: boolean;
+  /** Role in the active company; `role` is the global one. */
+  company_role?: 'admin' | 'manager' | 'staff' | null;
+  can_manage_platform?: boolean;
 };
 
 export type AuthProvider = {

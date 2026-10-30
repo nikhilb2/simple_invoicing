@@ -22,6 +22,9 @@ type AuthState = {
   token: string | null;
   userEmail: string | null;
   userRole: UserProfile['role'] | null;
+  /** Role in the active company; null until /auth/me answers or without one. */
+  companyRole: UserProfile['role'] | null;
+  canManagePlatform: boolean;
   setToken: (token: string | null) => void;
   setUserRole: (role: UserProfile['role'] | null) => void;
   hydrateUserRole: () => Promise<void>;
@@ -35,19 +38,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   token: localStorage.getItem('token'),
   userEmail: decodeEmailFromToken(localStorage.getItem('token')),
   userRole: null,
+  companyRole: null,
+  canManagePlatform: false,
 
   setToken: (token) => {
     set({ token, userEmail: decodeEmailFromToken(token) });
   },
 
   setUserRole: (role) => {
-    set({ userRole: role });
+    set(role === null ? { userRole: null, companyRole: null, canManagePlatform: false } : { userRole: role });
   },
 
   hydrateUserRole: async () => {
     const token = get().token;
     if (!token) {
-      set({ userRole: null });
+      set({ userRole: null, companyRole: null, canManagePlatform: false });
       return;
     }
 
@@ -58,9 +63,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       } else {
         localStorage.removeItem('active_company_id');
       }
-      set({ userRole: res.data.role });
+      set({
+        userRole: res.data.role,
+        companyRole: res.data.company_role ?? null,
+        canManagePlatform: res.data.can_manage_platform ?? false,
+      });
     } catch {
-      set({ userRole: null });
+      set({ userRole: null, companyRole: null, canManagePlatform: false });
     }
   },
 
@@ -104,6 +113,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // The mobile app holds its own copy of the tokens; this is what sends it
     // back to its native login screen instead of reloading us signed in.
     postToNative({ type: 'logout' });
-    set({ token: null, userEmail: null, userRole: null });
+    set({ token: null, userEmail: null, userRole: null, companyRole: null, canManagePlatform: false });
   },
 }));

@@ -18,10 +18,10 @@ function linkClass(isActive: boolean, extra = '') {
 }
 
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
-  const { isAdmin, userEmail, logout } = useAuth();
+  const { isAdmin, canManagePlatform, userEmail, logout } = useAuth();
   const { collapsed, toggleCollapsed, openSection, toggleSection, openSectionFor } = useSidebarStore();
   const location = useLocation();
-  const entries = visiblePrimaryNav(isAdmin);
+  const entries = visiblePrimaryNav(isAdmin, canManagePlatform);
   const currentSection = sectionIdForPath(location.pathname);
 
   // Escape-to-close lives in Layout, which owns the drawer state.

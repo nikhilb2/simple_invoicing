@@ -90,10 +90,10 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
   return children;
 }
 
-function AdminOnly({ children }: { children: React.ReactNode }) {
-  const { isAdmin } = useAuth();
+function AdminOnly({ platform = false, children }: { platform?: boolean; children: React.ReactNode }) {
+  const { isAdmin, canManagePlatform } = useAuth();
 
-  if (!isAdmin) {
+  if (!isAdmin || (platform && !canManagePlatform)) {
     return <Navigate to="/" replace />;
   }
 
@@ -151,10 +151,13 @@ function CompanyRequired({ children }: { children: React.ReactNode }) {
  */
 function SettingsRoute({
   admin = false,
+  platform = false,
   requireCompany = true,
   children,
 }: {
   admin?: boolean;
+  /** Needs platform-admin on top of admin: surfaces the backend gates with require_platform_admin. */
+  platform?: boolean;
   requireCompany?: boolean;
   children: React.ReactNode;
 }) {
@@ -163,7 +166,7 @@ function SettingsRoute({
       <SettingsLayout>{children}</SettingsLayout>
     </Layout>
   );
-  if (admin) node = <AdminOnly>{node}</AdminOnly>;
+  if (admin || platform) node = <AdminOnly platform={platform}>{node}</AdminOnly>;
   if (requireCompany) node = <CompanyRequired>{node}</CompanyRequired>;
   return <Protected>{node}</Protected>;
 }
@@ -256,7 +259,7 @@ function AppRoutes() {
       <Route path="/settings" element={<SettingsRoute requireCompany={false}><SettingsOverviewPage /></SettingsRoute>} />
       <Route path="/settings/company" element={<SettingsRoute requireCompany={false}><CompanyPage /></SettingsRoute>} />
       <Route path="/settings/marketplace" element={<SettingsRoute admin><MarketplaceSettingsPage /></SettingsRoute>} />
-      <Route path="/settings/email" element={<SettingsRoute admin><SmtpSettingsPage /></SettingsRoute>} />
+      <Route path="/settings/email" element={<SettingsRoute platform><SmtpSettingsPage /></SettingsRoute>} />
       <Route path="/settings/email-history" element={<SettingsRoute admin><EmailHistoryPage /></SettingsRoute>} />
       <Route path="/settings/security" element={<SettingsRoute><ChangePasswordPage /></SettingsRoute>} />
       <Route path="/settings/shortcuts" element={<SettingsRoute><KeyboardShortcutsPage /></SettingsRoute>} />
@@ -264,7 +267,7 @@ function AppRoutes() {
       <Route path="/settings/api-keys"element={<SettingsRoute admin><ApiKeysPage /></SettingsRoute>} />
       {/* Per-user, not admin-only: a user manages the connectors they themselves consented to. */}
       <Route path="/settings/connected-apps" element={<SettingsRoute><ConnectedAppsPage /></SettingsRoute>} />
-      <Route path="/settings/backups" element={<SettingsRoute admin><BackupsPage /></SettingsRoute>} />
+      <Route path="/settings/backups" element={<SettingsRoute platform><BackupsPage /></SettingsRoute>} />
 
       {/* Where those pages used to live. */}
       {Object.entries(LEGACY_REDIRECTS).map(([from, to]) => (

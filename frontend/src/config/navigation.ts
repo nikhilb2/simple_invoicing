@@ -67,6 +67,12 @@ export type NavLeaf = {
   end?: boolean;
   /** Hide the link from non-admins. Visibility only; see file header. */
   adminOnly?: boolean;
+  /**
+   * Hide the link unless the user also runs the platform (`canManagePlatform`).
+   * For surfaces the backend gates with require_platform_admin: in shared
+   * hosting a company admin is not one. Implies adminOnly.
+   */
+  platformOnly?: boolean;
   shortcutAction?: ActionKey;
   /** Child paths that share this item's identity for titling purposes. */
   alsoTitles?: { path: string; title: string }[];
@@ -229,6 +235,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         title: 'Email Settings',
         icon: Mail,
         adminOnly: true,
+        platformOnly: true,
         description: 'SMTP server, sender identity, and a send test before you rely on it.',
       },
       {
@@ -291,6 +298,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         title: 'Database Backups',
         icon: DatabaseBackup,
         adminOnly: true,
+        platformOnly: true,
         description: 'Take a snapshot of the database, or restore one you took earlier.',
       },
     ],
@@ -326,22 +334,28 @@ export const NAV_ITEMS: NavLeaf[] = [
   ...HIDDEN_ROUTES,
 ];
 
+/** Whether a nav item may be shown to a user with these capabilities. */
+export function isNavItemVisible(item: NavLeaf, isAdmin: boolean, canManagePlatform: boolean): boolean {
+  if (item.platformOnly) return isAdmin && canManagePlatform;
+  return !item.adminOnly || isAdmin;
+}
+
 /** PRIMARY_NAV with unauthorised items — and any section thereby emptied — dropped. */
-export function visiblePrimaryNav(isAdmin: boolean): NavEntry[] {
+export function visiblePrimaryNav(isAdmin: boolean, canManagePlatform = false): NavEntry[] {
   return PRIMARY_NAV.flatMap<NavEntry>((entry) => {
     if (entry.kind === 'link') {
-      return entry.adminOnly && !isAdmin ? [] : [entry];
+      return isNavItemVisible(entry, isAdmin, canManagePlatform) ? [entry] : [];
     }
-    const children = entry.children.filter((item) => !item.adminOnly || isAdmin);
+    const children = entry.children.filter((item) => isNavItemVisible(item, isAdmin, canManagePlatform));
     return children.length > 0 ? [{ ...entry, children }] : [];
   });
 }
 
 /** SETTINGS_GROUPS with unauthorised items — and any group thereby emptied — dropped. */
-export function visibleSettingsGroups(isAdmin: boolean): SettingsGroup[] {
+export function visibleSettingsGroups(isAdmin: boolean, canManagePlatform = false): SettingsGroup[] {
   return SETTINGS_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => !item.adminOnly || isAdmin),
+    items: group.items.filter((item) => isNavItemVisible(item, isAdmin, canManagePlatform)),
   })).filter((group) => group.items.length > 0);
 }
 

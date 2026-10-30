@@ -34,6 +34,7 @@ from src.schemas.auth import (
 )
 from src.schemas.user import UserOut
 from src.core.config import settings
+from src.services.company_access import company_role, is_platform_admin
 from src.core.rate_limit import TokenBucket, client_ip
 from src.core.security import (
     RESET_PASSWORD_TOKEN_TTL,
@@ -444,8 +445,19 @@ def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=UserOut)
-def get_me(current_user: User = Depends(get_current_user)):
-    return current_user
+def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    out = UserOut.model_validate(current_user)
+    if settings.is_shared_hosting:
+        out.company_role = (
+            company_role(db, current_user, current_user.active_company_id)
+            if current_user.active_company_id is not None
+            else None
+        )
+        out.can_manage_platform = is_platform_admin(current_user)
+    else:
+        out.company_role = current_user.role
+        out.can_manage_platform = current_user.role == UserRole.admin
+    return out
 
 
 def _signed_in_interactively(request: Request) -> bool:

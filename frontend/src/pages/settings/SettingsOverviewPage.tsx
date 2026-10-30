@@ -11,8 +11,8 @@ import { useAuth } from '../../context/AuthContext';
  * "API keys" are only obvious to someone who already knows where to go.
  */
 export default function SettingsOverviewPage() {
-  const { isAdmin, userEmail } = useAuth();
-  const groups = visibleSettingsGroups(isAdmin);
+  const { isAdmin, canManagePlatform, userEmail } = useAuth();
+  const groups = visibleSettingsGroups(isAdmin, canManagePlatform);
 
   return (
     <div className="page-grid">
