@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { readUrlSecret } from '../lib/urlSecrets';
 import { resendVerification, verifyEmail } from '../api/auth';
 import { authErrorMessage } from '../utils/authFlow';
 import AuthLayout from '../components/AuthLayout';
@@ -8,8 +9,7 @@ import StatusToasts from '../components/StatusToasts';
 type Status = 'verifying' | 'verified' | 'failed';
 
 export default function VerifyEmailPage() {
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get('token');
+  const [token] = useState(() => readUrlSecret('token'));
   const [status, setStatus] = useState<Status>(token ? 'verifying' : 'failed');
   const [message, setMessage] = useState(token ? '' : 'This verification link is missing its token.');
   const [email, setEmail] = useState('');

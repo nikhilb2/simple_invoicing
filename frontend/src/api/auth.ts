@@ -32,7 +32,14 @@ export async function resetPassword(token: string, newPassword: string): Promise
 }
 
 export async function exchangeOAuthCode(code: string): Promise<AuthToken> {
-  const res = await api.post<AuthToken>('/auth/oauth/exchange', { code });
+  const res = await api.post<AuthToken>(
+    '/auth/oauth/exchange',
+    { code },
+    // The si_oauth_state cookie set during the Google redirect binds the code
+    // to this browser. Same-origin /api sends it anyway; a cross-origin
+    // VITE_API_BASE_URL only does with this set.
+    { withCredentials: true },
+  );
   return res.data;
 }
 

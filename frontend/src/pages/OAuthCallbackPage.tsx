@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { exchangeOAuthCode } from '../api/auth';
+import { readUrlSecret } from '../lib/urlSecrets';
 import { useAuth } from '../context/AuthContext';
 import { callbackNextPath, OAUTH_FAILED_PATH } from '../utils/authFlow';
 import AuthLayout from '../components/AuthLayout';
@@ -17,12 +18,13 @@ export default function OAuthCallbackPage() {
   // The code is single-use, and StrictMode runs effects twice in development:
   // the second exchange would fail and bounce a good sign-in back to /login.
   const started = useRef(false);
+  // Read once and scrubbed from the URL, so replay never records it.
+  const [code] = useState(() => readUrlSecret('code'));
 
   useEffect(() => {
     if (started.current) return;
     started.current = true;
 
-    const code = searchParams.get('code');
     if (!code) {
       navigate(OAUTH_FAILED_PATH, { replace: true });
       return;
@@ -33,7 +35,7 @@ export default function OAuthCallbackPage() {
       .then((tokens) => setSession(tokens))
       .then(() => navigate(next, { replace: true }))
       .catch(() => navigate(OAUTH_FAILED_PATH, { replace: true }));
-  }, [searchParams, navigate, setSession]);
+  }, [code, searchParams, navigate, setSession]);
 
   return (
     <AuthLayout title="Signing in">

@@ -1,5 +1,6 @@
 import { FormEvent, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { readUrlSecret } from '../lib/urlSecrets';
 import { resetPassword } from '../api/auth';
 import { authErrorMessage } from '../utils/authFlow';
 import AuthLayout from '../components/AuthLayout';
@@ -9,8 +10,7 @@ import StatusToasts from '../components/StatusToasts';
 const MIN_PASSWORD_LENGTH = 8;
 
 export default function ResetPasswordPage() {
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get('token');
+  const [token] = useState(() => readUrlSecret('token'));
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');

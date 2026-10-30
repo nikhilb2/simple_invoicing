@@ -120,11 +120,11 @@ export default function LoginPage() {
         </button>
       </form>
 
-      {config.password_signup_enabled ? (
+      {config.password_reset_enabled || config.password_signup_enabled ? (
         <p className="muted-text" style={{ margin: 0 }}>
-          <Link to="/forgot-password">Forgot password?</Link>
-          {' · '}
-          <Link to="/register">Create account</Link>
+          {config.password_reset_enabled ? <Link to="/forgot-password">Forgot password?</Link> : null}
+          {config.password_reset_enabled && config.password_signup_enabled ? ' · ' : null}
+          {config.password_signup_enabled ? <Link to="/register">Create account</Link> : null}
         </p>
       ) : null}
     </AuthLayout>

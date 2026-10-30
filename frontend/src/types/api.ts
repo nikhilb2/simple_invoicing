@@ -752,6 +752,7 @@ export type AuthProvider = {
 
 export type AuthConfig = {
   password_signup_enabled: boolean;
+  password_reset_enabled: boolean;
   providers: AuthProvider[];
 };
 
