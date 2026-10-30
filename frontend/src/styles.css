@@ -8459,3 +8459,7 @@ a.ledger-chip:focus-visible {
 .appearance-swatch__line--short {
   width: 55%;
 }
+.dues-ageing-note {
+  font-size: 0.78rem;
+  margin-top: 10px;
+}

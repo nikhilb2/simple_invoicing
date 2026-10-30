@@ -312,7 +312,7 @@ export default function InvoiceDuesPage() {
         )}
       >
         <div className="field">
-          <label htmlFor="dues-sort">Sort invoices</label>
+          <label htmlFor="dues-sort">Sort this page</label>
           <select
             id="dues-sort"
             className="input"

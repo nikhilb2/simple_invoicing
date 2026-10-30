@@ -93,7 +93,7 @@ export default function DuesAgeingStrip({ search, ledgerId, dueDateFrom, dueDate
       ) : (
         <>
           <DuesAgeingTiles ageing={ageing} currencyCode={currencyCode} />
-          <p className="muted-text">
+          <p className="muted-text dues-ageing-note">
             As of {ageing.as_of_date}. Overdue tiles here can be lower than the dashboard overdue total:
             this page leaves out ledgers whose receivables are fully offset by what you owe them,
             while the dashboard counts every ledger.
