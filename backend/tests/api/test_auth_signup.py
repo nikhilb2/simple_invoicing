@@ -147,10 +147,17 @@ def test_config_single_tenant_defaults(client, monkeypatch):
     assert response.json() == {"password_signup_enabled": False, "password_reset_enabled": False, "providers": []}
 
 
-def test_config_shared_hosting_everything_on(client, shared):
+def test_config_shared_hosting_everything_on(client, shared, monkeypatch):
+    monkeypatch.setattr(settings, "OAUTH_GOOGLE_CLIENT_ID", "id")
+    monkeypatch.setattr(settings, "OAUTH_GOOGLE_CLIENT_SECRET", "secret")
+
     body = client.get("/api/auth/config").json()
 
-    assert body == {"password_signup_enabled": True, "password_reset_enabled": True, "providers": []}
+    assert body == {
+        "password_signup_enabled": True,
+        "password_reset_enabled": True,
+        "providers": [{"id": "google", "name": "Google"}],
+    }
 
 
 def test_config_shared_hosting_without_smtp_has_no_password_signup(client, monkeypatch):
@@ -164,6 +171,21 @@ def test_config_shared_hosting_without_smtp_has_no_password_signup(client, monke
     assert body["password_reset_enabled"] is False
 
 
+def test_config_single_tenant_lists_google_for_login_and_offers_reset(client, single_with_smtp, monkeypatch):
+    monkeypatch.setattr(settings, "OAUTH_GOOGLE_CLIENT_ID", "id")
+    monkeypatch.setattr(settings, "OAUTH_GOOGLE_CLIENT_SECRET", "secret")
+
+    body = client.get("/api/auth/config").json()
+
+    # Signup stays off outside shared hosting; Google login for existing users
+    # and password reset do not depend on the mode.
+    assert body == {
+        "password_signup_enabled": False,
+        "password_reset_enabled": True,
+        "providers": [{"id": "google", "name": "Google"}],
+    }
+
+
 def test_signup_routes_are_not_in_the_openapi_schema(client):
     paths = client.get("/openapi.json").json()["paths"]
 
@@ -174,6 +196,9 @@ def test_signup_routes_are_not_in_the_openapi_schema(client):
         "/api/auth/resend-verification",
         "/api/auth/forgot-password",
         "/api/auth/reset-password",
+        "/api/auth/oauth/{provider}/login",
+        "/api/auth/oauth/{provider}/callback",
+        "/api/auth/oauth/exchange",
     ):
         assert hidden not in paths, hidden
     assert "/api/auth/login" in paths
@@ -636,3 +661,10 @@ def test_mail_endpoints_are_rate_limited_per_ip(client, shared, outbox, frozen_c
     assert statuses[:10] == [202] * 10
     assert statuses[10] == 429
     assert client.post("/api/auth/resend-verification", json={"email": "z@example.com"}).status_code == 429
+
+
+def test_oauth_exchange_is_rate_limited_per_ip(client, frozen_clock):
+    statuses = [client.post("/api/auth/oauth/exchange", json={"code": f"bogus{i}"}).status_code for i in range(21)]
+
+    assert statuses[:20] == [400] * 20
+    assert statuses[20] == 429

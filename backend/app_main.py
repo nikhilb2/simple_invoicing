@@ -1,4 +1,5 @@
 import os
+import hashlib
 import importlib.util
 from pathlib import Path
 
@@ -6,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import text
 
 from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes
@@ -172,6 +174,26 @@ app.add_middleware(
     # the authorization server is. Without this it never starts the OAuth flow --
     # the failure looks like "works in curl, fails in the browser".
     expose_headers=["WWW-Authenticate", "Mcp-Session-Id", "MCP-Protocol-Version"],
+)
+
+
+# Holds the OAuth state, nonce and PKCE verifier between /auth/oauth/<p>/login and
+# its callback -- Authlib keeps them in request.session, and comparing the state
+# that comes back against this cookie is what defeats CSRF on the callback. It is
+# nothing else: the app's own sessions are bearer tokens, not cookies.
+#   - Its own cookie name, so it cannot collide with anything the SPA sets.
+#   - SameSite=Lax: the provider sends the user back with a top-level GET, which
+#     Lax still carries; a cross-site POST or subresource request does not.
+#   - Ten minutes: a sign-in that takes longer simply starts again.
+#   - A key derived from SECRET_KEY rather than SECRET_KEY itself, so the same
+#     bytes never sign both a JWT and a cookie.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=hashlib.sha256(b"oauth-session:" + settings.SECRET_KEY.encode()).hexdigest(),
+    session_cookie="si_oauth_state",
+    max_age=600,
+    same_site="lax",
+    https_only=settings.ENVIRONMENT == "production",
 )
 
 

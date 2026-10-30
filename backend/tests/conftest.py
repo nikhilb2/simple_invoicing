@@ -63,10 +63,14 @@ def setup_db():
 
 @pytest.fixture(autouse=True)
 def _reset_auth_module_state():
-    # Login and signup rate limits are in-process token buckets: module state
-    # that, left alone, lets the login tests in one file spend the next's allowance.
+    # Login and signup rate limits are in-process token buckets, and the OAuth
+    # provider registry is built once from settings. Both are module state: left
+    # alone, the login tests in one file would spend the allowance of the next.
     from src.core.rate_limit import reset_all_rate_limits
+    from src.services.auth_providers import reset_registry
 
     reset_all_rate_limits()
+    reset_registry()
     yield
     reset_all_rate_limits()
+    reset_registry()
