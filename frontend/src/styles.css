@@ -958,7 +958,7 @@ textarea {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px 12px;
-  align-items: end;
+  align-items: start;
   flex: 1 1 320px;
   min-width: 0;
 }
@@ -992,7 +992,7 @@ textarea {
 .scope-bar__trailing {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 12px 18px;
   flex: 0 1 auto;
   margin-left: auto;
@@ -1014,13 +1014,8 @@ textarea {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
-
-/* Divides the presets row from the fields under it without a full rule, which
-   at this density read as a second panel edge. */
-.scope-bar__row + .scope-bar__fields {
-  padding-top: 12px;
-  border-top: 1px solid rgb(var(--rgb-info) / 0.1);
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgb(var(--rgb-info) / 0.1);
 }
 
 /* ── Scope presets ────────────────────────────────────────────────── */
