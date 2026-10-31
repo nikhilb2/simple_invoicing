@@ -227,7 +227,8 @@ def _make_db_for_generate(
       2. InvoiceSeries (with_for_update) for NULL fallback    → only reached if target is None
       3. InvoiceSeries for active FY format borrowing         → active_series
       4. FinancialYear for FY label                           → linked_fy
-      5. Invoice for duplicate check                          → None (no collision)
+      5. Invoice / Payment / CreditNote duplicate check       → taken when the
+         generated number appears in existing_numbers
     """
     # series_call_count is in _make_db_for_generate scope so that all
     # db.query(InvoiceSeries) calls share the same counter via closure.
@@ -235,8 +236,14 @@ def _make_db_for_generate(
 
     def query_side_effect(model):
         from src.models.invoice import Invoice  # noqa: PLC0415
+        from src.models.payment import Payment  # noqa: PLC0415
+        from src.models.credit_note import CreditNote  # noqa: PLC0415
 
         mock_q = MagicMock()
+
+        # Identity checks only: `model` is `Model.id` for the duplicate-check
+        # queries, and `model in (ModelA, ModelB)` would invoke
+        # SQLAlchemy's == and try to build a SQL expression Out of the class.
 
         if model is InvoiceSeries:
             def filter_side(*args, **kwargs):
@@ -267,8 +274,22 @@ def _make_db_for_generate(
             inner.first.return_value = linked_fy
             mock_q.filter.return_value = inner
 
+        elif model is Invoice.id or model is Payment.id or model is CreditNote.id:
+            # Duplicate check. The generated number is the right-hand side of
+            # the filter expression; report it as taken when it is listed in
+            # existing_numbers, otherwise free.
+            def dup_filter(*args):
+                inner = MagicMock()
+                expr = args[0] if args else None
+                value = getattr(getattr(expr, "right", None), "value", None)
+                taken = value is not None and existing_numbers is not None and value in existing_numbers
+                inner.first.return_value = (1,) if taken else None
+                return inner
+
+            mock_q.filter.side_effect = dup_filter
+
         else:
-            # Invoice duplicate check — always returns None (no collision)
+            # Any other query — never collides
             inner = MagicMock()
             inner.first.return_value = None
             mock_q.filter.return_value = inner
@@ -405,3 +426,70 @@ class TestGenerateNextNumber:
             active_financial_year_id=10,
         )
         assert result == "INV-2025-26-001/S"
+
+
+class TestGenerateNextNumberSkipsUsedNumbers:
+    """Numbers already persisted must be skipped, per voucher kind.
+
+    Regression tests for the credit-note 500: generate_next_number checked
+    invoices (or payments) for every non-payment voucher, but credit notes and
+    supplier (debit) notes are numbered into the credit_notes table, whose
+    credit_note_number is unique database-wide. Using the series of one company
+    or one financial year therefore collided with notes from another.
+    """
+
+    def test_taken_credit_note_number_is_skipped(self):
+        target = make_series(1, voucher_type="credit_note", prefix="CN", year_format="YYYY", next_sequence=1)
+        db = _make_db_for_generate(target, existing_numbers={"CN-2026-001"})
+
+        result = generate_next_number(
+            db, "credit_note", financial_year_id=10, invoice_date=date(2026, 6, 1),
+        )
+
+        assert result == "CN-2026-002"
+        # Both attempted numbers are spent on the counter.
+        assert target.next_sequence == 3
+
+    def test_taken_debit_note_number_is_skipped(self):
+        """Supplier notes share the registry, so their series must skip too."""
+        target = make_series(1, voucher_type="debit_note", prefix="DN", year_format="YYYY", next_sequence=1)
+        db = _make_db_for_generate(target, existing_numbers={"DN-2026-001"})
+
+        result = generate_next_number(
+            db, "debit_note", financial_year_id=10, invoice_date=date(2026, 6, 1),
+        )
+
+        assert result == "DN-2026-002"
+
+    def test_untaken_credit_note_number_is_served_without_a_skip(self):
+        target = make_series(1, voucher_type="credit_note", prefix="CN", year_format="YYYY", next_sequence=1)
+        db = _make_db_for_generate(target, existing_numbers={"CN-2026-002"})
+
+        result = generate_next_number(
+            db, "credit_note", financial_year_id=10, invoice_date=date(2026, 6, 1),
+        )
+
+        assert result == "CN-2026-001"
+        assert target.next_sequence == 2
+
+    def test_taken_payment_number_is_skipped_as_before(self):
+        """Payment numbering is unchanged by the credit-note fix."""
+        target = make_series(1, voucher_type="payment", prefix="PAY", year_format="YYYY", next_sequence=1)
+        db = _make_db_for_generate(target, existing_numbers={"PAY-2026-001"})
+
+        result = generate_next_number(
+            db, "payment", financial_year_id=10, invoice_date=date(2026, 6, 1),
+        )
+
+        assert result == "PAY-2026-002"
+
+    def test_taken_sales_invoice_number_is_skipped_as_before(self):
+        """Invoice numbering is unchanged by the credit-note fix."""
+        target = make_series(1, voucher_type="sales", year_format="YYYY", next_sequence=1)
+        db = _make_db_for_generate(target, existing_numbers={"INV-2026-001"})
+
+        result = generate_next_number(
+            db, "sales", financial_year_id=10, invoice_date=date(2026, 6, 1),
+        )
+
+        assert result == "INV-2026-002"

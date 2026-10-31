@@ -50,13 +50,30 @@ def generate_next_number(
     active FY's series so the user only needs to configure one place.  The
     sequence counter and FY label always come from the target FY.
 
-    If the generated number already exists in the invoices table (e.g. due to a
-    previous rolled-back transaction or cross-FY series overlap), the counter is
-    advanced until a unique number is found.
+    If the generated number already exists in the invoices, payments or
+    credit_notes table (e.g. due to a previous rolled-back transaction or a
+    cross-FY / cross-company series overlap), the counter is advanced until a
+    unique number is found.
     """
     # Import here to avoid circular imports
     from src.models.invoice import Invoice  # noqa: PLC0415
     from src.models.payment import Payment  # noqa: PLC0415
+    from src.models.credit_note import CreditNote  # noqa: PLC0415
+
+    def _number_taken(db: Session, voucher_type: str, number: str) -> bool:
+        """Check whether `number` already exists in the voucher's table.
+
+        Credit and supplier (debit) notes both persist into the credit_notes
+        table under one global unique credit_note_number, so they check there
+        rather than against invoices.
+        """
+        if voucher_type == "payment":
+            existing = db.query(Payment.id).filter(Payment.payment_number == number).first()
+        elif voucher_type in ("credit_note", "debit_note"):
+            existing = db.query(CreditNote.id).filter(CreditNote.credit_note_number == number).first()
+        else:
+            existing = db.query(Invoice.id).filter(Invoice.invoice_number == number).first()
+        return existing is not None
 
     series = None
 
@@ -92,11 +109,7 @@ def generate_next_number(
         # invoice) don't collide on the unique invoice_number constraint.
         for seq in range(1_000_000):
             number = f"INV-{seq:06d}"
-            if voucher_type == "payment":
-                existing = db.query(Payment.id).filter(Payment.payment_number == number).first()
-            else:
-                existing = db.query(Invoice.id).filter(Invoice.invoice_number == number).first()
-            if existing is None:
+            if not _number_taken(db, voucher_type, number):
                 return number
         return f"INV-{int(datetime.utcnow().timestamp())}"
 
@@ -139,11 +152,7 @@ def generate_next_number(
         seq = series.next_sequence
         series.next_sequence = seq + 1
         number = _format_number(format_series, seq, linked_fy, invoice_date)
-        if voucher_type == "payment":
-            existing = db.query(Payment.id).filter(Payment.payment_number == number).first()
-        else:
-            existing = db.query(Invoice.id).filter(Invoice.invoice_number == number).first()
-        if existing is None:
+        if not _number_taken(db, voucher_type, number):
             return number
 
     # Extremely unlikely: return a timestamped fallback so creation still succeeds
