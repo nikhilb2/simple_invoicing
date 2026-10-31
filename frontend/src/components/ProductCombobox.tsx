@@ -28,6 +28,7 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestRequest = useRef(0);
 
   // Sync label when external value changes (e.g. default product on load)
   useEffect(() => {
@@ -36,7 +37,10 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
   }, [value, products]);
 
   // Cleanup debounce timer on unmount
-  useEffect(() => () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); }, []);
+  useEffect(() => () => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    latestRequest.current += 1;
+  }, []);
 
   // When typing: use server results (already filtered). When not typing: show full prop list.
   const suggestions = open
@@ -57,17 +61,22 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
 
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     if (val.trim() === '') {
+      latestRequest.current += 1;
       setServerResults(null);
       return;
     }
+    const requestId = latestRequest.current + 1;
+    latestRequest.current = requestId;
     searchTimerRef.current = setTimeout(() => {
       void (async () => {
         try {
           const res = await api.get<{ items: Product[] }>('/products/', {
             params: { page: 1, page_size: 30, search: val.trim() },
           });
+          if (latestRequest.current !== requestId) return;
           setServerResults(res.data.items);
         } catch {
+          if (latestRequest.current !== requestId) return;
           // silently ignore search errors
         }
       })();
@@ -75,6 +84,7 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
   }
 
   function handleSelect(product: Product) {
+    latestRequest.current += 1;
     setQuery(`${product.name} (${product.sku})`);
     setOpen(false);
     setActiveIndex(-1);
@@ -104,6 +114,7 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
         handleSelect(suggestions[activeIndex]);
       }
     } else if (e.key === 'Escape') {
+      latestRequest.current += 1;
       setOpen(false);
       setActiveIndex(-1);
       setSearching(false);
@@ -125,6 +136,7 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
   useEffect(() => {
     function handleOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        latestRequest.current += 1;
         setOpen(false);
         setSearching(false);
         setServerResults(null);
@@ -140,6 +152,7 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
   const showClear = Boolean(onClear && value);
 
   function handleClear() {
+    latestRequest.current += 1;
     setQuery('');
     setOpen(false);
     setSearching(false);
