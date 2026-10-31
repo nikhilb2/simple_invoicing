@@ -67,6 +67,7 @@ export default function MonthlySalesTab({ filters }: { filters: AnalyticsFilters
 
           <div className="analytics-table-scroll">
             <table className="invoice-feed-table">
+              <caption className="sr-only">Monthly sales</caption>
               <thead>
                 <tr>
                   <th scope="col">Month</th>

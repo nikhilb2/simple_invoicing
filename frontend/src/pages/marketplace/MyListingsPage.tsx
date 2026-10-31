@@ -165,6 +165,7 @@ export default function MyListingsPage() {
             {listings.length > 0 && (
               <div className="marketplace-table-scroll">
                 <table className="marketplace-table">
+                  <caption className="sr-only">Your listings</caption>
                   <thead>
                     <tr>
                       <th scope="col">Listing</th>

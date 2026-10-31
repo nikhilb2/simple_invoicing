@@ -337,6 +337,7 @@ export default function MarketplaceBrowsePage() {
               {!catalogQuery.isLoading && listings.length > 0 && viewType === 'table' && (
                 <div className="marketplace-table-scroll">
                   <table className="marketplace-table">
+                    <caption className="sr-only">Marketplace listings</caption>
                     <thead>
                       <tr>
                         <th scope="col">Listing</th>

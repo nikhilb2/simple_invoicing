@@ -193,6 +193,7 @@ export default function MarketplaceOrdersPage() {
                 {orders.length > 0 && (
                   <div className="marketplace-table-scroll">
                     <table className="marketplace-table">
+                      <caption className="sr-only">{side === 'sell' ? 'Orders you sold' : 'Orders you bought'}</caption>
                       <thead>
                         <tr>
                           <th scope="col">Order</th>

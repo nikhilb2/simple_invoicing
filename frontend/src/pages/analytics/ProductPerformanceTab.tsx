@@ -221,6 +221,7 @@ export default function ProductPerformanceTab({ filters }: { filters: AnalyticsF
 
       <div className="analytics-table-scroll">
         <table className="invoice-feed-table product-performance__table">
+          <caption className="sr-only">Product performance</caption>
           <thead>
             <tr>
               {COLUMNS.map((column) => {

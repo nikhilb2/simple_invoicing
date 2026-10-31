@@ -108,6 +108,7 @@ export default function CatalogueTable({
   return (
     <div className="catalogue-table-wrap">
       <table className="catalogue-table">
+        <caption className="sr-only">Products</caption>
         <thead>
           <tr>
             {COLUMNS.map((column) => {

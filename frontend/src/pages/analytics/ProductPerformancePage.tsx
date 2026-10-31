@@ -151,6 +151,7 @@ function ProductPerformanceBody({ data, partyFiltered }: { data: ProductPerforma
       <h2 className="nav-panel__title">Month by month</h2>
       <div className="analytics-table-scroll">
         <table className="invoice-feed-table product-detail__table">
+          <caption className="sr-only">Month by month</caption>
           <thead>
             <tr>
               <th scope="col">Month</th>

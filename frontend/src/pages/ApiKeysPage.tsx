@@ -287,6 +287,7 @@ export default function ApiKeysPage() {
         <div className="panel">
           <div className="table-scroll">
             <table className="data-table">
+              <caption className="sr-only">API keys</caption>
               <thead>
                 <tr>
                   <th scope="col">Name</th>

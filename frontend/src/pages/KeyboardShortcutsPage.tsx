@@ -156,6 +156,7 @@ export default function KeyboardShortcutsPage() {
       <section className="section-card">
         <div className="table-scroll">
           <table className="table" style={{ width: '100%' }}>
+            <caption className="sr-only">Keyboard shortcuts</caption>
             <thead>
               <tr>
                 <th scope="col">Action</th>

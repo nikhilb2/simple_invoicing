@@ -124,6 +124,7 @@ export default function ProductSalesTab({ filters }: { filters: AnalyticsFilters
 
           <div className="analytics-table-scroll">
             <table className="invoice-feed-table">
+              <caption className="sr-only">Sales by product</caption>
               <thead>
                 <tr>
                   <th scope="col">Product</th>

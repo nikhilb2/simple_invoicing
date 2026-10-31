@@ -74,6 +74,7 @@ export default function OrderDetailModal({
 
         <div className="marketplace-table-scroll">
           <table className="marketplace-table">
+            <caption className="sr-only">Order items</caption>
             <thead>
               <tr>
                 <th scope="col">#</th>
