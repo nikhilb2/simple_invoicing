@@ -15,6 +15,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
+import useDebouncedValue from '../hooks/useDebouncedValue';
 import StatusToasts from '../components/StatusToasts';
 import type { CompanyProfile, Ledger, PaginatedLedgers } from '../types/api';
 import formatCurrency from '../utils/formatting';
@@ -91,6 +92,8 @@ export default function LedgersPage() {
   const [total, setTotal] = useState(0);
   const [pageSize, setPageSize] = useState(() => readStoredPageSize('ledgers-page-size'));
   const [exporting, setExporting] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const debouncedSearch = useDebouncedValue(search, 300);
 
   useEffect(() => {
     const state = location.state as { success?: string } | null;
@@ -100,26 +103,32 @@ export default function LedgersPage() {
     }
   }, [location.state]);
 
-  async function loadLedgers(currentPage: number, currentSearch: string, currentSort: string, currentPageSize: number) {
-    try {
-      setLoading(true);
-      setError('');
-      const res = await api.get<PaginatedLedgers>('/ledgers/', {
-        params: { page: currentPage, page_size: currentPageSize, search: currentSearch, sort: currentSort },
-      });
-      setLedgers(res.data.items);
-      setTotal(res.data.total);
-      setTotalPages(res.data.total_pages);
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to load ledgers'));
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    void loadLedgers(page, search, sort, pageSize);
-  }, [page, search, sort, pageSize]);
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const res = await api.get<PaginatedLedgers>('/ledgers/', {
+          params: { page, page_size: pageSize, search: debouncedSearch, sort },
+        });
+        if (cancelled) return;
+        setLedgers(res.data.items);
+        setTotal(res.data.total);
+        setTotalPages(res.data.total_pages);
+      } catch (err) {
+        if (cancelled) return;
+        setError(getApiErrorMessage(err, 'Unable to load ledgers'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [page, debouncedSearch, sort, pageSize, reloadKey]);
 
   // Exports every ledger the current search and sort select, not just the
   // visible page: the export pages the list endpoint itself (see ledgers/exports).
@@ -180,6 +189,7 @@ export default function LedgersPage() {
       setLedgers((current) => current.filter((l) => l.id !== pendingDeleteLedgerId));
       setTotal((t) => t - 1);
       setSuccess('Ledger deleted successfully.');
+      setReloadKey((k) => k + 1);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to delete ledger'));
     } finally {
