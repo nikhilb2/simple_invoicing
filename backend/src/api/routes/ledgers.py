@@ -1881,6 +1881,30 @@ def _hsn_desc(value: str | None, hsn: str) -> str:
     return text[:HSN_DESC_LIMIT].strip() or hsn
 
 
+def _doc_number_sort_key(number: str) -> tuple[list[int | str], str]:
+    """Natural sort key for a document number: digit runs compare as integers."""
+    # A counter can outgrow its zero padding (INV-999 -> INV-1000), so a plain
+    # text sort would put INV-1000 before INV-999. re.split with a capture group
+    # alternates text and digit parts, so the parts line up between numbers.
+    parts = [int(p) if p.isdigit() else p.casefold() for p in re.split(r"(\d+)", number)]
+    return parts, number
+
+
+def _doc_range(numbers: list[str], num: int = 1) -> dict | None:
+    """A Table 13 (documents issued) row: first and last number in issue order."""
+    nums = sorted((n for n in numbers if n), key=_doc_number_sort_key)
+    if not nums:
+        return None
+    return {
+        "num": num,
+        "from": nums[0],
+        "to": nums[-1],
+        "totnum": len(nums),
+        "cancel": 0,
+        "net_issue": len(nums),
+    }
+
+
 def _validate_hsn(hsn: str | None) -> str | None:
     """Validate HSN/SAC code. Returns error message or None."""
     if not hsn or not hsn.strip():
@@ -2505,19 +2529,6 @@ def gstr1_export_json(
         hsn_section["hsn_b2c"] = hsn_b2c_rows
 
     # Documents issued (Table 13): nature-of-document code + issued range.
-    def _doc_range(numbers: list[str], num: int = 1) -> dict | None:
-        nums = sorted(n for n in numbers if n)
-        if not nums:
-            return None
-        return {
-            "num": num,
-            "from": nums[0],
-            "to": nums[-1],
-            "totnum": len(nums),
-            "cancel": 0,
-            "net_issue": len(nums),
-        }
-
     doc_det: list[dict] = []
     # Table 13 reports the invoice document series, irrespective of whether the
     # recipient is registered. Splitting one sales series into B2B and B2C

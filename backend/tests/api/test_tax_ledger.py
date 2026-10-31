@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from fastapi import HTTPException
 
-from src.api.routes.ledgers import get_tax_ledger, gstr1_export_csv, gstr1_export_json, gstr1_summary, gstr1_validate
+from src.api.routes.ledgers import _doc_range, get_tax_ledger, gstr1_export_csv, gstr1_export_json, gstr1_summary, gstr1_validate
 from src.db.base import Base
 from src.models.buyer import Buyer
 from src.models.company import CompanyProfile
@@ -1488,6 +1488,60 @@ def test_gstr1_doc_issue_uses_nature_code_and_ranges(db_session):
     assert rng["to"] == "DOC-002"
     assert rng["totnum"] == 2
     assert rng["net_issue"] == 2
+
+
+@pytest.mark.parametrize(
+    ("numbers", "first", "last"),
+    [
+        # Padded counter that outgrows its pad: text order would give 1000..999.
+        (["INV-2026-998", "INV-2026-1001", "INV-2026-999", "INV-2026-1000"], "INV-2026-998", "INV-2026-1001"),
+        (["S-98", "S-100", "S-99"], "S-98", "S-100"),
+        (["INV-10", "INV-9"], "INV-9", "INV-10"),
+        # The financial-year digits must not confuse the order of the counter.
+        (["INV-2026-27-010", "INV-2026-27-009", "INV-2025-26-999"], "INV-2025-26-999", "INV-2026-27-010"),
+        (["A/10", "A/2", "a/1"], "a/1", "A/10"),
+    ],
+)
+def test_gstr1_doc_range_sorts_numbers_in_issue_order(numbers, first, last):
+    rng = _doc_range(numbers)
+    assert rng["from"] == first
+    assert rng["to"] == last
+    assert rng["totnum"] == len(numbers)
+    assert rng["net_issue"] == len(numbers)
+
+
+def test_gstr1_doc_range_single_empty_and_null_numbers():
+    rng = _doc_range(["INV-001", None, ""], num=5)
+    assert rng == {"num": 5, "from": "INV-001", "to": "INV-001", "totnum": 1, "cancel": 0, "net_issue": 1}
+    assert _doc_range([]) is None
+    assert _doc_range([None, ""]) is None
+
+
+def test_gstr1_doc_issue_range_survives_counter_outgrowing_pad(db_session):
+    """Table 13 from/to follow issue order once a padded counter reaches 1000."""
+    user, ledger = _seed_basics(db_session)
+    for day, number in enumerate(["INV-998", "INV-999", "INV-1000", "INV-1001"], start=1):
+        _add_invoice_with_item(
+            db_session, ledger, user,
+            voucher_type="sales",
+            invoice_number=number,
+            when=datetime(2026, 4, day),
+            gst_rate=18,
+            taxable_amount=1000,
+            cgst_amount=90,
+            sgst_amount=90,
+            igst_amount=0,
+        )
+    db_session.commit()
+    company = _make_company(gst="29TESTT1234X1ZE")
+
+    data = _export_json_data(db_session, user, company, date(2026, 4, 1), date(2026, 4, 30))
+
+    inv_doc = next(d for d in data["doc_issue"]["doc_det"] if d["doc_num"] == 1)
+    rng = inv_doc["docs"][0]
+    assert rng["from"] == "INV-998"
+    assert rng["to"] == "INV-1001"
+    assert rng["totnum"] == 4
 
 
 def test_gstr1_doc_issue_keeps_b2b_and_b2c_in_same_invoice_series(db_session):
