@@ -13,6 +13,7 @@ import BOMConfigModal from '../components/BOMConfigModal';
 import SerialBackfillModal from '../components/SerialBackfillModal';
 import useDebouncedValue from '../hooks/useDebouncedValue';
 import { numericParam, useDeepLinkScroll } from '../utils/deepLink';
+import { parseRowEdit } from '../utils/catalogueRowEdit';
 import { scanCode } from '../features/serials/api';
 import type { CompanyProfile, Product, ProductCreate } from '../types/api';
 import CatalogueTable from './catalogue/CatalogueTable';
@@ -276,34 +277,9 @@ export default function CataloguePage() {
   async function saveEdit() {
     if (editingId === null || !editValues) return;
 
-    // Said inline, beside the row, rather than as a toast that appears far from
-    // the field that caused it.
-    if (!editValues.name.trim()) {
-      setRowError('Product name cannot be empty.');
-      return;
-    }
-    if (!editValues.sku.trim()) {
-      setRowError('SKU cannot be empty.');
-      return;
-    }
-    const selling = Number(editValues.selling_price);
-    const purchase = Number(editValues.purchase_price);
-    const reorder = Number(editValues.reorder_level);
-    const gst = Number(editValues.gst_rate);
-    if (Number.isNaN(selling) || selling < 0) {
-      setRowError('Selling price must be a number of 0 or more.');
-      return;
-    }
-    if (Number.isNaN(purchase) || purchase < 0) {
-      setRowError('Purchase price must be a number of 0 or more.');
-      return;
-    }
-    if (Number.isNaN(reorder) || reorder < 0) {
-      setRowError('Reorder level must be a number of 0 or more.');
-      return;
-    }
-    if (Number.isNaN(gst) || gst < 0 || gst > 100) {
-      setRowError('GST rate must be between 0 and 100.');
+    const parsed = parseRowEdit(editValues);
+    if (!parsed.ok) {
+      setRowError(parsed.error);
       return;
     }
 
@@ -312,14 +288,7 @@ export default function CataloguePage() {
       setRowError('');
       // current_stock is deliberately absent: stock moves only through the
       // audited adjustment flow, so a row edit can never overwrite it.
-      await api.put(`/products/${editingId}/with-inventory`, {
-        name: editValues.name.trim(),
-        sku: editValues.sku.trim(),
-        selling_price: selling,
-        purchase_price: purchase,
-        reorder_level: reorder,
-        gst_rate: gst,
-      });
+      await api.put(`/products/${editingId}/with-inventory`, parsed.value);
       setSuccess(`${editValues.name.trim()} saved.`);
       cancelEdit();
       await loadData();
