@@ -98,6 +98,20 @@ def create_financial_year(
     if existing:
         raise HTTPException(status_code=409, detail=f"Financial year '{payload.label}' already exists.")
 
+    overlapping = db.query(FinancialYear).filter(
+        FinancialYear.company_id == active_company.id,
+        FinancialYear.start_date <= payload.end_date,
+        FinancialYear.end_date >= payload.start_date,
+    ).first()
+    if overlapping:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Financial year '{payload.label}' overlaps '{overlapping.label}' "
+                f"({overlapping.start_date} to {overlapping.end_date})."
+            ),
+        )
+
     fy = FinancialYear(
         company_id=active_company.id,
         label=payload.label,
