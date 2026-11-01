@@ -15,8 +15,8 @@ export function validateAllocations(
       return `Allocated amount for ${allocation.invoice_number ?? `invoice ${allocation.invoice_id}`} must be greater than 0`;
     }
   }
-  const total = list.reduce((sum, allocation) => sum + Number(allocation.allocated_amount || 0), 0);
-  if (total > paymentAmount) {
+  const totalPaise = list.reduce((sum, a) => sum + Math.round(Number(a.allocated_amount || 0) * 100), 0);
+  if (totalPaise > Math.round(paymentAmount * 100)) {
     return 'Allocated amounts exceed the payment amount';
   }
   return null;

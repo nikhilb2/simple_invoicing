@@ -37,3 +37,22 @@ test('returns null for empty allocations', () => {
   const result = validateAllocations([], 100);
   expect(result).toBeNull();
 });
+
+test('accepts 50.1 + 50.2 against 100.3 (floating point)', () => {
+  const result = validateAllocations(
+    [
+      { invoice_id: 1, invoice_number: 'INV-1', allocated_amount: 50.1 },
+      { invoice_id: 2, invoice_number: 'INV-2', allocated_amount: 50.2 },
+    ],
+    100.3,
+  );
+  expect(result).toBeNull();
+});
+
+test('flags non-numeric allocation', () => {
+  const result = validateAllocations(
+    [{ invoice_id: 1, invoice_number: 'INV-1', allocated_amount: 'abc' }],
+    100,
+  );
+  expect(result).toBe('Allocated amount for INV-1 must be greater than 0');
+});
