@@ -1,5 +1,6 @@
 import csv
 import io
+import math
 from datetime import datetime
 from typing import Optional
 
@@ -26,6 +27,7 @@ from src.schemas.product import (
 )
 from src.api.deps import get_active_company, get_current_user, require_roles
 from src.core.analytics import distinct_id_for, track
+from src.core.validation import normalize_hsn_sac
 from src.services.serial_service import SerialManager
 
 router = APIRouter()
@@ -775,6 +777,16 @@ async def import_products_csv(
     return result
 
 
+def _csv_number(raw) -> float:
+    """A numeric CSV cell: an empty (or absent) value means 0; anything float()
+    cannot read — including 'nan'/'inf', which float() accepts — raises ValueError."""
+    text = str(raw or "").strip()
+    value = float(text) if text else 0.0
+    if math.isnan(value) or math.isinf(value):
+        raise ValueError(f"non-finite value: {text}")
+    return value
+
+
 def _import_csv_from_content(content: bytes, db: Session, active_company: CompanyProfile) -> dict:
     created = 0
     updated = 0
@@ -816,26 +828,46 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             continue
 
         try:
-            gst_rate = float(values.get("tax") or values.get("gst") or 0)
+            tax_cell = values.get("tax") or values.get("gst") or ""
+            gst_rate = _csv_number(tax_cell.removesuffix("%"))
             if gst_rate < 0 or gst_rate > 100:
-                gst_rate = 0
+                raise ValueError(gst_rate)
         except ValueError:
-            gst_rate = 0
+            errors.append({"row": row_num, "message": f"Invalid Tax for {sku}"})
+            continue
 
         try:
-            stock = float(values.get("current_stock") or values.get("stock") or 0)
+            stock = _csv_number(values.get("current_stock") or values.get("stock") or 0)
+            if stock < 0:
+                raise ValueError(stock)
         except ValueError:
-            stock = 0
+            errors.append({"row": row_num, "message": f"Invalid Current Stock for {sku}"})
+            continue
 
         try:
-            purchase_price = float(values.get("purchase_price") or 0)
+            purchase_price = _csv_number(values.get("purchase_price") or 0)
+            if purchase_price < 0:
+                raise ValueError(purchase_price)
         except ValueError:
-            purchase_price = 0
+            errors.append({"row": row_num, "message": f"Invalid Purchase Price for {sku}"})
+            continue
 
         try:
-            reorder_level = float(values.get("reorder_level") or 0)
+            reorder_level = _csv_number(values.get("reorder_level") or 0)
+            if reorder_level < 0:
+                raise ValueError(reorder_level)
         except ValueError:
-            reorder_level = 0
+            errors.append({"row": row_num, "message": f"Invalid Reorder Level for {sku}"})
+            continue
+
+        try:
+            hsn_sac = normalize_hsn_sac(values.get("hsn_code"))
+        except ValueError:
+            errors.append({
+                "row": row_num,
+                "message": f"Invalid HSN Code for {sku}: must be 4, 6 or 8 digits",
+            })
+            continue
 
         existing = (
             db.query(Product)
@@ -854,8 +886,8 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             existing.reorder_level = reorder_level
             if values.get("description"):
                 existing.description = values["description"]
-            if values.get("hsn_code"):
-                existing.hsn_sac = values["hsn_code"]
+            if hsn_sac is not None:
+                existing.hsn_sac = hsn_sac
             if values.get("unit"):
                 existing.unit = values["unit"]
 
@@ -887,7 +919,7 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
                 sku=sku,
                 name=item_name,
                 description=values.get("description") or None,
-                hsn_sac=values.get("hsn_code") or None,
+                hsn_sac=hsn_sac,
                 price=selling_price,
                 purchase_price=purchase_price,
                 gst_rate=gst_rate,
