@@ -352,8 +352,9 @@ def list_invoices(
           financial_year_id=financial_year_id,
         ),
       )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error listing invoices")
+        raise HTTPException(status_code=500, detail="Failed to list invoices")
 
 
 _VOUCHER_TYPE_LABELS = {"sales": "Sales", "purchase": "Purchase"}
@@ -439,8 +440,9 @@ def export_invoices_csv(
             media_type="text/csv; charset=utf-8",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error exporting invoices")
+        raise HTTPException(status_code=500, detail="Failed to export invoices")
 
 
 def _outstanding_due_invoices(
@@ -568,8 +570,9 @@ def dues_ageing_summary(
             total_invoice_count=len(outstanding_invoices),
             total_remaining=float(sum(totals.values(), Decimal("0"))),
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error building dues ageing summary")
+        raise HTTPException(status_code=500, detail="Failed to load dues ageing summary")
 
 
 @router.get("/dues", response_model=PaginatedInvoiceOut)
@@ -630,8 +633,9 @@ def list_due_invoices(
                 financial_year_id=None,
             ),
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error listing due invoices")
+        raise HTTPException(status_code=500, detail="Failed to list due invoices")
 
 
 @router.get("/{invoice_id}", response_model=InvoiceOut)
@@ -733,9 +737,10 @@ def update_invoice(
     except HTTPException:
         db.rollback()
         raise
-    except Exception as e:
+    except Exception:
+        logger.exception("Error updating invoice")
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to update invoice")
 
     track(
         "invoice_updated",
@@ -854,9 +859,10 @@ def cancel_invoice(
     except HTTPException:
         db.rollback()
         raise
-    except Exception as e:
+    except Exception:
+        logger.exception("Error cancelling invoice")
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to cancel invoice")
 
     track(
         "invoice_cancelled",
@@ -900,9 +906,10 @@ def restore_invoice(
     except HTTPException:
         db.rollback()
         raise
-    except Exception as e:
+    except Exception:
+        logger.exception("Error restoring invoice")
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to restore invoice")
 
 
 @router.post("/{invoice_id}/duplicate")
@@ -1023,6 +1030,7 @@ def duplicate_invoice(
     except HTTPException:
         db.rollback()
         raise
-    except Exception as e:
+    except Exception:
+        logger.exception("Error duplicating invoice")
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to duplicate invoice")
