@@ -84,7 +84,11 @@ def _recompute_credit_status(invoice_id: int, db: Session, company_id: int | Non
         result_query = result_query.filter(or_(CN.company_id == company_id, CN.company_id.is_(None)))
     result = result_query.scalar()
     credited_total = Decimal(str(result or 0))
-    invoice_total = Decimal(str(invoice.taxable_amount or 0))
+    # line_total includes tax, so compare against total_amount (which also
+    # includes tax) — taxable_amount excludes tax and would mark an invoice
+    # fully credited too early. Fall back to taxable_amount for legacy rows
+    # that never stored a total.
+    invoice_total = Decimal(str(invoice.total_amount or invoice.taxable_amount or 0))
 
     if credited_total <= 0:
         invoice.credit_status = "not_credited"
