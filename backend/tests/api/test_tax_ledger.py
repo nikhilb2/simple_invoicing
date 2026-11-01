@@ -603,6 +603,57 @@ def test_gstr1_validate_passes_for_valid_sales_invoices(db_session):
     assert len(result.errors) == 0
 
 
+def test_gstr1_validate_ignores_purchase_invoices(db_session):
+    user, ledger = _seed_basics(db_session)
+
+    purchase = _add_invoice_with_item(
+        db_session,
+        ledger,
+        user,
+        voucher_type="purchase",
+        invoice_number="GP-BAD",
+        when=datetime(2026, 4, 11, 9, 0, 0),
+        gst_rate=17.99,
+        taxable_amount=0,
+        cgst_amount=0,
+        sgst_amount=0,
+        igst_amount=0,
+    )
+    purchase.ledger_gst = "INVALID"
+    purchase.items[0].hsn_sac = None
+
+    sales = _add_invoice_with_item(
+        db_session,
+        ledger,
+        user,
+        voucher_type="sales",
+        invoice_number="GS-BAD-MIXED",
+        when=datetime(2026, 4, 12, 9, 0, 0),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+    )
+    sales.ledger_gst = "INVALID"
+    db_session.commit()
+
+    result = gstr1_validate(
+        from_date=date(2026, 4, 1),
+        to_date=date(2026, 4, 30),
+        db=db_session,
+        _=user,
+        active_company=None,
+    )
+
+    assert result.status == "invalid"
+    assert result.total_invoices == 1
+    assert result.valid_invoices == 0
+    assert result.invalid_invoices == 1
+    assert all(error.invoice_number != "GP-BAD" for error in result.errors)
+    assert any(error.invoice_number == "GS-BAD-MIXED" and "Invalid GSTIN" in error.message for error in result.errors)
+
+
 def test_gstr1_validate_detects_missing_gstin(db_session):
     user, ledger = _seed_basics(db_session)
     ledger.gst = None
