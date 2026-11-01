@@ -892,6 +892,7 @@ export type BOMUpdate = {
 export type ProduceRequest = {
   product_id: number;
   quantity: number;
+  notes?: string;
 };
 
 export type ProductionTransaction = {

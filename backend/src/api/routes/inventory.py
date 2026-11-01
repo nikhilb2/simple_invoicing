@@ -218,6 +218,7 @@ def produce_item(
         payload.product_id,
         Decimal(str(payload.quantity)),
         current_user.id,
+        notes=payload.notes,
     )
 
     if not result["success"]:

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
 from datetime import datetime
 
@@ -35,6 +35,17 @@ class ProduceRequest(BaseModel):
     """Request to produce an item"""
     product_id: int
     quantity: float
+    notes: Optional[str] = None
+
+    @field_validator("notes")
+    @classmethod
+    def _blank_notes_become_none(cls, value: Optional[str]) -> Optional[str]:
+        """Treat blank/whitespace-only notes as no notes."""
+        if value is not None:
+            value = value.strip()
+            if not value:
+                return None
+        return value
 
 
 class ProductionTransactionOut(BaseModel):
