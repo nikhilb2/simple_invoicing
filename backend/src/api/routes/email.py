@@ -95,6 +95,28 @@ def _reminder_statement_window(db: Session, ledger_id: int, company_id: int | No
     return min(start, today), today
 
 
+def _last_receipt_date(db: Session, ledger_id: int, company_id: int | None) -> str | None:
+    """The ledger's most recent receipt, formatted for the reminder body.
+
+    Only receipts count. A payment voucher is money paid *out* to the party and an
+    opening-balance entry is not a payment at all, so filtering on ``status`` alone
+    picks whichever row happens to be newest and reports money you paid as money
+    they paid. A ledger that is both customer and supplier has both kinds, which is
+    exactly where this used to go wrong.
+    """
+    query = db.query(Payment).filter(
+        Payment.ledger_id == ledger_id,
+        Payment.voucher_type == "receipt",
+        Payment.status == "active",
+    )
+    if company_id is not None:
+        query = query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+    last_receipt = query.order_by(Payment.date.desc()).first()
+    if last_receipt is None or last_receipt.date is None:
+        return None
+    return last_receipt.date.strftime("%d %b %Y")
+
+
 # ---------------------------------------------------------------------------
 # POST /invoice/{invoice_id}
 # ---------------------------------------------------------------------------
@@ -382,11 +404,7 @@ async def send_payment_reminder_email(
     total_receipts = float(total_receipts_query.scalar())
     outstanding_balance = total_sales - credit_note_summary.sales_credit_total - total_receipts
 
-    last_payment_query = db.query(Payment).filter(Payment.ledger_id == ledger_id, Payment.status == "active")
-    if company_id is not None:
-        last_payment_query = last_payment_query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
-    last_payment = last_payment_query.order_by(Payment.date.desc()).first()
-    last_payment_date = last_payment.date.strftime("%d %b %Y") if last_payment else None
+    last_payment_date = _last_receipt_date(db, ledger_id, company_id)
 
     sales_invoices_query = (
         db.query(Invoice)
@@ -578,14 +596,7 @@ async def send_due_reminders(
             )
             continue
 
-        last_payment_query = (
-            db.query(Payment)
-            .filter(Payment.ledger_id == ledger_id, Payment.voucher_type == "receipt", Payment.status == "active")
-        )
-        if company_id is not None:
-            last_payment_query = last_payment_query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
-        last_payment = last_payment_query.order_by(Payment.date.desc()).first()
-        last_payment_date = last_payment.date.strftime("%d %b %Y") if last_payment else None
+        last_payment_date = _last_receipt_date(db, ledger_id, company_id)
 
         # One statement link per ledger. document_share_url is idempotent, so a ledger
         # reminded every month keeps the same URL rather than accumulating tokens.
