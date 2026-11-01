@@ -14,6 +14,7 @@ import SendEmailModal from '../components/SendEmailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ModalCloseButton from '../components/ModalCloseButton';
 import formatCurrency, { formatDate } from '../utils/formatting';
+import { validateAllocations } from '../utils/validateAllocations';
 import { useFY } from '../context/FYContext';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { fetchOutstandingInvoices, fetchLedgerAddresses, createLedgerAddress, updateLedgerAddress, deleteLedgerAddress } from '../features/invoices/api';
@@ -516,6 +517,11 @@ export default function LedgerViewPage() {
       setError('Amount must be greater than 0');
       return;
     }
+    const allocationError = validateAllocations(paymentForm.invoice_allocations, paymentForm.amount);
+    if (allocationError) {
+      setError(allocationError);
+      return;
+    }
     try {
       setSubmittingPayment(true);
       setError('');
@@ -567,6 +573,11 @@ export default function LedgerViewPage() {
     if (!editingPayment) return;
     if ((editPaymentForm.amount ?? 0) <= 0) {
       setError('Amount must be greater than 0');
+      return;
+    }
+    const editAllocationError = validateAllocations(editPaymentForm.invoice_allocations, editPaymentForm.amount ?? 0);
+    if (editAllocationError) {
+      setError(editAllocationError);
       return;
     }
     try {
