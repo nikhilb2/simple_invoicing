@@ -41,7 +41,7 @@ def make_ledger(id=1, gst="29ABCDE1234F1ZW"):
 
 
 def make_invoice(id, ledger_id=1, status="active", company_gst="29XYZAB1234C1ZQ", taxable_amount=1000,
-                 voucher_type="sales"):
+                 voucher_type="sales", total_amount=None):
     inv = Invoice()
     inv.id = id
     inv.ledger_id = ledger_id
@@ -49,6 +49,7 @@ def make_invoice(id, ledger_id=1, status="active", company_gst="29XYZAB1234C1ZQ"
     inv.status = status
     inv.company_gst = company_gst
     inv.taxable_amount = taxable_amount
+    inv.total_amount = total_amount
     inv.credit_status = "not_credited"
     return inv
 
@@ -171,7 +172,7 @@ class TestRecomputeCreditStatus:
         return db
 
     def test_sets_not_credited_when_no_cns(self):
-        invoice = make_invoice(1, taxable_amount=1000)
+        invoice = make_invoice(1, taxable_amount=1000, total_amount=1180)
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = invoice
         db.query.return_value.join.return_value.filter.return_value.scalar.return_value = None
@@ -179,18 +180,29 @@ class TestRecomputeCreditStatus:
         assert invoice.credit_status == "not_credited"
 
     def test_sets_partially_credited(self):
-        invoice = make_invoice(1, taxable_amount=1000)
+        invoice = make_invoice(1, taxable_amount=1000, total_amount=1180)
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = invoice
         db.query.return_value.join.return_value.filter.return_value.scalar.return_value = Decimal("500")
         _recompute_credit_status(1, db)
         assert invoice.credit_status == "partially_credited"
 
-    def test_sets_fully_credited(self):
-        invoice = make_invoice(1, taxable_amount=1000)
+    def test_credited_total_including_tax_is_not_fully_credited(self):
+        # 10 x Rs 100 at 18% -> taxable 1000, total 1180. Returning 9 units
+        # credits 1062 (incl. tax); comparing against taxable 1000 would mark
+        # it fully credited even though Rs 118 is still open.
+        invoice = make_invoice(1, taxable_amount=1000, total_amount=1180)
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = invoice
-        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = Decimal("1000")
+        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = Decimal("1062")
+        _recompute_credit_status(1, db)
+        assert invoice.credit_status == "partially_credited"
+
+    def test_sets_fully_credited_when_total_including_tax_covered(self):
+        invoice = make_invoice(1, taxable_amount=1000, total_amount=1180)
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = invoice
+        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = Decimal("1180")
         _recompute_credit_status(1, db)
         assert invoice.credit_status == "fully_credited"
 
