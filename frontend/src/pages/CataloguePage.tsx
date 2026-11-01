@@ -23,6 +23,7 @@ import SerialHistoryDrawer from './catalogue/SerialHistoryDrawer';
 import ImportModal from './catalogue/ImportModal';
 import { exportCatalogueCsv, exportCataloguePdf } from './catalogue/exports';
 import { isLowStock, isSerialFilter, rowEditFrom } from './catalogue/types';
+import { parseRowEdit } from '../utils/catalogueRowEdit';
 import type {
   CatalogueRow,
   PaginatedCatalogue,
@@ -286,26 +287,17 @@ export default function CataloguePage() {
       setRowError('SKU cannot be empty.');
       return;
     }
-    const selling = Number(editValues.selling_price);
-    const purchase = Number(editValues.purchase_price);
-    const reorder = Number(editValues.reorder_level);
-    const gst = Number(editValues.gst_rate);
-    if (Number.isNaN(selling) || selling < 0) {
-      setRowError('Selling price must be a number of 0 or more.');
+    const parsed = parseRowEdit(editValues);
+    if (!parsed.ok) {
+      setRowError(parsed.error);
       return;
     }
-    if (Number.isNaN(purchase) || purchase < 0) {
-      setRowError('Purchase price must be a number of 0 or more.');
-      return;
-    }
-    if (Number.isNaN(reorder) || reorder < 0) {
-      setRowError('Reorder level must be a number of 0 or more.');
-      return;
-    }
-    if (Number.isNaN(gst) || gst < 0 || gst > 100) {
-      setRowError('GST rate must be between 0 and 100.');
-      return;
-    }
+    const { selling, purchase, reorder, gst } = {
+      selling: parsed.value.selling_price,
+      purchase: parsed.value.purchase_price,
+      reorder: parsed.value.reorder_level,
+      gst: parsed.value.gst_rate,
+    };
 
     try {
       setSavingId(editingId);
