@@ -1982,6 +1982,9 @@ def gstr1_validate(
         raise HTTPException(status_code=400, detail="from_date must be before or equal to to_date")
 
     invoices = _gstr1_invoice_query(db, from_date, to_date, company_id)
+    # GSTR-1 reports outward supplies only. Purchase invoices are reported
+    # through the inward-supply workflow and must not block this filing.
+    invoices = [inv for inv in invoices if inv.voucher_type == "sales"]
     errors: list[Gstr1ValidationError] = []
     seen_numbers: dict[str, list[int]] = {}
 
