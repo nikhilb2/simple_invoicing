@@ -5,6 +5,8 @@ from src.models.invoice import Invoice
 from src.models.product import Product
 
 from .builders import (
+    _build_invoice_discount_html,
+    _build_item_discount_html,
     _amount_in_words_indian,
     _build_pdf_payment_details_html,
     _build_pdf_table_colgroup,
@@ -13,12 +15,16 @@ from .builders import (
     _build_pdf_tax_row_cells,
     _e,
     _fmt_currency,
-    _fmt_rate,
     _pdf_display_quantity,
     _pdf_display_unit,
     _pdf_unit_price,
 )
-from .purchase_template import _build_purchase_invoice_html, _is_interstate_supply, _extract_pan_from_gstin
+from .purchase_template import (
+    _build_item_serials_html,
+    _build_purchase_invoice_html,
+    _is_interstate_supply,
+    _extract_pan_from_gstin,
+)
 
 
 def _copy_label(n: int) -> str:
@@ -30,13 +36,13 @@ def _copy_label(n: int) -> str:
     return f"{n}{suffix} Copy"
 
 
-def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount] | None = None, copy_label: str = "Original", show_sku: bool = True) -> str:
+def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount] | None = None, copy_label: str = "Original", show_sku: bool = True, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "") -> str:
     """Generate HTML for a sales invoice."""
     if invoice_bank_accounts is None:
         invoice_bank_accounts = []
     
     if invoice.voucher_type == "purchase":
-        return _build_purchase_invoice_html(invoice, products)
+        return _build_purchase_invoice_html(invoice, products, serials)
 
     currency = invoice.company_currency_code or "USD"
     voucher_label = "Sales" if invoice.voucher_type == "sales" else "Purchase"
@@ -47,6 +53,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     table_colgroup = _build_pdf_table_colgroup(interstate_supply, show_sku=show_sku)
 
     product_map = {p.id: p for p in products}
+    serials_map = serials or {}
     tax_inclusive = bool(invoice.tax_inclusive)
 
     # Build line item rows
@@ -64,20 +71,15 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
         quantity_display = _pdf_display_quantity(item.quantity, getattr(prod, "allow_decimal", None) if prod else None)
         tax_row_cells = _build_pdf_tax_row_cells(item, currency, interstate_supply)
 
-        # Item-level discount display
-        item_discount_html = ""
-        raw_item_discount = float(item.discount_value or 0)
-        if item.discount_type and raw_item_discount > 0:
-            if item.discount_type == "percentage":
-                item_discount_html = f"<br><span class=\"muted-text\">Disc: {_fmt_rate(raw_item_discount)}%</span>"
-            else:
-                item_discount_html = f"<br><span class=\"muted-text\">Disc: {_fmt_currency(raw_item_discount, currency)} off</span>"
+        item_discount_html = _build_item_discount_html(item, currency, tax_inclusive=tax_inclusive)
+
+        item_serials_html = _build_item_serials_html(serials_map.get(item.product_id))
 
         if show_sku:
             item_rows += f"""
         <tr>
           <td>{idx}</td>
-          <td>{product_cell_html}{item_discount_html}</td>
+          <td>{product_cell_html}{item_discount_html}{item_serials_html}</td>
           <td>{sku}</td>
           <td>{hsn}</td>
           <td class="right">{quantity_display}</td>
@@ -90,7 +92,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
             item_rows += f"""
         <tr>
           <td>{idx}</td>
-          <td>{product_cell_html}{item_discount_html}</td>
+          <td>{product_cell_html}{item_discount_html}{item_serials_html}</td>
           <td>{hsn}</td>
           <td class="right">{quantity_display}</td>
           <td>{unit}</td>
@@ -106,7 +108,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     if invoice.company_logo_data and invoice.company_logo_mime_type:
         company_header_html += f"""
     <div class="invoice-sheet__logo">
-      <img src="data:{_e(invoice.company_logo_mime_type)};base64,{invoice.company_logo_data}" alt="Company logo" class="invoice-sheet__logo-img" />
+      <img src="data:{_e(invoice.company_logo_mime_type)};base64,{_e(invoice.company_logo_data)}" alt="Company logo" class="invoice-sheet__logo-img" />
     </div>"""
     if invoice.company_additional_info:
         lines = invoice.company_additional_info.split("\n")
@@ -175,17 +177,9 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     round_off_html = (
         f'<p>Round off: {_fmt_currency(round_off_amount, currency)}</p>' if show_round_off else ''
     )
-    # Invoice-level discount display
-    invoice_discount_label = ""
-    inv_disc_type = invoice.discount_type
-    inv_disc_val = float(invoice.discount_value or 0)
-    if inv_disc_type and inv_disc_val > 0:
-        if inv_disc_type == "percentage":
-            invoice_discount_label = f"<p>Discount: {_fmt_rate(inv_disc_val)}%</p>"
-        else:
-            invoice_discount_label = f"<p>Discount: {_fmt_currency(inv_disc_val, currency)} off</p>"
+    invoice_discount_label = _build_invoice_discount_html(invoice, currency)
     tax_breakup_rows = _build_pdf_tax_breakup_rows(invoice, currency)
-    payment_details_html = _build_pdf_payment_details_html(invoice_bank_accounts)
+    payment_details_html = _build_pdf_payment_details_html(invoice_bank_accounts, pay_qr_html)
     reference_notes_html = ""
     if invoice.reference_notes:
         reference_notes_html = f"""
@@ -351,48 +345,111 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
   .invoice-sheet__table tbody tr:last-child td {{
     border-bottom: 2px solid #d1d5db;
   }}
+  .invoice-sheet__table tbody tr {{
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }}
+  /* Payment details sit beside the totals instead of in a band of their own below
+     them: that band left the footer's left half blank and was what pushed a
+     7-line invoice onto a second page. The footer also moves as one piece, so a
+     page break can never strand the "Payment details" heading from its content. */
   .invoice-sheet__footer {{
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 24px;
     margin-top: 8px;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }}
-  .invoice-sheet__bank-section {{
-    margin-top: 14px;
-    border-top: 1px solid #e5e7eb;
-    padding-top: 10px;
+  .invoice-sheet__payment {{
+    flex: 1 1 auto;
+    min-width: 0;
   }}
-  .invoice-sheet__bank-section p {{
-    font-size: 9px;
-    color: #4b5563;
-    margin-bottom: 1px;
+  .invoice-sheet__payment .eyebrow {{
+    margin-bottom: 5px;
   }}
-  .invoice-sheet__bank-cards {{
+  /* Bank accounts and the QR share one panel, so they read as one block of
+     "how to pay" rather than two boxes of unequal height with a gap between. */
+  .invoice-sheet__pay-panel {{
     display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
     align-items: stretch;
-  }}
-  .invoice-sheet__bank-card {{
-    flex: 1 1 240px;
-    max-width: 320px;
     border: 1px solid #e5e7eb;
-    border-radius: 10px;
+    border-radius: 8px;
     background: #f9fafb;
-    padding: 10px 12px;
   }}
-  .invoice-sheet__bank-card p {{
-    white-space: normal;
+  .invoice-sheet__pay-panel--qr-only {{
+    max-width: 150px;
+  }}
+  .invoice-sheet__pay-accounts {{
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 9px 12px;
+  }}
+  .invoice-sheet__bank-account + .invoice-sheet__bank-account {{
+    margin-top: 7px;
+    padding-top: 7px;
+    border-top: 1px dashed #d1d5db;
+  }}
+  .invoice-sheet__bank-rows {{
+    width: 100%;
+    border-collapse: collapse;
+  }}
+  .invoice-sheet__bank-rows th {{
+    width: 64px;
+    padding: 1px 8px 1px 0;
+    text-align: left;
+    vertical-align: top;
+    font-size: 8px;
+    font-weight: 500;
+    color: #6b7280;
+  }}
+  .invoice-sheet__bank-rows td {{
+    padding: 1px 0;
+    font-size: 9px;
+    color: #1f2937;
     overflow-wrap: anywhere;
-    word-break: break-word;
   }}
-  .invoice-sheet__bank-card-title {{
-    font-size: 10px !important;
+  /* The two values a payer copies by hand. */
+  .invoice-sheet__bank-key {{
     font-weight: 700;
-    color: #1f2937 !important;
-    margin-bottom: 4px !important;
+    letter-spacing: 0.03em;
+  }}
+  .pay-qr {{
+    flex: 0 0 148px;
+    padding: 8px 10px 9px;
+    text-align: center;
+    background: #ffffff;
+    border-left: 1px solid #e5e7eb;
+    border-radius: 0 8px 8px 0;
+  }}
+  .invoice-sheet__pay-panel--qr-only .pay-qr {{
+    border-left: 0;
+    border-radius: 8px;
+  }}
+  .pay-qr__title {{
+    font-size: 10px;
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 4px;
+  }}
+  .pay-qr__img {{
+    /* ~33mm on A4. A printed QR needs roughly 25-30mm to stay scannable, and 108px
+       would sit right on that floor. The PNG is generated well above this size, so
+       it is downsampled here rather than upscaled. */
+    width: 124px;
+    height: 124px;
+    display: block;
+    margin: 0 auto 4px;
+    image-rendering: pixelated;
+  }}
+  .pay-qr__hint {{
+    font-size: 8px;
+    color: #6b7280;
+    line-height: 1.35;
   }}
   .invoice-sheet__totals {{
-    min-width: 240px;
+    flex: 0 0 230px;
     text-align: right;
   }}
   .invoice-sheet__totals p {{
@@ -455,6 +512,8 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     border-top: 1px solid #e5e7eb;
     margin-top: 16px;
     padding-top: 10px;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }}
   .invoice-sheet__terms-list {{
     margin: 4px 0 0 0;
@@ -516,6 +575,10 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
   </section>
 
   <section class="invoice-sheet__footer">
+    <div class="invoice-sheet__payment">
+      <p class="eyebrow">Payment details</p>
+      {payment_details_html}
+    </div>
     <div class="invoice-sheet__totals">
       <p class="eyebrow">Tax breakup</p>
       <p>Taxable: {_fmt_currency(float(invoice.taxable_amount or 0), currency)}</p>
@@ -530,11 +593,6 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     </div>
   </section>
 
-  <section class="invoice-sheet__bank-section">
-    <p class="eyebrow">Payment details</p>
-    {payment_details_html}
-  </section>
-
   {terms_html}
 </div>
 </body>
@@ -542,17 +600,17 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     return html
 
 
-def _build_multi_copy_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, show_sku: bool = True) -> str:
+def _build_multi_copy_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, show_sku: bool = True, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "") -> str:
     """Generate HTML for multiple copies of an invoice in a single document."""
     if invoice.voucher_type == "purchase":
-        return _build_purchase_invoice_html(invoice, products)
+        return _build_purchase_invoice_html(invoice, products, serials)
     if copies == 1:
-        return _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku)
+        return _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html)
 
     pages = []
     first_html: str | None = None
     for i in range(1, copies + 1):
-        full_html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(i), show_sku=show_sku)
+        full_html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(i), show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html)
         if i == 1:
             first_html = full_html
         body_open_end = full_html.index('<body>') + len('<body>')

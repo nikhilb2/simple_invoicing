@@ -1,0 +1,670 @@
+"""Public, unauthenticated share pages.
+
+Mounted at the origin root (``/s/...``) and again under ``/api/s/...``. Every route
+is ``include_in_schema=False``: ``src/mcp_server/registry.py`` turns each OpenAPI
+operation into a callable MCP tool, and these must never become one.
+
+The tenant boundary
+-------------------
+Nothing here depends on ``get_current_user`` or ``get_active_company``. The
+``company_id`` comes from the ``ShareLink`` row and every downstream query filters
+on it, exactly as the authenticated routes filter on ``active_company.id``. That is
+the single rule that stops a token minted in one tenant from reaching another
+tenant's documents; ``tests/api/test_share_links.py`` asserts by introspection that
+neither auth dependency is ever declared on these routes.
+"""
+
+from __future__ import annotations
+
+import base64
+import binascii
+from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from sqlalchemy.orm import Session
+
+from src.core.analytics import track_anonymous
+from src.core.config import settings
+from src.core.rate_limit import TokenBucket, client_ip
+from src.db.session import get_db
+from src.models.share_link import ShareLink
+from src.services.share_documents import (
+    ShareSummary,
+    build_share_summary,
+    render_share_document_html,
+    render_share_pdf,
+    resolve_share_link,
+)
+
+router = APIRouter()
+
+_TEMPLATES_DIR = Path(__file__).parent.parent.parent / "services" / "share_templates"
+# Autoescape ON. Company names, party names and document numbers are all
+# user-supplied and are now being rendered to an audience outside the tenant.
+_jinja_env = Environment(
+    loader=FileSystemLoader(str(_TEMPLATES_DIR)),
+    autoescape=select_autoescape(["html", "xml"]),
+)
+
+# Logos for the UPI app shortcuts, keyed by file stem to match the keys in
+# upi.UPI_APP_SCHEMES. Inlined as data URIs: the CSP admits no third-party image, and
+# a ~1 KB PNG inline costs less than a second request on a slow connection. Read once
+# at import; a missing file only drops that logo, and its shortcut falls back to text.
+_UPI_APP_LOGO_DIR = _TEMPLATES_DIR / "upi_apps"
+
+
+def _load_upi_app_logos() -> dict[str, str]:
+    return {
+        path.stem: "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+        for path in sorted(_UPI_APP_LOGO_DIR.glob("*.png"))
+    }
+
+
+_UPI_APP_LOGOS = _load_upi_app_logos()
+
+
+# ---------------------------------------------------------------------------
+# Response headers
+# ---------------------------------------------------------------------------
+
+# Without X-Robots-Tag, a share URL that lands in a public Slack/forum gets
+# crawled and shared invoices show up in Google. Referrer-Policy is not a nicety
+# either: the ad block links out, and the default referrer policy would hand the
+# full URL — token and all — to the ad destination in the Referer header.
+_PUBLIC_HEADERS = {
+    "X-Robots-Tag": "noindex, nofollow, noarchive",
+    "Cache-Control": "no-store",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+}
+
+# The page needs no JavaScript whatsoever, so say so and let the browser enforce it.
+_HTML_CSP = (
+    "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+    "script-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
+)
+
+
+def _html_headers() -> dict[str, str]:
+    return {**_PUBLIC_HEADERS, "Content-Security-Policy": _HTML_CSP}
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+
+# PER REPLICA, like every bucket in src/core/rate_limit.py. WeasyPrint rendering
+# is expensive enough that an unauthenticated URL triggering it is a cheap DoS
+# lever, and this raises the cost of pulling it.
+_RATE_CAPACITY = 60.0
+_RATE_REFILL_PER_SECOND = 1.0
+_RATE_MAX_TRACKED_IPS = 20_000
+
+_rate_bucket = TokenBucket(_RATE_CAPACITY, _RATE_REFILL_PER_SECOND, max_keys=_RATE_MAX_TRACKED_IPS)
+
+
+def reset_rate_limits() -> None:
+    """Test hook — the buckets are module state and must not leak between tests."""
+    _rate_bucket.reset()
+
+
+def _rate_limited(request: Request) -> bool:
+    return _rate_bucket.hit(client_ip(request))
+
+
+def _too_many_requests() -> Response:
+    return Response(
+        content="Too many requests",
+        status_code=429,
+        media_type="text/plain; charset=utf-8",
+        headers={**_PUBLIC_HEADERS, "Retry-After": "60"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Uniform not-found
+# ---------------------------------------------------------------------------
+
+def _not_found() -> Response:
+    """One body for every miss.
+
+    Unknown token, revoked token, deleted document — all identical. A different
+    status or body for "revoked" would confirm to a scanner that the token was
+    once real, which is exactly the signal a scanner is looking for.
+    """
+    return Response(
+        content="Not found",
+        status_code=404,
+        media_type="text/plain; charset=utf-8",
+        headers=dict(_PUBLIC_HEADERS),
+    )
+
+
+# ---------------------------------------------------------------------------
+# View counting
+# ---------------------------------------------------------------------------
+
+# Every one of these fetches the page to draw a preview card in a chat. Counting
+# those would make "opened 3 times" mean "forwarded to 3 chats", which is worse
+# than useless when the owner is using the number to decide whether to chase a
+# payment.
+_CRAWLER_USER_AGENTS = (
+    "whatsapp",
+    "facebookexternalhit",
+    "telegrambot",
+    "twitterbot",
+    "slackbot",
+)
+
+
+def _is_crawler(request: Request) -> bool:
+    ua = (request.headers.get("user-agent") or "").lower()
+    return any(marker in ua for marker in _CRAWLER_USER_AGENTS)
+
+
+def _record_view(db: Session, link: ShareLink) -> None:
+    from datetime import datetime
+
+    link.view_count = (link.view_count or 0) + 1
+    link.last_viewed_at = datetime.utcnow()
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Analytics
+# ---------------------------------------------------------------------------
+
+def _track_share(
+    event: str,
+    link: ShareLink | None,
+    request: Request,
+    properties: dict | None = None,
+) -> None:
+    """One event from the public side of a share link.
+
+    Anonymous by construction: the reader is the tenant's customer, not an
+    operator, so nothing here identifies them and no person profile is created.
+    The link's numeric id groups the events of one document; the token never
+    leaves the request, because it is the credential that opens the document and
+    an analytics payload is the last place it should end up.
+
+    Crawlers are excluded on the same grounds `_record_view` excludes them: every
+    chat app that a link is forwarded into fetches the page to draw a preview
+    card, and counting those would turn "opened twice" into "forwarded twice".
+
+    `owner_user_id` and `company_id` ride along so a tenant can ask how their own
+    links are doing without the event being attributed to them as the actor --
+    the person who opened it is a customer, and folding that into an operator's
+    timeline would corrupt every funnel that starts at a login.
+    """
+    if _is_crawler(request):
+        return
+
+    origin = _origin(request)
+    path = _base_path(request)
+    payload = {
+        # The standard PostHog URL properties, so these behave like the page
+        # views they are — filterable and breakable-down by path and host. The
+        # host is the tenant's own domain, which is the other half of "where was
+        # this opened".
+        #
+        # These carry the real URL, token and all, which is a deliberate choice
+        # with a cost attached: the token is the entire credential for the
+        # document behind it, so read access to this PostHog project is read
+        # access to every document ever shared from this app. Grant it on those
+        # terms.
+        "$current_url": f"{origin}{path}",
+        "$host": origin.split("//", 1)[-1],
+        "$pathname": path,
+        # The same path with the token collapsed. Group by this one: the raw URL
+        # is one row per link, which answers a question nobody asked.
+        "share_route": _share_route(request),
+    }
+    payload.update(properties or {})
+    if link is not None:
+        payload.setdefault("share_link_id", link.id)
+        payload.setdefault("resource_type", link.resource_type)
+        payload.setdefault("company_id", link.company_id)
+        payload.setdefault("owner_user_id", link.created_by_user_id)
+
+    group_key = f"share_link:{link.id}" if link is not None else "share_link:unresolved"
+    track_anonymous(event, group_key, payload)
+
+
+# ---------------------------------------------------------------------------
+# URL helpers
+# ---------------------------------------------------------------------------
+
+def _origin(request: Request) -> str:
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+    scheme = forwarded_proto or request.url.scheme
+    host = (request.headers.get("host") or "").strip() or request.url.netloc
+    return f"{scheme}://{host}"
+
+
+def _base_path(request: Request) -> str:
+    """The path this page was served from, minus any trailing slash.
+
+    Derived from the request rather than hardcoded, because the router is mounted
+    twice — at ``/s`` and at ``/api/s`` — and the page's own links have to stay on
+    whichever mount the recipient actually reached.
+    """
+    return request.url.path.rstrip("/")
+
+
+# Stands in for a token on the dead-link page's ad links. Every miss must render
+# BYTE-IDENTICALLY — a link that carried the attempted token would tell a scanner
+# its guess reached a page, which is exactly what token-guessing wants to learn —
+# so the counting redirect there is addressed by a constant that can never be a
+# real token (they are 32+ characters of base64url from secrets.token_urlsafe).
+_NO_TOKEN = "-"
+
+
+def _mount_prefix(request: Request) -> str:
+    """``/s`` or ``/api/s`` — this page's path with its last segment dropped.
+
+    Constant for a given mount, unlike `_base_path`, which carries the token.
+    """
+    return _base_path(request).rsplit("/", 1)[0]
+
+
+# What the token segment collapses to in `share_route`.
+_TOKEN_PLACEHOLDER = ":token"
+
+
+def _share_route(request: Request) -> str:
+    """This request's path with the share token collapsed to a placeholder.
+
+    Reported alongside the real URL, not instead of it. Every link carries its
+    own token, so a breakdown over ``$current_url`` returns one row per link —
+    accurate, and useless for the question actually being asked, which is how the
+    share page is doing as a whole. ``/s/:token/pdf`` is the row that answers
+    that; ``share_link_id`` is still there to drill into one link.
+
+    The mount is deliberately preserved: ``/s`` and ``/api/s`` both serve these
+    pages, and which one recipients actually reach is worth knowing.
+    """
+    parts = _base_path(request).split("/")
+    for index, segment in enumerate(parts):
+        # The mount marker. A whole segment equal to "s" cannot be a token —
+        # they are 40-odd characters of base64url.
+        if segment == "s" and index + 1 < len(parts):
+            parts[index + 1] = _TOKEN_PLACEHOLDER
+            break
+    return "/".join(parts)
+
+
+# Campaign tags on the ad's outbound link. This page sends
+# `Referrer-Policy: no-referrer` and marks the link `rel="noreferrer"` on purpose,
+# so the share token never reaches the marketing site in a Referer header — which
+# also means simpleinvoicings.com would otherwise log every one of these arrivals
+# as direct traffic. These tags are the only thing that identifies a visitor who
+# came from a shared document; utm_content says which kind of document it was.
+_AD_UTM = (
+    ("utm_medium", "referral"),
+    ("utm_campaign", "document_share"),
+)
+
+
+def _tag_ad_website(website: str, placement: str, source: str = "share_page") -> str:
+    """`website` with the campaign tags appended, preserving any query it has.
+
+    `source` separates the share page from the emails that carry the same block.
+    """
+    if not website:
+        return ""
+
+    parts = urlsplit(website)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    # A deployment that already points SHARE_AD_WEBSITE at a tagged URL keeps its
+    # own tags rather than carrying two conflicting utm_sources.
+    if any(key.startswith("utm_") for key, _ in query):
+        return website
+
+    query.append(("utm_source", source))
+    query.extend(_AD_UTM)
+    query.append(("utm_content", placement))
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def _split_domain_label(label: str) -> tuple[str, str, str]:
+    """Splits ``simpleinvoicings.com`` into ``("simpleinvoicing", "s", ".com")``.
+
+    The middle piece is the one the panel flashes. The trailing "s" is the
+    character people drop when they type the domain from memory, so the panel
+    animates exactly that one letter and nothing else.
+
+    A domain whose name does not end in "s" comes back as ``(label, "", "")`` and
+    renders as flat text — a white-label deployment gets no stray animation
+    drawing the eye to an ordinary letter.
+    """
+    name, dot, rest = label.partition(".")
+    if not dot or not name.endswith("s"):
+        return label, "", ""
+    return name[:-1], name[-1], f".{rest}"
+
+
+def ad_context(
+    placement: str,
+    whatsapp_click_url: str | None = None,
+    source: str = "share_page",
+) -> dict:
+    """Everything the Simple Invoicings block renders.
+
+    `placement` is what the reader was looking at — the resource type, or
+    "unavailable" on the dead-link page — and rides out on the link as
+    `utm_content`, so the marketing site can tell an invoice recipient from a
+    statement recipient.
+
+    `whatsapp_click_url` points the CTA at this app's own counting redirect
+    instead of straight at wa.me. The page runs no JavaScript at all
+    (`script-src 'none'`), so a redirect is the only way to know the button was
+    ever pressed; the redirect still lands on the same wa.me URL.
+
+    `source` becomes `utm_source`: "share_page" here, "email" when the outgoing
+    emails reuse this block in their footer.
+
+    Every field degrades independently: blank the phone and that button goes,
+    blank the chips and the row goes, blank the price and that line goes, blank
+    the website and the whole "powered by" line goes. A half-configured
+    deployment therefore shows less, never something broken.
+    """
+    website = (settings.SHARE_AD_WEBSITE or "").strip()
+    # The visible label is the bare domain, so it is taken before the tags go on.
+    label = website.replace("https://", "").replace("http://", "").rstrip("/")
+    label = label or website
+    domain_head, domain_flash, domain_tail = _split_domain_label(label)
+    phone = (settings.SHARE_AD_PHONE or "").strip()
+    wa = "".join(ch for ch in (settings.SHARE_AD_WHATSAPP or "") if ch.isdigit())
+    chips = [c.strip() for c in (settings.SHARE_AD_CHIPS or "").split(",") if c.strip()]
+    return {
+        "enabled": bool(settings.SHARE_AD_ENABLED),
+        "brand_name": settings.SHARE_AD_BRAND_NAME,
+        "headline": settings.SHARE_AD_HEADLINE,
+        "tagline": settings.SHARE_AD_TAGLINE,
+        "website": _tag_ad_website(website, placement, source),
+        "website_label": label,
+        # The label again, cut into the three pieces the "powered by" line sets
+        # separately. Kept beside the whole label so anything that just wants
+        # the domain as text still has it.
+        "domain_head": domain_head,
+        "domain_flash": domain_flash,
+        "domain_tail": domain_tail,
+        "chips": chips,
+        "cta_label": settings.SHARE_AD_CTA_LABEL,
+        "footnote": settings.SHARE_AD_FOOTNOTE,
+        "price": (settings.SHARE_AD_PRICE or "").strip(),
+        "price_period": (settings.SHARE_AD_PRICE_PERIOD or "").strip(),
+        "price_prefix": (settings.SHARE_AD_PRICE_PREFIX or "").strip(),
+        "phone": phone,
+        # tel: wants no spaces; the visible label keeps them.
+        "phone_href": "".join(ch for ch in phone if ch.isdigit() or ch == "+"),
+        "whatsapp_url": (whatsapp_click_url or f"https://wa.me/{wa}") if wa else "",
+    }
+
+
+def _whatsapp_destination() -> str:
+    """The configured WhatsApp chat URL, or "" when no number is set."""
+    wa = "".join(ch for ch in (settings.SHARE_AD_WHATSAPP or "") if ch.isdigit())
+    return f"https://wa.me/{wa}" if wa else ""
+
+
+def _captions(link: ShareLink) -> tuple[str, str, str]:
+    """(party label, date label, amount label) for the summary card."""
+    if link.resource_type == "ledger_statement":
+        return "Account", "Period", "Closing balance"
+    if link.resource_type == "payment":
+        return "Party", "Date", "Amount"
+    if link.resource_type == "credit_note":
+        return "Issued to", "Date", "Credit"
+    return "Billed to", "Date", "Total"
+
+
+def _render_unavailable(request: Request) -> HTMLResponse:
+    """The one page a human sees for every miss on the landing route.
+
+    Unknown token, revoked link, deleted row and cancelled document all render
+    THIS, byte for byte, with the same 404. Indistinguishable to a scanner, and
+    a real customer whose link was withdrawn gets a sentence they can act on
+    instead of a raw "Not found" — the plain-text `_not_found()` is kept for the
+    sub-resources (pdf, logo, document.html), which nobody lands on directly.
+    """
+    html = _jinja_env.get_template("share_unavailable.html").render(
+        page_title="Document unavailable",
+        ad=ad_context("unavailable", f"{_mount_prefix(request)}/{_NO_TOKEN}/whatsapp"),
+    )
+    return HTMLResponse(content=html, status_code=404, headers=_html_headers())
+
+
+def _resolve(db: Session, token: str) -> ShareLink | None:
+    if not settings.SHARE_LINKS_ENABLED:
+        return None
+    return resolve_share_link(db, token)
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@router.get("/s/{token}", include_in_schema=False)
+def public_share_page(
+    token: str,
+    request: Request,
+    # Set to "qr" by the QR printed on invoice PDFs. Nothing else reads it, and an
+    # unknown value is simply reported as-is -- it is a hint about where the reader
+    # came from, never a control input.
+    src: str = Query(default=""),
+    db: Session = Depends(get_db),
+) -> Response:
+    if _rate_limited(request):
+        return _too_many_requests()
+
+    link = _resolve(db, token)
+    if link is None:
+        # Not split into "revoked" from "never existed": telling them apart
+        # needs a second query on the exact path a scanner hammers, and
+        # resolve_share_link refuses the distinction by design.
+        _track_share("share_link_unavailable", None, request, {"reason": "unresolved"})
+        return _render_unavailable(request)
+
+    summary: ShareSummary | None = build_share_summary(db, link)
+    if summary is None:
+        # Dangling: the document row is gone. Same answer as an unknown token.
+        _track_share("share_link_unavailable", link, request, {"reason": "document_missing"})
+        return _render_unavailable(request)
+
+    # Counted here and ONLY here. The PDF route is hit again by the download
+    # button, so counting it there would multiply every real open.
+    if not _is_crawler(request):
+        _record_view(db, link)
+
+    if not summary.available:
+        _track_share("share_link_unavailable", link, request, {"reason": "document_unavailable"})
+        return _render_unavailable(request)
+
+    # After _record_view, so view_count is this visit's number rather than the
+    # one before it — and a first view is the moment the link actually reached
+    # someone, which is the number the owner is really asking about.
+    _track_share(
+        "share_page_viewed",
+        link,
+        request,
+        {
+            "view_count": link.view_count,
+            "is_first_view": link.view_count == 1,
+            # The only way to tell a scan off a printed invoice from a link somebody
+            # forwarded in a chat. "direct" covers both a forward and a typed URL.
+            "entry_source": "qr" if src == "qr" else "direct",
+            "has_upi_offer": summary.upi_qr_data_uri is not None,
+            "has_upi_button": summary.upi_uri is not None,
+        },
+    )
+
+    base = _base_path(request)
+    origin = _origin(request)
+    party_caption, date_caption, amount_caption = _captions(link)
+
+    description_parts = [p for p in (summary.party_name, summary.amount_label, summary.date_label) if p]
+
+    html = _jinja_env.get_template("share_document.html").render(
+        page_title=f"{summary.title} · {summary.company_name}".strip(" ·"),
+        summary=summary,
+        party_label=party_caption,
+        date_label_caption=date_caption,
+        amount_caption=amount_caption,
+        download_url=f"{base}/pdf?download=1",
+        upi_app_logos=_UPI_APP_LOGOS,
+        # No document_url or logo_url: the page no longer embeds the document or
+        # draws the sender's logo. Both routes still answer on their own — the
+        # logo is what a chat app fetches for the og:image below.
+        og={
+            "site_name": summary.company_name or "Simple Invoicing",
+            "title": f"{summary.title} · {summary.company_name}".strip(" ·"),
+            "description": " · ".join(description_parts),
+            "url": f"{origin}{base}",
+            # Absolute, because a crawler will not resolve a relative og:image.
+            "image": f"{origin}{base}/logo" if summary.logo_data else None,
+        },
+        ad=ad_context(link.resource_type, f"{base}/whatsapp"),
+    )
+    return HTMLResponse(content=html, headers=_html_headers())
+
+
+@router.get("/s/{token}/pdf", include_in_schema=False)
+def public_share_pdf(
+    token: str,
+    request: Request,
+    download: int = Query(default=0),
+    db: Session = Depends(get_db),
+) -> Response:
+    if _rate_limited(request):
+        return _too_many_requests()
+
+    link = _resolve(db, token)
+    if link is None:
+        return _not_found()
+
+    summary = build_share_summary(db, link)
+    if summary is None or not summary.available:
+        return _not_found()
+
+    buf = render_share_pdf(db, link, request=request)
+
+    disposition = "attachment" if download else "inline"
+    headers = {
+        **_PUBLIC_HEADERS,
+        "Content-Disposition": f'{disposition}; filename="{summary.pdf_filename}"',
+    }
+    # NOTE: no view counting here. See public_share_page. The event is a
+    # different question from the view count, though: `disposition` separates the
+    # page's Download button (attachment) from someone opening the PDF URL
+    # directly, and taking the document away is the step that says the link did
+    # its job.
+    _track_share("share_pdf_downloaded", link, request, {"disposition": disposition})
+    return StreamingResponse(buf, media_type="application/pdf", headers=headers)
+
+
+@router.get("/s/{token}/whatsapp", include_in_schema=False)
+def public_share_whatsapp(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Counts a press of the ad's WhatsApp button, then sends the reader on.
+
+    The page runs no JavaScript (`script-src 'none'`), so a redirect through our
+    own origin is the only way to know the button was ever pressed. The
+    destination is `settings.SHARE_AD_WHATSAPP`, never anything off the request,
+    so this cannot be turned into an open redirect.
+
+    Deliberately does NOT require the token to resolve. This button also appears
+    on the dead-link page, where by definition there is no live link, and a CTA
+    that 404s because the document behind it was revoked would be a worse bug
+    than a missing event. An unresolved token just means the event carries no
+    document context.
+    """
+    if _rate_limited(request):
+        return _too_many_requests()
+
+    destination = _whatsapp_destination()
+    if not destination:
+        return _not_found()
+
+    link = _resolve(db, token)
+    _track_share(
+        "share_whatsapp_clicked",
+        link,
+        request,
+        {"placement": link.resource_type if link is not None else "unavailable"},
+    )
+
+    # 302, not 301: a permanent redirect would be cached by the browser and every
+    # later press of the button would skip this route entirely.
+    return RedirectResponse(destination, status_code=302, headers=dict(_PUBLIC_HEADERS))
+
+
+@router.get("/s/{token}/document.html", include_in_schema=False)
+def public_share_document_html(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    """The print-styled document as HTML.
+
+    No longer embedded anywhere — the share page dropped its inline preview —
+    but still served: it is the one way to read the document itself without
+    downloading a PDF, and links to it are already in circulation.
+    """
+    if _rate_limited(request):
+        return _too_many_requests()
+
+    link = _resolve(db, token)
+    if link is None:
+        return _not_found()
+
+    summary = build_share_summary(db, link)
+    if summary is None or not summary.available:
+        return _not_found()
+
+    html = render_share_document_html(db, link, request=request)
+    return HTMLResponse(content=html, headers=_html_headers())
+
+
+@router.get("/s/{token}/logo", include_in_schema=False)
+def public_share_logo(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    """The company logo, so ``og:image`` has something real to point at.
+
+    Crawlers will not render a data: URI in an og:image, which is why the logo
+    needs a URL of its own rather than being inlined like it is in the PDF.
+    """
+    if _rate_limited(request):
+        return _too_many_requests()
+
+    link = _resolve(db, token)
+    if link is None:
+        return _not_found()
+
+    summary = build_share_summary(db, link)
+    if summary is None or not summary.available or not summary.logo_data:
+        return _not_found()
+
+    try:
+        raw = base64.b64decode(summary.logo_data, validate=False)
+    except (binascii.Error, ValueError):
+        return _not_found()
+    if not raw:
+        return _not_found()
+
+    mime = (summary.logo_mime_type or "").strip().lower()
+    # Rows written before uploads were checked can hold any type the client claimed.
+    if mime not in ("image/png", "image/jpeg", "image/jpg"):
+        mime = "image/png"
+
+    return Response(content=raw, media_type=mime, headers=dict(_PUBLIC_HEADERS))

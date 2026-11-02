@@ -1,16 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
-import { FilePlus2, RefreshCw, Search, XCircle } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { FilePlus2, FileText, RefreshCw, Search, XCircle } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { cancelCreditNote, createCreditNote, listCreditNotes } from '../api/creditNotes';
 import api, { getApiErrorMessage } from '../api/client';
+import CreditNotePreview from '../components/CreditNotePreview';
 import LedgerCombobox from '../components/LedgerCombobox';
 import StatusToasts from '../components/StatusToasts';
 import EmptyState from '../components/EmptyState';
+import LoadingState from '../components/LoadingState';
 import { invoiceCreditStatusMeta } from '../common/invoiceCreditStatus';
 import type {
   CompanyProfile,
   CreditNote,
   CreditNoteCreate,
+  CreditNoteDirection,
   CreditNoteType,
   Invoice,
   PaginatedInvoices,
@@ -19,7 +22,9 @@ import type {
   Ledger,
   Product,
 } from '../types/api';
-import formatCurrency from '../utils/formatting';
+import formatCurrency, { formatDate } from '../utils/formatting';
+import { downloadCsv } from '../utils/csv';
+import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
 
 type SelectedLineItem = {
   invoice: Invoice;
@@ -43,11 +48,6 @@ function createQuantityKey(invoiceId: number, invoiceItemId: number) {
   return `${invoiceId}:${invoiceItemId}`;
 }
 
-function formatDate(value: string | null | undefined) {
-  if (!value) return 'N/A';
-  return new Date(value).toLocaleDateString();
-}
-
 function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
@@ -66,6 +66,11 @@ export default function CreditNotesPage() {
   const [selectedLedgerId, setSelectedLedgerId] = useState(queryLedgerId);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<number[]>([]);
   const [creditNoteType, setCreditNoteType] = useState<'return' | 'discount'>('return');
+  // Which way the note runs. Inward means the supplier issued it: we file
+  // nothing, we record theirs and give back the input credit we claimed.
+  const [direction, setDirection] = useState<CreditNoteDirection>('outward');
+  const [supplierNoteNumber, setSupplierNoteNumber] = useState('');
+  const [supplierNoteDate, setSupplierNoteDate] = useState('');
   const [reason, setReason] = useState('');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [discountAmounts, setDiscountAmounts] = useState<Record<string, string>>({});
@@ -74,11 +79,13 @@ export default function CreditNotesPage() {
   const [loadingCreditNotes, setLoadingCreditNotes] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [cancellingId, setCancellingId] = useState<number | null>(null);
+  const [previewCreditNote, setPreviewCreditNote] = useState<CreditNote | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [directionFilter, setDirectionFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [listPage, setListPage] = useState(1);
@@ -87,7 +94,26 @@ export default function CreditNotesPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const pageSize = 20;
 
+  // Citation deep link: /credit-notes?cn_id=7. The feed searches on credit note
+  // number and not on id, so the number is fetched first and dropped into the
+  // search box — that filters the registry down to the one record, on any page
+  // and whatever the other filters were left on.
+  const deepLinkCreditNoteId = numericParam(searchParams, 'cn_id');
+  const [highlightCreditNoteId, setHighlightCreditNoteId] = useState<number | null>(null);
+
   const currencyCode = company?.currency_code || 'INR';
+
+  // A note only ever covers one voucher type, so the picker only ever offers
+  // one. Mixing them was possible before and produced a note the ledger, the
+  // stock and GSTR-1 each read differently.
+  const expectedVoucherType = direction === 'inward' ? 'purchase' : 'sales';
+
+  const fetchInvoices = useCallback(
+    () => api.get<PaginatedInvoices>('/invoices/', {
+      params: { page_size: 500, show_cancelled: false, voucher_type: expectedVoucherType },
+    }),
+    [expectedVoucherType],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -99,7 +125,7 @@ export default function CreditNotesPage() {
           api.get<CompanyProfile>('/company/'),
           api.get<PaginatedLedgers>('/ledgers/', { params: { page_size: 500 } }),
           api.get<PaginatedProducts>('/products/', { params: { page_size: 500 } }),
-          api.get<PaginatedInvoices>('/invoices/', { params: { page_size: 500, show_cancelled: false } }),
+          fetchInvoices(),
         ]);
 
         if (cancelled) return;
@@ -126,7 +152,7 @@ export default function CreditNotesPage() {
     return () => {
       cancelled = true;
     };
-  }, [queryInvoiceId, queryLedgerId]);
+  }, [fetchInvoices, queryInvoiceId, queryLedgerId]);
 
   useEffect(() => {
     if (!queryInvoiceId) return;
@@ -138,6 +164,9 @@ export default function CreditNotesPage() {
         if (cancelled) return;
 
         if (invoiceRes.data.ledger_id) {
+          // Landing on a purchase invoice should open the Purchase tab, not
+          // leave the user on Sales staring at an empty invoice list.
+          setDirection(invoiceRes.data.voucher_type === 'purchase' ? 'inward' : 'outward');
           setSelectedLedgerId(String(invoiceRes.data.ledger_id));
           setSelectedInvoiceIds([invoiceRes.data.id]);
         }
@@ -164,6 +193,7 @@ export default function CreditNotesPage() {
           page_size: pageSize,
           search,
           status: statusFilter || undefined,
+          direction: (directionFilter || undefined) as CreditNoteDirection | undefined,
           date_from: dateFrom || undefined,
           date_to: dateTo || undefined,
         });
@@ -187,13 +217,49 @@ export default function CreditNotesPage() {
     return () => {
       cancelled = true;
     };
-  }, [dateFrom, dateTo, listPage, refreshKey, search, statusFilter]);
+  }, [dateFrom, dateTo, directionFilter, listPage, refreshKey, search, statusFilter]);
+
+  useEffect(() => {
+    if (deepLinkCreditNoteId === null) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { data } = await api.get<CreditNote>(`/credit-notes/${deepLinkCreditNoteId}`);
+        if (cancelled) return;
+        setSearch(data.credit_note_number);
+        setStatusFilter('');
+        setDirectionFilter('');
+        setDateFrom('');
+        setDateTo('');
+        setListPage(1);
+        setHighlightCreditNoteId(data.id);
+      } catch (err) {
+        if (!cancelled) {
+          setError(getApiErrorMessage(err, `Unable to open credit note #${deepLinkCreditNoteId}`));
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [deepLinkCreditNoteId]);
+
+  useDeepLinkScroll(
+    highlightCreditNoteId === null ? null : `credit-note-${highlightCreditNoteId}`,
+    !loadingCreditNotes,
+  );
 
   const filteredInvoices = useMemo(() => {
     const numericLedgerId = Number(selectedLedgerId);
     if (!numericLedgerId) return [];
-    return allInvoices.filter((invoice) => invoice.ledger_id === numericLedgerId && invoice.status === 'active');
-  }, [allInvoices, selectedLedgerId]);
+    return allInvoices.filter((invoice) => (
+      invoice.ledger_id === numericLedgerId
+      && invoice.status === 'active'
+      // The fetch already asks for one voucher type; this holds the line while
+      // a switched tab's request is still in flight.
+      && invoice.voucher_type === expectedVoucherType
+    ));
+  }, [allInvoices, expectedVoucherType, selectedLedgerId]);
 
   useEffect(() => {
     if (!selectedLedgerId) return;
@@ -362,11 +428,18 @@ export default function CreditNotesPage() {
       setError(creditNoteType === 'discount' ? 'Enter at least one discount amount.' : 'Enter at least one credited quantity.');
       return;
     }
+    if (direction === 'inward' && (!supplierNoteNumber.trim() || !supplierNoteDate)) {
+      setError("Enter the number and date on the supplier's credit note.");
+      return;
+    }
 
     const payload: CreditNoteCreate = {
       ledger_id: Number(selectedLedgerId),
       invoice_ids: selectedInvoiceIds,
       credit_note_type: creditNoteType,
+      direction,
+      supplier_credit_note_number: direction === 'inward' ? supplierNoteNumber.trim() : null,
+      supplier_credit_note_date: direction === 'inward' ? supplierNoteDate : null,
       reason: reason.trim() || null,
       items: payloadItems,
     };
@@ -374,16 +447,30 @@ export default function CreditNotesPage() {
     try {
       setSubmitting(true);
       const response = await createCreditNote(payload);
-      setSuccess(`Credit note ${response.data.credit_note_number} created.`);
+      setSuccess(
+        direction === 'inward'
+          ? `Supplier credit note ${supplierNoteNumber.trim()} recorded as ${response.data.credit_note_number}.`
+          : `Credit note ${response.data.credit_note_number} created.`,
+      );
       setReason('');
       setSelectedInvoiceIds([]);
       setQuantities({});
       setDiscountAmounts({});
+      setSupplierNoteNumber('');
+      setSupplierNoteDate('');
       setRefreshKey((value) => value + 1);
 
       const [creditNotesRes, invoicesRes] = await Promise.all([
-        listCreditNotes({ page: listPage, page_size: pageSize, search, status: statusFilter || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined }),
-        api.get<PaginatedInvoices>('/invoices/', { params: { page_size: 500, show_cancelled: false } }),
+        listCreditNotes({
+          page: listPage,
+          page_size: pageSize,
+          search,
+          status: statusFilter || undefined,
+          direction: (directionFilter || undefined) as CreditNoteDirection | undefined,
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+        }),
+        fetchInvoices(),
       ]);
 
       setCreditNotes(creditNotesRes.data.items);
@@ -405,8 +492,16 @@ export default function CreditNotesPage() {
       setRefreshKey((value) => value + 1);
 
       const [creditNotesRes, invoicesRes] = await Promise.all([
-        listCreditNotes({ page: listPage, page_size: pageSize, search, status: statusFilter || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined }),
-        api.get<PaginatedInvoices>('/invoices/', { params: { page_size: 500, show_cancelled: false } }),
+        listCreditNotes({
+          page: listPage,
+          page_size: pageSize,
+          search,
+          status: statusFilter || undefined,
+          direction: (directionFilter || undefined) as CreditNoteDirection | undefined,
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+        }),
+        fetchInvoices(),
       ]);
 
       setCreditNotes(creditNotesRes.data.items);
@@ -418,6 +513,23 @@ export default function CreditNotesPage() {
     } finally {
       setCancellingId(null);
     }
+  }
+
+  function handleExportCreditNotesCsv() {
+    downloadCsv(
+      `credit_notes_${new Date().toISOString().slice(0, 10)}.csv`,
+      ['Number', 'Date', 'Ledger', 'Original invoice', 'Total'],
+      creditNotes.map((creditNote) => {
+        const ledger = ledgers.find((entry) => entry.id === creditNote.ledger_id);
+        return [
+          creditNote.credit_note_number,
+          formatDate(creditNote.created_at),
+          ledger?.name || `Ledger #${creditNote.ledger_id}`,
+          creditNote.invoice_ids.join(', '),
+          creditNote.total_amount,
+        ];
+      }),
+    );
   }
 
   return (
@@ -442,11 +554,30 @@ export default function CreditNotesPage() {
             </div>
           </div>
 
-          {loadingBootstrap ? <EmptyState message="Loading ledgers, invoices, and products..." /> : null}
+          {loadingBootstrap ? <LoadingState message="Loading ledgers, invoices, and products..." /> : null}
 
           {!loadingBootstrap ? (
             <form className="stack" onSubmit={handleSubmit}>
               <div className="field-grid">
+                <label>
+                  <span>Voucher</span>
+                  <select
+                    id="credit-note-direction"
+                    className="select"
+                    value={direction}
+                    onChange={(event) => {
+                      setDirection(event.target.value as CreditNoteDirection);
+                      setSelectedInvoiceIds([]);
+                      setQuantities({});
+                      setDiscountAmounts({});
+                      setSupplierNoteNumber('');
+                      setSupplierNoteDate('');
+                    }}
+                  >
+                    <option value="outward">Sales — credit note we issue</option>
+                    <option value="inward">Purchase — credit note from a supplier</option>
+                  </select>
+                </label>
                 <label>
                   <span>Ledger</span>
                   <LedgerCombobox
@@ -476,6 +607,39 @@ export default function CreditNotesPage() {
                 </label>
               </div>
 
+              {direction === 'inward' ? (
+                <>
+                  <p className="hint" style={{ margin: 0 }}>
+                    Nothing is filed for this note — the supplier declares it and it reaches
+                    you in GSTR-2B. Record their number and date so the two can be matched.
+                  </p>
+                  <div className="field-grid">
+                    <label>
+                      <span>Supplier credit note #</span>
+                      <input
+                        id="credit-note-supplier-number"
+                        className="input"
+                        required
+                        value={supplierNoteNumber}
+                        onChange={(event) => setSupplierNoteNumber(event.target.value)}
+                        placeholder="The number on their credit note"
+                      />
+                    </label>
+                    <label>
+                      <span>Supplier credit note date</span>
+                      <input
+                        id="credit-note-supplier-date"
+                        className="input"
+                        type="date"
+                        required
+                        value={supplierNoteDate}
+                        onChange={(event) => setSupplierNoteDate(event.target.value)}
+                      />
+                    </label>
+                  </div>
+                </>
+              ) : null}
+
               <label>
                 <span>Reason</span>
                 <textarea
@@ -494,10 +658,14 @@ export default function CreditNotesPage() {
                       <p className="eyebrow">Step 1</p>
                       <h3 className="nav-panel__title" style={{ fontSize: '1rem' }}>Select invoice set</h3>
                     </div>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{filteredInvoices.length} active invoices for this ledger</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                      {filteredInvoices.length} active {expectedVoucherType} invoices for this ledger
+                    </span>
                   </div>
 
-                  {filteredInvoices.length === 0 ? <EmptyState message="No active invoices found for the selected ledger." /> : null}
+                  {filteredInvoices.length === 0 ? (
+                    <EmptyState message={`No active ${expectedVoucherType} invoices found for the selected ledger.`} />
+                  ) : null}
 
                   <div className="stack" style={{ gap: '10px' }}>
                     {filteredInvoices.map((invoice) => {
@@ -641,7 +809,9 @@ export default function CreditNotesPage() {
               <div className="button-row">
                 <button type="submit" className="button button--primary" disabled={submitting || !selectedLedgerId || payloadItems.length === 0}>
                   <FilePlus2 size={16} />
-                  {submitting ? 'Creating...' : 'Create Credit Note'}
+                  {submitting
+                    ? (direction === 'inward' ? 'Recording...' : 'Creating...')
+                    : (direction === 'inward' ? 'Record Supplier Credit Note' : 'Create Credit Note')}
                 </button>
                 <button
                   type="button"
@@ -652,6 +822,9 @@ export default function CreditNotesPage() {
                     setDiscountAmounts({});
                     setReason('');
                     setCreditNoteType('return');
+                    setDirection('outward');
+                    setSupplierNoteNumber('');
+                    setSupplierNoteDate('');
                   }}
                 >
                   Reset form
@@ -667,9 +840,19 @@ export default function CreditNotesPage() {
               <p className="eyebrow">Registry</p>
               <h2 className="nav-panel__title">Credit note feed</h2>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <p className="eyebrow">Listed total</p>
-              <strong style={{ fontSize: '1.1rem' }}>{listTotal}</strong>
+            <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+              <div>
+                <p className="eyebrow">Listed total</p>
+                <strong style={{ fontSize: '1.1rem' }}>{listTotal}</strong>
+              </div>
+              <button
+                type="button"
+                className="button button--secondary button--small"
+                disabled={loadingCreditNotes || creditNotes.length === 0}
+                onClick={handleExportCreditNotesCsv}
+              >
+                Export CSV
+              </button>
             </div>
           </div>
 
@@ -683,7 +866,7 @@ export default function CreditNotesPage() {
                   style={{ paddingLeft: '36px' }}
                   value={search}
                   onChange={(event) => { setSearch(event.target.value); setListPage(1); }}
-                  placeholder="Search credit note, ledger, or invoice number"
+                  placeholder="Search our number, the supplier's, or a ledger"
                 />
               </div>
             </label>
@@ -700,6 +883,18 @@ export default function CreditNotesPage() {
               </select>
             </label>
             <label>
+              <span>Voucher</span>
+              <select
+                className="select"
+                value={directionFilter}
+                onChange={(event) => { setDirectionFilter(event.target.value); setListPage(1); }}
+              >
+                <option value="">All</option>
+                <option value="outward">Sales</option>
+                <option value="inward">Purchase</option>
+              </select>
+            </label>
+            <label>
               <span>From</span>
               <input className="input" type="date" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setListPage(1); }} />
             </label>
@@ -713,6 +908,7 @@ export default function CreditNotesPage() {
             <button type="button" className="button button--ghost" onClick={() => {
               setSearch('');
               setStatusFilter('');
+              setDirectionFilter('');
               setDateFrom('');
               setDateTo('');
               setListPage(1);
@@ -726,17 +922,26 @@ export default function CreditNotesPage() {
             </button>
           </div>
 
-          {loadingCreditNotes ? <EmptyState message="Loading credit notes..." /> : null}
+          {loadingCreditNotes ? <LoadingState message="Loading credit notes..." /> : null}
           {!loadingCreditNotes && creditNotes.length === 0 ? <EmptyState message="No credit notes match the current filters." /> : null}
 
           <div className="stack" style={{ gap: '12px' }}>
             {creditNotes.map((creditNote) => {
               const ledger = ledgers.find((entry) => entry.id === creditNote.ledger_id);
               return (
-                <div key={creditNote.id} className="panel" style={{ padding: '16px' }}>
+                <div
+                  key={creditNote.id}
+                  id={`credit-note-${creditNote.id}`}
+                  className={deepLinkClass(highlightCreditNoteId === creditNote.id, 'panel')}
+                  style={{ padding: '16px' }}
+                >
                   <div className="panel__header">
                     <div>
-                      <p className="eyebrow">{creditNoteTypeLabels[creditNote.credit_note_type]}</p>
+                      <p className="eyebrow">
+                        {creditNote.direction === 'inward' ? 'Purchase' : 'Sales'}
+                        {' · '}
+                        {creditNoteTypeLabels[creditNote.credit_note_type]}
+                      </p>
                       <h3 className="nav-panel__title" style={{ fontSize: '1rem' }}>{creditNote.credit_note_number}</h3>
                     </div>
                     <span style={{
@@ -755,6 +960,17 @@ export default function CreditNotesPage() {
                     {ledger?.name || `Ledger #${creditNote.ledger_id}`} • Created {formatDate(creditNote.created_at)} • Invoices {creditNote.invoice_ids.join(', ')}
                   </p>
 
+                  {creditNote.direction === 'inward' && creditNote.supplier_credit_note_number ? (
+                    // The number the user reconciles against GSTR-2B, so it
+                    // belongs on the card rather than one click away.
+                    <p style={{ margin: '0 0 10px', color: 'var(--text-muted)' }}>
+                      Supplier CN {creditNote.supplier_credit_note_number}
+                      {creditNote.supplier_credit_note_date
+                        ? ` dated ${formatDate(creditNote.supplier_credit_note_date)}`
+                        : ''}
+                    </p>
+                  ) : null}
+
                   {creditNote.reason ? <p style={{ margin: '0 0 10px' }}>{creditNote.reason}</p> : null}
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -763,6 +979,18 @@ export default function CreditNotesPage() {
                       <span>Tax {formatCurrency(creditNote.cgst_amount + creditNote.sgst_amount + creditNote.igst_amount, currencyCode)}</span>
                       <strong style={{ color: 'var(--text)' }}>Total {formatCurrency(creditNote.total_amount, currencyCode)}</strong>
                     </div>
+                    <div className="button-row">
+                    {creditNote.direction !== 'inward' ? (
+                      // An inward note is the supplier's own document — nothing of ours to send.
+                      <button
+                        type="button"
+                        className="button button--secondary"
+                        onClick={() => setPreviewCreditNote(creditNote)}
+                      >
+                        <FileText size={16} />
+                        {creditNote.status === 'active' ? 'View / Share' : 'View'}
+                      </button>
+                    ) : null}
                     {creditNote.status === 'active' ? (
                       <button
                         type="button"
@@ -773,6 +1001,7 @@ export default function CreditNotesPage() {
                         {cancellingId === creditNote.id ? 'Cancelling...' : 'Cancel credit note'}
                       </button>
                     ) : null}
+                    </div>
                   </div>
                 </div>
               );
@@ -792,6 +1021,18 @@ export default function CreditNotesPage() {
           ) : null}
         </article>
       </section>
+
+      {previewCreditNote ? (
+        <CreditNotePreview
+          creditNoteId={previewCreditNote.id}
+          creditNoteNumber={previewCreditNote.credit_note_number}
+          canShare={previewCreditNote.status === 'active'}
+          ledgerPhone={ledgers.find((entry) => entry.id === previewCreditNote.ledger_id)?.phone_number}
+          companyName={company?.name}
+          onClose={() => setPreviewCreditNote(null)}
+          onError={(message) => setError(message)}
+        />
+      ) : null}
     </>
   );
 }

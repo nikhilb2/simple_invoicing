@@ -18,10 +18,19 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import text
 
 from src.core.config import settings
-from src.db.session import engine
+# Dumps, restores and their migration bookkeeping run as the OWNER. In shared
+# hosting the app's role is filtered by row-level security, and a pg_dump taken
+# through it would succeed while silently leaving out every tenant's rows.
+# Without MIGRATION_DATABASE_URL the two engines are the same object.
+from src.db.session import engine as app_engine
+from src.db.session import migration_engine as engine
 
 
 BACKUP_DIR = Path(os.getenv("BACKUP_DIR", "./backups"))
+# Archive name prefixes. Scheduled backups carry their own so retention can prune
+# them without ever touching one someone made by hand.
+MANUAL_BACKUP_PREFIX = "backup_"
+AUTO_BACKUP_PREFIX = "autobackup_"
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 logger = logging.getLogger(__name__)
 _backup_key_warned = False
@@ -165,11 +174,18 @@ def _run_pg_dump(output_path: Path) -> None:
         raise HTTPException(status_code=500, detail=f"Backup failed: {detail}") from err
 
 
-def create_backup_archive() -> dict:
+def create_backup_archive(file_prefix: str = MANUAL_BACKUP_PREFIX) -> dict:
+    """Dump, encrypt and store one backup archive.
+
+    ``file_prefix`` is what tells a scheduled archive apart from one a person
+    clicked for, and retention pruning keys off it -- see
+    ``src.services.backup_scheduler``. Both kinds list, download and restore
+    identically; the prefix only decides what the scheduler is allowed to delete.
+    """
     ensure_backup_dir()
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    file_name = f"backup_{stamp}.enc"
+    file_name = f"{file_prefix}{stamp}.enc"
     archive_path = BACKUP_DIR / file_name
 
     with TemporaryDirectory() as temp_dir_name:
@@ -203,7 +219,7 @@ def create_backup_archive() -> dict:
         "file_name": file_name,
         "size_bytes": stat.st_size,
         "created_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
-        "migration_head": _build_manifest().migration_head,
+        "migration_head": manifest.migration_head,
     }
 
 
@@ -306,17 +322,17 @@ def _prepare_uploaded_backup(upload: UploadFile) -> _PreparedBackup:
 
 
 def _probe_dump(dump_path: Path) -> None:
-    print(f"[restore-debug] probing dump start: {dump_path}")
+    logger.debug(f"probing dump start: {dump_path}")
     command = ["pg_restore", "--list", str(dump_path)]
     try:
         subprocess.run(command, check=True, capture_output=True, text=True)
-        print("[restore-debug] probing dump success")
+        logger.debug("probing dump success")
     except FileNotFoundError as err:
-        print("[restore-debug] probing dump failed: pg_restore not found")
+        logger.error("probing dump failed: pg_restore not found")
         raise HTTPException(status_code=500, detail="pg_restore is not available on the server") from err
     except subprocess.CalledProcessError as err:
         detail = (err.stderr or err.stdout or "pg_restore failed").strip()
-        print(f"[restore-debug] probing dump failed: {detail}")
+        logger.error(f"probing dump failed: {detail}")
         raise HTTPException(status_code=400, detail=f"Backup file is not restorable: {detail}") from err
 
 
@@ -358,7 +374,7 @@ def preflight_restore(upload: UploadFile) -> RestorePreflight:
 
 def _apply_pending_migrations() -> int:
     if not MIGRATIONS_DIR.exists():
-        print("[restore-debug] no migrations directory, skipping pending migrations")
+        logger.debug("no migrations directory, skipping pending migrations")
         return 0
 
     with engine.begin() as conn:
@@ -396,14 +412,27 @@ def _apply_pending_migrations() -> int:
                 {"name": migration_file.stem},
             )
             applied_count += 1
-            print(f"[restore-debug] applied migration after restore: {migration_file.stem}")
+            logger.debug(f"applied migration after restore: {migration_file.stem}")
 
-        print(f"[restore-debug] pending migrations applied count: {applied_count}")
+        # A restored archive may come from a database that never had the
+        # policies (a single-tenant one): put them back before anyone reads.
+        if settings.is_shared_hosting:
+            from src.db.rls import ensure_row_level_security
+
+            ensure_row_level_security(conn)
+
+        logger.debug(f"pending migrations applied count: {applied_count}")
     return applied_count
 
 
+def _dispose_engines() -> None:
+    engine.dispose()
+    if app_engine is not engine:
+        app_engine.dispose()
+
+
 def _terminate_other_db_sessions(env: dict[str, str]) -> None:
-    print("[restore-debug] terminating other DB sessions before restore")
+    logger.debug("terminating other DB sessions before restore")
     terminate_sql = (
         "SELECT pg_terminate_backend(pid) "
         "FROM pg_stat_activity "
@@ -418,27 +447,34 @@ def _terminate_other_db_sessions(env: dict[str, str]) -> None:
     ]
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
-        print("[restore-debug] terminate sessions success")
+        logger.debug("terminate sessions success")
     except FileNotFoundError as err:
-        print("[restore-debug] terminate sessions failed: psql not found")
+        logger.error("terminate sessions failed: psql not found")
         raise HTTPException(status_code=500, detail="psql is not available on the server") from err
     except subprocess.CalledProcessError as err:
         detail = (err.stderr or err.stdout or "failed to terminate active DB sessions").strip()
-        print(f"[restore-debug] terminate sessions failed: {detail}")
+        logger.error(f"terminate sessions failed: {detail}")
+        if "permission denied to terminate" in detail:
+            # Shared hosting: the owner restores, but the open sessions belong
+            # to the app role, and a non-superuser may only end its own.
+            detail += (
+                " -- the MIGRATION_DATABASE_URL role must be allowed to end the app's "
+                "sessions: GRANT pg_signal_backend TO <owner role>"
+            )
         raise HTTPException(status_code=500, detail=f"Restore failed: {detail}") from err
 
 
 def restore_backup(upload: UploadFile) -> tuple[str, int]:
-    print(f"[restore-debug] restore start: filename={upload.filename}")
+    logger.debug(f"restore start: filename={upload.filename}")
     prepared = _prepare_uploaded_backup(upload)
     try:
-        print(f"[restore-debug] backup prepared: dump={prepared.dump_path}")
+        logger.debug(f"backup prepared: dump={prepared.dump_path}")
         _probe_dump(prepared.dump_path)
 
         current = get_applied_migrations()
-        print(f"[restore-debug] current migration count before restore: {len(current)}")
+        logger.debug(f"current migration count before restore: {len(current)}")
         compatibility, reason, _ = _classify_compatibility(prepared.manifest.migration_names, current)
-        print(f"[restore-debug] compatibility={compatibility}, reason={reason}")
+        logger.debug(f"compatibility={compatibility}, reason={reason}")
         if compatibility in {"newer_than_app", "diverged"}:
             raise HTTPException(status_code=400, detail=reason or "Backup is not compatible with current app")
 
@@ -448,10 +484,10 @@ def restore_backup(upload: UploadFile) -> tuple[str, int]:
             env["PGPASSWORD"] = str(parts["password"])
 
         # Ensure app-side pooled connections don't hold stale state.
-        print("[restore-debug] disposing SQLAlchemy engine before restore")
-        engine.dispose()
+        logger.debug("disposing SQLAlchemy engine before restore")
+        _dispose_engines()
         _terminate_other_db_sessions(env)
-        engine.dispose()
+        _dispose_engines()
 
         # Step 1: extract plain SQL from the custom-format dump.
         # --clean --if-exists generates DROP … IF EXISTS before each object.
@@ -471,13 +507,13 @@ def restore_backup(upload: UploadFile) -> tuple[str, int]:
             extracted = subprocess.run(
                 extract_cmd, check=True, capture_output=True, text=True, env=env
             )
-            print(f"[restore-debug] extracted SQL bytes={len(extracted.stdout.encode('utf-8'))}")
+            logger.debug(f"extracted SQL bytes={len(extracted.stdout.encode('utf-8'))}")
         except FileNotFoundError as err:
-            print("[restore-debug] extract failed: pg_restore not found")
+            logger.error("extract failed: pg_restore not found")
             raise HTTPException(status_code=500, detail="pg_restore is not available on the server") from err
         except subprocess.CalledProcessError as err:
             detail = (err.stderr or err.stdout or "pg_restore failed").strip()
-            print(f"[restore-debug] extract failed: {detail}")
+            logger.error(f"extract failed: {detail}")
             raise HTTPException(status_code=500, detail=f"Restore failed: {detail}") from err
 
         # Step 2: filter out session-level SET commands that the target server may
@@ -488,7 +524,7 @@ def restore_backup(upload: UploadFile) -> tuple[str, int]:
             if not any(line.strip().startswith(p) for p in _UNSUPPORTED_SET_PREFIXES)
         ]
         filtered_sql = "\n".join(filtered_lines)
-        print(f"[restore-debug] filtered SQL lines={len(filtered_lines)}")
+        logger.debug(f"filtered SQL lines={len(filtered_lines)}")
 
         # Step 3: apply via psql in a single transaction; ON_ERROR_STOP=1 rolls
         # back and surfaces the first error (equivalent to --exit-on-error).
@@ -507,25 +543,25 @@ def restore_backup(upload: UploadFile) -> tuple[str, int]:
                 text=True,
                 env=env,
             )
-            print("[restore-debug] psql restore apply success")
+            logger.debug("psql restore apply success")
         except FileNotFoundError as err:
-            print("[restore-debug] restore apply failed: psql not found")
+            logger.error("restore apply failed: psql not found")
             raise HTTPException(status_code=500, detail="psql is not available on the server") from err
         except subprocess.CalledProcessError as err:
             detail = (err.stderr or err.stdout or "psql restore failed").strip()
-            print(f"[restore-debug] restore apply failed: {detail}")
+            logger.error(f"restore apply failed: {detail}")
             raise HTTPException(status_code=500, detail=f"Restore failed: {detail}") from err
 
         # Discard all pooled connections — they point to the pre-restore state.
         # SQLAlchemy will open fresh connections on the next request.
-        print("[restore-debug] disposing SQLAlchemy engine after restore")
-        engine.dispose()
+        logger.debug("disposing SQLAlchemy engine after restore")
+        _dispose_engines()
 
         applied_count = _apply_pending_migrations()
-        print(f"[restore-debug] restore completed: compatibility={compatibility}, applied_migrations={applied_count}")
+        logger.debug(f"restore completed: compatibility={compatibility}, applied_migrations={applied_count}")
         return compatibility, applied_count
     finally:
-        print("[restore-debug] cleanup temp dir and dispose engine")
+        logger.debug("cleanup temp dir and dispose engine")
         prepared.temp_dir.cleanup()
         # On both success and failure, force pool reset so new requests reconnect cleanly.
-        engine.dispose()
+        _dispose_engines()

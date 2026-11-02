@@ -1,0 +1,159 @@
+import { useQuery } from '@tanstack/react-query';
+import { RotateCcw } from 'lucide-react';
+import api from '../../api/client';
+import LedgerCombobox from '../../components/LedgerCombobox';
+import ProductCombobox from '../../components/ProductCombobox';
+import { useFY } from '../../context/FYContext';
+import type { AnalyticsFilters as Filters } from '../../features/analytics/types';
+import type { Ledger, Product } from '../../types/api';
+
+type Props = {
+  filters: Filters;
+  onChange: (next: Filters) => void;
+  onReset: () => void;
+  /** False when the filters are already at their defaults. */
+  canReset: boolean;
+  /** The product picker only applies to the product report. */
+  showProductFilter?: boolean;
+  /** Hidden on reports that cover sales and purchases together. */
+  showVoucherType?: boolean;
+  /** "Party" where the ledger can be a supplier as well as a customer. */
+  ledgerLabel?: string;
+};
+
+export default function AnalyticsFilters({
+  filters,
+  onChange,
+  onReset,
+  canReset,
+  showProductFilter = false,
+  showVoucherType = true,
+  ledgerLabel = 'Customer',
+}: Props) {
+  const { fyList } = useFY();
+
+  const ledgersQuery = useQuery({
+    queryKey: ['ledgers', 'lookup'],
+    queryFn: async () => {
+      const response = await api.get<{ items: Ledger[] }>('/ledgers/', { params: { page_size: 500 } });
+      return response.data.items ?? [];
+    },
+  });
+
+  const productsQuery = useQuery({
+    queryKey: ['products', 'lookup'],
+    queryFn: async () => {
+      const response = await api.get<{ items: Product[] }>('/products/', { params: { page_size: 500 } });
+      return response.data.items ?? [];
+    },
+    enabled: showProductFilter,
+  });
+
+  const selectFY = (value: string) => {
+    if (!value) {
+      onChange({ ...filters, financialYearId: undefined, fromDate: undefined, toDate: undefined });
+      return;
+    }
+    const fy = fyList.find((entry) => String(entry.id) === value);
+    if (!fy) return;
+    onChange({ ...filters, financialYearId: fy.id, fromDate: fy.start_date, toDate: fy.end_date });
+  };
+
+  // Explicit dates win server-side, so clear the FY selection to match.
+  const setDate = (key: 'fromDate' | 'toDate', value: string) => {
+    onChange({ ...filters, [key]: value || undefined, financialYearId: undefined });
+  };
+
+  return (
+    <div className="analytics-filters">
+      <label className="analytics-filters__field">
+        <span>Financial Year</span>
+        <select
+          className="input"
+          value={filters.financialYearId ? String(filters.financialYearId) : ''}
+          onChange={(event) => selectFY(event.target.value)}
+        >
+          <option value="">Custom range</option>
+          {fyList.map((fy) => (
+            <option key={fy.id} value={String(fy.id)}>{fy.label}</option>
+          ))}
+        </select>
+      </label>
+
+      <label className="analytics-filters__field">
+        <span>From</span>
+        <input
+          className="input"
+          type="date"
+          value={filters.fromDate ?? ''}
+          onChange={(event) => setDate('fromDate', event.target.value)}
+        />
+      </label>
+
+      <label className="analytics-filters__field">
+        <span>To</span>
+        <input
+          className="input"
+          type="date"
+          value={filters.toDate ?? ''}
+          onChange={(event) => setDate('toDate', event.target.value)}
+        />
+      </label>
+
+      {showVoucherType && (
+        <label className="analytics-filters__field">
+          <span>Type</span>
+          <select
+            className="input"
+            value={filters.voucherType}
+            onChange={(event) => onChange({ ...filters, voucherType: event.target.value as Filters['voucherType'] })}
+          >
+            <option value="sales">Sales</option>
+            <option value="purchase">Purchase</option>
+          </select>
+        </label>
+      )}
+
+      {/* Every other filter here wraps its control in a <label>; these two used
+          a plain <div> + <span>, so the combobox input had no accessible name
+          at all. htmlFor rather than wrapping, because the combobox carries a
+          clear button and a listbox of its own. */}
+      <label className="analytics-filters__field" htmlFor="analytics-ledger">
+        <span>{ledgerLabel}</span>
+        <LedgerCombobox
+          id="analytics-ledger"
+          ledgers={ledgersQuery.data ?? []}
+          value={filters.ledgerId ? String(filters.ledgerId) : ''}
+          onChange={(ledgerId) => onChange({ ...filters, ledgerId: ledgerId ? Number(ledgerId) : undefined })}
+          onClear={() => onChange({ ...filters, ledgerId: undefined })}
+        />
+      </label>
+
+      {showProductFilter && (
+        <label className="analytics-filters__field" htmlFor="analytics-product">
+          <span>Product</span>
+          <ProductCombobox
+            id="analytics-product"
+            products={productsQuery.data ?? []}
+            value={filters.productId ? String(filters.productId) : ''}
+            onChange={(productId) => onChange({ ...filters, productId: productId ? Number(productId) : undefined })}
+            onClear={() => onChange({ ...filters, productId: undefined })}
+          />
+        </label>
+      )}
+
+      <div className="analytics-filters__reset">
+        <button
+          type="button"
+          className="button button--ghost"
+          onClick={onReset}
+          disabled={!canReset}
+          title="Reset filters to the active financial year"
+        >
+          <RotateCcw size={16} aria-hidden="true" />
+          Reset
+        </button>
+      </div>
+    </div>
+  );
+}

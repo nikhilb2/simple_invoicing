@@ -23,7 +23,7 @@ from src.services.inventory_service import InventoryManager
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
 
-def make_company(db, *, gst="27AABCU9603R1ZX") -> CompanyProfile:
+def make_company(db, *, gst="27AABCU9603R1ZN") -> CompanyProfile:
     company = CompanyProfile(
         name="Test Co",
         address="123 Test St",
@@ -435,7 +435,7 @@ class TestApplyInvoiceChanges:
             company_id=company.id,
             name="L1",
             address="A",
-            gst="29AABCU9603R1ZX",
+            gst="29AABCU9603R1ZJ",
             phone_number="11",
         )
         db_session.add(ledger)
@@ -461,7 +461,7 @@ class TestApplyInvoiceChanges:
             company_id=company.id,
             name="L2",
             address="A",
-            gst="29AABCU9603R1ZX",
+            gst="29AABCU9603R1ZJ",
             phone_number="11",
         )
         db_session.add(ledger)
@@ -487,7 +487,7 @@ class TestApplyInvoiceChanges:
             company_id=company.id,
             name="L3",
             address="A",
-            gst="29AABCU9603R1ZX",
+            gst="29AABCU9603R1ZJ",
             phone_number="11",
         )
         db_session.add(ledger)

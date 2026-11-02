@@ -77,12 +77,12 @@ def test_sales_html_shows_pan_only_when_corresponding_gst_exists():
 
 def test_purchase_html_shows_supplier_and_company_pan_when_gst_present():
     invoice = _invoice_base("purchase")
-    invoice.ledger_gst = "29ABCDE1234F1Z5"
+    invoice.ledger_gst = "29ABCDE1234F1ZW"
     invoice.company_gst = "07AAMPB1274B1Z8"
 
     html = _build_purchase_invoice_html(invoice, [])
 
-    assert "GST: 29ABCDE1234F1Z5" in html
+    assert "GST: 29ABCDE1234F1ZW" in html
     assert "PAN: ABCDE1234F" in html
     assert "GST: 07AAMPB1274B1Z8" in html
     assert "PAN: AAMPB1274B" in html

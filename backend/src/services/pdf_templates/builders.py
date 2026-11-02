@@ -5,6 +5,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from src.models.company_account import CompanyAccount
 from src.models.invoice import Invoice, InvoiceItem
+from src.services.invoice_discounts import invoice_discount_amount, item_discount_amount
 
 
 def _money(value: Decimal) -> Decimal:
@@ -35,6 +36,30 @@ def _fmt_currency(value: float, currency_code: str | None = None) -> str:
 def _fmt_rate(value: float) -> str:
     """Format a percentage rate without trailing zeros."""
     return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def _build_item_discount_html(item: InvoiceItem, currency: str | None, *, tax_inclusive: bool) -> str:
+    """Muted sub-line under a product naming its discount and the amount it took off."""
+    raw_value = float(item.discount_value or 0)
+    if not item.discount_type or raw_value <= 0:
+        return ""
+    amount = float(item_discount_amount(item, tax_inclusive=tax_inclusive))
+    if item.discount_type == "percentage":
+        label = f"Disc: {_fmt_rate(raw_value)}% (-{_fmt_currency(amount, currency)})"
+    else:
+        label = f"Disc: {_fmt_currency(amount, currency)} off"
+    return f"<br><span class=\"muted-text\">{label}</span>"
+
+
+def _build_invoice_discount_html(invoice: Invoice, currency: str | None) -> str:
+    """Totals-box line naming the invoice-level discount and the amount it took off."""
+    raw_value = float(invoice.discount_value or 0)
+    if not invoice.discount_type or raw_value <= 0:
+        return ""
+    amount = _fmt_currency(float(invoice_discount_amount(invoice)), currency)
+    if invoice.discount_type == "percentage":
+        return f"<p>Discount ({_fmt_rate(raw_value)}%): -{amount}</p>"
+    return f"<p>Discount: -{amount}</p>"
 
 
 def _amount_in_words_indian(amount: float, currency_code: str | None = None) -> str:
@@ -148,7 +173,11 @@ def _build_pdf_tax_header_cells(interstate_supply: bool) -> str:
 
 
 def _build_pdf_table_colgroup(interstate_supply: bool, show_sku: bool = True) -> str:
-    """Build table column group for invoice PDF based on tax type and SKU visibility."""
+    """Build table column group for invoice PDF based on tax type and SKU visibility.
+
+    HSN/SAC stays at 8% or wider in every layout: anything narrower breaks an
+    8-digit HSN code across two lines at the table's 8px font size.
+    """
     if interstate_supply:
         if show_sku:
             return (
@@ -184,9 +213,9 @@ def _build_pdf_table_colgroup(interstate_supply: bool, show_sku: bool = True) ->
         return (
             '<colgroup>'
             '<col style="width: 3%;" />'
-            '<col style="width: 16%;" />'
+            '<col style="width: 15%;" />'
             '<col style="width: 6%;" />'
-            '<col style="width: 7%;" />'
+            '<col style="width: 8%;" />'
             '<col style="width: 5%;" />'
             '<col style="width: 5%;" />'
             '<col style="width: 10%;" />'
@@ -201,8 +230,8 @@ def _build_pdf_table_colgroup(interstate_supply: bool, show_sku: bool = True) ->
     return (
         '<colgroup>'
         '<col style="width: 3%;" />'
-        '<col style="width: 22%;" />'
-        '<col style="width: 7%;" />'
+        '<col style="width: 21%;" />'
+        '<col style="width: 8%;" />'
         '<col style="width: 5%;" />'
         '<col style="width: 5%;" />'
         '<col style="width: 10%;" />'
@@ -263,23 +292,55 @@ def _build_pdf_tax_breakup_rows(invoice: Invoice, currency: str) -> str:
     )
 
 
-def _build_pdf_payment_details_html(invoice_bank_accounts: list[CompanyAccount]) -> str:
+def _build_pdf_pay_qr_card_html(share_url: str, qr_data_uri: str) -> str:
+    """The "Pay online" card: a QR of this document's own share page.
+
+    124px is roughly 33mm on A4 -- above the ~25-30mm floor a printed QR needs to
+    stay scannable, which 108px would sit right on top of.
+    """
+    if not share_url or not qr_data_uri:
+        return ""
+
+    # `pay-qr` is the shared hook: the invoice stylesheet docks it into the payment
+    # panel beside the bank accounts, and the statement stylesheet -- which knows
+    # nothing about bank accounts -- styles it on its own.
+    return (
+        '<div class="pay-qr">'
+        '<p class="pay-qr__title">Pay online</p>'
+        f'<img class="pay-qr__img" src="{_e(qr_data_uri)}" alt="Scan to pay online" />'
+        '<p class="pay-qr__hint">Scan to view this document and pay by UPI</p>'
+        "</div>"
+    )
+
+
+def _build_pdf_payment_details_html(
+    invoice_bank_accounts: list[CompanyAccount],
+    pay_qr_html: str = "",
+) -> str:
     """Build bank payment details section for invoice PDF."""
-    if not invoice_bank_accounts:
+    if not invoice_bank_accounts and not pay_qr_html:
         return '<p class="muted-text">No bank account marked to display on invoice.</p>'
 
-    blocks: list[str] = []
-    for account in invoice_bank_accounts:
-        blocks.append(
-            (
-                '<div class="invoice-sheet__bank-card">'
-                f"<p>Bank: {_e(account.bank_name) or 'N/A'}</p>"
-                f"<p>Branch: {_e(account.branch_name) or 'N/A'}</p>"
-                f"<p>Account Name: {_e(account.account_name) or 'N/A'}</p>"
-                f"<p>A/C No: {_e(account.account_number) or 'N/A'}</p>"
-                f"<p>IFSC: {_e(account.ifsc_code) or 'N/A'}</p>"
-                "</div>"
-            )
-        )
+    accounts = "".join(
+        '<div class="invoice-sheet__bank-account">'
+        '<table class="invoice-sheet__bank-rows">'
+        f"<tr><th>Bank</th><td>{_e(account.bank_name) or 'N/A'}</td></tr>"
+        f"<tr><th>Branch</th><td>{_e(account.branch_name) or 'N/A'}</td></tr>"
+        f"<tr><th>Account name</th><td>{_e(account.account_name) or 'N/A'}</td></tr>"
+        f"<tr><th>A/C no.</th><td class=\"invoice-sheet__bank-key\">{_e(account.account_number) or 'N/A'}</td></tr>"
+        f"<tr><th>IFSC</th><td class=\"invoice-sheet__bank-key\">{_e(account.ifsc_code) or 'N/A'}</td></tr>"
+        "</table>"
+        "</div>"
+        for account in invoice_bank_accounts
+    )
+    if not accounts:
+        return f'<div class="invoice-sheet__pay-panel invoice-sheet__pay-panel--qr-only">{pay_qr_html}</div>'
 
-    return f'<div class="invoice-sheet__bank-cards">{"".join(blocks)}</div>'
+    # The QR docks on the right so the account details a customer might type by hand
+    # are read first; the accounts stack beside it, filling the height the QR sets.
+    return (
+        '<div class="invoice-sheet__pay-panel">'
+        f'<div class="invoice-sheet__pay-accounts">{accounts}</div>'
+        f"{pay_qr_html}"
+        "</div>"
+    )

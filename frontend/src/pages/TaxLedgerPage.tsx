@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import api, { getApiErrorMessage, getBlobErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
+import ScopeBar from '../components/ScopeBar';
+import DateRangePresets from '../components/DateRangePresets';
+import LoadingState from '../components/LoadingState';
 import { useFY } from '../context/FYContext';
+import useDebouncedValue from '../hooks/useDebouncedValue';
 import type {
   CompanyProfile,
-  Gstr1Summary,
-  Gstr1ValidationResult,
   TaxLedger,
+  TaxLiability,
+  TaxLiabilityBucket,
 } from '../types/api';
-import formatCurrency from '../utils/formatting';
+import formatCurrency, { formatDate } from '../utils/formatting';
+import { parseGstRate } from '../utils/gstRate';
 
 function defaultDateRange() {
   const today = new Date();
@@ -18,19 +24,12 @@ function defaultDateRange() {
   return { fromDate: toIso(firstDay), toDate: toIso(today) };
 }
 
-type Tab = 'tax-ledger' | 'gstr1';
-
-type Gstr1Step = 'select-period' | 'validate' | 'summary';
-
 export default function TaxLedgerPage() {
   const { activeFY } = useFY();
 
-  // ── Shared state ──
-  const [tab, setTab] = useState<Tab>('tax-ledger');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // ── Tax Ledger tab ──
   const [period, setPeriod] = useState(() => ({
     fromDate: activeFY?.start_date ?? defaultDateRange().fromDate,
     toDate: activeFY?.end_date ?? defaultDateRange().toDate,
@@ -59,62 +58,67 @@ export default function TaxLedgerPage() {
     ? rowVirtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end
     : 0;
 
-  const numericGstRate = useMemo(() => {
-    if (!gstRate.trim()) return undefined;
-    const parsed = Number(gstRate);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }, [gstRate]);
-
-  // ── GSTR-1 tab ──
-  const [gstr1Period, setGstr1Period] = useState(() => ({
-    fromDate: activeFY?.start_date ?? defaultDateRange().fromDate,
-    toDate: activeFY?.end_date ?? defaultDateRange().toDate,
-  }));
-  const [gstr1Step, setGstr1Step] = useState<Gstr1Step>('select-period');
-  const [gstr1Validation, setGstr1Validation] = useState<Gstr1ValidationResult | null>(null);
-  const [gstr1Summary, setGstr1Summary] = useState<Gstr1Summary | null>(null);
-  const [gstr1Loading, setGstr1Loading] = useState(false);
-  const [gstr1Downloading, setGstr1Downloading] = useState<'json' | 'csv' | 'pdf' | null>(null);
+  const debouncedGstRate = useDebouncedValue(gstRate, 300);
+  const numericGstRate = useMemo(
+    () => parseGstRate(debouncedGstRate),
+    [debouncedGstRate],
+  );
 
   // ═══════════════════════════════════════════════════════════════════════
-  //  Tax Ledger tab — load & export
+  //  Load & export
   // ═══════════════════════════════════════════════════════════════════════
 
-  async function loadTaxLedger() {
-    try {
-      setLoading(true);
-      setError('');
-      const [taxLedgerResponse, companyResponse] = await Promise.all([
-        api.get<TaxLedger>('/ledgers/tax-ledger/', {
+  // The company profile does not depend on the filters, so load it once.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await api.get<CompanyProfile>('/company/');
+        if (!cancelled) setCompany(response.data);
+      } catch {
+        // Keep the default currency; the ledger itself is still usable.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const response = await api.get<TaxLedger>('/ledgers/tax-ledger/', {
           params: {
             from_date: period.fromDate,
             to_date: period.toDate,
             voucher_type: voucherType === 'all' ? undefined : voucherType,
             gst_rate: numericGstRate,
           },
-        }),
-        api.get<CompanyProfile>('/company/'),
-      ]);
-      setTaxLedger(taxLedgerResponse.data);
-      setCompany(companyResponse.data);
-    } catch (err) {
-      setTaxLedger(null);
-      setError(getApiErrorMessage(err, 'Unable to load tax ledger'));
-    } finally {
-      setLoading(false);
-    }
-  }
+        });
+        if (cancelled) return;
+        setTaxLedger(response.data);
+      } catch (err) {
+        if (cancelled) return;
+        setTaxLedger(null);
+        setError(getApiErrorMessage(err, 'Unable to load tax ledger'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
 
-  useEffect(() => {
-    void loadTaxLedger();
+    return () => {
+      cancelled = true;
+    };
   }, [period.fromDate, period.toDate, voucherType, numericGstRate]);
 
   useEffect(() => {
     setPeriod({
-      fromDate: activeFY?.start_date ?? defaultDateRange().fromDate,
-      toDate: activeFY?.end_date ?? defaultDateRange().toDate,
-    });
-    setGstr1Period({
       fromDate: activeFY?.start_date ?? defaultDateRange().fromDate,
       toDate: activeFY?.end_date ?? defaultDateRange().toDate,
     });
@@ -147,115 +151,28 @@ export default function TaxLedgerPage() {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  //  GSTR-1 tab — validate, summary, export
-  // ═══════════════════════════════════════════════════════════════════════
-
-  async function handleGstr1Validate() {
-    try {
-      setGstr1Loading(true);
-      setError('');
-      setGstr1Validation(null);
-      setGstr1Summary(null);
-
-      const response = await api.get<Gstr1ValidationResult>(
-        '/ledgers/tax-ledger/gstr1/validate',
-        { params: { from_date: gstr1Period.fromDate, to_date: gstr1Period.toDate } },
-      );
-      setGstr1Validation(response.data);
-      // Always move to the results step so validation errors (or the all-clear)
-      // are rendered. Previously we only advanced on success, so an invalid
-      // result left the user on the period screen with nothing shown.
-      setGstr1Step('validate');
-
-      if (response.data.status === 'valid') {
-        setSuccess('Validation passed. You can now view the filing summary.');
-      } else {
-        setError(
-          `Validation found ${response.data.invalid_invoices} invoice(s) with errors. ` +
-          'Resolve the issues below before generating GSTR-1.',
-        );
-      }
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to validate GSTR-1 data'));
-    } finally {
-      setGstr1Loading(false);
-    }
-  }
-
-  async function handleGstr1SkipValidation() {
-    setGstr1Step('summary');
-    try {
-      setGstr1Loading(true);
-      setError('');
-      const response = await api.get<Gstr1Summary>(
-        '/ledgers/tax-ledger/gstr1/summary',
-        { params: { from_date: gstr1Period.fromDate, to_date: gstr1Period.toDate } },
-      );
-      setGstr1Summary(response.data);
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to load GSTR-1 summary'));
-    } finally {
-      setGstr1Loading(false);
-    }
-  }
-
-  async function handleGstr1Download(format: 'json' | 'csv' | 'pdf') {
-    try {
-      setGstr1Downloading(format);
-      setError('');
-      const response = await api.get(`/ledgers/tax-ledger/gstr1/export-${format}`, {
-        params: { from_date: gstr1Period.fromDate, to_date: gstr1Period.toDate },
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(response.data as Blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `gstr1_${gstr1Period.fromDate}_${gstr1Period.toDate}.${format}`;
-      link.click();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(await getBlobErrorMessage(err, `Unable to download GSTR-1 ${format.toUpperCase()}`));
-    } finally {
-      setGstr1Downloading(null);
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
   //  Render
   // ═══════════════════════════════════════════════════════════════════════
 
   return (
     <div className="page-grid">
-      {/* ── Tab bar ── */}
       <section className="page-hero">
         <div>
           <p className="eyebrow">GST reports</p>
           <h1 className="page-title">Tax ledger</h1>
           <p className="section-copy">
-            Track SGST, CGST &amp; IGST debit/credit and file GSTR-1 returns.
+            Track SGST, CGST &amp; IGST debit and credit across every voucher in the period.
           </p>
         </div>
-        <div className="status-chip">
-          {tab === 'tax-ledger' ? `${entries.length} rows` : 'GSTR-1'}
+        <div className="page-hero__aside">
+          <div className="status-chip">{entries.length} rows</div>
+          {/* Filing used to be the second half of this page. It has its own
+              route now, so the ledger keeps the link that the tab bar was. */}
+          <Link className="button button--ghost button--small" to="/gstr1">
+            GSTR-1 filing
+          </Link>
         </div>
       </section>
-
-      <div className="tab-bar" style={{ display: 'flex', gap: 0, marginBottom: '0.5rem' }}>
-        <button
-          type="button"
-          className={`button ${tab === 'tax-ledger' ? 'button--primary' : 'button--ghost'}`}
-          onClick={() => setTab('tax-ledger')}
-        >
-          Tax Ledger
-        </button>
-        <button
-          type="button"
-          className={`button ${tab === 'gstr1' ? 'button--primary' : 'button--ghost'}`}
-          onClick={() => setTab('gstr1')}
-        >
-          GSTR-1 Filing
-        </button>
-      </div>
 
       <StatusToasts
         error={error}
@@ -264,180 +181,157 @@ export default function TaxLedgerPage() {
         onClearSuccess={() => setSuccess('')}
       />
 
-      {tab === 'tax-ledger' ? (
-        <>
-          <TaxLedgerFilters
-            period={period}
-            setPeriod={setPeriod}
-            voucherType={voucherType}
-            setVoucherType={setVoucherType}
-            gstRate={gstRate}
-            setGstRate={setGstRate}
-            downloading={downloading}
-            onDownload={(fmt) => { void handleTaxLedgerDownload(fmt); }}
-            activeCurrencyCode={activeCurrencyCode}
-            taxLedger={taxLedger}
-          />
+      <TaxLedgerFilters
+        period={period}
+        setPeriod={setPeriod}
+        voucherType={voucherType}
+        setVoucherType={setVoucherType}
+        gstRate={gstRate}
+        setGstRate={setGstRate}
+        downloading={downloading}
+        onDownload={(fmt) => { void handleTaxLedgerDownload(fmt); }}
+        activeCurrencyCode={activeCurrencyCode}
+        taxLedger={taxLedger}
+        activeFY={activeFY}
+      />
 
-          <section className="panel stack">
-            <div className="panel__header">
-              <div>
-                <p className="eyebrow">Entries</p>
-                <h2 className="nav-panel__title">
-                  Invoice + GST rate ledger rows
-                </h2>
-              </div>
-            </div>
+      <section className="panel stack">
+        <div className="panel__header">
+          <div>
+            <p className="eyebrow">Entries</p>
+            <h2 className="nav-panel__title">
+              Invoice + GST rate ledger rows
+            </h2>
+          </div>
+        </div>
 
-            {loading ? (
-              <div className="empty-state">Loading tax ledger...</div>
-            ) : null}
-            {!loading && (!taxLedger || taxLedger.entries.length === 0) ? (
-              <div className="empty-state">No tax entries found for this filter.</div>
-            ) : null}
+        {loading ? (
+          <LoadingState message="Loading tax ledger..." />
+        ) : null}
+        {!loading && (!taxLedger || taxLedger.entries.length === 0) ? (
+          <div className="empty-state">No tax entries found for this filter.</div>
+        ) : null}
 
-            {!loading && entries.length > 0 ? (
-              <div
-                ref={scrollContainerRef}
-                className="table-wrap tax-ledger-scroll"
-              >
-                <table className="invoice-feed-table tax-ledger-table">
-                  <thead className="tax-ledger-thead--sticky">
-                    <tr>
-                      <th>Date</th>
-                      <th>Reference</th>
-                      <th>Ledger</th>
-                      <th>GSTIN</th>
-                      <th>Type</th>
-                      <th>GST %</th>
-                      <th className="text-right">Taxable</th>
-                      <th className="text-right">Dr SGST</th>
-                      <th className="text-right">Dr CGST</th>
-                      <th className="text-right">Dr IGST</th>
-                      <th className="text-right">Cr SGST</th>
-                      <th className="text-right">Cr CGST</th>
-                      <th className="text-right">Cr IGST</th>
+        {!loading && entries.length > 0 ? (
+          <div
+            ref={scrollContainerRef}
+            className="table-wrap tax-ledger-scroll"
+          >
+            <table className="invoice-feed-table tax-ledger-table">
+              <caption className="sr-only">Tax ledger entries</caption>
+              <thead className="tax-ledger-thead--sticky">
+                <tr>
+                  <th scope="col">Date</th>
+                  <th scope="col">Reference</th>
+                  <th scope="col">Ledger</th>
+                  <th scope="col">GSTIN</th>
+                  <th scope="col">Type</th>
+                  <th scope="col">GST %</th>
+                  <th scope="col" className="text-right">Taxable</th>
+                  <th scope="col" className="text-right">Dr SGST</th>
+                  <th scope="col" className="text-right">Dr CGST</th>
+                  <th scope="col" className="text-right">Dr IGST</th>
+                  <th scope="col" className="text-right">Cr SGST</th>
+                  <th scope="col" className="text-right">Cr CGST</th>
+                  <th scope="col" className="text-right">Cr IGST</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topPadding > 0 && (
+                  <tr>
+                    <td colSpan={13} style={{ height: `${topPadding}px`, padding: 0 }} />
+                  </tr>
+                )}
+                {virtualItems.map((virtualRow) => {
+                  const entry = entries[virtualRow.index];
+                  const rowClass =
+                    entry.source_voucher_type === 'sales'
+                      ? 'tax-ledger-row--sales'
+                      : 'tax-ledger-row--purchase';
+                  const typeBadgeClass =
+                    entry.source_voucher_type === 'sales'
+                      ? 'invoice-type-badge invoice-type-badge--sales'
+                      : 'invoice-type-badge invoice-type-badge--purchase';
+
+                  return (
+                    <tr
+                      key={`${entry.entry_type}-${entry.entry_id}-${entry.gst_rate}`}
+                      className={rowClass}
+                      style={{ height: `${virtualRow.size}px` }}
+                    >
+                      <td>
+                        {formatDate(entry.date)}
+                      </td>
+                      <td>
+                        <strong className="text-xs">{entry.reference_number}</strong>
+                      </td>
+                      <td className="text-xs">{entry.ledger_name}</td>
+                      <td className="text-xs" style={{ fontFamily: 'monospace' }}>
+                        {entry.ledger_gst || '-'}
+                      </td>
+                      <td>
+                        <div className="tax-ledger-type-cell">
+                          <span className={typeBadgeClass}>
+                            {entry.source_voucher_type}
+                          </span>
+                          {entry.entry_type === 'credit_note' ? (
+                            <span className="tax-ledger-note-tag">Credit Note</span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td>{entry.gst_rate.toFixed(2)}%</td>
+                      <td className="text-right">
+                        {formatCurrency(entry.taxable_amount, activeCurrencyCode)}
+                      </td>
+                      <td className="text-right">
+                        {entry.debit_sgst > 0
+                          ? formatCurrency(entry.debit_sgst, activeCurrencyCode)
+                          : '-'}
+                      </td>
+                      <td className="text-right">
+                        {entry.debit_cgst > 0
+                          ? formatCurrency(entry.debit_cgst, activeCurrencyCode)
+                          : '-'}
+                      </td>
+                      <td className="text-right">
+                        {entry.debit_igst > 0
+                          ? formatCurrency(entry.debit_igst, activeCurrencyCode)
+                          : '-'}
+                      </td>
+                      <td className="text-right">
+                        {entry.credit_sgst > 0
+                          ? formatCurrency(entry.credit_sgst, activeCurrencyCode)
+                          : '-'}
+                      </td>
+                      <td className="text-right">
+                        {entry.credit_cgst > 0
+                          ? formatCurrency(entry.credit_cgst, activeCurrencyCode)
+                          : '-'}
+                      </td>
+                      <td className="text-right">
+                        {entry.credit_igst > 0
+                          ? formatCurrency(entry.credit_igst, activeCurrencyCode)
+                          : '-'}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {topPadding > 0 && (
-                      <tr>
-                        <td colSpan={13} style={{ height: `${topPadding}px`, padding: 0 }} />
-                      </tr>
-                    )}
-                    {virtualItems.map((virtualRow) => {
-                      const entry = entries[virtualRow.index];
-                      const rowClass =
-                        entry.source_voucher_type === 'sales'
-                          ? 'tax-ledger-row--sales'
-                          : 'tax-ledger-row--purchase';
-                      const typeBadgeClass =
-                        entry.source_voucher_type === 'sales'
-                          ? 'invoice-type-badge invoice-type-badge--sales'
-                          : 'invoice-type-badge invoice-type-badge--purchase';
-
-                      return (
-                        <tr
-                          key={`${entry.entry_type}-${entry.entry_id}-${entry.gst_rate}`}
-                          className={rowClass}
-                          style={{ height: `${virtualRow.size}px` }}
-                        >
-                          <td>
-                            {new Date(entry.date).toLocaleDateString()}
-                          </td>
-                          <td>
-                            <strong className="text-xs">{entry.reference_number}</strong>
-                          </td>
-                          <td className="text-xs">{entry.ledger_name}</td>
-                          <td className="text-xs" style={{ fontFamily: 'monospace' }}>
-                            {entry.ledger_gst || '-'}
-                          </td>
-                          <td>
-                            <div className="tax-ledger-type-cell">
-                              <span className={typeBadgeClass}>
-                                {entry.source_voucher_type}
-                              </span>
-                              {entry.entry_type === 'credit_note' ? (
-                                <span className="tax-ledger-note-tag">Credit Note</span>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td>{entry.gst_rate.toFixed(2)}%</td>
-                          <td className="text-right">
-                            {formatCurrency(entry.taxable_amount, activeCurrencyCode)}
-                          </td>
-                          <td className="text-right">
-                            {entry.debit_sgst > 0
-                              ? formatCurrency(entry.debit_sgst, activeCurrencyCode)
-                              : '-'}
-                          </td>
-                          <td className="text-right">
-                            {entry.debit_cgst > 0
-                              ? formatCurrency(entry.debit_cgst, activeCurrencyCode)
-                              : '-'}
-                          </td>
-                          <td className="text-right">
-                            {entry.debit_igst > 0
-                              ? formatCurrency(entry.debit_igst, activeCurrencyCode)
-                              : '-'}
-                          </td>
-                          <td className="text-right">
-                            {entry.credit_sgst > 0
-                              ? formatCurrency(entry.credit_sgst, activeCurrencyCode)
-                              : '-'}
-                          </td>
-                          <td className="text-right">
-                            {entry.credit_cgst > 0
-                              ? formatCurrency(entry.credit_cgst, activeCurrencyCode)
-                              : '-'}
-                          </td>
-                          <td className="text-right">
-                            {entry.credit_igst > 0
-                              ? formatCurrency(entry.credit_igst, activeCurrencyCode)
-                              : '-'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {bottomPadding > 0 && (
-                      <tr>
-                        <td colSpan={13} style={{ height: `${bottomPadding}px`, padding: 0 }} />
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-          </section>
-        </>
-      ) : (
-        /* ── GSTR-1 Filing Tab ── */
-        <Gstr1FilingTab
-          period={gstr1Period}
-          setPeriod={setGstr1Period}
-          step={gstr1Step}
-          setStep={setGstr1Step}
-          validation={gstr1Validation}
-          summary={gstr1Summary}
-          loading={gstr1Loading}
-          downloading={gstr1Downloading}
-          onValidate={() => { void handleGstr1Validate(); }}
-          onSkipValidation={() => { void handleGstr1SkipValidation(); }}
-          onDownload={(fmt) => { void handleGstr1Download(fmt); }}
-          onReset={() => {
-            setGstr1Step('select-period');
-            setGstr1Validation(null);
-            setGstr1Summary(null);
-          }}
-          activeCurrencyCode={activeCurrencyCode}
-        />
-      )}
+                  );
+                })}
+                {bottomPadding > 0 && (
+                  <tr>
+                    <td colSpan={13} style={{ height: `${bottomPadding}px`, padding: 0 }} />
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }
 
 /* ────────────────────────────────────────────────────────────────────────
-   Tax Ledger Filters (shared across Tab)
+   Tax Ledger scope + period totals
    ──────────────────────────────────────────────────────────────────────── */
 
 function TaxLedgerFilters({
@@ -451,6 +345,7 @@ function TaxLedgerFilters({
   onDownload,
   activeCurrencyCode,
   taxLedger,
+  activeFY,
 }: {
   period: { fromDate: string; toDate: string };
   setPeriod: React.Dispatch<React.SetStateAction<{ fromDate: string; toDate: string }>>;
@@ -462,576 +357,339 @@ function TaxLedgerFilters({
   onDownload: (fmt: 'pdf' | 'csv') => void;
   activeCurrencyCode: string;
   taxLedger: TaxLedger | null;
+  activeFY: { start_date: string; end_date: string } | null;
 }) {
+  const totals = taxLedger?.totals;
+
   return (
-    <section className="content-grid">
-      <article className="panel stack">
-        <div className="panel__header">
-          <div>
-            <p className="eyebrow">Filters</p>
-            <h2 className="nav-panel__title">Reporting scope</h2>
-          </div>
-        </div>
-
-        <div className="field-grid">
-          <div className="field">
-            <label htmlFor="tax-ledger-from">From</label>
-            <input
-              id="tax-ledger-from"
-              className="input"
-              type="date"
-              value={period.fromDate}
-              onChange={(e) =>
-                setPeriod((c) => ({ ...c, fromDate: e.target.value }))
-              }
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="tax-ledger-to">To</label>
-            <input
-              id="tax-ledger-to"
-              className="input"
-              type="date"
-              value={period.toDate}
-              onChange={(e) =>
-                setPeriod((c) => ({ ...c, toDate: e.target.value }))
-              }
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="tax-ledger-voucher-type">Voucher type</label>
-            <select
-              id="tax-ledger-voucher-type"
-              className="input"
-              value={voucherType}
-              onChange={(e) =>
-                setVoucherType(e.target.value as 'all' | 'sales' | 'purchase')
-              }
+    <>
+      {/* The exports carry the same scope as the filters, so they ride in the
+          bar rather than in a button row that would read as an action on the
+          entries table below. */}
+      <ScopeBar
+        presets={<DateRangePresets value={period} onChange={setPeriod} fy={activeFY} />}
+        actions={(
+          <>
+            <button
+              type="button"
+              className="button button--primary button--small"
+              onClick={() => onDownload('pdf')}
+              disabled={downloading !== null}
             >
-              <option value="all">All</option>
-              <option value="sales">Sales</option>
-              <option value="purchase">Purchase</option>
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="tax-ledger-gst-rate">GST rate</label>
-            <input
-              id="tax-ledger-gst-rate"
-              className="input"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="All rates"
-              value={gstRate}
-              onChange={(e) => setGstRate(e.target.value)}
-            />
-          </div>
+              {downloading === 'pdf' ? 'Downloading…' : 'Export PDF'}
+            </button>
+            <button
+              type="button"
+              className="button button--secondary button--small"
+              onClick={() => onDownload('csv')}
+              disabled={downloading !== null}
+            >
+              {downloading === 'csv' ? 'Downloading…' : 'Export CSV'}
+            </button>
+          </>
+        )}
+      >
+        <div className="field">
+          <label htmlFor="tax-ledger-from">From</label>
+          <input
+            id="tax-ledger-from"
+            className="input"
+            type="date"
+            value={period.fromDate}
+            onChange={(e) =>
+              setPeriod((c) => ({ ...c, fromDate: e.target.value }))
+            }
+          />
         </div>
-
-        <div className="button-row">
-          <button
-            type="button"
-            className="button button--primary"
-            onClick={() => onDownload('pdf')}
-            disabled={downloading !== null}
+        <div className="field">
+          <label htmlFor="tax-ledger-to">To</label>
+          <input
+            id="tax-ledger-to"
+            className="input"
+            type="date"
+            value={period.toDate}
+            onChange={(e) =>
+              setPeriod((c) => ({ ...c, toDate: e.target.value }))
+            }
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="tax-ledger-voucher-type">Voucher type</label>
+          <select
+            id="tax-ledger-voucher-type"
+            className="input"
+            value={voucherType}
+            onChange={(e) =>
+              setVoucherType(e.target.value as 'all' | 'sales' | 'purchase')
+            }
           >
-            {downloading === 'pdf' ? 'Downloading PDF...' : 'Export PDF'}
-          </button>
-          <button
-            type="button"
-            className="button button--secondary"
-            onClick={() => onDownload('csv')}
-            disabled={downloading !== null}
-          >
-            {downloading === 'csv' ? 'Downloading CSV...' : 'Export CSV'}
-          </button>
+            <option value="all">All</option>
+            <option value="sales">Sales</option>
+            <option value="purchase">Purchase</option>
+          </select>
         </div>
-
-        <div className="summary-box">
-          <p className="eyebrow">Net tax</p>
-          <p className="summary-box__value">
-            {formatCurrency(taxLedger?.totals.net_total_tax ?? 0, activeCurrencyCode)}
-          </p>
-          <p className="muted-text">
-            Dr{' '}
-            {formatCurrency(taxLedger?.totals.debit_total_tax ?? 0, activeCurrencyCode)}{' '}
-            · Cr{' '}
-            {formatCurrency(taxLedger?.totals.credit_total_tax ?? 0, activeCurrencyCode)}
-          </p>
+        <div className="field">
+          <label htmlFor="tax-ledger-gst-rate">GST rate</label>
+          <input
+            id="tax-ledger-gst-rate"
+            className="input"
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="All rates"
+            value={gstRate}
+            onChange={(e) => setGstRate(e.target.value)}
+          />
         </div>
-      </article>
+      </ScopeBar>
 
       <article className="panel stack">
         <div className="panel__header">
           <div>
             <p className="eyebrow">Summary</p>
-            <h2 className="nav-panel__title">GST bucket balances</h2>
+            <h2 className="nav-panel__title">Period totals</h2>
           </div>
+          <span className="status-chip">
+            {voucherType === 'all' ? 'Sales \u0026 purchase' : voucherType === 'sales' ? 'Sales only' : 'Purchase only'}
+          </span>
         </div>
 
-        <div className="field-grid">
-          <div className="summary-box">
-            <p className="eyebrow">CGST net</p>
-            <p className="summary-box__value">
-              {formatCurrency(taxLedger?.totals.net_cgst ?? 0, activeCurrencyCode)}
-            </p>
-            <p className="muted-text">
-              Dr{' '}
-              {formatCurrency(taxLedger?.totals.debit_cgst ?? 0, activeCurrencyCode)}{' '}
-              · Cr{' '}
-              {formatCurrency(taxLedger?.totals.credit_cgst ?? 0, activeCurrencyCode)}
-            </p>
-          </div>
-          <div className="summary-box">
-            <p className="eyebrow">SGST net</p>
-            <p className="summary-box__value">
-              {formatCurrency(taxLedger?.totals.net_sgst ?? 0, activeCurrencyCode)}
-            </p>
-            <p className="muted-text">
-              Dr{' '}
-              {formatCurrency(taxLedger?.totals.debit_sgst ?? 0, activeCurrencyCode)}{' '}
-              · Cr{' '}
-              {formatCurrency(taxLedger?.totals.credit_sgst ?? 0, activeCurrencyCode)}
-            </p>
-          </div>
-          <div className="summary-box">
-            <p className="eyebrow">IGST net</p>
-            <p className="summary-box__value">
-              {formatCurrency(taxLedger?.totals.net_igst ?? 0, activeCurrencyCode)}
-            </p>
-            <p className="muted-text">
-              Dr{' '}
-              {formatCurrency(taxLedger?.totals.debit_igst ?? 0, activeCurrencyCode)}{' '}
-              · Cr{' '}
-              {formatCurrency(taxLedger?.totals.credit_igst ?? 0, activeCurrencyCode)}
-            </p>
+        {/* Taxable value + GST = gross value. Laying the three out as the
+            equation they are saves the reader adding two cards together to
+            find the figure that has to tie back to the books. */}
+        <div className="tax-total-flow">
+          <TaxTotalTile
+            label="Taxable value"
+            value={totals?.net_taxable ?? 0}
+            debit={totals?.debit_taxable ?? 0}
+            credit={totals?.credit_taxable ?? 0}
+            currency={activeCurrencyCode}
+          />
+          <span className="tax-total-flow__op" aria-hidden="true">+</span>
+          <TaxTotalTile
+            label="GST"
+            value={totals?.net_total_tax ?? 0}
+            debit={totals?.debit_total_tax ?? 0}
+            credit={totals?.credit_total_tax ?? 0}
+            currency={activeCurrencyCode}
+          />
+          <span className="tax-total-flow__op" aria-hidden="true">=</span>
+          <TaxTotalTile
+            label="Gross value"
+            hint="Taxable + GST"
+            value={totals?.net_gross ?? 0}
+            debit={totals?.debit_gross ?? 0}
+            credit={totals?.credit_gross ?? 0}
+            currency={activeCurrencyCode}
+            headline
+          />
+        </div>
+
+        <div className="tax-bucket-group">
+          <p className="eyebrow">GST bucket balances</p>
+          <div className="tax-bucket-grid">
+            <TaxTotalTile
+              label="CGST"
+              value={totals?.net_cgst ?? 0}
+              debit={totals?.debit_cgst ?? 0}
+              credit={totals?.credit_cgst ?? 0}
+              currency={activeCurrencyCode}
+              compact
+            />
+            <TaxTotalTile
+              label="SGST"
+              value={totals?.net_sgst ?? 0}
+              debit={totals?.debit_sgst ?? 0}
+              credit={totals?.credit_sgst ?? 0}
+              currency={activeCurrencyCode}
+              compact
+            />
+            <TaxTotalTile
+              label="IGST"
+              value={totals?.net_igst ?? 0}
+              debit={totals?.debit_igst ?? 0}
+              credit={totals?.credit_igst ?? 0}
+              currency={activeCurrencyCode}
+              compact
+            />
           </div>
         </div>
       </article>
-    </section>
+
+      <TaxLiabilityPanel
+        liability={taxLedger?.liability ?? null}
+        voucherType={voucherType}
+        gstRate={gstRate}
+        currency={activeCurrencyCode}
+      />
+    </>
   );
 }
 
-/* ────────────────────────────────────────────────────────────────────────
-   GSTR-1 Filing Tab
-   ──────────────────────────────────────────────────────────────────────── */
+/* What has to be paid, which is not the same question as what was billed.
 
-function Gstr1FilingTab({
-  period,
-  setPeriod,
-  step,
-  validation,
-  summary,
-  loading,
-  downloading,
-  onValidate,
-  onSkipValidation,
-  onDownload,
-  onReset,
-  activeCurrencyCode,
+   The set-off is done on the server (s.49A/49B, r.88A) because it cannot be
+   read off the bucket balances above: CGST credit is useless against an SGST
+   liability, so heads that net to zero between them can still leave cash due. */
+function TaxLiabilityPanel({
+  liability,
+  voucherType,
+  gstRate,
+  currency,
 }: {
-  period: { fromDate: string; toDate: string };
-  setPeriod: React.Dispatch<React.SetStateAction<{ fromDate: string; toDate: string }>>;
-  step: string;
-  setStep: (s: Gstr1Step) => void;
-  validation: Gstr1ValidationResult | null;
-  summary: Gstr1Summary | null;
-  loading: boolean;
-  downloading: 'json' | 'csv' | 'pdf' | null;
-  onValidate: () => void;
-  onSkipValidation: () => void;
-  onDownload: (fmt: 'json' | 'csv' | 'pdf') => void;
-  onReset: () => void;
-  activeCurrencyCode: string;
+  liability: TaxLiability | null;
+  voucherType: 'all' | 'sales' | 'purchase';
+  gstRate: string;
+  currency: string;
 }) {
-  if (step === 'select-period') {
-    return (
-      <section className="content-grid">
-        <article className="panel stack">
-          <div className="panel__header">
-            <div>
-              <p className="eyebrow">Step 1</p>
-              <h2 className="nav-panel__title">Select filing period</h2>
-            </div>
-          </div>
+  const rows: Array<{ head: string; bucket: TaxLiabilityBucket }> = [
+    { head: 'CGST', bucket: liability?.cgst ?? EMPTY_BUCKET },
+    { head: 'SGST', bucket: liability?.sgst ?? EMPTY_BUCKET },
+    { head: 'IGST', bucket: liability?.igst ?? EMPTY_BUCKET },
+  ];
 
-          <div className="field-grid">
-            <div className="field">
-              <label htmlFor="gstr1-from">From</label>
-              <input
-                id="gstr1-from"
-                className="input"
-                type="date"
-                value={period.fromDate}
-                onChange={(e) => setPeriod((c) => ({ ...c, fromDate: e.target.value }))}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="gstr1-to">To</label>
-              <input
-                id="gstr1-to"
-                className="input"
-                type="date"
-                value={period.toDate}
-                onChange={(e) => setPeriod((c) => ({ ...c, toDate: e.target.value }))}
-              />
-            </div>
-          </div>
+  // A narrowed ledger is a partial return. Sales-only hides the input credit
+  // that would reduce this figure, so the number stops being the liability and
+  // starts being an upper bound — worth saying outright rather than letting the
+  // scope chip carry it.
+  const narrowed = voucherType !== 'all' || gstRate.trim() !== '';
 
-          <div className="button-row">
-            <button
-              type="button"
-              className="button button--primary"
-              onClick={onValidate}
-              disabled={loading}
-            >
-              {loading ? 'Validating...' : 'Validate & Proceed'}
-            </button>
-            <button
-              type="button"
-              className="button button--ghost"
-              onClick={onSkipValidation}
-              disabled={loading}
-            >
-              Skip validation
-            </button>
-          </div>
-        </article>
-      </section>
-    );
-  }
-
-  if (step === 'validate' && validation) {
-    return (
-      <section className="content-grid">
-        <article className="panel stack" style={{ gridColumn: '1 / -1' }}>
-          <div className="panel__header">
-            <div>
-              <p className="eyebrow">Step 2</p>
-              <h2 className="nav-panel__title">Validation Results</h2>
-            </div>
-            <span
-              className={`status-chip ${
-                validation.status === 'valid' ? 'status-chip--success' : 'status-chip--error'
-              }`}
-            >
-              {validation.status === 'valid' ? '✓ Valid' : '✕ Invalid'}
-            </span>
-          </div>
-
-          <p className="muted-text" style={{ marginBottom: '1rem' }}>
-            {validation.total_invoices} invoice(s) checked:{' '}
-            {validation.valid_invoices} valid, {validation.invalid_invoices} with errors
-          </p>
-
-          {validation.errors.length > 0 && (
-            <div className="table-wrap" style={{ maxHeight: 360, overflow: 'auto' }}>
-              <table className="invoice-feed-table">
-                <thead>
-                  <tr>
-                    <th>Invoice #</th>
-                    <th>Field</th>
-                    <th>Issue</th>
-                    <th>Severity</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {validation.errors.map((err, i) => (
-                    <tr key={i}>
-                      <td className="text-xs">{err.invoice_number}</td>
-                      <td className="text-xs">{err.field}</td>
-                      <td className="text-xs">{err.message}</td>
-                      <td>
-                        <span
-                          className={`invoice-type-badge ${
-                            err.severity === 'error'
-                              ? 'invoice-type-badge--purchase'
-                              : 'invoice-type-badge--sales'
-                          }`}
-                        >
-                          {err.severity}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {validation.errors.length === 0 && (
-            <p style={{ color: 'var(--success, #22c55e)' }}>
-              No issues found! Data is ready for filing.
-            </p>
-          )}
-
-          <div className="button-row" style={{ marginTop: '1rem' }}>
-            <button
-              type="button"
-              className="button"
-              onClick={onReset}
-            >
-              ← Back
-            </button>
-            {validation.status === 'valid' && (
-              <button
-                type="button"
-                className="button button--primary"
-                onClick={() => {
-                  void onSkipValidation();
-                }}
-              >
-                View Summary →
-              </button>
-            )}
-          </div>
-        </article>
-      </section>
-    );
-  }
-
-  if (step === 'summary' && summary) {
-    return (
-      <>
-        <Gstr1SummaryView
-          summary={summary}
-          activeCurrencyCode={activeCurrencyCode}
-        />
-
-        {/* Download buttons */}
-        <section className="content-grid">
-          <article className="panel stack">
-            <div className="panel__header">
-              <div>
-                <p className="eyebrow">Step 3</p>
-                <h2 className="nav-panel__title">Download Exports</h2>
-              </div>
-            </div>
-
-            <div className="button-row">
-              <button
-                type="button"
-                className="button button--primary"
-                onClick={() => onDownload('json')}
-                disabled={downloading !== null}
-              >
-                {downloading === 'json' ? 'Downloading...' : 'Download JSON'}
-              </button>
-              <button
-                type="button"
-                className="button button--secondary"
-                onClick={() => onDownload('csv')}
-                disabled={downloading !== null}
-              >
-                {downloading === 'csv' ? 'Downloading...' : 'Download CSV'}
-              </button>
-              <button
-                type="button"
-                className="button button--ghost"
-                onClick={() => onDownload('pdf')}
-                disabled={downloading !== null}
-              >
-                {downloading === 'pdf' ? 'Downloading...' : 'Download PDF'}
-              </button>
-            </div>
-          </article>
-
-          <article className="panel stack">
-            <div className="panel__header">
-              <div>
-                <p className="eyebrow">Actions</p>
-                <h2 className="nav-panel__title">Navigation</h2>
-              </div>
-            </div>
-            <button
-              type="button"
-              className="button button--ghost"
-              onClick={onReset}
-            >
-              ← Back to period selection
-            </button>
-          </article>
-        </section>
-      </>
-    );
-  }
-
-  // Loading state for summary fetch
-  if (step === 'summary' && !summary) {
-    return (
-      <section className="content-grid">
-        <article className="panel stack">
-          <div className="empty-state">Loading GSTR-1 summary...</div>
-        </article>
-      </section>
-    );
-  }
-
-  return null;
-}
-
-/* ────────────────────────────────────────────────────────────────────────
-   GSTR-1 Summary View
-   ──────────────────────────────────────────────────────────────────────── */
-
-function Gstr1SummaryView({
-  summary,
-  activeCurrencyCode,
-}: {
-  summary: Gstr1Summary;
-  activeCurrencyCode: string;
-}) {
   return (
-    <section className="content-grid">
-      {/* B2B / B2CL / B2CS */}
-      <article className="panel stack">
-        <div className="panel__header">
-          <div>
-            <p className="eyebrow">Filing summary</p>
-            <h2 className="nav-panel__title">Supply categories</h2>
-          </div>
+    <article className="panel stack">
+      <div className="panel__header">
+        <div>
+          <p className="eyebrow">Liability</p>
+          <h2 className="nav-panel__title">GST payable</h2>
         </div>
+      </div>
 
-        <div className="field-grid">
-          <CategoryCard label="B2B (with GSTIN)" data={summary.b2b} currency={activeCurrencyCode} />
-          <CategoryCard label="B2CL (&gt;2.5L)" data={summary.b2cl} currency={activeCurrencyCode} />
-          <CategoryCard label="B2CS (≤2.5L)" data={summary.b2cs} currency={activeCurrencyCode} />
-          <CategoryCard label="Nil Rated/Exempt" data={summary.nil_rated} currency={activeCurrencyCode} />
-        </div>
-      </article>
+      {narrowed ? (
+        <p className="field-warning">
+          {voucherType === 'sales'
+            ? 'Filtered to sales, so no input credit is set off — this is output tax, not what you owe.'
+            : voucherType === 'purchase'
+              ? 'Filtered to purchases, so there is no output tax to set credit against.'
+              : `Filtered to ${gstRate}% GST, so this covers one rate rather than the whole return.`}
+        </p>
+      ) : null}
 
-      {/* Credit / Debit Notes */}
-      <article className="panel stack">
-        <div className="panel__header">
-          <div>
-            <p className="eyebrow">Adjustments</p>
-            <h2 className="nav-panel__title">Credit &amp; Debit Notes</h2>
-          </div>
-        </div>
-
-        <div className="field-grid">
-          <CategoryCard label="Credit Notes" data={summary.credit_notes} currency={activeCurrencyCode} />
-          <CategoryCard label="Debit Notes" data={summary.debit_notes} currency={activeCurrencyCode} />
-        </div>
-      </article>
-
-      {/* HSN Summary */}
-      <article className="panel stack" style={{ gridColumn: '1 / -1' }}>
-        <div className="panel__header">
-          <div>
-            <p className="eyebrow">HSN-wise summary</p>
-            <h2 className="nav-panel__title">Commodity breakdown</h2>
-          </div>
-        </div>
-
-        <div className="table-wrap" style={{ maxHeight: 320, overflow: 'auto' }}>
-          <table className="invoice-feed-table">
+      <div className="tax-payable-grid">
+        <TaxTotalTile
+          label="Payable in cash"
+          hint="After credit set-off"
+          value={liability?.payable ?? 0}
+          debit={liability?.output_tax ?? 0}
+          credit={liability?.input_credit ?? 0}
+          debitLabel="Output tax"
+          creditLabel="Input credit"
+          currency={currency}
+          headline
+        />
+        <div className="tax-setoff">
+          <table className="tax-setoff__table">
+            <caption className="sr-only">Tax payable set-off by tax head</caption>
             <thead>
               <tr>
-                <th>HSN/SAC</th>
-                <th className="text-right">Qty</th>
-                <th className="text-right">Taxable Value</th>
-                <th className="text-right">CGST</th>
-                <th className="text-right">SGST</th>
-                <th className="text-right">IGST</th>
-                <th className="text-right">Total Tax</th>
+                <th scope="col">Head</th>
+                <th scope="col" className="text-right">Output tax</th>
+                <th scope="col" className="text-right">Input credit</th>
+                <th scope="col" className="text-right">Set off</th>
+                <th scope="col" className="text-right">Payable</th>
               </tr>
             </thead>
             <tbody>
-              {summary.hsn_summary.map((item) => (
-                <tr key={item.hsn_code}>
-                  <td className="text-xs" style={{ fontFamily: 'monospace' }}>
-                    {item.hsn_code}
-                  </td>
-                  <td className="text-right">{item.quantity}</td>
-                  <td className="text-right">
-                    {formatCurrency(item.taxable_value, activeCurrencyCode)}
-                  </td>
-                  <td className="text-right">
-                    {formatCurrency(item.cgst, activeCurrencyCode)}
-                  </td>
-                  <td className="text-right">
-                    {formatCurrency(item.sgst, activeCurrencyCode)}
-                  </td>
-                  <td className="text-right">
-                    {formatCurrency(item.igst, activeCurrencyCode)}
-                  </td>
-                  <td className="text-right">
-                    {formatCurrency(item.total_tax, activeCurrencyCode)}
+              {rows.map(({ head, bucket }) => (
+                <tr key={head}>
+                  <th scope="row">{head}</th>
+                  <td className="text-right">{formatCurrency(bucket.output_tax, currency)}</td>
+                  <td className="text-right">{formatCurrency(bucket.input_credit, currency)}</td>
+                  <td className="text-right">{formatCurrency(bucket.credit_used, currency)}</td>
+                  <td className="text-right tax-setoff__payable">
+                    {formatCurrency(bucket.payable, currency)}
                   </td>
                 </tr>
               ))}
-              {summary.hsn_summary.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="text-xs text-center muted-text">
-                    No HSN data
-                  </td>
-                </tr>
-              )}
             </tbody>
+            <tfoot>
+              <tr>
+                <th scope="row">Total</th>
+                <td className="text-right">{formatCurrency(liability?.output_tax ?? 0, currency)}</td>
+                <td className="text-right">{formatCurrency(liability?.input_credit ?? 0, currency)}</td>
+                <td className="text-right">{formatCurrency(liability?.credit_used ?? 0, currency)}</td>
+                <td className="text-right tax-setoff__payable">
+                  {formatCurrency(liability?.payable ?? 0, currency)}
+                </td>
+              </tr>
+            </tfoot>
           </table>
-        </div>
-      </article>
 
-      {/* Document Summary */}
-      <article className="panel stack">
-        <div className="panel__header">
-          <div>
-            <p className="eyebrow">Documents</p>
-            <h2 className="nav-panel__title">Document summary</h2>
-          </div>
+          <p className="field-hint tax-setoff__note">
+            {(liability?.credit_carried_forward ?? 0) > 0 ? (
+              <>
+                <strong>{formatCurrency(liability?.credit_carried_forward ?? 0, currency)}</strong>
+                {' '}of credit is left over and carries forward.{' '}
+              </>
+            ) : null}
+            Computed from vouchers in this period alone — it does not include credit
+            carried in from earlier periods, reverse charge, or your cash ledger balance.
+          </p>
         </div>
-
-        <div className="field-grid">
-          <div className="summary-box">
-            <p className="eyebrow">Total Invoices</p>
-            <p className="summary-box__value">{summary.doc_summary.total_invoices}</p>
-          </div>
-          <div className="summary-box">
-            <p className="eyebrow">Credit Notes</p>
-            <p className="summary-box__value">{summary.doc_summary.total_credit_notes}</p>
-          </div>
-          <div className="summary-box">
-            <p className="eyebrow">Debit Notes</p>
-            <p className="summary-box__value">{summary.doc_summary.total_debit_notes}</p>
-          </div>
-        </div>
-      </article>
-    </section>
+      </div>
+    </article>
   );
 }
 
-/* ────────────────────────────────────────────────────────────────────────
-   Category Card
-   ──────────────────────────────────────────────────────────────────────── */
+const EMPTY_BUCKET: TaxLiabilityBucket = {
+  output_tax: 0,
+  input_credit: 0,
+  credit_used: 0,
+  payable: 0,
+  credit_carried_forward: 0,
+};
 
-function CategoryCard({
+/* One period total: the net figure, with the debit and credit sides it came
+   from underneath. Sales sit on the debit side and purchases on the credit
+   side, matching the Dr/Cr columns of the entries table. */
+function TaxTotalTile({
   label,
-  data,
+  hint,
+  value,
+  debit,
+  credit,
+  debitLabel = 'Dr',
+  creditLabel = 'Cr',
   currency,
+  headline = false,
+  compact = false,
 }: {
   label: string;
-  data: {
-    invoice_count: number;
-    taxable_value: number;
-    cgst: number;
-    sgst: number;
-    igst: number;
-    total_tax: number;
-  };
+  hint?: string;
+  value: number;
+  debit: number;
+  credit: number;
+  debitLabel?: string;
+  creditLabel?: string;
   currency: string;
+  headline?: boolean;
+  compact?: boolean;
 }) {
+  const className = [
+    'tax-total',
+    headline ? 'tax-total--headline' : '',
+    compact ? 'tax-total--compact' : '',
+    value < 0 ? 'tax-total--negative' : '',
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className="summary-box">
-      <p className="eyebrow">{label}</p>
-      <p className="summary-box__value">
-        {data.invoice_count} invoice(s)
+    <div className={className}>
+      <p className="eyebrow tax-total__label">
+        {label}
+        {hint ? <span className="tax-total__hint">{hint}</span> : null}
       </p>
-      <p className="muted-text">
-        Taxable: {formatCurrency(data.taxable_value, currency)}
-        {data.total_tax > 0
-          ? ` · Tax: ${formatCurrency(data.total_tax, currency)}`
-          : ''}
+      <p className="tax-total__value">{formatCurrency(value, currency)}</p>
+      <p className="tax-total__split">
+        <span>{debitLabel} <b>{formatCurrency(debit, currency)}</b></span>
+        <span>{creditLabel} <b>{formatCurrency(credit, currency)}</b></span>
       </p>
     </div>
   );

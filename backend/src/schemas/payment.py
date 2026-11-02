@@ -31,7 +31,7 @@ class PaymentUpdate(BaseModel):
     mode: str | None = None
     reference: str | None = None
     notes: str | None = None
-    invoice_allocations: list[PaymentInvoiceAllocationCreate] = Field(default_factory=list)
+    invoice_allocations: list[PaymentInvoiceAllocationCreate] | None = None
 
     @field_validator("voucher_type")
     @classmethod

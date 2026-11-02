@@ -1,0 +1,53 @@
+{#
+  backup_email.html — Sent to admins after a scheduled backup finishes.
+  Extends base.html.
+
+  Variables (in addition to base.html variables):
+    file_name       (str)       — Archive filename, e.g. "autobackup_20260908_183000.enc"
+    created_at      (str)       — Human-readable creation time, e.g. "09 Sep 2026, 00:00 IST"
+    size_label      (str)       — Formatted archive size, e.g. "12.4 MB"
+    migration_head  (str|None)  — Schema version the archive was taken at
+    attached        (bool)      — Whether the archive is attached to this email
+    skip_reason     (str|None)  — Why it is not attached; shown only when attached is false
+    keep            (int)       — How many automatic backups the server retains
+#}
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Backup {{ file_name }}{% endblock %}
+
+{% block content %}
+<p style="margin: 0 0 20px 0; font-size: 15px; line-height: 1.6; color: #c0bcaf;">
+    Last night's scheduled database backup finished successfully.{% if attached %} The archive is attached to this email.{% endif %}
+</p>
+
+{% set items = [
+    ("File", file_name, None),
+    ("Created", created_at, None),
+    ("Size", size_label, "figure"),
+] %}
+{% if migration_head %}{% set items = items + [("Schema version", migration_head, None)] %}{% endif %}
+
+{% call ui.recap("Automatic backup", "Backup completed") %}
+    {{ ui.rows(items) }}
+    {% if not attached %}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 4px 0 0 0;">
+        <tr>
+            <td bgcolor="#2a2108" style="padding: 12px 14px; border-radius: 12px; border: 1px solid #6b5412; background-color: #2a2108; font-size: 13.5px; line-height: 1.55; color: #ffe08a;">
+                <strong style="color: #ffcc33;">The archive is not attached.</strong><br>
+                {{ skip_reason }} Download it from <strong>Settings &rarr; Backups</strong> instead.
+            </td>
+        </tr>
+    </table>
+    {% endif %}
+{% endcall %}
+
+{{ ui.closing("The archive is encrypted. Restoring it needs a server holding the same backup encryption key, so this attachment on its own does not expose your data.") }}
+<p style="margin: 10px 0 0 0; font-size: 12.5px; line-height: 1.6; color: #a29d91;">
+    Backups on the server are cleared when it restarts, and only the {{ keep }} most recent
+    automatic ones are kept. Keep the copies that matter somewhere outside the server.
+</p>
+{% endblock %}
+
+{# An internal notice to the install's own admin: no sales pitch. #}
+{% block pitch %}{% endblock %}

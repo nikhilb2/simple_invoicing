@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import api, { getApiErrorMessage } from '../api/client';
+import ModalCloseButton from './ModalCloseButton';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 import type {
   CompanyCreationCapOut,
   CompanyListItem,
@@ -11,11 +13,12 @@ import type {
 } from '../types/api';
 
 export default function CompanySelector() {
-  const queryClient = useQueryClient();
   const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
   const [companySwitchingId, setCompanySwitchingId] = useState<number | null>(null);
   const [companyError, setCompanyError] = useState('');
   const [newCompanyModalOpen, setNewCompanyModalOpen] = useState(false);
+
+  useEscapeClose(useCallback(() => setNewCompanyModalOpen(false), []));
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newCompanySubmitting, setNewCompanySubmitting] = useState(false);
   const [newCompanyError, setNewCompanyError] = useState('');
@@ -110,13 +113,16 @@ export default function CompanySelector() {
       <div ref={companyDropdownRef} style={{ position: 'relative', marginBottom: '12px' }}>
         <button
           className="button button--ghost"
+          data-testid="company-switcher"
           style={{ width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
           onClick={() => setCompanyDropdownOpen((v) => !v)}
           aria-haspopup="listbox"
           aria-expanded={companyDropdownOpen}
         >
-          <span>{activeCompany?.name?.trim() || 'Select company'}</span>
-          <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>▾</span>
+          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {activeCompany?.name?.trim() || 'Select company'}
+          </span>
+          <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>▾</span>
         </button>
         {companyDropdownOpen && (
           <div
@@ -128,8 +134,8 @@ export default function CompanySelector() {
               top: 'calc(100% + 4px)',
               background: 'var(--bg-card-strong)',
               border: '1px solid var(--line-strong)',
-              borderRadius: '0.5rem',
-              boxShadow: '0 4px 24px rgba(0,0,0,0.45)',
+              borderRadius: '0.75rem',
+              boxShadow: '0 4px 24px rgb(var(--rgb-shadow) / 0.45)',
               zIndex: 100,
               overflow: 'hidden',
               color: 'var(--text)',
@@ -139,7 +145,7 @@ export default function CompanySelector() {
               <p style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', opacity: 0.7 }}>Loading companies...</p>
             )}
             {!companiesQuery.isLoading && companyList.length === 0 && (
-              <p style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', opacity: 0.6 }}>No companies found</p>
+              <p style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', opacity: 0.8 }}>No companies found</p>
             )}
             {companyList.map((company) => (
               <button
@@ -156,7 +162,7 @@ export default function CompanySelector() {
                   background: 'none',
                   border: 'none',
                   cursor: companySwitchingId === null ? 'pointer' : 'wait',
-                  fontWeight: company.is_active ? 700 : 400,
+                  fontWeight: company.is_active ? 700 : 500,
                   fontSize: '0.875rem',
                   color: 'inherit',
                 }}
@@ -201,7 +207,7 @@ export default function CompanySelector() {
         )}
       </div>
       {effectiveCompanyError && (
-        <p style={{ marginTop: '-6px', marginBottom: '8px', color: 'var(--error, #ef4444)', fontSize: '0.8rem' }}>
+        <p style={{ marginTop: '-6px', marginBottom: '8px', color: 'var(--error)', fontSize: '0.8rem' }}>
           {effectiveCompanyError}
         </p>
       )}
@@ -227,7 +233,10 @@ export default function CompanySelector() {
               transition={{ duration: 0.2 }}
               style={{ maxWidth: '28rem' }}
             >
-              <h2 style={{ marginBottom: '1.25rem', fontSize: '1.125rem', fontWeight: 700 }}>New Company</h2>
+              <div className="panel__header">
+                <h2 className="nav-panel__title">New Company</h2>
+                <ModalCloseButton onClick={() => setNewCompanyModalOpen(false)} label="Close new company" />
+              </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.875rem', fontWeight: 500 }}>
                   Company name
@@ -241,7 +250,7 @@ export default function CompanySelector() {
                 <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.7 }}>
                   This creates a blank company profile. You can complete GST, address, and bank details on the Company page.
                 </p>
-                {newCompanyError && <p style={{ margin: 0, color: 'var(--error, #ef4444)', fontSize: '0.85rem' }}>{newCompanyError}</p>}
+                {newCompanyError && <p style={{ margin: 0, color: 'var(--error)', fontSize: '0.85rem' }}>{newCompanyError}</p>}
                 <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
                   <button type="button" className="button button--ghost" onClick={() => setNewCompanyModalOpen(false)}>
                     Cancel

@@ -1,5 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_
+import csv
+import io
+import math
+from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, Depends, File as FastAPIFile, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 from decimal import Decimal
 
@@ -8,9 +15,19 @@ from src.models.company import CompanyProfile
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
+from src.models.product_serial import ProductSerial
 from src.models.user import User, UserRole
-from src.schemas.product import PaginatedProductOut, ProductCreate, ProductOut
-from src.api.deps import get_active_company, get_current_user, require_roles
+from src.schemas.product import (
+    ImportCSVResult,
+    PaginatedProductOut,
+    ProductCreate,
+    ProductOut,
+    ProductWithInventoryOut,
+    ProductWithInventoryUpdate,
+)
+from src.api.deps import get_active_company, get_current_user, require_company_role
+from src.core.analytics import distinct_id_for, track
+from src.services.serial_service import SerialManager
 
 router = APIRouter()
 
@@ -19,21 +36,56 @@ def _is_whole_number(value: float) -> bool:
     return Decimal(str(value)) == Decimal(str(value)).to_integral_value()
 
 
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}{'' if count == 1 else 's'}"
+
+
 @router.post("", response_model=ProductOut, include_in_schema=False)
 @router.post("/", response_model=ProductOut)
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
-    if payload.gst_rate < 0 or payload.gst_rate > 100:
+    if not 0 <= payload.gst_rate <= 100:
         raise HTTPException(status_code=400, detail="GST rate must be between 0 and 100")
 
     sku = payload.sku.strip().upper()
     existing = db.query(Product).filter(Product.company_id == active_company.id, Product.sku == sku).first()
     if existing:
         raise HTTPException(status_code=400, detail="Product with this SKU already exists")
+
+    serial_codes = SerialManager.normalize_codes(payload.serial_numbers)
+    allow_decimal = payload.allow_decimal
+    if payload.track_serials:
+        if not payload.maintain_inventory:
+            raise HTTPException(
+                status_code=400,
+                detail="Serial-tracked products must maintain inventory",
+            )
+        # A unit is a unit: half an IMEI does not exist.
+        allow_decimal = False
+        if not _is_whole_number(payload.initial_quantity):
+            raise HTTPException(
+                status_code=400,
+                detail="Initial quantity must be a whole number for a serial-tracked product",
+            )
+        opening = int(Decimal(str(payload.initial_quantity)).to_integral_value())
+        if len(serial_codes) != opening:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{payload.name.strip()} opens with {_plural(opening, 'unit')} — "
+                    f"provide {_plural(opening, 'serial number')} "
+                    f"({len(serial_codes)} provided)"
+                ),
+            )
+    elif serial_codes:
+        raise HTTPException(
+            status_code=400,
+            detail="Serial numbers are only allowed on a serial-tracked product",
+        )
 
     product = Product(
         company_id=active_company.id,
@@ -42,12 +94,15 @@ def create_product(
         description=payload.description.strip() if payload.description else None,
         hsn_sac=payload.hsn_sac,
         price=payload.price,
+        purchase_price=payload.purchase_price,
         gst_rate=payload.gst_rate,
         unit=payload.unit,
-        allow_decimal=payload.allow_decimal,
+        allow_decimal=allow_decimal,
         maintain_inventory=payload.maintain_inventory,
         is_producable=payload.is_producable,
         production_cost=payload.production_cost,
+        reorder_level=payload.reorder_level,
+        track_serials=payload.track_serials,
     )
     db.add(product)
     db.flush()  # get product.id before committing
@@ -58,7 +113,7 @@ def create_product(
             detail="Initial quantity is only allowed when maintain inventory is enabled",
         )
 
-    if not payload.allow_decimal and not _is_whole_number(payload.initial_quantity):
+    if not allow_decimal and not _is_whole_number(payload.initial_quantity):
         raise HTTPException(status_code=400, detail="Initial quantity must be a whole number for this product")
 
     if payload.maintain_inventory:
@@ -69,8 +124,29 @@ def create_product(
         )
         db.add(inventory)
 
+    if serial_codes:
+        SerialManager(db).register_stock(
+            serial_codes,
+            product_id=product.id,
+            company_id=active_company.id,
+            note="Opening stock",
+        )
+
     db.commit()
     db.refresh(product)
+
+    track(
+        "product_created",
+        distinct_id_for(current_user),
+        {
+            "product_id": product.id,
+            "gst_rate": float(product.gst_rate or 0),
+            "maintain_inventory": product.maintain_inventory,
+            "track_serials": product.track_serials,
+            "is_producable": product.is_producable,
+            "has_opening_stock": (payload.initial_quantity or 0) > 0,
+        },
+    )
     return product
 
 
@@ -112,10 +188,10 @@ def update_product(
     product_id: int,
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
-    if payload.gst_rate < 0 or payload.gst_rate > 100:
+    if not 0 <= payload.gst_rate <= 100:
         raise HTTPException(status_code=400, detail="GST rate must be between 0 and 100")
 
     product = db.query(Product).filter(Product.id == product_id, Product.company_id == active_company.id).first()
@@ -136,10 +212,12 @@ def update_product(
     product.description = payload.description.strip() if payload.description else None
     product.hsn_sac = payload.hsn_sac
     product.price = payload.price
+    product.purchase_price = payload.purchase_price
     product.gst_rate = payload.gst_rate
     product.unit = payload.unit
     product.is_producable = payload.is_producable
     product.production_cost = payload.production_cost
+    product.reorder_level = payload.reorder_level
 
     if product.allow_decimal and not payload.allow_decimal:
         inventory = db.query(Inventory).filter(
@@ -152,9 +230,30 @@ def update_product(
                 detail="Cannot disable decimal quantity while inventory has fractional stock",
             )
 
-    product.allow_decimal = payload.allow_decimal
+    was_tracking_serials = bool(product.track_serials)
+    serial_codes = SerialManager.normalize_codes(payload.serial_numbers)
+    if payload.track_serials and not payload.maintain_inventory:
+        raise HTTPException(
+            status_code=400,
+            detail="Serial-tracked products must maintain inventory",
+        )
+    if serial_codes and (not payload.track_serials or was_tracking_serials):
+        # The only serials this endpoint accepts are the backfill that turns
+        # tracking on; afterwards units arrive on purchases and adjustments.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{product.name} is already serial-tracked — add serial numbers "
+                "on a purchase entry or a stock adjustment"
+                if was_tracking_serials
+                else "Serial numbers are only allowed on a serial-tracked product"
+            ),
+        )
+
+    product.allow_decimal = payload.allow_decimal and not payload.track_serials
     was_tracking_inventory = bool(product.maintain_inventory)
     product.maintain_inventory = payload.maintain_inventory
+    product.track_serials = payload.track_serials
 
     if not was_tracking_inventory and payload.maintain_inventory:
         inventory = db.query(Inventory).filter(
@@ -164,16 +263,68 @@ def update_product(
         if not inventory:
             db.add(Inventory(company_id=active_company.id, product_id=product_id, quantity=0))
 
+    if payload.track_serials and not was_tracking_serials:
+        _backfill_serials(db, product, serial_codes, company_id=active_company.id)
+
     db.commit()
     db.refresh(product)
     return product
+
+
+def _backfill_serials(
+    db: Session,
+    product: Product,
+    codes: list[str],
+    *,
+    company_id: int,
+) -> None:
+    """Give every unit already in stock a serial as tracking is switched on.
+
+    Flag and units are written in the same request on purpose: a product left
+    tracked with fewer serials than stock breaks the invariant the whole feature
+    rests on, and there is no second round-trip to repair it in.
+    """
+    inventory = db.query(Inventory).filter(
+        Inventory.product_id == product.id,
+        Inventory.company_id == company_id,
+    ).first()
+    stock = Decimal(str(inventory.quantity or 0)) if inventory else Decimal("0")
+    if stock != stock.to_integral_value():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{product.name} has fractional stock ({stock}) — it cannot be "
+                "serial-tracked until that is adjusted to a whole number"
+            ),
+        )
+
+    # Turning tracking off leaves the rows behind for history, so a product
+    # switched back on already has some of its units covered.
+    on_hand = int(stock)
+    already = SerialManager(db).count_in_stock(product.id, company_id=company_id)
+    missing = max(on_hand - already, 0)
+    if len(codes) != missing:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{product.name} has {_plural(on_hand, 'unit')} in stock — provide "
+                f"{_plural(missing, 'serial number')} to enable serial tracking"
+            ),
+        )
+
+    SerialManager(db).register_stock(
+        codes,
+        product_id=product.id,
+        company_id=company_id,
+        note="Backfilled when serial tracking was enabled",
+    )
 
 
 @router.delete("/{product_id}")
 def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     product = db.query(Product).filter(Product.id == product_id, Product.company_id == active_company.id).first()
@@ -199,3 +350,600 @@ def delete_product(
     db.delete(product)
     db.commit()
     return {"message": "Product deleted"}
+
+
+# ---------------------------------------------------------------------------
+# Merged Products + Inventory endpoints
+# ---------------------------------------------------------------------------
+
+def _apply_catalogue_filters(
+    query,
+    quantity_expr,
+    search: str,
+    status_filter: str,
+    low_stock: bool,
+    serial_filter: str,
+    db: Session,
+    company_id: int,
+):
+    """Filters shared by the catalogue grid and its CSV export.
+
+    The export is the grid the user is looking at, saved to a file — if the two
+    ever filtered differently a filtered export would quietly hand back rows
+    that were not on screen.
+    """
+    if search.strip():
+        cleaned = search.strip()
+        term = f"%{cleaned}%"
+        # A pasted IMEI names a unit, not a product, so the search also reaches
+        # into the serial register and returns the product that unit belongs to
+        # — the catalogue-side counterpart of the invoice list's serial search.
+        #
+        # Upper-cased on both sides rather than leaning on ilike's collation,
+        # because ``ux_product_serials_company_number`` is an index on
+        # ``upper(serial_number)``.  Contains-match, since an operator reading
+        # the sticker on a handset usually types only its last few digits.
+        #
+        # Sold and void rows are matched too: "which product is this unit?" is
+        # asked most often about a handset that has already left the shelf.
+        serial_term = f"%{cleaned.upper()}%"
+        serial_subq = (
+            db.query(ProductSerial.product_id)
+            .filter(
+                # Tenancy: the serial rows themselves are scoped, not merely the
+                # products they point at — a serial belonging to another company
+                # must never name a product here.
+                ProductSerial.company_id == company_id,
+                func.upper(ProductSerial.serial_number).like(serial_term),
+            )
+            # ``scalar_subquery`` rather than ``subquery``: IN() over a plain
+            # Subquery is coerced with a SAWarning on SQLAlchemy 2.
+            .scalar_subquery()
+        )
+        query = query.filter(
+            or_(
+                Product.name.ilike(term),
+                Product.sku.ilike(term),
+                Product.id.in_(serial_subq),
+            )
+        )
+
+    # Tri-state rather than a boolean flag: `serials=untracked` is a question
+    # operators actually ask (which lines still need serials backfilled), and a
+    # boolean cannot say it — `serials=false` reads as "filter off", not as
+    # "only the untracked ones".  Unknown values fall through as "all", the way
+    # `status` already behaves.
+    if serial_filter == "tracked":
+        query = query.filter(Product.track_serials == True)
+    elif serial_filter == "untracked":
+        query = query.filter(Product.track_serials == False)
+
+    if status_filter == "active":
+        query = query.filter(Product.maintain_inventory == True)
+    elif status_filter == "inactive":
+        query = query.filter(Product.maintain_inventory == False)
+
+    if low_stock:
+        # A reorder level of 0 means no restock threshold was ever set, so those
+        # products are not "low" — without this every zero-stock row would be.
+        query = query.filter(
+            Product.reorder_level > 0,
+            quantity_expr <= Product.reorder_level,
+        )
+
+    return query
+
+
+@router.get("/with-inventory", response_model=dict)
+def list_products_with_inventory(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
+    search: str = Query(""),
+    status_filter: str = Query("", alias="status"),
+    low_stock: bool = Query(False),
+    serial_filter: str = Query("", alias="serials"),
+    sort_by: str = Query("name"),
+    sort_order: str = Query("asc"),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Returns products joined with their inventory data for the unified grid."""
+    # Subquery: last invoice_date per product (non-cancelled invoices)
+    last_sold_subq = (
+        db.query(
+            InvoiceItem.product_id,
+            func.max(Invoice.invoice_date).label("last_sold_at"),
+        )
+        .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
+        .filter(
+            Invoice.status != "cancelled",
+            Invoice.company_id == active_company.id,
+        )
+        .group_by(InvoiceItem.product_id)
+        .subquery()
+    )
+
+    quantity_expr = func.coalesce(Inventory.quantity, 0)
+
+    query = (
+        db.query(
+            Product,
+            quantity_expr.label("current_stock"),
+            last_sold_subq.c.last_sold_at,
+        )
+        .outerjoin(
+            Inventory,
+            and_(
+                Inventory.product_id == Product.id,
+                Inventory.company_id == active_company.id,
+            ),
+        )
+        .outerjoin(last_sold_subq, last_sold_subq.c.product_id == Product.id)
+        .filter(Product.company_id == active_company.id)
+    )
+
+    query = _apply_catalogue_filters(
+        query, quantity_expr, search, status_filter, low_stock, serial_filter, db, active_company.id
+    )
+
+    total = query.count()
+
+    if sort_by == "name":
+        order_col = Product.name
+    elif sort_by == "sku":
+        order_col = Product.sku
+    elif sort_by == "price":
+        order_col = Product.price
+    elif sort_by == "stock":
+        order_col = quantity_expr
+    elif sort_by == "purchase_price":
+        order_col = Product.purchase_price
+    elif sort_by == "reorder_level":
+        order_col = Product.reorder_level
+    elif sort_by == "gst_rate":
+        order_col = Product.gst_rate
+    elif sort_by == "date_added":
+        order_col = Product.created_at
+    elif sort_by == "last_sold":
+        order_col = last_sold_subq.c.last_sold_at
+    else:
+        order_col = Product.name
+
+    if sort_order == "desc":
+        query = query.order_by(order_col.desc().nulls_last())
+    else:
+        query = query.order_by(order_col.asc().nulls_last())
+
+    rows = query.offset((page - 1) * page_size).limit(page_size).all()
+
+    items = []
+    for product, current_stock, last_sold_at in rows:
+        items.append(
+            {
+                "id": product.id,
+                "sku": product.sku,
+                "name": product.name,
+                "description": product.description,
+                "hsn_sac": product.hsn_sac,
+                "purchase_price": float(product.purchase_price or 0),
+                "selling_price": float(product.price),
+                "current_stock": float(current_stock),
+                "reorder_level": float(product.reorder_level or 0),
+                "status": "active" if product.maintain_inventory else "inactive",
+                "unit": product.unit,
+                "gst_rate": float(product.gst_rate),
+                "track_serials": bool(product.track_serials),
+                "maintain_inventory": bool(product.maintain_inventory),
+                "allow_decimal": bool(product.allow_decimal),
+                "is_producable": bool(product.is_producable),
+                "production_cost": float(product.production_cost) if product.production_cost is not None else None,
+                "date_added": product.created_at,
+                "last_sold_at": last_sold_at,
+            }
+        )
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size if total > 0 else 1,
+    }
+
+
+@router.put("/{product_id}/with-inventory")
+def update_product_with_inventory(
+    product_id: int,
+    payload: ProductWithInventoryUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Update product fields and optionally inventory quantity in one call."""
+    product = (
+        db.query(Product)
+        .filter(Product.id == product_id, Product.company_id == active_company.id)
+        .first()
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
+
+    # Update product fields
+    if payload.name is not None:
+        product.name = payload.name.strip()
+    if payload.sku is not None:
+        new_sku = payload.sku.strip().upper()
+        existing = (
+            db.query(Product)
+            .filter(
+                Product.company_id == active_company.id,
+                Product.sku == new_sku,
+                Product.id != product_id,
+            )
+            .first()
+        )
+        if existing:
+            raise HTTPException(status_code=400, detail="Product with this SKU already exists")
+        product.sku = new_sku
+    if payload.description is not None:
+        product.description = payload.description.strip() if payload.description else None
+    if payload.hsn_sac is not None:
+        product.hsn_sac = payload.hsn_sac
+    if payload.selling_price is not None:
+        product.price = payload.selling_price
+    if payload.purchase_price is not None:
+        product.purchase_price = payload.purchase_price
+    if payload.reorder_level is not None:
+        product.reorder_level = payload.reorder_level
+    if payload.gst_rate is not None:
+        if not 0 <= payload.gst_rate <= 100:
+            raise HTTPException(status_code=400, detail="GST rate must be between 0 and 100")
+        product.gst_rate = payload.gst_rate
+    if payload.unit is not None:
+        product.unit = payload.unit.strip()
+
+    if payload.status is not None:
+        if payload.status == "active":
+            product.maintain_inventory = True
+        elif payload.status == "inactive":
+            product.maintain_inventory = False
+
+    # Update inventory quantity if provided
+    if payload.current_stock is not None:
+        inventory = (
+            db.query(Inventory)
+            .filter(
+                Inventory.product_id == product_id,
+                Inventory.company_id == active_company.id,
+            )
+            .first()
+        )
+        # Setting stock outright would leave a tracked product with a quantity
+        # no set of serials backs. It has to move through /inventory/adjust.
+        current = Decimal(str(inventory.quantity or 0)) if inventory else Decimal("0")
+        if product.track_serials and Decimal(str(payload.current_stock)) != current:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{product.name} is serial-tracked — adjust its stock with "
+                    "serial numbers instead of editing the quantity"
+                ),
+            )
+        if inventory:
+            inventory.quantity = Decimal(str(payload.current_stock))
+        else:
+            db.add(
+                Inventory(
+                    company_id=active_company.id,
+                    product_id=product_id,
+                    quantity=Decimal(str(payload.current_stock)),
+                )
+            )
+
+    db.commit()
+    db.refresh(product)
+
+    # Return joined data
+    inv = (
+        db.query(Inventory)
+        .filter(
+            Inventory.product_id == product.id,
+            Inventory.company_id == active_company.id,
+        )
+        .first()
+    )
+    stock = float(inv.quantity) if inv else 0.0
+
+    return {
+        "id": product.id,
+        "sku": product.sku,
+        "name": product.name,
+        "description": product.description,
+        "hsn_sac": product.hsn_sac,
+        "purchase_price": float(product.purchase_price or 0),
+        "selling_price": float(product.price),
+        "current_stock": stock,
+        "reorder_level": float(product.reorder_level or 0),
+        "status": "active" if product.maintain_inventory else "inactive",
+        "unit": product.unit,
+        "gst_rate": float(product.gst_rate),
+        "track_serials": bool(product.track_serials),
+    }
+
+
+# ---------------------------------------------------------------------------
+# CSV Export
+# ---------------------------------------------------------------------------
+
+@router.get("/export-csv")
+def export_products_csv(
+    search: str = Query(""),
+    status_filter: str = Query("", alias="status"),
+    low_stock: bool = Query(False),
+    serial_filter: str = Query("", alias="serials"),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Export the products with inventory the current filters select as CSV."""
+    quantity_expr = func.coalesce(Inventory.quantity, 0)
+    query = (
+        db.query(
+            Product,
+            quantity_expr.label("current_stock"),
+        )
+        .outerjoin(
+            Inventory,
+            and_(
+                Inventory.product_id == Product.id,
+                Inventory.company_id == active_company.id,
+            ),
+        )
+        .filter(Product.company_id == active_company.id)
+    )
+
+    query = _apply_catalogue_filters(
+        query, quantity_expr, search, status_filter, low_stock, serial_filter, db, active_company.id
+    )
+
+    rows = query.order_by(Product.name.asc()).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Item Name", "Item Code", "Category", "Purchase Price",
+        "Selling Price", "Current Stock", "Reorder Level",
+        "Description", "HSN Code", "Unit", "Tax",
+    ])
+
+    for product, stock in rows:
+        writer.writerow([
+            product.name,
+            product.sku,
+            "",  # Category — not stored
+            str(float(product.purchase_price or 0)),
+            str(product.price),
+            str(float(stock)),
+            str(float(product.reorder_level or 0)),
+            product.description or "",
+            product.hsn_sac or "",
+            product.unit or "",
+            str(product.gst_rate),
+        ])
+
+    output.seek(0)
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="products_inventory_{timestamp}.csv"'
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# CSV Import
+# ---------------------------------------------------------------------------
+
+@router.post("/import-csv", response_model=ImportCSVResult)
+async def import_products_csv(
+    file: UploadFile = FastAPIFile(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Import products from CSV — upsert by Item Code (SKU).
+
+    Accepts a multipart/form-data upload with a field named 'file'.
+    Returns a summary of created, updated, and error counts.
+    """
+    content = await file.read()
+    result = _import_csv_from_content(content, db, active_company)
+
+    # A wholly failed import is still an import attempt worth counting: rows that
+    # error are the reason someone gives up on the feature.
+    track(
+        "products_csv_imported",
+        distinct_id_for(current_user),
+        {
+            "created_count": result["created"],
+            "updated_count": result["updated"],
+            "error_count": len(result["errors"]),
+        },
+    )
+    return result
+
+
+def _csv_number(raw) -> float:
+    """A numeric CSV cell: an empty (or absent) value means 0; anything float()
+    cannot read — including 'nan'/'inf', which float() accepts — raises ValueError."""
+    text = str(raw or "").strip()
+    value = float(text) if text else 0.0
+    if math.isnan(value) or math.isinf(value):
+        raise ValueError(f"non-finite value: {text}")
+    return value
+
+
+def _import_csv_from_content(content: bytes, db: Session, active_company: CompanyProfile) -> dict:
+    created = 0
+    updated = 0
+    errors: list[dict] = []
+
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError as e:
+        return {"created": 0, "updated": 0, "errors": [{"row": 0, "message": f"Invalid file encoding: {e}"}]}
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        return {"created": 0, "updated": 0, "errors": [{"row": 0, "message": "CSV file appears to be empty"}]}
+
+    # Normalise column names
+    normalised = [h.strip().lower().replace(" ", "_") for h in reader.fieldnames]
+
+    row_num = 1  # header is row 0
+    for row in reader:
+        row_num += 1
+        values = dict(zip(normalised, [v.strip() if v else "" for v in row.values()]))
+
+        item_code = values.get("item_code") or values.get("sku") or values.get("item_code")
+        item_name = values.get("item_name") or values.get("name")
+
+        if not item_code:
+            errors.append({"row": row_num, "message": "Missing Item Code / SKU"})
+            continue
+        if not item_name:
+            errors.append({"row": row_num, "message": f"Missing Item Name for SKU {item_code}"})
+            continue
+
+        sku = item_code.strip().upper()
+
+        try:
+            selling_price = float(values.get("selling_price") or 0)
+        except ValueError:
+            errors.append({"row": row_num, "message": f"Invalid Selling Price for {sku}"})
+            continue
+
+        try:
+            tax_cell = values.get("tax") or values.get("gst") or ""
+            gst_rate = _csv_number(tax_cell.removesuffix("%"))
+            if gst_rate < 0 or gst_rate > 100:
+                raise ValueError(gst_rate)
+        except ValueError:
+            errors.append({"row": row_num, "message": f"Invalid Tax for {sku}"})
+            continue
+
+        try:
+            stock = _csv_number(values.get("current_stock") or values.get("stock") or 0)
+            if stock < 0:
+                raise ValueError(stock)
+        except ValueError:
+            errors.append({"row": row_num, "message": f"Invalid Current Stock for {sku}"})
+            continue
+
+        try:
+            purchase_price = _csv_number(values.get("purchase_price") or 0)
+            if purchase_price < 0:
+                raise ValueError(purchase_price)
+        except ValueError:
+            errors.append({"row": row_num, "message": f"Invalid Purchase Price for {sku}"})
+            continue
+
+        try:
+            reorder_level = _csv_number(values.get("reorder_level") or 0)
+            if reorder_level < 0:
+                raise ValueError(reorder_level)
+        except ValueError:
+            errors.append({"row": row_num, "message": f"Invalid Reorder Level for {sku}"})
+            continue
+
+        existing = (
+            db.query(Product)
+            .filter(
+                Product.company_id == active_company.id,
+                Product.sku == sku,
+            )
+            .first()
+        )
+
+        if existing:
+            existing.name = item_name
+            existing.price = selling_price
+            existing.purchase_price = purchase_price
+            existing.gst_rate = gst_rate
+            existing.reorder_level = reorder_level
+            if values.get("description"):
+                existing.description = values["description"]
+            if values.get("hsn_code"):
+                existing.hsn_sac = values["hsn_code"]
+            if values.get("unit"):
+                existing.unit = values["unit"]
+
+            # Update inventory
+            inv = (
+                db.query(Inventory)
+                .filter(
+                    Inventory.product_id == existing.id,
+                    Inventory.company_id == active_company.id,
+                )
+                .first()
+            )
+            # Same reason as the with-inventory update: a CSV cannot carry the
+            # serials that a tracked product's stock has to be backed by.
+            if existing.track_serials:
+                errors.append({
+                    "row": row_num,
+                    "message": f"Stock for {sku} was left as-is — it is serial-tracked",
+                })
+            elif inv:
+                inv.quantity = Decimal(str(stock))
+            elif existing.maintain_inventory:
+                db.add(Inventory(company_id=active_company.id, product_id=existing.id, quantity=Decimal(str(stock))))
+
+            updated += 1
+        else:
+            product = Product(
+                company_id=active_company.id,
+                sku=sku,
+                name=item_name,
+                description=values.get("description") or None,
+                hsn_sac=values.get("hsn_code") or None,
+                price=selling_price,
+                purchase_price=purchase_price,
+                gst_rate=gst_rate,
+                reorder_level=reorder_level,
+                unit=values.get("unit") or "Pieces",
+            )
+            db.add(product)
+            db.flush()
+
+            if product.maintain_inventory:
+                db.add(Inventory(company_id=active_company.id, product_id=product.id, quantity=Decimal(str(stock))))
+
+            created += 1
+
+    db.commit()
+    return {"created": created, "updated": updated, "errors": errors}
+
+
+# Declared last on purpose: a path parameter this greedy would otherwise shadow
+# the literal routes above it, and `/products/with-inventory` would arrive here
+# as a product id.
+@router.get("/{product_id}", response_model=ProductOut)
+def get_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """One product by id, for deep links that name a record rather than a search."""
+    product = (
+        db.query(Product)
+        .filter(Product.id == product_id, Product.company_id == active_company.id)
+        .first()
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
+    return product

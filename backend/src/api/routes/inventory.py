@@ -13,8 +13,10 @@ from src.models.production_transaction import ProductionTransaction
 from src.models.user import User, UserRole
 from src.schemas.inventory import InventoryAdjust, InventoryOut, PaginatedInventoryOut
 from src.schemas.bom import ProduceRequest, ProductionTransactionOut, PaginatedProductionTransactionOut
-from src.api.deps import get_active_company, get_current_user, require_roles
+from src.api.deps import get_active_company, get_current_user, require_company_role
+from src.core.analytics import distinct_id_for, track
 from src.services import bom_service
+from src.services.serial_service import SerialManager
 
 router = APIRouter()
 
@@ -27,7 +29,7 @@ def _is_whole_number(value: float) -> bool:
 def adjust_inventory(
     payload: InventoryAdjust,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     product = db.query(Product).filter(
@@ -41,6 +43,30 @@ def adjust_inventory(
     if not product.allow_decimal and not _is_whole_number(payload.quantity):
         raise HTTPException(status_code=400, detail="Quantity must be a whole number for this product")
 
+    serials = SerialManager(db)
+    codes = SerialManager.normalize_codes(payload.serial_numbers)
+    if product.track_serials:
+        if not _is_whole_number(payload.quantity):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{product.name} is serial-tracked, so the adjustment must be a whole number",
+            )
+        units = abs(int(Decimal(str(payload.quantity)).to_integral_value()))
+        if len(codes) != units:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{product.name} is serial-tracked — provide {units} serial "
+                    f"number{'' if units == 1 else 's'} for this adjustment "
+                    f"({len(codes)} provided)"
+                ),
+            )
+    elif codes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{product.name} is not serial-tracked — remove the serial numbers",
+        )
+
     inventory = db.query(Inventory).filter(
         Inventory.product_id == payload.product_id,
         Inventory.company_id == active_company.id,
@@ -53,7 +79,37 @@ def adjust_inventory(
     if Decimal(str(inventory.quantity or 0)) < 0:
         raise HTTPException(status_code=400, detail="Inventory cannot be negative")
 
+    if codes:
+        if payload.quantity > 0:
+            serials.register_stock(
+                codes,
+                product_id=product.id,
+                company_id=active_company.id,
+                note=payload.note,
+            )
+        else:
+            serials.void_stock(
+                codes,
+                product_id=product.id,
+                company_id=active_company.id,
+                note=payload.note,
+            )
+
     db.commit()
+
+    # The magnitude stays off the event on purpose -- how much stock a tenant
+    # holds is their business. The direction is what tells us whether people use
+    # this to receive goods or to write off shrinkage.
+    track(
+        "inventory_adjusted",
+        distinct_id_for(current_user),
+        {
+            "product_id": product.id,
+            "direction": "increase" if payload.quantity > 0 else "decrease",
+            "serial_tracked": bool(codes),
+            "has_note": bool(payload.note and payload.note.strip()),
+        },
+    )
     return {"message": "Inventory updated"}
 
 
@@ -130,6 +186,7 @@ def list_inventory(
             allow_decimal=bool(product.allow_decimal),
             price=float(product.price),
             maintain_inventory=bool(product.maintain_inventory),
+            track_serials=bool(product.track_serials),
             quantity=float(quantity),
             date_added=product.created_at,
             last_sold_at=last_sold_at,
@@ -149,7 +206,7 @@ def list_inventory(
 def produce_item(
     payload: ProduceRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """
@@ -161,6 +218,7 @@ def produce_item(
         payload.product_id,
         Decimal(str(payload.quantity)),
         current_user.id,
+        notes=payload.notes,
     )
 
     if not result["success"]:

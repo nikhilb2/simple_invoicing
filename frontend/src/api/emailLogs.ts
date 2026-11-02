@@ -3,7 +3,13 @@ import api from './client';
 export interface DueRemindersResponse {
   message: string;
   sent: { ledger_id: number; ledger_name: string; email: string }[];
-  skipped: { ledger_id: number; ledger_name: string; reason: string }[];
+  skipped: {
+    ledger_id: number;
+    ledger_name: string;
+    reason: string;
+    reason_code: 'no_email' | 'net_payable_offset';
+    net_receivable?: number;
+  }[];
   failed: { ledger_id: number; ledger_name: string; email: string }[];
 }
 
@@ -24,7 +30,7 @@ export interface EmailLog {
   subject: string;
   email_type: string;
   reference_id: number | null;
-  status: 'sent' | 'failed';
+  status: 'sent' | 'sending' | 'failed';
   error_message: string | null;
   sent_by_user_id: number | null;
   sent_at: string;

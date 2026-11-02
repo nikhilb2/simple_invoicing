@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import api from '../api/client';
+import { identifyUser, resetAnalyticsUser } from '../lib/analytics';
+import { postToNative } from '../lib/nativeBridge';
 import type { AuthToken, UserProfile } from '../types/api';
 
 function decodeEmailFromToken(token: string | null) {
@@ -20,9 +22,14 @@ type AuthState = {
   token: string | null;
   userEmail: string | null;
   userRole: UserProfile['role'] | null;
+  /** Role in the active company; null until /auth/me answers or without one. */
+  companyRole: UserProfile['role'] | null;
+  canManagePlatform: boolean;
   setToken: (token: string | null) => void;
   setUserRole: (role: UserProfile['role'] | null) => void;
   hydrateUserRole: () => Promise<void>;
+  /** Stores a token pair however it was obtained (password login, OAuth exchange). */
+  setSession: (tokens: AuthToken) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 };
@@ -31,19 +38,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   token: localStorage.getItem('token'),
   userEmail: decodeEmailFromToken(localStorage.getItem('token')),
   userRole: null,
+  companyRole: null,
+  canManagePlatform: false,
 
   setToken: (token) => {
     set({ token, userEmail: decodeEmailFromToken(token) });
   },
 
   setUserRole: (role) => {
-    set({ userRole: role });
+    set(role === null ? { userRole: null, companyRole: null, canManagePlatform: false } : { userRole: role });
   },
 
   hydrateUserRole: async () => {
     const token = get().token;
     if (!token) {
-      set({ userRole: null });
+      set({ userRole: null, companyRole: null, canManagePlatform: false });
       return;
     }
 
@@ -54,27 +63,56 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       } else {
         localStorage.removeItem('active_company_id');
       }
-      set({ userRole: res.data.role });
+      set({
+        userRole: res.data.role,
+        companyRole: res.data.company_role ?? null,
+        canManagePlatform: res.data.can_manage_platform ?? false,
+      });
     } catch {
-      set({ userRole: null });
+      set({ userRole: null, companyRole: null, canManagePlatform: false });
     }
+  },
+
+  setSession: async (tokens: AuthToken) => {
+    localStorage.setItem('token', tokens.access_token);
+    localStorage.setItem('refresh_token', tokens.refresh_token);
+    postToNative({ type: 'tokens', accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
+    const identifiedEmail = decodeEmailFromToken(tokens.access_token);
+    set({
+      token: tokens.access_token,
+      userEmail: identifiedEmail,
+    });
+
+    // The one piece of analytics the browser still owns. Events are captured
+    // server-side and keyed by this same email, so identifying here is what puts
+    // the recording of a session and the events that session produced on one
+    // person instead of two. Role and active company are set on the person by
+    // the backend, on login and on every company switch.
+    if (identifiedEmail) {
+      identifyUser(identifiedEmail, { email: identifiedEmail });
+    }
+
+    await get().hydrateUserRole();
   },
 
   login: async (email: string, password: string) => {
     const res = await api.post<AuthToken>('/auth/login', { email, password });
-    localStorage.setItem('token', res.data.access_token);
-    localStorage.setItem('refresh_token', res.data.refresh_token);
-    set({
-      token: res.data.access_token,
-      userEmail: decodeEmailFromToken(res.data.access_token),
-    });
-    await get().hydrateUserRole();
+    await get().setSession(res.data);
   },
 
   logout: () => {
+    // Fire-and-forget, and before the token is cleared: the endpoint exists so
+    // that signing out is counted on the server like every other event. Nothing
+    // waits on it and a failure is not worth surfacing -- the sign-out itself is
+    // local, and happens either way.
+    void api.post('/auth/logout').catch(() => undefined);
+    resetAnalyticsUser();
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('active_company_id');
-    set({ token: null, userEmail: null, userRole: null });
+    // The mobile app holds its own copy of the tokens; this is what sends it
+    // back to its native login screen instead of reloading us signed in.
+    postToNative({ type: 'logout' });
+    set({ token: null, userEmail: null, userRole: null, companyRole: null, canManagePlatform: false });
   },
 }));

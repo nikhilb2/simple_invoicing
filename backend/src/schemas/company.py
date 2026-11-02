@@ -40,6 +40,8 @@ class CompanyProfileBase(BaseModel):
     eway_local_threshold: float = 100000
     eway_interstate_threshold: float = 50000
     eway_always_show_button: bool = True
+    show_pay_qr_on_invoice: bool = False
+    show_upi_pay_button: bool = False
 
 
 class CompanyProfileUpdate(CompanyProfileBase):

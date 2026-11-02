@@ -1,5 +1,7 @@
 import api from '../../api/client';
-import type { CompanyProfile, Invoice, Ledger, LedgerAddress, LedgerAddressCreate, LedgerAddressUpdate, OutstandingInvoice, PaginatedInvoices, Product } from '../../types/api';
+import type { CompanyProfile, DuesAgeing, Invoice, Ledger, LedgerAddress, LedgerAddressCreate, LedgerAddressUpdate, OutstandingInvoice, PaginatedInvoices, Product } from '../../types/api';
+
+export type VoucherTypeFilter = 'all' | 'sales' | 'purchase';
 
 type InvoiceFilters = {
   page: number;
@@ -8,7 +10,13 @@ type InvoiceFilters = {
   showCancelled: boolean;
   financialYearId?: number;
   productId?: number;
+  includeDescription?: boolean;
+  voucherType?: VoucherTypeFilter;
+  dateFrom?: string;
+  dateTo?: string;
 };
+
+export type InvoiceExportFilters = Omit<InvoiceFilters, 'page' | 'pageSize'>;
 
 export type DueInvoiceFilters = {
   page: number;
@@ -35,7 +43,38 @@ function buildInvoiceParams(filters: InvoiceFilters) {
     params.product_id = filters.productId;
   }
 
+  if (filters.includeDescription) {
+    params.include_description = true;
+  }
+
+  if (filters.voucherType && filters.voucherType !== 'all') {
+    params.voucher_type = filters.voucherType;
+  }
+
+  if (filters.dateFrom) {
+    params.date_from = filters.dateFrom;
+  }
+
+  if (filters.dateTo) {
+    params.date_to = filters.dateTo;
+  }
+
   return params;
+}
+
+export async function exportInvoicesCsv(filters: InvoiceExportFilters): Promise<void> {
+  const params = buildInvoiceParams({ ...filters, page: 1, pageSize: 1 });
+  delete params.page;
+  delete params.page_size;
+
+  const res = await api.get('/invoices/export', { params, responseType: 'blob' });
+
+  const url = window.URL.createObjectURL(res.data as Blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `invoices_${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  window.URL.revokeObjectURL(url);
 }
 
 export async function fetchInvoiceById(invoiceId: number): Promise<Invoice> {
@@ -68,6 +107,32 @@ export async function fetchDueInvoicePage(filters: DueInvoiceFilters): Promise<P
   }
 
   const res = await api.get<PaginatedInvoices>('/invoices/dues', { params });
+  return res.data;
+}
+
+export type DuesAgeingFilters = {
+  search: string;
+  ledgerId?: number;
+  dueDateFrom?: string;
+  dueDateTo?: string;
+};
+
+export async function fetchDuesAgeing(filters: DuesAgeingFilters): Promise<DuesAgeing> {
+  const params: Record<string, string | number> = {
+    search: filters.search,
+  };
+
+  if (typeof filters.ledgerId === 'number') {
+    params.ledger_id = filters.ledgerId;
+  }
+  if (filters.dueDateFrom) {
+    params.due_date_from = filters.dueDateFrom;
+  }
+  if (filters.dueDateTo) {
+    params.due_date_to = filters.dueDateTo;
+  }
+
+  const res = await api.get<DuesAgeing>('/invoices/dues/ageing', { params });
   return res.data;
 }
 

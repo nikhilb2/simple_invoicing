@@ -15,6 +15,10 @@ export type Product = {
   unit: string;
   allow_decimal: boolean;
   maintain_inventory: boolean;
+  /* Each unit of this product is a physical thing with an identity — a handset
+     with an IMEI — so its lines carry serial numbers and derive their quantity
+     from them. */
+  track_serials: boolean;
   is_producable: boolean;
   production_cost: number | null;
   created_at: string | null;
@@ -33,6 +37,11 @@ export type ProductCreate = {
   is_producable: boolean;
   production_cost?: number | null;
   initial_quantity?: number;
+  track_serials?: boolean;
+  /* Initial serials on create, and the backfill when the flag is switched on
+     for a product that already has stock. Flag and serials travel together so
+     the two can never diverge. */
+  serial_numbers?: string[];
 };
 
 export type InventoryRow = {
@@ -43,6 +52,7 @@ export type InventoryRow = {
   allow_decimal: boolean;
   price: number;
   maintain_inventory: boolean;
+  track_serials?: boolean;
   quantity: number;
   date_added: string | null;
   last_sold_at: string | null;
@@ -51,6 +61,10 @@ export type InventoryRow = {
 export type InventoryAdjust = {
   product_id: number;
   quantity: number;
+  /* Required for a serial-tracked product, with one entry per unit: a positive
+     adjustment registers these serials, a negative one writes them off. */
+  serial_numbers?: string[];
+  note?: string;
 };
 
 export type PaginatedInventoryOut = {
@@ -89,6 +103,8 @@ export type Ledger = {
   address: string;
   gst: string;
   opening_balance: number | null;
+  /** Closing balance to date (debit - credit). Only sent by the ledger list. */
+  balance?: number | null;
   phone_number: string;
   email: string | null;
   website: string | null;
@@ -151,8 +167,26 @@ export type PaginatedInvoices = {
   };
 };
 
+export type DuesAgeingBucket = {
+  key: string;
+  label: string;
+  invoice_count: number;
+  total_remaining: number;
+};
+
+export type DuesAgeing = {
+  as_of_date: string;
+  buckets: DuesAgeingBucket[];
+  total_invoice_count: number;
+  total_remaining: number;
+};
+
 export type CreditNoteType = 'return' | 'discount' | 'adjustment';
 export type CreditNoteStatus = 'active' | 'cancelled';
+// Outward is a note we issued against a sale. Inward is the supplier's own
+// credit note against a purchase — we issue no document for it, we record
+// theirs so the input credit we claimed comes back off.
+export type CreditNoteDirection = 'outward' | 'inward';
 
 export type CompanyTermOut = {
   id: number;
@@ -184,6 +218,8 @@ export type CompanyProfile = {
   eway_local_threshold: number;
   eway_interstate_threshold: number;
   eway_always_show_button: boolean;
+  show_pay_qr_on_invoice: boolean;
+  show_upi_pay_button: boolean;
 };
 
 export type CompanyListItem = {
@@ -223,6 +259,8 @@ export type CompanyProfileUpdate = {
   eway_local_threshold?: number;
   eway_interstate_threshold?: number;
   eway_always_show_button?: boolean;
+  show_pay_qr_on_invoice?: boolean;
+  show_upi_pay_button?: boolean;
 };
 
 export type CompanyAccountType = 'bank' | 'cash';
@@ -236,6 +274,7 @@ export type CompanyAccount = {
   account_name: string | null;
   account_number: string | null;
   ifsc_code: string | null;
+  upi_vpa: string | null;
   display_on_invoice: boolean;
   opening_balance: number;
   is_active: boolean;
@@ -252,6 +291,7 @@ export type CompanyAccountCreate = {
   account_name?: string;
   account_number?: string;
   ifsc_code?: string;
+  upi_vpa?: string;
   display_on_invoice?: boolean;
   opening_balance?: number;
   is_active?: boolean;
@@ -265,6 +305,7 @@ export type CompanyAccountUpdate = {
   account_name?: string;
   account_number?: string;
   ifsc_code?: string;
+  upi_vpa?: string;
   display_on_invoice?: boolean;
   opening_balance?: number;
   is_active?: boolean;
@@ -318,6 +359,8 @@ export type Invoice = {
   outstanding_amount: number;
   payment_status: 'unpaid' | 'partial' | 'paid';
   due_in_days: number | null;
+  ledger_payable_amount?: number;
+  ledger_net_receivable?: number | null;
   created_at: string;
   items: InvoiceItem[];
   warnings?: string[];
@@ -356,6 +399,7 @@ export type InvoiceItem = {
   description?: string | null;
   discount_type?: string | null;
   discount_value?: number | null;
+  serial_numbers?: string[];
 };
 
 export type InvoiceItemInput = {
@@ -365,6 +409,7 @@ export type InvoiceItemInput = {
   description?: string;
   discount_type?: 'percentage' | 'net' | null;
   discount_value?: number | null;
+  serial_numbers?: string[];
 };
 
 export type CreditNoteItem = {
@@ -386,6 +431,9 @@ export type CreditNote = {
   ledger_id: number;
   financial_year_id: number | null;
   credit_note_type: CreditNoteType;
+  direction: CreditNoteDirection;
+  supplier_credit_note_number: string | null;
+  supplier_credit_note_date: string | null;
   reason: string | null;
   status: CreditNoteStatus;
   taxable_amount: number;
@@ -404,12 +452,18 @@ export type CreditNoteItemCreate = {
   invoice_item_id: number;
   quantity?: number;
   discount_amount_inclusive?: number;
+  // Which physical units are coming back — required on a return over a
+  // serial-tracked product.
+  serial_numbers?: string[];
 };
 
 export type CreditNoteCreate = {
   ledger_id: number;
   invoice_ids: number[];
   credit_note_type: CreditNoteType;
+  direction: CreditNoteDirection;
+  supplier_credit_note_number?: string | null;
+  supplier_credit_note_date?: string | null;
   reason?: string | null;
   items: CreditNoteItemCreate[];
 };
@@ -450,6 +504,8 @@ export type LedgerStatementEntry = {
   credit: number;
   account_display_name?: string | null;
   account_type?: CompanyAccountType | null;
+  payment_reference?: string | null;
+  notes?: string | null;
   invoice_allocations?: Array<{
     invoice_id: number;
     invoice_number?: string | null;
@@ -509,6 +565,8 @@ export type TaxLedgerEntry = {
   particulars: string;
   gst_rate: number;
   taxable_amount: number;
+  debit_taxable: number;
+  credit_taxable: number;
   debit_cgst: number;
   debit_sgst: number;
   debit_igst: number;
@@ -520,6 +578,9 @@ export type TaxLedgerEntry = {
 };
 
 export type TaxLedgerTotals = {
+  debit_taxable: number;
+  credit_taxable: number;
+  net_taxable: number;
   debit_cgst: number;
   debit_sgst: number;
   debit_igst: number;
@@ -532,6 +593,28 @@ export type TaxLedgerTotals = {
   net_sgst: number;
   net_igst: number;
   net_total_tax: number;
+  debit_gross: number;
+  credit_gross: number;
+  net_gross: number;
+};
+
+export type TaxLiabilityBucket = {
+  output_tax: number;
+  input_credit: number;
+  credit_used: number;
+  payable: number;
+  credit_carried_forward: number;
+};
+
+export type TaxLiability = {
+  cgst: TaxLiabilityBucket;
+  sgst: TaxLiabilityBucket;
+  igst: TaxLiabilityBucket;
+  output_tax: number;
+  input_credit: number;
+  credit_used: number;
+  payable: number;
+  credit_carried_forward: number;
 };
 
 export type TaxLedger = {
@@ -541,6 +624,7 @@ export type TaxLedger = {
   gst_rate: number | null;
   entries: TaxLedgerEntry[];
   totals: TaxLedgerTotals;
+  liability: TaxLiability;
   fy_label: string | null;
   financial_year_id: number | null;
 };
@@ -665,15 +749,43 @@ export type UserProfile = {
   full_name: string;
   role: 'admin' | 'manager' | 'staff';
   active_company_id: number | null;
+  has_password: boolean;
+  email_verified: boolean;
+  /** Role in the active company; `role` is the global one. */
+  company_role?: 'admin' | 'manager' | 'staff' | null;
+  can_manage_platform?: boolean;
+};
+
+export type AuthProvider = {
+  id: string;
+  name: string;
+};
+
+export type AuthConfig = {
+  password_signup_enabled: boolean;
+  password_reset_enabled: boolean;
+  providers: AuthProvider[];
+};
+
+export type RegisterRequest = {
+  email: string;
+  full_name: string;
+};
+
+export type DetailResponse = {
+  detail: string;
 };
 
 export type ChangePasswordRequest = {
-  current_password: string;
+  current_password?: string;
   new_password: string;
 };
 
 export type ChangePasswordResponse = {
   detail: string;
+  access_token?: string | null;
+  refresh_token?: string | null;
+  token_type?: string | null;
 };
 
 export type SmtpConfig = {
@@ -774,6 +886,21 @@ export type BackupRestoreResponse = {
   applied_migrations: number;
 };
 
+export type BackupScheduleResponse = {
+  enabled: boolean;
+  email_enabled: boolean;
+  schedule_time: string | null;
+  timezone: string | null;
+  keep: number;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_status: 'success' | 'failed' | null;
+  last_file_name: string | null;
+  last_error: string | null;
+  last_email_status: 'sent' | 'skipped' | 'failed' | null;
+  last_email_detail: string | null;
+};
+
 // BOM (Bill of Materials) types
 export type BOMComponent = {
   id: number;
@@ -801,6 +928,7 @@ export type BOMUpdate = {
 export type ProduceRequest = {
   product_id: number;
   quantity: number;
+  notes?: string;
 };
 
 export type ProductionTransaction = {
@@ -833,4 +961,102 @@ export type ProduceResponse = {
       after: number;
     }
   >;
+};
+
+export type ApiKey = {
+  id: number;
+  name: string;
+  key_prefix: string;
+  expires_at: string;
+  is_active: boolean;
+  created_at: string;
+  created_by_user_id: number;
+};
+
+export type ApiKeyCreateResponse = ApiKey & {
+  raw_key: string;
+};
+
+export type ApiKeyCreate = {
+  name: string;
+  expires_at: string;
+};
+
+export type DashboardMonthlyPoint = {
+  month: string;
+  label: string;
+  sales: number;
+  purchases: number;
+  receipts: number;
+};
+
+export type DashboardTopProduct = {
+  product_id: number;
+  name: string;
+  quantity: number;
+  revenue: number;
+};
+
+export type DashboardMetrics = {
+  currency_code: string;
+  catalog: {
+    total_products: number;
+    producible_products: number;
+  };
+  inventory: {
+    tracked_products: number;
+    total_units: number;
+    low_stock_count: number;
+    out_of_stock_count: number;
+    stock_value: number;
+  };
+  sales: {
+    sales_invoice_count: number;
+    purchase_invoice_count: number;
+    total_sales: number;
+    total_purchases: number;
+    this_month_sales: number;
+    average_invoice_value: number;
+  };
+  receivables: {
+    outstanding_amount: number;
+    overdue_amount: number;
+    overdue_count: number;
+    paid_count: number;
+    partial_count: number;
+    unpaid_count: number;
+  };
+  payments: {
+    received_total: number;
+    paid_total: number;
+    this_month_received: number;
+  };
+  charts: {
+    monthly: DashboardMonthlyPoint[];
+    top_products: DashboardTopProduct[];
+  };
+};
+
+/** What a public share link can point at. */
+export type ShareResourceType = 'invoice' | 'ledger_statement' | 'payment' | 'credit_note';
+
+/**
+ * A public, tokenised URL for one document, handed to a customer over WhatsApp.
+ *
+ * `resource_id` is the invoice id, the *ledger* id for a statement, or the
+ * payment id. `from_date`/`to_date` are only ever set for `ledger_statement` —
+ * a statement without its period is not the same document.
+ */
+export type ShareLink = {
+  id: number;
+  token: string;
+  /** Absolute, ready to paste. Built by the backend, not assembled here. */
+  url: string;
+  resource_type: ShareResourceType;
+  resource_id: number;
+  from_date: string | null;
+  to_date: string | null;
+  view_count: number;
+  last_viewed_at: string | null;
+  created_at: string;
 };

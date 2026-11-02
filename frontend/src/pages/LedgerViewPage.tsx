@@ -1,20 +1,26 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, FileText, FilePlus, Mail, Pencil, ReceiptText, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, FileText, FilePlus, Mail, Pencil, ReceiptText, Share2, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyAccount, CompanyProfile, Invoice, Ledger, LedgerAddress, LedgerStatement, OutstandingInvoice, Payment, PaymentCreate, PaymentInvoiceAllocation, PaymentUpdate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
+import CreditNotePreview from '../components/CreditNotePreview';
 import PaymentReceiptPreview from '../components/PaymentReceiptPreview';
 import StatementPreview from '../components/StatementPreview';
+import ShareModal from '../components/ShareModal';
 import StatusToasts from '../components/StatusToasts';
 import CreateInvoiceModal from '../components/CreateInvoiceModal';
 import SendEmailModal from '../components/SendEmailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
-import formatCurrency from '../utils/formatting';
+import ModalCloseButton from '../components/ModalCloseButton';
+import formatCurrency, { formatDate } from '../utils/formatting';
+import { validateAllocations } from '../utils/validateAllocations';
 import { useFY } from '../context/FYContext';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 import { fetchOutstandingInvoices, fetchLedgerAddresses, createLedgerAddress, updateLedgerAddress, deleteLedgerAddress } from '../features/invoices/api';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import EmptyState from '../components/EmptyState';
+import LedgerPhoneLinks from '../components/LedgerPhoneLinks';
 
 function defaultDateRange() {
   const today = new Date();
@@ -109,6 +115,7 @@ export default function LedgerViewPage() {
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [previewReceiptId, setPreviewReceiptId] = useState<number | null>(null);
   const [previewReceiptNumber, setPreviewReceiptNumber] = useState<string | null>(null);
+  const [previewCreditNote, setPreviewCreditNote] = useState<{ id: number; number: string | null } | null>(null);
   const [loadingLedger, setLoadingLedger] = useState(true);
   const [loadingStatement, setLoadingStatement] = useState(false);
   const [error, setError] = useState('');
@@ -124,11 +131,19 @@ export default function LedgerViewPage() {
   const [loadingOutstandingInvoices, setLoadingOutstandingInvoices] = useState(false);
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [showStatementPreview, setShowStatementPreview] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showActionsDropdown, setShowActionsDropdown] = useState(false);
   const actionsDropdownRef = useRef<HTMLDivElement>(null);
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+
+  // Both payment dialogs are long enough to scroll; Escape is the way out that
+  // does not depend on where the user has scrolled to.
+  useEscapeClose(useCallback(() => {
+    setShowPaymentForm(false);
+    setEditingPayment(null);
+  }, []));
   const [editPaymentForm, setEditPaymentForm] = useState<PaymentUpdate>(() => createDefaultEditPaymentForm());
   const [editOutstandingInvoices, setEditOutstandingInvoices] = useState<OutstandingInvoice[]>([]);
   const [loadingEditOutstandingInvoices, setLoadingEditOutstandingInvoices] = useState(false);
@@ -145,9 +160,15 @@ export default function LedgerViewPage() {
   const [showAddressForm, setShowAddressForm] = useState(false);
   const [submittingAddress, setSubmittingAddress] = useState(false);
 
+  // Reset the create form on every close, not just after a successful save.
+  // The voucher type is otherwise sticky: an abandoned "Payment" entry becomes
+  // the default for the next receipt, which then books to the wrong side.
   useEffect(() => {
-    if (!showPaymentForm) setAllocationCreateSearch('');
-  }, [showPaymentForm]);
+    if (showPaymentForm) return;
+    setAllocationCreateSearch('');
+    setPaymentForm(createDefaultPaymentForm(ledgerId));
+    setOutstandingInvoices([]);
+  }, [showPaymentForm, ledgerId]);
 
   useEffect(() => {
     if (!editingPayment) setAllocationEditSearch('');
@@ -496,13 +517,16 @@ export default function LedgerViewPage() {
       setError('Amount must be greater than 0');
       return;
     }
+    const allocationError = validateAllocations(paymentForm.invoice_allocations, paymentForm.amount);
+    if (allocationError) {
+      setError(allocationError);
+      return;
+    }
     try {
       setSubmittingPayment(true);
       setError('');
       const res = await api.post<Payment>('/payments/', paymentForm);
       setShowPaymentForm(false);
-      setPaymentForm(createDefaultPaymentForm(ledgerId));
-      setOutstandingInvoices([]);
       // Refresh statement
       setRefreshKey((k) => k + 1);
       if (res.data.warnings?.includes('invoice_date_outside_fy') && activeFY) {
@@ -549,6 +573,11 @@ export default function LedgerViewPage() {
     if (!editingPayment) return;
     if ((editPaymentForm.amount ?? 0) <= 0) {
       setError('Amount must be greater than 0');
+      return;
+    }
+    const editAllocationError = validateAllocations(editPaymentForm.invoice_allocations, editPaymentForm.amount ?? 0);
+    if (editAllocationError) {
+      setError(editAllocationError);
       return;
     }
     try {
@@ -614,11 +643,13 @@ export default function LedgerViewPage() {
           <p className="eyebrow">Ledger statement</p>
           <h1 className="page-title">{ledger.name}</h1>
           <p className="section-copy">
-            {[ledger.gst ? `GST: ${ledger.gst}` : '', ledger.phone_number].filter(Boolean).join(' · ')}
+            {ledger.gst ? `GST: ${ledger.gst}` : null}
+            {ledger.gst && ledger.phone_number?.trim() ? ' · ' : null}
+            <LedgerPhoneLinks phone={ledger.phone_number} />
             {ledger.email ? ` · ${ledger.email}` : ''}
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div className="page-hero__actions">
           <button
             type="button"
             className="button button--ghost"
@@ -685,6 +716,16 @@ export default function LedgerViewPage() {
                   >
                     <FileText size={16} />
                     Create Credit Note
+                  </button>
+                  <button
+                    type="button"
+                    className="action-dropdown__item"
+                    role="menuitem"
+                    aria-label="Share Statement"
+                    onClick={() => { setShowActionsDropdown(false); setShowShareModal(true); }}
+                  >
+                    <Share2 size={16} />
+                    Share Statement
                   </button>
                 </div>
               ) : null}
@@ -869,11 +910,20 @@ export default function LedgerViewPage() {
           <div className="summary-box">
             <p className="eyebrow">Tally-style summary</p>
             <p className="summary-box__value">{statement ? formatCurrency(statement.closing_balance, activeCurrencyCode) : formatCurrency(0, activeCurrencyCode)}</p>
-            <p className="muted-text">
-              Opening {statement ? formatCurrency(statement.opening_balance, activeCurrencyCode) : formatCurrency(0, activeCurrencyCode)} · Debit{' '}
-              {statement ? formatCurrency(statement.period_debit, activeCurrencyCode) : formatCurrency(0, activeCurrencyCode)} · Credit{' '}
-              {statement ? formatCurrency(statement.period_credit, activeCurrencyCode) : formatCurrency(0, activeCurrencyCode)}
-            </p>
+            <dl className="muted-text summary-box__breakdown">
+              <div className="summary-box__stat">
+                <dt>Opening</dt>
+                <dd>{formatCurrency(statement ? statement.opening_balance : 0, activeCurrencyCode)}</dd>
+              </div>
+              <div className="summary-box__stat">
+                <dt>Debit</dt>
+                <dd>{formatCurrency(statement ? statement.period_debit : 0, activeCurrencyCode)}</dd>
+              </div>
+              <div className="summary-box__stat">
+                <dt>Credit</dt>
+                <dd>{formatCurrency(statement ? statement.period_credit : 0, activeCurrencyCode)}</dd>
+              </div>
+            </dl>
           </div>
 
           <div className="invoice-list">
@@ -887,13 +937,22 @@ export default function LedgerViewPage() {
                   <div key={`${entry.entry_type}-${entry.entry_id}-${idx}`} className="invoice-row">
                     <div className="invoice-row__meta">
                       <strong>{entry.reference_number || `${entry.voucher_type} #${entry.entry_id}`}</strong>
-                      <span className="table-subtext">{new Date(entry.date).toLocaleDateString()} · {entry.particulars}</span>
+                      <span className="table-subtext">{formatDate(entry.date)} · {entry.particulars}</span>
                       {entry.entry_type === 'payment' ? (
                         <>
                           <span className="table-subtext">
                             Account: {entry.account_display_name || 'Unallocated'}
                             {entry.account_type ? ` (${entry.account_type})` : ''}
                           </span>
+                          {entry.payment_reference ? (
+                            <span className="table-subtext">Ref: {entry.payment_reference}</span>
+                          ) : null}
+                          {entry.notes ? (
+                            <span className="voucher-note">
+                              <span className="voucher-note__label">Note</span>
+                              <span className="voucher-note__text">{entry.notes}</span>
+                            </span>
+                          ) : null}
                           {entry.invoice_allocations && entry.invoice_allocations.length > 0 ? (
                             <div className="receipt-allocation-strip">
                               <div className="receipt-allocation-strip__header">
@@ -942,6 +1001,7 @@ export default function LedgerViewPage() {
                     <span className="invoice-row__price">
                       {entry.debit > 0 ? `Dr ${formatCurrency(entry.debit, activeCurrencyCode)}` : `Cr ${formatCurrency(entry.credit, activeCurrencyCode)}`}
                     </span>
+                    <div className="invoice-row__actions">
                     {entry.entry_type === 'invoice' ? (
                       <button
                         type="button"
@@ -949,6 +1009,22 @@ export default function LedgerViewPage() {
                         onClick={() => void handleViewInvoice(entry.entry_id)}
                         title="View invoice"
                         aria-label="View invoice"
+                      >
+                        View
+                      </button>
+                    ) : entry.entry_type === 'credit_note' ? (
+                      <button
+                        type="button"
+                        className="button button--ghost button--small"
+                        onClick={() => (
+                          // A Debit Note row is a supplier's note we only recorded; it has no
+                          // document of ours, so it opens on the credit notes page instead.
+                          entry.voucher_type === 'Debit Note'
+                            ? navigate(`/credit-notes?cn_id=${entry.entry_id}`)
+                            : setPreviewCreditNote({ id: entry.entry_id, number: entry.reference_number ?? null })
+                        )}
+                        title="View credit note"
+                        aria-label="View credit note"
                       >
                         View
                       </button>
@@ -963,7 +1039,7 @@ export default function LedgerViewPage() {
                         Edit Ledger
                       </button>
                     ) : (
-                      <div style={{ display: 'flex', gap: '4px' }}>
+                      <div className="invoice-row__actions-group">
                         <button
                           type="button"
                           className="button button--ghost button--small"
@@ -993,6 +1069,7 @@ export default function LedgerViewPage() {
                         </button>
                       </div>
                     )}
+                    </div>
                   </div>
                 ))
               : null}
@@ -1011,13 +1088,28 @@ export default function LedgerViewPage() {
         />
       ) : null}
 
+      {showShareModal ? (
+        <ShareModal
+          resourceType="ledger_statement"
+          /* The ledger id, and the period currently on screen: a statement link
+             without its dates is a different document. */
+          resourceId={ledger.id}
+          fromDate={period.fromDate}
+          toDate={period.toDate}
+          label={`Statement — ${period.fromDate} to ${period.toDate}`}
+          messageLead={`Account statement${company?.name ? ` from ${company.name}` : ''} (${period.fromDate} to ${period.toDate})${statement ? ` — closing balance ${formatCurrency(statement.closing_balance, activeCurrencyCode)}` : ''}`}
+          phone={ledger.phone_number}
+          onClose={() => setShowShareModal(false)}
+        />
+      ) : null}
+
       {showPaymentForm ? (
         <div className="modal-overlay" role="dialog" aria-modal="true" onClick={() => setShowPaymentForm(false)}>
           <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
             <div className="panel stack">
               <div className="panel__header">
                 <h2 className="nav-panel__title">Record Receipt / Payment</h2>
-                <button type="button" className="button button--ghost" onClick={() => setShowPaymentForm(false)} title="Close payment dialog" aria-label="Close payment dialog">✕</button>
+                <ModalCloseButton onClick={() => setShowPaymentForm(false)} label="Close payment dialog" />
               </div>
               <form onSubmit={(e) => void handleSubmitPayment(e)} className="stack">
                 <div className="field">
@@ -1143,10 +1235,23 @@ export default function LedgerViewPage() {
         />
       ) : null}
 
+      {previewCreditNote ? (
+        <CreditNotePreview
+          creditNoteId={previewCreditNote.id}
+          creditNoteNumber={previewCreditNote.number}
+          ledgerPhone={ledger.phone_number}
+          companyName={company?.name}
+          onClose={() => setPreviewCreditNote(null)}
+          onError={(msg) => setError(msg)}
+        />
+      ) : null}
+
       {previewReceiptId !== null ? (
         <PaymentReceiptPreview
           paymentId={previewReceiptId}
           paymentNumber={previewReceiptNumber}
+          ledgerPhone={ledger.phone_number}
+          companyName={company?.name}
           onClose={() => { setPreviewReceiptId(null); setPreviewReceiptNumber(null); }}
           onError={(msg) => setError(msg)}
         />
@@ -1189,7 +1294,7 @@ export default function LedgerViewPage() {
             <div className="panel stack">
               <div className="panel__header">
                 <h2 className="nav-panel__title">Edit Payment #{editingPayment.id}</h2>
-                <button type="button" className="button button--ghost" onClick={() => setEditingPayment(null)} title="Close" aria-label="Close">✕</button>
+                <ModalCloseButton onClick={() => setEditingPayment(null)} label="Close edit payment" />
               </div>
               <form onSubmit={(e) => void handleUpdatePayment(e)} className="stack">
                 <div className="field">

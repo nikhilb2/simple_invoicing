@@ -1,0 +1,576 @@
+{#
+  Public share page skeleton.
+
+  Rendered with autoescape ON: every value on this page (company name, party name,
+  document number) is user-supplied and is now being served to strangers.
+
+  No external fonts, no CDN, no JavaScript, no external images. The recipient is
+  usually opening this from inside WhatsApp on a phone with two bars of signal,
+  and the response CSP sets `script-src 'none'` and `img-src 'self' data:` —
+  anything needing JS or a third-party asset does not work here. Every visual
+  effect below is therefore plain CSS: gradients, not image files.
+
+  The page is one panel in the brand's own dark/lime/pink treatment. Inside it,
+  the document the recipient came for is first — who shared it, what it is, what
+  it is worth, and the download button — and the product's pitch follows below.
+  The document block is inset and quiet against the panel so the two are still
+  legibly separate: the business's figures are not the brand's copy.
+#}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>{{ page_title }}</title>
+{% block social %}{% endblock %}
+<style>
+  :root {
+    /* Document half — warm neutrals, tuned to sit beside the brand's #FCFBF8 */
+    --bg: #f5f3ef;
+    --bg-tint: #ece9e2;
+    --card: #ffffff;
+    --ink: #14120f;
+    --ink-soft: #4a463f;
+    --muted: #7c766b;
+    --line: #e7e3da;
+    --line-soft: #f0ece4;
+    --btn: #14120f;
+    --btn-ink: #fcfbf8;
+    --shadow: 0 1px 2px rgba(20,18,15,.05), 0 8px 24px -12px rgba(20,18,15,.18);
+
+    /* Brand palette, sampled from the marketing site. */
+    --brand-black: #0f0c0a;
+    --brand-panel: #181311;
+    --brand-ink: #fcfbf8;
+    --brand-muted: #c0bcaf;
+    --lime: #9ceb0a;
+    --pink: #f924a4;
+    --yellow: #ffcc33;
+    --brand-border: rgba(54,43,38,.7);
+    /* The marketing site's two named shadows, kept under its own names. */
+    --brand-glow: 0 0 60px -10px rgba(156,235,10,.55);
+    /* The site's magenta drop, pulled back a stop: it lands on a light page
+       here, where the full-strength version reads as a smear under the panel. */
+    --brand-elegant: 0 18px 50px -24px rgba(179,5,109,.35);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #100e0c;
+      --bg-tint: #171412;
+      --card: #1a1715;
+      --ink: #f4f1ea;
+      --ink-soft: #cdc7bb;
+      --muted: #948d80;
+      --line: #2a2622;
+      --line-soft: #221e1b;
+      --btn: #fcfbf8;
+      --btn-ink: #14120f;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(80rem 40rem at 50% -12rem, var(--bg-tint), transparent 70%),
+      var(--bg);
+    color: var(--ink);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+                 Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 660px; margin: 0 auto; padding: 14px 16px 40px; }
+
+  /* ── Document card ───────────────────────────────────────────────────
+     Only the unavailable page uses this now; the document page's own summary
+     lives inside the panel below. */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 26px 24px 24px;
+    box-shadow: var(--shadow);
+  }
+
+  .notice { text-align: center; padding: 44px 22px; }
+  .notice h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 10px; }
+  .notice p { margin: 0; color: var(--muted); font-size: 15px; }
+
+  /* ── Brand panel ─────────────────────────────────────────────────────
+     Not an ad slot: the product's own brand surface, rebuilt from the marketing
+     site's panel primitive — warm near-black under a lime glow top-left and a
+     magenta glow bottom-right, a faint grid, the lime→pink gradient the wordmark
+     uses, and the site's own price typesetting. It stays dark in both colour
+     schemes because it is a brand asset, not page chrome.
+     (Kept free of the brand name on purpose: everything inside <style> is
+     served to every visitor, so a name here would survive the panel being
+     switched off and make "is it really gone?" untestable.) */
+  .promo {
+    position: relative; overflow: hidden; isolation: isolate;
+    margin-top: 30px; padding: 28px 26px 22px;
+    /* The marketing site's panel radius (1.75rem), deliberately rounder than
+       the document card above it — the two halves are different objects. */
+    border-radius: 28px;
+    background:
+      radial-gradient(34rem 20rem at -10% -20%, rgba(156,235,10,.30), transparent 62%),
+      radial-gradient(30rem 22rem at 115% 118%, rgba(249,36,164,.30), transparent 62%),
+      linear-gradient(180deg, #1e1815 0%, var(--brand-black) 76%);
+    color: var(--brand-ink);
+    border: 1px solid var(--brand-border);
+    box-shadow: var(--brand-elegant);
+  }
+  /* Faint grid, matching the marketing site's backdrop. Behind the content. */
+  .promo::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(252,251,248,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(252,251,248,.05) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(28rem 20rem at 50% 0%, #000 35%, transparent 78%);
+    -webkit-mask-image: radial-gradient(28rem 20rem at 50% 0%, #000 35%, transparent 78%);
+  }
+
+  .promo-id { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .promo-mark { flex: none; display: block; border-radius: 9px; }
+  .promo-id .name {
+    font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: var(--brand-ink);
+  }
+
+  /* The site's signature label: uppercase, widely letterspaced, lime. */
+  .eyebrow {
+    margin: 0 0 8px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .28em;
+    color: var(--lime);
+  }
+
+  .promo h2 {
+    font-size: 27px; font-weight: 780; letter-spacing: -0.035em; line-height: 1.14;
+    margin: 0 0 10px;
+    /* Fallback first: if background-clip:text is unsupported the text is still
+       readable warm-white rather than invisible. */
+    color: var(--brand-ink);
+    background-image: linear-gradient(96deg, var(--lime) 4%, #eaf7c0 38%, var(--pink) 96%);
+    -webkit-background-clip: text; background-clip: text;
+  }
+  @supports ((-webkit-background-clip: text) or (background-clip: text)) {
+    .promo h2 { -webkit-text-fill-color: transparent; }
+  }
+  .promo .sub {
+    margin: 0 0 18px; font-size: 15px; line-height: 1.5; color: var(--brand-muted);
+    max-width: 34rem;
+  }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; padding: 0; list-style: none; }
+  /* The site's pill: lime-tinted hairline over the panel fill, with the same
+     tight lime bloom underneath. */
+  .chips li {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 13px 7px 10px; border-radius: 999px;
+    font-size: 12.5px; font-weight: 550; color: var(--brand-ink);
+    background: rgba(24,19,17,.88);
+    border: 1px solid rgba(156,235,10,.26);
+    box-shadow: 0 0 28px -16px rgba(156,235,10,.9);
+  }
+  .chips svg { flex: none; color: var(--lime); }
+
+  /* Price, set the way the marketing site sets it: the amount large and heavy,
+     the period small beside it, a quiet lead-in above the baseline. */
+  .price { display: flex; align-items: baseline; flex-wrap: wrap; margin: 0 0 20px; }
+  .price .lead {
+    margin-right: 11px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .22em;
+    color: var(--brand-muted);
+  }
+  .price .amount {
+    font-size: 38px; font-weight: 800; letter-spacing: -0.035em; line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--brand-ink);
+    background-image: linear-gradient(96deg, var(--lime) 6%, #eaf7c0 44%, var(--pink) 100%);
+    -webkit-background-clip: text; background-clip: text;
+  }
+  @supports ((-webkit-background-clip: text) or (background-clip: text)) {
+    .price .amount { -webkit-text-fill-color: transparent; }
+  }
+  /* Tight against the amount: it reads as one price, not two words. */
+  .price .period { margin-left: 3px; font-size: 15px; font-weight: 600; color: var(--brand-muted); }
+
+  .promo-cta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .cta-primary {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 14px 22px; border-radius: 999px;
+    font-size: 15px; font-weight: 700; letter-spacing: -0.01em;
+    color: var(--brand-black); text-decoration: none;
+    background: linear-gradient(96deg, var(--lime) 0%, #d7f25c 42%, var(--pink) 100%);
+    box-shadow: 0 10px 30px -12px rgba(156,235,10,.55);
+  }
+  .cta-secondary {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 13px 20px; border-radius: 999px;
+    font-size: 15px; font-weight: 600; color: var(--brand-ink); text-decoration: none;
+    background: linear-gradient(180deg, rgba(30,24,21,.82), rgba(15,12,10,.92));
+    border: 1px solid var(--brand-border);
+  }
+  .cta-secondary svg { color: var(--lime); }
+  /* Hover only where there is a pointer: on a phone :hover sticks after a tap. */
+  @media (hover: hover) {
+    .cta-primary, .cta-secondary { transition: transform .26s cubic-bezier(.16,1,.3,1), box-shadow .3s ease; }
+    .cta-primary:hover { transform: translateY(-2px); box-shadow: var(--brand-glow); }
+    .cta-secondary:hover { transform: translateY(-2px); border-color: rgba(156,235,10,.40); }
+  }
+
+  /* ── The document ────────────────────────────────────────────────────
+     What the recipient came for, so it sits at the top of the panel with the
+     download button in it and the pitch underneath. Rendered only on the
+     document page: the unavailable page has no summary. */
+  .recap {
+    margin: 0 0 20px; padding: 15px 16px 14px;
+    border-radius: 18px;
+    background: rgba(9,7,6,.55);
+    border: 1px solid rgba(252,251,248,.09);
+  }
+  .recap-label {
+    display: flex; align-items: center; gap: 8px; margin: 0 0 10px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .18em;
+    color: rgba(192,188,175,.75);
+    word-break: break-word;
+  }
+  .recap-label .dot {
+    flex: none; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--lime); box-shadow: 0 0 0 3px rgba(156,235,10,.18);
+  }
+  .recap-doc {
+    margin: 0 0 10px; font-size: 20px; font-weight: 700; letter-spacing: -0.025em;
+    line-height: 1.2; color: var(--brand-ink); word-break: break-word;
+  }
+  /* Flex-wrapped rather than a grid with a minimum column width: that minimum put
+     each figure on its own line on a phone, spending most of a screen before the
+     payment block had even started. These sit side by side and wrap only when the
+     values genuinely do not fit. */
+  .recap-rows {
+    display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 0;
+  }
+  .recap-rows > div { max-width: 100%; }
+  .recap-rows dt {
+    /* Mono for the captions, the way the site sets its technical labels. */
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px; text-transform: uppercase; letter-spacing: .16em;
+    color: rgba(192,188,175,.7);
+  }
+  .recap-rows dd {
+    margin: 2px 0 0; font-size: 14.5px; font-weight: 600; color: var(--brand-ink);
+    word-break: break-word;
+  }
+  .recap-rows .figure { font-variant-numeric: tabular-nums; color: var(--lime); }
+
+  /* The recipient's own action, so it is the solid one. Warm white rather than
+     the brand gradient: the gradient button below is the product asking for
+     something, this one is the reader getting what they came for. */
+  .recap-btn {
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    width: 100%; margin-top: 18px; padding: 15px 18px;
+    background: var(--brand-ink); color: var(--brand-black);
+    text-decoration: none; border-radius: 999px;
+    font-size: 16px; font-weight: 650; letter-spacing: -0.01em;
+  }
+  .recap-btn svg { flex: none; }
+  /* Download demotes to an outline once there is a payment block above it, so the
+     two do not compete: paying is what the reader came to do. */
+  .recap-upi + .recap-btn {
+    margin-top: 12px; padding: 9px 18px; font-size: 14.5px;
+    background: transparent; color: var(--brand-ink);
+    box-shadow: inset 0 0 0 1px rgba(192,188,175,.28);
+  }
+  /* ...and drops its filename line, which tells the reader nothing the button does
+     not, so the product's own panel below still shows on the first screen. */
+  .recap-upi + .recap-btn + .recap-hint { display: none; }
+
+  .recap-upi { margin-top: 14px; text-align: center; scroll-margin-top: 16px; }
+  .recap-upi-label {
+    margin: 0 0 12px; font-size: 15px; font-weight: 650;
+    letter-spacing: -0.01em; color: var(--brand-ink);
+  }
+  /* The white tile is not decoration. A QR has to be dark-on-light to scan, and
+     this panel is near-black. */
+  .recap-upi-code {
+    display: inline-block; background: #fff;
+    padding: 10px; border-radius: 14px; line-height: 0;
+  }
+  .recap-upi-qr {
+    width: 200px; height: 200px; display: block;
+    image-rendering: pixelated;
+  }
+  .recap-upi-vpa {
+    margin: 10px 2px 0; font-size: 13px; color: var(--brand-muted);
+    /* Selectable on purpose: copying the address by hand is the one route that
+       works everywhere -- inside a chat app's webview, on iOS, and on a feature
+       phone that cannot scan anything at all. */
+    user-select: all; word-break: break-all;
+  }
+  /* Only for companies that opted in to the button. Solid lime: on the phone the
+     UPI app lives on, tapping is the quickest way to pay. */
+  .recap-btn--upi { margin: 0 0 10px; padding: 13px 18px; background: var(--lime); color: var(--brand-black); }
+  /* White tiles for the same reason the QR sits on one: these logos are drawn for a
+     light ground, and two of them are dark type that would vanish on the panel. One
+     row of three equal tiles, which still fits a 360px phone. */
+  .recap-upi-apps {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+    margin: 0 0 12px; padding: 0; list-style: none;
+  }
+  .upi-app {
+    display: flex; align-items: center; justify-content: center;
+    height: 40px; padding: 0 8px; border-radius: 14px;
+    background: #fff; color: #14120f; text-decoration: none;
+    font-size: 13px; font-weight: 650;
+  }
+  /* Max sizes, not fixed ones, so a wordmark too wide for a narrow tile scales down
+     with its aspect ratio intact instead of being squashed. */
+  .upi-app-logo { display: block; width: auto; height: auto; max-height: 22px; max-width: 100%; }
+  /* A round icon reads smaller than a wordmark of the same height. */
+  .upi-app--phonepe .upi-app-logo { max-height: 28px; }
+  @media (hover: hover) {
+    .upi-app { transition: transform .26s cubic-bezier(.16,1,.3,1); }
+    .upi-app:hover { transform: translateY(-2px); }
+  }
+  .recap-upi-hint {
+    margin: 10px 2px 0; font-size: 12px; color: rgba(192,188,175,.7);
+  }
+  /* The QR in tap mode: a compact row for paying from a second phone, since on the
+     phone the reader is holding, the button is the way in. The image carries its
+     own quiet zone, so the white tile around it can be thin. */
+  .recap-upi-scan {
+    display: flex; align-items: center; gap: 14px;
+    padding: 8px; border-radius: 16px; text-align: left;
+    background: rgba(252,251,248,.04); border: 1px solid rgba(252,251,248,.08);
+  }
+  .recap-upi-scan .recap-upi-code { flex: none; padding: 3px; border-radius: 10px; }
+  .recap-upi-scan .recap-upi-qr { width: 104px; height: 104px; }
+  .recap-upi-scan-copy { min-width: 0; }
+  .recap-upi-scan-title { margin: 0; font-size: 14px; font-weight: 650; color: var(--brand-ink); }
+  .recap-upi-scan .recap-upi-hint { margin: 2px 0 0; }
+  /* The column beside the code is narrow, so the address is allowed to break after
+     its "@" (the <wbr> in the markup) and only mid-word if one half still does not
+     fit. The base rule's break-all would split it at an arbitrary letter. */
+  .recap-upi-scan .recap-upi-vpa {
+    margin: 6px 0 0; font-size: 13.5px; font-weight: 600; color: var(--brand-ink);
+    word-break: normal; overflow-wrap: anywhere;
+  }
+  /* On a wide screen -- a desktop, where tapping does nothing and scanning is the
+     only way to pay -- the code grows back to a comfortable size. */
+  @media (min-width: 560px) {
+    .recap-upi-scan .recap-upi-qr { width: 150px; height: 150px; }
+  }
+  .recap-hint {
+    margin: 10px 2px 0; font-size: 12px; text-align: center;
+    color: rgba(192,188,175,.7); word-break: break-all;
+  }
+
+  .promo-foot {
+    margin: 16px 0 0; font-size: 12.5px; color: rgba(192,188,175,.75);
+  }
+  .promo-foot a { color: var(--brand-muted); text-decoration: underline; text-underline-offset: 3px; }
+  /* The trailing "s" is the character people drop when they type the domain
+     from memory, so it is the one thing on this page that moves: set as a
+     capital, in brand lime, blinking twice and then resting. The <a> text
+     itself stays the real lowercase domain, so what a reader copies is right. */
+  .flash-s {
+    text-transform: uppercase; font-weight: 800; color: var(--lime);
+    animation: flash-s 2.6s ease-in-out infinite;
+  }
+  @keyframes flash-s {
+    0%, 100% { color: var(--brand-muted); text-shadow: none; }
+    7%       { color: var(--lime); text-shadow: 0 0 14px rgba(156,235,10,.9); }
+    20%      { color: var(--brand-muted); text-shadow: none; }
+    29%      { color: var(--lime); text-shadow: 0 0 14px rgba(156,235,10,.9); }
+    44%      { color: var(--brand-muted); text-shadow: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* Still the loudest character in the line, just no longer moving. */
+    .flash-s { animation: none; color: var(--lime); text-shadow: none; }
+  }
+
+  @media (max-width: 400px) {
+    .promo { padding: 20px 18px 20px; }
+    .promo h2 { font-size: 24px; }
+    .price .amount { font-size: 34px; }
+    .cta-primary, .cta-secondary { width: 100%; justify-content: center; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+{% block content %}{% endblock %}
+
+{% if ad.enabled %}
+  <section class="promo" aria-label="About Simple Invoicings">
+    <div class="promo-id">
+      {# Inline SVG, not an <img>: the CSP forbids third-party images and this
+         costs no extra request on a two-bar connection. #}
+      <svg class="promo-mark" width="30" height="30" viewBox="0 0 32 32" role="img" aria-label="Simple Invoicings">
+        <defs>
+          <linearGradient id="siMark" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#ffcc33"/>
+            <stop offset="100%" stop-color="#9ceb0a"/>
+          </linearGradient>
+        </defs>
+        <rect width="32" height="32" rx="9" fill="url(#siMark)"/>
+        <path d="M11 8.5h7.2L23 13.2V23a1.6 1.6 0 0 1-1.6 1.6H11A1.6 1.6 0 0 1 9.4 23V10.1A1.6 1.6 0 0 1 11 8.5Z" fill="#0f0c0a" opacity=".92"/>
+        <path d="M12.7 17.4l2.1 2.1 4.3-4.6" fill="none" stroke="#9ceb0a" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="name">{{ ad.brand_name }}</span>
+    </div>
+
+    {# The reason the recipient opened the link, so it comes first and the pitch
+       waits below it. `summary` is undefined on the unavailable page, and
+       Jinja's undefined is falsy, so that page drops this block and keeps the
+       rest — no second template to maintain. #}
+    {% if summary %}
+    <div class="recap">
+      <p class="recap-label">
+        <span class="dot"></span>{% if summary.company_name %}Shared by {{ summary.company_name }}{% else %}Shared document{% endif %}
+      </p>
+      <p class="recap-doc">{{ summary.title }}</p>
+      <dl class="recap-rows">
+        {% if summary.party_name %}
+        <div><dt>{{ party_label }}</dt><dd>{{ summary.party_name }}</dd></div>
+        {% endif %}
+        {% if summary.date_label %}
+        <div><dt>{{ date_label_caption }}</dt><dd>{{ summary.date_label }}</dd></div>
+        {% endif %}
+        <div><dt>{{ amount_caption }}</dt><dd class="figure">{{ summary.amount_label }}</dd></div>
+      </dl>
+      {% if summary.upi_qr_data_uri %}
+      {# The QR is always offered; a tappable button above it is the company's call.
+
+         For an ordinary personal UPI ID, Paytm meets an upi:// hand-off with "this
+         payment may fail as per UPI Risk Policy" and steers the payer to scan a QR
+         instead. That friction is the cost of an unsigned intent: signing needs an
+         RSA key registered with an acquiring bank through NPCI, which a self-hosted
+         app cannot get. A UPI ID registered as a merchant with its provider goes
+         through cleanly, and only the owner knows which kind they entered -- so the
+         button and its app shortcuts render only when the company has turned on
+         show_upi_pay_button. Scanning draws no warning either way, which is why the
+         QR stays regardless.
+
+         Server-rendered: the page ships no JavaScript, so the buttons are plain
+         links and the QR arrives as a data URI, which is what `img-src 'self' data:`
+         in the CSP is there to allow. #}
+      <div class="recap-upi{% if summary.upi_uri %} recap-upi--tap{% endif %}" id="pay">
+        {% if summary.upi_uri %}
+        {# Tap mode is laid out to stay short: the amount rides in the button rather
+           than a label above it, and the QR drops to a compact row. A tall payment
+           block pushed the rest of the page off the first screen. #}
+        <a class="recap-btn recap-btn--upi" href="{{ summary.upi_uri }}">Pay {{ summary.upi_amount_label }} by UPI</a>
+        {% if summary.upi_app_links %}
+        <ul class="recap-upi-apps" aria-label="Open in a UPI app">
+          {% for key, label, href in summary.upi_app_links %}
+          <li><a class="upi-app upi-app--{{ key }}" href="{{ href }}">
+            {%- if upi_app_logos and upi_app_logos[key] -%}
+            <img class="upi-app-logo" src="{{ upi_app_logos[key] }}" alt="{{ label }}">
+            {%- else -%}
+            {{ label }}
+            {%- endif -%}
+          </a></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        <div class="recap-upi-scan">
+          <span class="recap-upi-code">
+            <img class="recap-upi-qr" src="{{ summary.upi_qr_data_uri }}" width="104" height="104"
+                 alt="UPI QR code to pay {{ summary.upi_amount_label }}">
+          </span>
+          <div class="recap-upi-scan-copy">
+            <p class="recap-upi-scan-title">Paying from another phone?</p>
+            <p class="recap-upi-hint">Scan this code, or pay to this UPI ID:</p>
+            {# <wbr> adds a break opportunity without adding a character, so copying
+               the address still yields exactly what the payer has to type. #}
+            {% set vpa_local, _, vpa_handle = summary.upi_vpa.partition("@") %}
+            <p class="recap-upi-vpa">{{ vpa_local }}@<wbr>{{ vpa_handle }}</p>
+          </div>
+        </div>
+        {% else %}
+        <p class="recap-upi-label">Pay {{ summary.upi_amount_label }} by UPI</p>
+        <span class="recap-upi-code">
+          <img class="recap-upi-qr" src="{{ summary.upi_qr_data_uri }}" width="200" height="200"
+               alt="UPI QR code to pay {{ summary.upi_amount_label }}">
+        </span>
+        <p class="recap-upi-vpa">{{ summary.upi_vpa }}</p>
+        <p class="recap-upi-hint">
+          Scan the code with any UPI app, or copy the UPI ID above and pay from your
+          bank app.
+        </p>
+        {% endif %}
+      </div>
+      {% endif %}
+      <a class="recap-btn" href="{{ download_url }}">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M4 17.5V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1.5"/>
+        </svg>Download PDF
+      </a>
+      <p class="recap-hint">{{ summary.pdf_filename }}</p>
+    </div>
+    {% endif %}
+
+    {% if ad.footnote %}<p class="eyebrow">{{ ad.footnote }}</p>{% endif %}
+    <h2>{{ ad.headline }}</h2>
+    <p class="sub">{{ ad.tagline }}</p>
+
+    {% if ad.chips %}
+    <ul class="chips">
+      {% for chip in ad.chips %}
+      <li>
+        <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M3.4 8.4l3 3 6.2-6.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>{{ chip }}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if ad.price %}
+    <p class="price">
+      {% if ad.price_prefix %}<span class="lead">{{ ad.price_prefix }}</span>{% endif %}
+      <span class="amount">{{ ad.price }}</span>
+      {% if ad.price_period %}<span class="period">{{ ad.price_period }}</span>{% endif %}
+    </p>
+    {% endif %}
+
+    <div class="promo-cta">
+      {# noreferrer matters here: without it the browser would hand the full share
+         URL — token included — to the destination in the Referer header. #}
+      {% if ad.whatsapp_url %}
+        <a class="cta-primary" href="{{ ad.whatsapp_url }}" rel="noopener noreferrer nofollow" target="_blank">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-2.9.8.8-2.8-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.740-1.7-.8-.2-.1-.4-.1-.6.1-.2.2-.6.8-.8 1-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.3.1-.2 0-.4 0-.5s-.6-1.4-.8-1.9c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3A2.9 2.9 0 0 0 6.8 12a5 5 0 0 0 1 2.6 11.5 11.5 0 0 0 4.4 3.9c1.6.6 2.2.7 3 .6a2.6 2.6 0 0 0 1.7-1.2 2.1 2.1 0 0 0 .1-1.2c0-.1-.2-.2-.5-.3Z"/>
+          </svg>{{ ad.cta_label }}
+        </a>
+      {% elif ad.website %}
+        <a class="cta-primary" href="{{ ad.website }}" rel="noopener noreferrer nofollow" target="_blank">{{ ad.cta_label }}</a>
+      {% endif %}
+
+      {% if ad.phone %}
+        <a class="cta-secondary" href="tel:{{ ad.phone_href }}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.4 2.1L8.1 9.6a16 16 0 0 0 6 6l1.2-1.2a2 2 0 0 1 2.1-.4c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2Z"/>
+          </svg>{{ ad.phone }}
+        </a>
+      {% endif %}
+    </div>
+
+    {% if ad.website %}
+      {# One line on purpose: a newline inside the <a> would put whitespace in
+         the middle of the domain the reader copies. #}
+      <p class="promo-foot">
+        Powered by <a href="{{ ad.website }}" rel="noopener noreferrer nofollow" target="_blank">{{ ad.domain_head }}<span class="flash-s">{{ ad.domain_flash }}</span>{{ ad.domain_tail }}</a>
+      </p>
+    {% endif %}
+  </section>
+{% endif %}
+</div>
+</body>
+</html>

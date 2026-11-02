@@ -1,12 +1,20 @@
-import { useState } from 'react';
-import api, { getApiErrorMessage } from '../api/client';
+import { useCallback, useState } from 'react';
+import { Download, ExternalLink, FileSpreadsheet, Mail, Printer, Share2 } from 'lucide-react';
+import api, { getApiErrorMessage, getBlobErrorMessage } from '../api/client';
+import { parseContentDispositionFilename } from '../utils/contentDisposition';
 import type { CompanyProfile, Ledger, LedgerStatement } from '../types/api';
 import formatCurrency from '../utils/formatting';
 import SendEmailModal from './SendEmailModal';
+import ShareModal from './ShareModal';
+import PreviewToolbar from './PreviewToolbar';
+import PdfPreview, { usePdfPreview } from './PdfPreview';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 
 type StatementPreviewProps = {
   ledger: Ledger;
   statement: LedgerStatement;
+  /** No longer drawn on the statement itself — the PDF carries its own header.
+   *  Still the name the email subject and the share message are written in. */
   company: CompanyProfile | null;
   currencyCode: string;
   onClose: () => void;
@@ -15,172 +23,138 @@ type StatementPreviewProps = {
 
 export default function StatementPreview({ ledger, statement, company, currencyCode, onClose, onError }: StatementPreviewProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
-  const companyDetails = [
-    company?.gst ? `GST: ${company.gst}` : '',
-    company?.phone_number ? `Phone: ${company.phone_number}` : '',
-  ].filter(Boolean).join(' · ');
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [downloadingCsv, setDownloadingCsv] = useState(false);
 
-  const companyContact = [
-    company?.email ? `Email: ${company.email}` : '',
-    company?.website ? `Web: ${company.website}` : '',
-  ].filter(Boolean).join(' · ');
+  // The email and share modals stacked on top close themselves on Escape;
+  // without this guard the same keypress tears down the preview behind them.
+  useEscapeClose(useCallback(() => {
+    // Escape closes the open menu first, then the preview -- otherwise opening
+    // the menu and hitting Escape would dismiss the whole dialog underneath it.
+    if (menuOpen) { setMenuOpen(false); return; }
+    if (!showEmailModal && !showShareModal) onClose();
+  }, [menuOpen, showEmailModal, showShareModal, onClose]));
 
-  const ledgerContact = [
-    ledger.gst ? `GST: ${ledger.gst}` : '',
-    ledger.phone_number ? `Phone: ${ledger.phone_number}` : '',
-    ledger.email || '',
-  ].filter(Boolean).join(' · ');
+  // The statement is a view over a period, so the dates are part of what is
+  // being previewed: change them on the page behind the modal and this refetches.
+  const preview = usePdfPreview({
+    path: `/ledgers/${ledger.id}/statement/pdf`,
+    params: { from_date: statement.from_date, to_date: statement.to_date },
+    errorMessage: 'Unable to load statement PDF preview',
+    onError,
+  });
+
+  const handleDownloadPdf = async () => {
+    try {
+      const response = await api.get(`/ledgers/${ledger.id}/statement/pdf`, {
+        params: { from_date: statement.from_date, to_date: statement.to_date },
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(response.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `statement_${ledger.name.replace(/\s+/g, '_').slice(0, 30)}_${statement.from_date}_${statement.to_date}.pdf`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      onError?.(getApiErrorMessage(err, 'Unable to download PDF'));
+    }
+  };
+
+  // The CSV comes from the server, not rebuilt on the client: the server
+  // is what owns the opening balance, the running balance and the totals,
+  // so downloading its file keeps all three formats in agreement. The
+  // name prefers the server's Content-Disposition header and falls back
+  // to the same statement_<ledger>_<from>_<to>.csv shape the server uses.
+  const handleDownloadCsv = async () => {
+    try {
+      setDownloadingCsv(true);
+      const response = await api.get(`/ledgers/${ledger.id}/statement/csv`, {
+        params: { from_date: statement.from_date, to_date: statement.to_date },
+        responseType: 'blob',
+      });
+      const safeName = ledger.name.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30)
+        || `ledger_${ledger.id}`;
+      const filename = parseContentDispositionFilename(response.headers['content-disposition'])
+        ?? `statement_${safeName}_${statement.from_date}_${statement.to_date}.csv`;
+      const url = window.URL.createObjectURL(response.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      onError?.(await getBlobErrorMessage(err, 'Unable to download CSV'));
+    } finally {
+      setDownloadingCsv(false);
+    }
+  };
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="statement-preview-title">
       <div className="modal-panel modal-panel--invoice-preview">
-        <div className="panel__header no-print">
-          <div>
-            <p className="eyebrow">Statement preview</p>
-            <h2 id="statement-preview-title" className="nav-panel__title">
-              {ledger.name} — {statement.from_date} to {statement.to_date}
-            </h2>
-          </div>
-          <div className="button-row">
-            <button type="button" className="button button--secondary" onClick={() => window.print()} title="Print statement" aria-label="Print statement">
-              Print
-            </button>
-            <button
-              type="button"
-              className="button button--primary"
-              title="Download statement PDF"
-              aria-label="Download statement PDF"
-              onClick={async () => {
-                try {
-                  const response = await api.get(`/ledgers/${ledger.id}/statement/pdf`, {
-                    params: { from_date: statement.from_date, to_date: statement.to_date },
-                    responseType: 'blob',
-                  });
-                  const url = window.URL.createObjectURL(response.data as Blob);
-                  const link = document.createElement('a');
-                  link.href = url;
-                  link.download = `statement_${ledger.name.replace(/\s+/g, '_').slice(0, 30)}_${statement.from_date}_${statement.to_date}.pdf`;
-                  link.click();
-                  window.URL.revokeObjectURL(url);
-                } catch (err) {
-                  onError?.(getApiErrorMessage(err, 'Unable to download PDF'));
-                }
-              }}
-            >
-              Download PDF
-            </button>
-            <button
-              type="button"
-              className="button button--primary"
-              onClick={() => setShowEmailModal(true)}
-              title="Email statement"
-              aria-label="Email statement"
-            >
-              Email Statement
-            </button>
-            <button type="button" className="button button--ghost" onClick={onClose} title="Close statement preview" aria-label="Close statement preview">
-              Close
-            </button>
-          </div>
-        </div>
+        <PreviewToolbar
+          eyebrow="Statement preview"
+          titleId="statement-preview-title"
+          title={ledger.name}
+          meta={`${statement.from_date} to ${statement.to_date}`}
+          primary={{
+            label: 'Share',
+            icon: <Share2 size={16} aria-hidden="true" />,
+            onClick: () => setShowShareModal(true),
+            title: 'Share a link to this statement',
+          }}
+          secondary={[
+            {
+              // Same reasoning as the invoice preview: the send action belongs
+              // in the row, not behind an overflow menu nobody opens.
+              label: 'Email',
+              icon: <Mail size={16} aria-hidden="true" />,
+              onClick: () => setShowEmailModal(true),
+              title: 'Email statement',
+            },
+            {
+              label: 'Print',
+              icon: <Printer size={16} aria-hidden="true" />,
+              onClick: preview.print,
+              disabled: !preview.canPrint,
+              title: 'Print statement',
+            },
+            {
+              label: 'Download',
+              icon: <Download size={16} aria-hidden="true" />,
+              onClick: handleDownloadPdf,
+              title: 'Download statement PDF',
+            },
+            {
+              label: downloadingCsv ? 'Downloading…' : 'Export CSV',
+              icon: <FileSpreadsheet size={16} aria-hidden="true" />,
+              onClick: () => { void handleDownloadCsv(); },
+              disabled: downloadingCsv,
+              title: 'Download statement CSV',
+            },
+          ]}
+          menu={[
+            {
+              // Always offered, not just once the frame has given up: on iOS
+              // Safari a PDF in an iframe simply will not scroll, and the frame
+              // fires no error, so the fallback card never appears there.
+              label: 'Open in new tab',
+              icon: <ExternalLink size={16} aria-hidden="true" />,
+              onClick: preview.openInNewTab,
+              disabled: !preview.pdfUrl,
+            },
+          ]}
+          menuOpen={menuOpen}
+          onMenuOpenChange={setMenuOpen}
+          onClose={onClose}
+          closeLabel="Close statement preview"
+        />
 
-        <article className="invoice-print-root invoice-sheet">
-          <header className="invoice-sheet__header">
-            <div>
-              <p className="eyebrow">Issued by</p>
-              <h3>{company?.name || 'Company not set'}</h3>
-              <p>{company?.address || 'Address not provided'}</p>
-              <p>{companyDetails}</p>
-              <p>{companyContact}</p>
-            </div>
-            <div className="invoice-sheet__meta">
-              <span className="invoice-badge">Ledger Statement</span>
-              <h2>{ledger.name}</h2>
-              <p>{new Date(statement.from_date).toLocaleDateString()} – {new Date(statement.to_date).toLocaleDateString()}</p>
-            </div>
-          </header>
-
-          <section className="invoice-sheet__billto">
-            <p className="eyebrow">Ledger</p>
-            <h4>{ledger.name}</h4>
-            <p>{ledger.address}</p>
-            <p>{ledgerContact}</p>
-          </section>
-
-          <section style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-            {[
-              { label: 'Opening Balance', value: statement.opening_balance },
-              { label: 'Period Debit', value: statement.period_debit },
-              { label: 'Period Credit', value: statement.period_credit },
-              { label: 'Closing Balance', value: statement.closing_balance, highlight: true },
-            ].map((item) => (
-              <div
-                key={item.label}
-                style={{
-                  flex: 1,
-                  background: '#f9fafb',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '6px',
-                  padding: '10px 12px',
-                  textAlign: 'center',
-                }}
-              >
-                <p className="eyebrow">{item.label}</p>
-                <p style={{
-                  fontSize: item.highlight ? '18px' : '14px',
-                  fontWeight: 700,
-                  color: item.highlight ? '#1a56db' : '#1f2937',
-                }}>
-                  {formatCurrency(item.value, currencyCode)}
-                </p>
-              </div>
-            ))}
-          </section>
-
-          <section>
-            <table className="invoice-sheet__table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Voucher</th>
-                  <th>Particulars</th>
-                  <th className="right">Debit</th>
-                  <th className="right">Credit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {statement.entries.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} style={{ textAlign: 'center', color: '#9ca3af' }}>
-                      No entries in this period
-                    </td>
-                  </tr>
-                ) : (
-                  statement.entries.map((entry, idx) => (
-                    <tr key={`${entry.entry_type}-${entry.entry_id}-${idx}`}>
-                      <td>{new Date(entry.date).toLocaleDateString()}</td>
-                      <td>{entry.reference_number || `${entry.voucher_type} #${entry.entry_id}`}</td>
-                      <td>{entry.particulars}</td>
-                      <td className="right">{entry.debit > 0 ? formatCurrency(entry.debit, currencyCode) : ''}</td>
-                      <td className="right">{entry.credit > 0 ? formatCurrency(entry.credit, currencyCode) : ''}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </section>
-
-          <section className="invoice-sheet__footer">
-            <div />
-            <div className="invoice-sheet__totals">
-              <p className="eyebrow">Closing Balance</p>
-              <p className="invoice-sheet__total-value">
-                {formatCurrency(statement.closing_balance, currencyCode)}
-              </p>
-              <p className="muted-text">Generated on {new Date().toLocaleDateString()}</p>
-            </div>
-          </section>
-        </article>
+        <PdfPreview preview={preview} title={`Statement for ${ledger.name} PDF preview`} />
       </div>
 
       {showEmailModal && (
@@ -197,6 +171,21 @@ export default function StatementPreview({ ledger, statement, company, currencyC
             // Could show success toast here if needed
           }}
           onError={(message) => onError?.(message)}
+        />
+      )}
+
+      {showShareModal && (
+        <ShareModal
+          resourceType="ledger_statement"
+          /* The ledger id, not a statement id — a statement is a view over a
+             period, and the period is what scopes the link. */
+          resourceId={ledger.id}
+          fromDate={statement.from_date}
+          toDate={statement.to_date}
+          label={`Statement — ${statement.from_date} to ${statement.to_date}`}
+          messageLead={`Account statement${company?.name ? ` from ${company.name}` : ''} (${statement.from_date} to ${statement.to_date}) — closing balance ${formatCurrency(statement.closing_balance, currencyCode)}`}
+          phone={ledger.phone_number}
+          onClose={() => setShowShareModal(false)}
         />
       )}
     </div>

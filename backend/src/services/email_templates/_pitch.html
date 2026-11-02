@@ -1,0 +1,91 @@
+{#
+  _pitch.html — The Simple Invoicings pitch at the foot of the panel.
+
+  The share page's promo block, set for email. Included by base.html only when
+  ad.enabled. Every line degrades on its own the way the share page's does: a blank
+  setting drops its line rather than leaving an empty shell.
+
+  What does not come across: the gradient text on the headline and the price
+  (background-clip:text is close to unsupported in mail, so they are solid lime,
+  the gradient's first stop), and the flashing "s" in the domain (no animation in
+  most clients, so it stays a static lime capital, where the share page's
+  animation comes to rest).
+#}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 26px 0 0 0;">
+    <tr>
+        <td style="border-top: 1px solid #2c2420; padding-top: 22px; font-size: 0; line-height: 0;">&nbsp;</td>
+    </tr>
+</table>
+
+{% if ad.footnote %}
+<p style="margin: 0 0 8px 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.28em; color: #9ceb0a;">{{ ad.footnote }}</p>
+{% endif %}
+<h2 class="si-headline" style="margin: 0 0 10px 0; font-size: 26px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.15; color: #9ceb0a;">{{ ad.headline }}</h2>
+{% if ad.tagline %}
+<p style="margin: 0 0 18px 0; font-size: 15px; line-height: 1.5; color: #c0bcaf;">{{ ad.tagline }}</p>
+{% endif %}
+
+{% if ad.chips %}
+{# One cell per chip, wrapped in their own row tables so a narrow screen can break
+   between them. The share page's lime-tinted pill, without the glow. #}
+<div style="margin: 0 0 12px 0;">
+    {% for chip in ad.chips %}
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="left" style="margin: 0 8px 8px 0;">
+        <tr>
+            <td bgcolor="#181311" style="padding: 6px 13px 6px 11px; border-radius: 999px; border: 1px solid #3f5a14; background-color: #181311; font-size: 12.5px; font-weight: 600; color: #fcfbf8; white-space: nowrap;">
+                <span style="color: #9ceb0a; font-weight: 800;">&#10003;</span>&nbsp;{{ chip }}
+            </td>
+        </tr>
+    </table>
+    {% endfor %}
+    <div style="clear: both; font-size: 0; line-height: 0;">&nbsp;</div>
+</div>
+{% endif %}
+
+{% if ad.price %}
+<p style="margin: 0 0 20px 0; line-height: 1;">
+    {% if ad.price_prefix %}<span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.22em; color: #c0bcaf; vertical-align: middle;">{{ ad.price_prefix }}&nbsp;&nbsp;</span>{% endif %}
+    <span class="si-amount" style="font-size: 34px; font-weight: 800; letter-spacing: -0.035em; color: #9ceb0a; vertical-align: middle;">{{ ad.price }}</span>
+    {% if ad.price_period %}<span style="font-size: 15px; font-weight: 600; color: #c0bcaf; vertical-align: middle;">{{ ad.price_period }}</span>{% endif %}
+</p>
+{% endif %}
+
+{% if ad.whatsapp_url or ad.website or ad.phone %}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 4px 0;">
+    <tr>
+        {% if ad.whatsapp_url or ad.website %}
+        <td class="si-cell" style="padding: 0 10px 0 0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                    <td class="si-cta" align="center" bgcolor="#9ceb0a"
+                        style="border-radius: 999px; background-color: #9ceb0a; background-image: linear-gradient(96deg, #9ceb0a 0%, #d7f25c 42%, #f924a4 100%);">
+                        <a href="{{ ad.whatsapp_url or ad.website }}" target="_blank" rel="noopener noreferrer"
+                           style="display: inline-block; padding: 13px 22px; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: #0f0c0a; text-decoration: none; white-space: nowrap;">{{ ad.cta_label }}</a>
+                    </td>
+                </tr>
+            </table>
+        </td>
+        {% endif %}
+        {% if ad.phone %}
+        <td class="si-cell">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                    <td align="center" bgcolor="#1a1411" style="border-radius: 999px; border: 1px solid #362b26; background-color: #1a1411;">
+                        <a href="tel:{{ ad.phone_href }}"
+                           style="display: inline-block; padding: 12px 20px; font-size: 15px; font-weight: 600; color: #fcfbf8; text-decoration: none; white-space: nowrap;"><span style="color: #9ceb0a;">&#9990;</span>&nbsp;{{ ad.phone }}</a>
+                    </td>
+                </tr>
+            </table>
+        </td>
+        {% endif %}
+    </tr>
+</table>
+{% endif %}
+
+{% if ad.website %}
+{# One line on purpose: a newline inside the <a> puts whitespace in the middle of
+   the domain the reader copies. #}
+<p style="margin: 16px 0 0 0; font-size: 12.5px; color: #a29d91;">
+    Powered by <a href="{{ ad.website }}" target="_blank" rel="noopener noreferrer" style="color: #c0bcaf; text-decoration: underline;">{{ ad.domain_head }}{% if ad.domain_flash %}<span style="color: #9ceb0a; font-weight: 800; text-transform: uppercase;">{{ ad.domain_flash }}</span>{% endif %}{{ ad.domain_tail }}</a>
+</p>
+{% endif %}

@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import ModalCloseButton from '../../../components/ModalCloseButton';
 import { useQueryClient } from '@tanstack/react-query';
 import api, { getApiErrorMessage } from '../../../api/client';
 import { useEscapeClose } from '../../../hooks/useEscapeClose';
@@ -9,8 +10,11 @@ import type { ProductFormState } from '../types';
 const UNIT_OPTIONS = ['Pieces', 'Kg', 'g', 'm', 'l', 'Ounce'];
 const CUSTOM_UNIT_VALUE = '__custom__';
 
+/* Serial tracking is asked for here and nowhere else in the composer, so it
+   rides along locally rather than widening the shared form state. */
+
 function createInitialProductForm(): ProductFormState {
-  return { name: '', sku: '', hsn_sac: '', price: '', gst_rate: '0', unit: 'Pieces', allow_decimal: false, maintain_inventory: true };
+  return { name: '', sku: '', hsn_sac: '', price: '', gst_rate: '0', unit: 'Pieces', allow_decimal: false, maintain_inventory: true, track_serials: false };
 }
 
 export default function ProductQuickCreateModal() {
@@ -44,6 +48,7 @@ export default function ProductQuickCreateModal() {
         unit: productForm.unit.trim() || 'Pieces',
         allow_decimal: productForm.allow_decimal,
         maintain_inventory: productForm.maintain_inventory,
+        track_serials: productForm.track_serials,
       };
 
       await api.post('/products/', payload);
@@ -71,6 +76,7 @@ export default function ProductQuickCreateModal() {
             <p className="eyebrow">Quick add</p>
             <h2 id="product-modal-title" className="nav-panel__title">Create product</h2>
           </div>
+          <ModalCloseButton onClick={closeProductCreateModal} label="Close create product" />
         </div>
 
         <form className="stack" onSubmit={handleSubmit}>
@@ -174,11 +180,16 @@ export default function ProductQuickCreateModal() {
                 id="modal-product-maintain-inventory"
                 type="checkbox"
                 checked={productForm.maintain_inventory}
+                disabled={productForm.track_serials}
                 onChange={(event) => setProductForm((current) => ({ ...current, maintain_inventory: event.target.checked }))}
               />
               Maintain inventory for this product
             </label>
-            <small className="field-hint">Disable this for service charges and other non-stock items.</small>
+            <small className="field-hint">
+              {productForm.track_serials
+                ? 'Always on while serial numbers are tracked — every serial is a unit of stock.'
+                : 'Disable this for service charges and other non-stock items.'}
+            </small>
           </div>
           <div className="field field--full" style={{ marginBottom: 0 }}>
             <label htmlFor="modal-product-allow-decimal" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 0 }}>
@@ -186,11 +197,36 @@ export default function ProductQuickCreateModal() {
                 id="modal-product-allow-decimal"
                 type="checkbox"
                 checked={productForm.allow_decimal}
+                disabled={productForm.track_serials}
                 onChange={(event) => setProductForm((current) => ({ ...current, allow_decimal: event.target.checked }))}
               />
               Allow decimal quantity
             </label>
-            <small className="field-hint">Enable this for fractional stock units like Kg or l.</small>
+            <small className="field-hint">
+              {productForm.track_serials
+                ? 'Not available while serial numbers are tracked — half a serial number does not exist.'
+                : 'Enable this for fractional stock units like Kg or l.'}
+            </small>
+          </div>
+          <div className="field field--full" style={{ marginBottom: 0 }}>
+            <label htmlFor="modal-product-track-serials" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 0 }}>
+              <input
+                id="modal-product-track-serials"
+                type="checkbox"
+                checked={productForm.track_serials}
+                onChange={(event) => setProductForm((current) => ({
+                  ...current,
+                  track_serials: event.target.checked,
+                  allow_decimal: event.target.checked ? false : current.allow_decimal,
+                  maintain_inventory: event.target.checked ? true : current.maintain_inventory,
+                }))}
+              />
+              Track serial numbers / IMEI
+            </label>
+            <small className="field-hint">
+              Each unit gets its own IMEI or serial number — for phones, appliances, anything with a warranty.
+              Receive the units on a purchase entry once the product is saved.
+            </small>
           </div>
 
           <div className="button-row">

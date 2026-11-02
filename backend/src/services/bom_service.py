@@ -266,6 +266,39 @@ def execute_production(
             "message": "Product is not marked as producable",
         }
 
+    # Serial-tracked stock must stay in lockstep with its serial records, and
+    # production creates no serials — producing a serial-tracked product (or
+    # consuming one as a component) would desync stock from the serial list.
+    if product.track_serials:
+        return {
+            "success": False,
+            "message": "Serial-tracked products can't be produced yet",
+        }
+
+    if not product.allow_decimal and quantity != quantity.to_integral_value():
+        return {
+            "success": False,
+            "message": "Quantity must be a whole number for this product",
+        }
+
+    # Get material requirements
+    requirements = get_bom_requirements(db, company_id, product_id, quantity)
+
+    if requirements:
+        serial_component = (
+            db.query(Product)
+            .filter(
+                Product.id.in_(requirements.keys()),
+                Product.track_serials.is_(True),
+            )
+            .first()
+        )
+        if serial_component:
+            return {
+                "success": False,
+                "message": "Serial-tracked products can't be produced yet",
+            }
+
     # Validate inventory availability
     is_available, error_msg = validate_bom_availability(db, company_id, product_id, quantity)
     if not is_available:
@@ -273,9 +306,6 @@ def execute_production(
             "success": False,
             "message": f"Production blocked: {error_msg}",
         }
-
-    # Get material requirements
-    requirements = get_bom_requirements(db, company_id, product_id, quantity)
 
     try:
         inventory_changes = {}

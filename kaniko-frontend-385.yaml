@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kaniko-frontend-385
+  namespace: openclaw
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: kaniko
+        image: gcr.io/kaniko-project/executor:latest
+        args:
+        - --context=git://github.com/nikhilb2/simple_invoicing.git#refs/heads/issue-385-inventory-invoice-improvements
+        - --context-sub-path=frontend
+        - --destination=ghcr.io/nikhilb2/simple_invoicing-frontend:latest
+        - --cache=true
+        - --snapshot-mode=redo
+        - --verbosity=info
+        # The git build context has no .env.production (it is gitignored), so
+        # the PostHog keys have to arrive as build args or the shipped bundle
+        # boots with analytics disabled. The project token is a write-only
+        # public key and is served in the bundle regardless.
+        - --build-arg=VITE_POSTHOG_PROJECT_TOKEN=phc_v4VGPGt4UDKo6hDVbeQzvwTHaUJGQ7fCxaGJGm2v7DKK
+        - --build-arg=VITE_POSTHOG_HOST=https://eu.i.posthog.com
+        env:
+        - name: DOCKER_CONFIG
+          value: /kaniko/.docker
+        volumeMounts:
+        - name: docker-config
+          mountPath: /kaniko/.docker
+      volumes:
+      - name: docker-config
+        secret:
+          secretName: ghcr-io-cred
+          items:
+          - key: .dockerconfigjson
+            path: config.json

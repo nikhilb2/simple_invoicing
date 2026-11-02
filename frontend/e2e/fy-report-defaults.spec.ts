@@ -1,4 +1,4 @@
-import { test, expect, uniqueGstin } from './fixtures';
+import { test, expect, uniqueGstin, clickNavLink } from './fixtures';
 
 /**
  * Financial year used for all FY-defaults tests.
@@ -13,7 +13,7 @@ const FY_END_DATE = '2032-03-31';
  * Ensure the test FY exists and is the active FY.
  */
 async function activateTestFY(page: import('@playwright/test').Page) {
-  const fyButton = page.locator('button[aria-haspopup="listbox"]');
+  const fyButton = page.getByTestId('fy-switcher');
   await fyButton.click();
   const listbox = page.locator('[role="listbox"]');
   await expect(listbox).toBeVisible({ timeout: 5_000 });
@@ -44,7 +44,7 @@ async function activateTestFY(page: import('@playwright/test').Page) {
 test.describe('FY Defaults — Day Book', () => {
   test('date range defaults to active FY on load', async ({ authedPage: page }) => {
     await activateTestFY(page);
-    await page.click('[href="/day-book"]');
+    await clickNavLink(page, '/day-book');
     await page.waitForTimeout(500);
 
     await expect(page.locator('#day-book-from')).toHaveValue(FY_START_DATE);
@@ -53,7 +53,7 @@ test.describe('FY Defaults — Day Book', () => {
 
   test('date inputs remain manually editable', async ({ authedPage: page }) => {
     await activateTestFY(page);
-    await page.click('[href="/day-book"]');
+    await clickNavLink(page, '/day-book');
     await page.waitForTimeout(500);
 
     const customDate = '2031-07-01';
@@ -65,7 +65,7 @@ test.describe('FY Defaults — Day Book', () => {
 
   test('date range updates when active FY is switched', async ({ authedPage: page }) => {
     await activateTestFY(page);
-    await page.click('[href="/day-book"]');
+    await clickNavLink(page, '/day-book');
     await page.waitForTimeout(500);
 
     // Verify the test FY dates are set
@@ -73,7 +73,7 @@ test.describe('FY Defaults — Day Book', () => {
     await expect(page.locator('#day-book-to')).toHaveValue(FY_END_DATE);
 
     // Switch to a different FY (2030-31) — create it if needed
-    const fyButton = page.locator('button[aria-haspopup="listbox"]');
+    const fyButton = page.getByTestId('fy-switcher');
     await fyButton.click();
     const listbox = page.locator('[role="listbox"]');
     await expect(listbox).toBeVisible({ timeout: 5_000 });
@@ -102,7 +102,7 @@ test.describe('FY Defaults — Day Book', () => {
   test('falls back to current-month default when no active FY', async ({ authedPage: page }) => {
     // Deactivate by switching to a non-active state — navigate while no FY is active
     // This just validates the page loads without crashing; exact default is best-effort
-    await page.click('[href="/day-book"]');
+    await clickNavLink(page, '/day-book');
     const fromInput = page.locator('#day-book-from');
     await expect(fromInput).toBeVisible({ timeout: 5_000 });
     // From date should be a valid ISO date string
@@ -118,7 +118,7 @@ test.describe('FY Defaults — Day Book', () => {
 test.describe('FY Defaults — Ledger Statement', () => {
   async function createAndNavigateToLedger(page: import('@playwright/test').Page) {
     const ledgerName = `FYDefaultLedger-${Date.now().toString(36)}`;
-    await page.click('[href="/ledgers"]');
+    await clickNavLink(page, '/ledgers');
     await page.click('button:has-text("Create ledger")');
     await expect(page.locator('h1')).toContainText('Create ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.fill('#ledger-name', ledgerName);
@@ -163,7 +163,7 @@ test.describe('FY Defaults — Ledger Statement', () => {
     await expect(page.locator('#statement-from')).toHaveValue(FY_START_DATE);
 
     // Switch to 2030-31
-    const fyButton = page.locator('button[aria-haspopup="listbox"]');
+    const fyButton = page.getByTestId('fy-switcher');
     await fyButton.click();
     const listbox = page.locator('[role="listbox"]');
     await expect(listbox).toBeVisible({ timeout: 5_000 });

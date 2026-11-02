@@ -3,13 +3,16 @@ from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 
-from src.core.security import decode_token
+from src.core.config import settings
+from src.core.security import decode_token, session_revoked
 from src.db.session import SessionLocal
 from src.models.user import User, UserRole
+from src.services.company_access import is_platform_admin
 from src.schemas.backup import (
     BackupCreateResponse,
     BackupPreflightResponse,
     BackupRestoreResponse,
+    BackupScheduleResponse,
     BackupSummary,
 )
 from src.services.backup import (
@@ -19,6 +22,7 @@ from src.services.backup import (
     preflight_restore,
     restore_backup,
 )
+from src.services.backup_scheduler import status as scheduler_status
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -41,9 +45,15 @@ def require_admin_no_session_hold(token: str = Depends(oauth2_scheme)) -> User:
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.email == email).first()
-        if not user:
+        # The same session rules as get_current_user.
+        if not user or user.is_active is False or session_revoked(user.sessions_valid_after, payload):
             raise credentials_exception
-        if getattr(user, "role", None) != UserRole.admin:
+        # A backup is a pg_dump of the whole database -- every tenant's data in
+        # shared hosting -- so there only the platform operators may touch it.
+        if settings.is_shared_hosting:
+            if not is_platform_admin(user):
+                raise HTTPException(status_code=403, detail="Insufficient permissions")
+        elif getattr(user, "role", None) != UserRole.admin:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         return user
     finally:
@@ -63,6 +73,31 @@ def get_backups(
     _: User = Depends(require_admin_no_session_hold),
 ):
     return list_backups()
+
+
+@router.get("/schedule", response_model=BackupScheduleResponse)
+def get_backup_schedule(
+    _: User = Depends(require_admin_no_session_hold),
+):
+    """Read-only view of the nightly automatic backup schedule.
+
+    The schedule itself is configuration (AUTO_BACKUP_*), not per-tenant state, so
+    there is no PUT here -- this exists purely so the Backups page can tell an admin
+    when the next run is and whether the last one worked."""
+    return BackupScheduleResponse(
+        enabled=scheduler_status.enabled,
+        email_enabled=scheduler_status.email_enabled,
+        schedule_time=scheduler_status.schedule_time,
+        timezone=scheduler_status.timezone_name,
+        keep=scheduler_status.keep,
+        next_run_at=scheduler_status.next_run_at,
+        last_run_at=scheduler_status.last_run_at,
+        last_status=scheduler_status.last_status,
+        last_file_name=scheduler_status.last_file_name,
+        last_error=scheduler_status.last_error,
+        last_email_status=scheduler_status.last_email_status,
+        last_email_detail=scheduler_status.last_email_detail,
+    )
 
 
 @router.get("/{file_name}/download")

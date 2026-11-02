@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { LayoutGrid, Table as TableIcon, X } from 'lucide-react';
+import { ChevronDown, Download, LayoutGrid, SlidersHorizontal, Table as TableIcon, X } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import type { Invoice } from '../types/api';
@@ -14,9 +14,11 @@ import type { Product } from '../types/api';
 import { useInvoiceFeedViewStore } from '../store/useInvoiceFeedViewStore';
 import { useInvoiceModalStore } from '../store/useInvoiceModalStore';
 import { useInvoiceCancelStore } from '../store/useInvoiceCancelStore';
-import { fetchCompanyProfile, fetchInvoicePage, fetchProducts } from '../features/invoices/api';
+import { exportInvoicesCsv, fetchCompanyProfile, fetchInvoicePage, fetchProducts } from '../features/invoices/api';
 import { invoiceQueryKeys } from '../features/invoices/queryKeys';
 import EmptyState from '../components/EmptyState';
+import PageSizeSelect, { readStoredPageSize, storePageSize } from '../components/PageSizeSelect';
+import { numericParam, textParam } from '../utils/deepLink';
 
 type Breakdown = {
   credit: number;
@@ -42,6 +44,33 @@ function calculateBreakdown(rows: Invoice[]): Breakdown {
   };
 }
 
+function toISODate(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+type DatePreset = 'today' | 'this_month' | 'prev_month';
+
+function computePreset(preset: DatePreset): { from: string; to: string } {
+  const now = new Date();
+  switch (preset) {
+    case 'today':
+      return { from: toISODate(now), to: toISODate(now) };
+    case 'this_month':
+      return {
+        from: toISODate(new Date(now.getFullYear(), now.getMonth(), 1)),
+        to: toISODate(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+      };
+    case 'prev_month':
+      return {
+        from: toISODate(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+        to: toISODate(new Date(now.getFullYear(), now.getMonth(), 0)),
+      };
+  }
+}
+
 export default function InvoicesAdvancedView() {
   const { activeFY, loading: fyLoading } = useFY();
   const navigate = useNavigate();
@@ -49,6 +78,8 @@ export default function InvoicesAdvancedView() {
   const { requestCancel } = useInvoiceCancelStore();
   const [actionError, setActionError] = useState('');
   const [actionSuccess, setActionSuccess] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const restoreMutation = useMutation({
     mutationFn: (invoiceId: number) => api.post(`/invoices/${invoiceId}/restore`),
@@ -67,6 +98,19 @@ export default function InvoicesAdvancedView() {
     navigate('/credit-notes', { state: { invoiceId: invoice.id } });
   }
 
+  const duplicateMutation = useMutation({
+    mutationFn: (invoiceId: number) => api.get<Invoice>(`/invoices/${invoiceId}`),
+    onSuccess: (data) => {
+      setActionSuccess('Invoice data loaded. Opening create page…');
+      setTimeout(() => navigate(`/invoices?duplicate=${data.data.id}`), 400);
+    },
+    onError: (err) => setActionError(getApiErrorMessage(err, 'Unable to load invoice for duplication')),
+  });
+
+  function handleDuplicate(invoice: Invoice) {
+    duplicateMutation.mutate(invoice.id);
+  }
+
   function handleCancelRequest(invoice: Invoice) {
     requestCancel(invoice.id, invoice.invoice_number);
   }
@@ -75,22 +119,75 @@ export default function InvoicesAdvancedView() {
     restoreMutation.mutate(invoice.id);
   }
 
+  async function handleExportCsv() {
+    setExporting(true);
+    setActionError('');
+    try {
+      await exportInvoicesCsv({
+        search: invoiceSearch,
+        showCancelled,
+        financialYearId: shouldUseAllFY ? undefined : activeFY?.id,
+        productId: productId ?? undefined,
+        includeDescription: searchDescription,
+        voucherType,
+        dateFrom,
+        dateTo,
+      });
+      setActionSuccess('Invoice CSV downloaded.');
+    } catch (err) {
+      setActionError(getApiErrorMessage(err, 'Unable to export invoices'));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  function handleApplyPreset(preset: 'today' | 'this_month' | 'prev_month' | 'current_fy') {
+    if (preset === 'current_fy') {
+      if (activeFY) {
+        setDateRange(activeFY.start_date.slice(0, 10), activeFY.end_date.slice(0, 10));
+      }
+      return;
+    }
+    const { from, to } = computePreset(preset);
+    setDateRange(from, to);
+  }
+
+  function handleResetFilters() {
+    resetFilters();
+    // Both halves, or Reset only half-works: the store holds the search text
+    // and the URL holds the copy that survives a refresh, and a deep link left
+    // in the address bar would re-apply itself on the next reload. `replace`
+    // keeps the cleared feed from becoming a separate Back-button step.
+    setSearchParams({}, { replace: true });
+  }
+
   const [searchParams, setSearchParams] = useSearchParams();
 
   const {
     viewType,
     invoiceSearch,
+    searchDescription,
     showCancelled,
     allowAllFY,
     page,
     productId,
+    voucherType,
+    dateFrom,
+    dateTo,
     setViewType,
     setInvoiceSearch,
+    setSearchDescription,
     setShowCancelled,
     setAllowAllFY,
     setPage,
     resetPage,
     setProductId,
+    setVoucherType,
+    setDateFrom,
+    setDateTo,
+    setDateRange,
+    applySearchDeepLink,
+    resetFilters,
   } = useInvoiceFeedViewStore();
 
   // Sync ?product_id from URL into store on mount
@@ -105,14 +202,97 @@ export default function InvoicesAdvancedView() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Sync ?search= from URL into store on mount.
+  //
+  // InvoicesPageView builds /invoices-view?search=<invoice number> behind its
+  // "Open invoice" link, so this param is a real in-app navigation, not just a
+  // hand-typed URL — and until now nothing read it, which is why following that
+  // link showed whatever the feed had been filtered to last instead of the
+  // invoice it named. `applySearchDeepLink` deliberately overwrites the store
+  // rather than deferring to it, and widens FY/cancelled the way the
+  // ?invoice_id= link below does; see the store for why.
+  //
+  // Ref-guarded rather than relying on the empty dep array alone: the two-way
+  // sync below rewrites `searchParams` as the user types, and a mount-only
+  // effect that ever re-ran would replace what they were typing with the value
+  // they arrived with.
+  const searchDeepLinkApplied = useRef(false);
+  useEffect(() => {
+    if (searchDeepLinkApplied.current) return;
+    searchDeepLinkApplied.current = true;
+    const urlSearch = textParam(searchParams, 'search');
+    if (urlSearch !== null) {
+      applySearchDeepLink(urlSearch);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // …and reflect the search box back into the URL, so a feed the user has
+  // filtered down is shareable and survives a refresh — the same contract the
+  // inbound link already assumed. `replace` because pushing would put one
+  // history entry per keystroke between the user and the Back button, and
+  // debounced for the same reason (the box itself is undebounced; the query
+  // refetches per keystroke already, but rewriting history that fast is worse).
+  // Other params are preserved so this cannot clobber ?product_id/?invoice_id.
+  const urlSearch = searchParams.get('search') ?? '';
+  useEffect(() => {
+    // Nothing to do when the URL already agrees — which is the case right after
+    // the mount sync above, and after every write this effect makes. Comparing
+    // first is what keeps the write→re-render→effect cycle from repeating.
+    if (urlSearch === invoiceSearch) return undefined;
+    const timer = setTimeout(() => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        if (invoiceSearch) {
+          next.set('search', invoiceSearch);
+        } else {
+          next.delete('search');
+        }
+        return next;
+      }, { replace: true });
+    }, 350);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceSearch, urlSearch]);
   const { previewInvoice, openPreview, closePreview } = useInvoiceModalStore();
-  const pageSize = 20;
+
+  // Citation deep link: /invoices-view?invoice_id=123 has to land on that
+  // invoice, not merely on the feed. Fetched by id rather than searched for,
+  // because the record may be cancelled, or in a financial year this feed is
+  // not currently showing — the filters are then widened to match so the row
+  // behind the preview is the one the citation named.
+  const deepLinkInvoiceId = numericParam(searchParams, 'invoice_id');
+
+  useEffect(() => {
+    if (deepLinkInvoiceId === null) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { data } = await api.get<Invoice>(`/invoices/${deepLinkInvoiceId}`);
+        if (cancelled) return;
+        setAllowAllFY(true);
+        setShowCancelled(true);
+        setInvoiceSearch(data.invoice_number ?? '');
+        openPreview(data);
+      } catch (err) {
+        if (!cancelled) {
+          setActionError(getApiErrorMessage(err, `Unable to open invoice #${deepLinkInvoiceId}`));
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkInvoiceId]);
+  const [pageSize, setPageSize] = useState(() => readStoredPageSize('invoices-page-size'));
   const shouldUseAllFY = allowAllFY;
   const isFYReady = shouldUseAllFY || Boolean(activeFY);
   const financialYearId = shouldUseAllFY ? undefined : activeFY?.id;
 
   const invoicesQuery = useQuery({
-    queryKey: invoiceQueryKeys.list(page, pageSize, invoiceSearch, showCancelled, financialYearId, productId ?? undefined),
+    queryKey: invoiceQueryKeys.list(page, pageSize, invoiceSearch, showCancelled, financialYearId, productId ?? undefined, searchDescription, voucherType, dateFrom, dateTo),
     queryFn: () => fetchInvoicePage({
       page,
       pageSize,
@@ -120,6 +300,10 @@ export default function InvoicesAdvancedView() {
       showCancelled,
       financialYearId,
       productId: productId ?? undefined,
+      includeDescription: searchDescription,
+      voucherType,
+      dateFrom,
+      dateTo,
     }),
     enabled: isFYReady && !fyLoading,
   });
@@ -136,10 +320,11 @@ export default function InvoicesAdvancedView() {
 
   useEffect(() => {
     resetPage();
-  }, [invoiceSearch, showCancelled, allowAllFY, activeFY?.id, productId]);
+  }, [invoiceSearch, searchDescription, showCancelled, allowAllFY, activeFY?.id, productId, voucherType, dateFrom, dateTo]);
 
   const invoices = invoicesQuery.data?.items ?? [];
   const totalPages = invoicesQuery.data?.total_pages ?? 1;
+  const totalInvoices = invoicesQuery.data?.total ?? 0;
   const company = companyQuery.data ?? null;
   const activeCurrencyCode = company?.currency_code || 'INR';
   const products = productsQuery.data ?? [];
@@ -200,7 +385,7 @@ export default function InvoicesAdvancedView() {
                 <button
                   type="button"
                   className="button button--ghost"
-                  onClick={() => navigate('/company')}
+                  onClick={() => navigate('/settings/company')}
                 >
                   Open Company Setup
                 </button>
@@ -212,6 +397,15 @@ export default function InvoicesAdvancedView() {
     );
   }
 
+  const activeFilterCount = [
+    voucherType !== 'all',
+    Boolean(dateFrom),
+    Boolean(dateTo),
+    allowAllFY,
+    searchDescription,
+    showCancelled,
+  ].filter(Boolean).length;
+
   return (
     <div className="invoice-feed-view stack">
       <section className="panel invoice-feed-view__header">
@@ -220,38 +414,145 @@ export default function InvoicesAdvancedView() {
             <p className="eyebrow">Invoices</p>
             <h1 className="page-title" style={{ margin: 0 }}>Invoice Feed</h1>
           </div>
-        </div>
 
-        <div className="invoice-feed-view__controls">
-          {/* View Toggle */}
-          <div className="button-row">
+          {/* View switcher — segmented tabs, kept separate from the action buttons */}
+          <div className="invoice-feed-view__view-tabs" role="tablist" aria-label="Invoice view">
             <button
               type="button"
+              role="tab"
+              aria-selected={viewType === 'card'}
               onClick={() => setViewType('card')}
-              className={`button button--small ${
-                viewType === 'card'
-                  ? 'button--primary'
-                  : 'button--ghost'
-              }`}
+              className={`button button--small ${viewType === 'card' ? 'button--primary' : 'button--ghost'}`}
             >
-              <LayoutGrid size={18} />
+              <LayoutGrid size={16} />
               Card
             </button>
             <button
               type="button"
+              role="tab"
+              aria-selected={viewType === 'table'}
               onClick={() => setViewType('table')}
-              className={`button button--small ${
-                viewType === 'table'
-                  ? 'button--primary'
-                  : 'button--ghost'
-              }`}
+              className={`button button--small ${viewType === 'table' ? 'button--primary' : 'button--ghost'}`}
             >
-              <TableIcon size={18} />
+              <TableIcon size={16} />
               Table
             </button>
           </div>
+        </div>
 
-          {/* FY Filter Toggle */}
+        {/* Toolbar: search + primary actions */}
+        <div className="invoice-feed-view__toolbar">
+          {/* Nobody pastes an IMEI into a box labelled "party or product", so the
+              placeholder names the fields the backend actually matches; the
+              full list lives in the hint under the toolbar, out of the flex row
+              so it cannot shove the action buttons off the input's baseline. */}
+          <input
+            type="text"
+            placeholder="Search invoice no., ledger, product or IMEI…"
+            aria-label="Search invoices"
+            aria-describedby="invoice-feed-search-hint"
+            value={invoiceSearch}
+            onChange={(e) => setInvoiceSearch(e.target.value)}
+            className="input invoice-feed-view__search"
+          />
+
+          <div className="invoice-feed-view__toolbar-actions">
+            <button
+              type="button"
+              className={`button button--small ${filtersOpen || activeFilterCount > 0 ? 'button--primary' : 'button--ghost'}`}
+              onClick={() => setFiltersOpen((open) => !open)}
+              aria-expanded={filtersOpen}
+            >
+              <SlidersHorizontal size={16} />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="invoice-feed-view__filter-badge">{activeFilterCount}</span>
+              )}
+              <ChevronDown
+                size={16}
+                className="invoice-feed-view__chevron"
+                style={{ transform: filtersOpen ? 'rotate(180deg)' : 'none' }}
+              />
+            </button>
+
+            <button
+              type="button"
+              className="button button--primary button--small"
+              onClick={handleExportCsv}
+              disabled={exporting}
+            >
+              <Download size={16} />
+              {exporting ? 'Preparing…' : 'Export CSV'}
+            </button>
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              onClick={handleResetFilters}
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <p className="invoice-feed-view__search-hint" id="invoice-feed-search-hint">
+          Matches invoice number, ledger, product and serial/IMEI. Use Filters to
+          also search item descriptions.
+        </p>
+
+        {filtersOpen && (
+        <div className="invoice-feed-view__advanced">
+        {/* Filters: voucher type, date range, presets, toggles */}
+        <div className="invoice-feed-view__filters">
+          <label className="invoice-feed-view__field">
+            <span className="invoice-feed-view__field-label">Voucher type</span>
+            <select
+              className="input"
+              value={voucherType}
+              onChange={(e) => setVoucherType(e.target.value as typeof voucherType)}
+            >
+              <option value="all">All</option>
+              <option value="sales">Sales</option>
+              <option value="purchase">Purchase</option>
+            </select>
+          </label>
+
+          <label className="invoice-feed-view__field">
+            <span className="invoice-feed-view__field-label">From date</span>
+            <input
+              type="date"
+              className="input"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={(e) => setDateFrom(e.target.value)}
+            />
+          </label>
+
+          <label className="invoice-feed-view__field">
+            <span className="invoice-feed-view__field-label">To date</span>
+            <input
+              type="date"
+              className="input"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={(e) => setDateTo(e.target.value)}
+            />
+          </label>
+
+          <div className="invoice-feed-view__field">
+            <span className="invoice-feed-view__field-label">Quick range</span>
+            <div className="button-row">
+              <button type="button" className="button button--ghost button--small" onClick={() => handleApplyPreset('today')}>Today</button>
+              <button type="button" className="button button--ghost button--small" onClick={() => handleApplyPreset('this_month')}>This month</button>
+              <button type="button" className="button button--ghost button--small" onClick={() => handleApplyPreset('prev_month')}>Prev month</button>
+              {activeFY && (
+                <button type="button" className="button button--ghost button--small" onClick={() => handleApplyPreset('current_fy')}>Current FY</button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Boolean toggles */}
+        <div className="invoice-feed-view__toggles">
           <label className="invoice-feed-view__checkbox">
             <input
               type="checkbox"
@@ -260,17 +561,14 @@ export default function InvoicesAdvancedView() {
             />
             <span>Search all FY</span>
           </label>
-
-          {/* Search */}
-          <input
-            type="text"
-            placeholder="Search invoices..."
-            value={invoiceSearch}
-            onChange={(e) => setInvoiceSearch(e.target.value)}
-            className="input invoice-feed-view__search"
-          />
-
-          {/* Cancelled toggle */}
+          <label className="invoice-feed-view__checkbox">
+            <input
+              type="checkbox"
+              checked={searchDescription}
+              onChange={(e) => setSearchDescription(e.target.checked)}
+            />
+            <span>Include item description</span>
+          </label>
           <label className="invoice-feed-view__checkbox">
             <input
               type="checkbox"
@@ -280,6 +578,8 @@ export default function InvoicesAdvancedView() {
             <span>Show cancelled</span>
           </label>
         </div>
+        </div>
+        )}
 
         {/* Current FY Info */}
         {!allowAllFY && (
@@ -301,7 +601,13 @@ export default function InvoicesAdvancedView() {
               title="Clear product filter"
               onClick={() => {
                 setProductId(null);
-                setSearchParams({});
+                // Only this badge's own param: ?search= belongs to the search
+                // box, which this button does not clear.
+                setSearchParams((prev) => {
+                  const next = new URLSearchParams(prev);
+                  next.delete('product_id');
+                  return next;
+                }, { replace: true });
               }}
             >
               <X size={14} />
@@ -329,9 +635,21 @@ export default function InvoicesAdvancedView() {
         {loading ? (
           <EmptyState message="Loading invoices..." />
         ) : invoices.length === 0 ? (
-          <EmptyState 
-            message={invoiceSearch ? "No invoices match your search." : "No invoices registered yet. Create your first invoice to get started."} 
-            action={!invoiceSearch ? { label: 'Create First Invoice', onClick: () => navigate('/invoices') } : undefined}
+          <EmptyState
+            message={
+              invoiceSearch
+                // The moment the searchable fields matter most: repeat them
+                // here, quote the term back so a typo is visible, and offer the
+                // way out, since an empty result is as often a stale filter as
+                // it is a genuinely absent invoice.
+                ? `No invoices match “${invoiceSearch}”. Search covers invoice number, ledger, product and serial/IMEI — check the term, or clear the filters.`
+                : 'No invoices registered yet. Create your first invoice to get started.'
+            }
+            action={
+              invoiceSearch
+                ? { label: 'Reset filters', onClick: handleResetFilters }
+                : { label: 'Create First Invoice', onClick: () => navigate('/invoices') }
+            }
           />
         ) : viewType === 'card' ? (
           <div className="invoice-feed-view__card-list">
@@ -345,6 +663,7 @@ export default function InvoicesAdvancedView() {
                   onCancel={handleCancelRequest}
                   onRestore={handleRestore}
                   onCreditNote={handleCreditNote}
+                  onDuplicate={handleDuplicate}
                 />
               ))}
           </div>
@@ -358,7 +677,7 @@ export default function InvoicesAdvancedView() {
       </section>
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {totalInvoices > 0 && (
         <div className="invoice-feed-view__pagination button-row">
           <button
             type="button"
@@ -379,6 +698,15 @@ export default function InvoicesAdvancedView() {
           >
             Next
           </button>
+          <PageSizeSelect
+            id="invoices-page-size"
+            value={pageSize}
+            onChange={(nextPageSize) => {
+              storePageSize('invoices-page-size', nextPageSize);
+              setPageSize(nextPageSize);
+              resetPage();
+            }}
+          />
         </div>
       )}
 

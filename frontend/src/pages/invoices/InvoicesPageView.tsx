@@ -1,21 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
+import { Boxes, Lock, Plus, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../../api/client';
 import type { CompanyAccount, CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerAddress, Payment, PaymentCreate, Product } from '../../types/api';
 import InvoicePreview from '../../components/InvoicePreview';
+import ScanBar, { type ScanOutcome, type ScanResolution } from '../../components/ScanBar';
 import StatusToasts from '../../components/StatusToasts';
 import ProductCombobox from '../../components/ProductCombobox';
 import LedgerCombobox from '../../components/LedgerCombobox';
 import formatCurrency from '../../utils/formatting';
+import { toIsoDate } from '../../utils/dateRanges';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../../utils/invoiceTax';
 import { createDueDateFormState, formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../../utils/invoiceDueDate.ts';
+import { readInvoiceComposerPrefs, updateInvoiceComposerPrefs } from '../../utils/invoiceComposerPrefs.ts';
 import { useFY } from '../../context/FYContext';
+import { useShortcuts } from '../../context/ShortcutsContext';
 import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses } from '../../features/invoices/api';
 import { invoiceQueryKeys } from '../../features/invoices/queryKeys';
 import { useInvoiceComposerStore } from '../../store/useInvoiceComposerStore';
 import LedgerQuickCreateModal from './components/LedgerQuickCreateModal';
 import ProductQuickCreateModal from './components/ProductQuickCreateModal';
+import SerialChips from './components/SerialChips';
+import SerialPickerModal from './components/SerialPickerModal';
 import StockUpdateModal from './components/StockUpdateModal';
 import ReceiptModal from '../../components/ReceiptModal';
 import { createItem, type InvoiceFormItem } from './types';
@@ -32,15 +39,19 @@ export default function InvoicesPage() {
   const feedbackError = useInvoiceComposerStore((state) => state.feedbackError);
   const feedbackSuccess = useInvoiceComposerStore((state) => state.feedbackSuccess);
   const clearFeedback = useInvoiceComposerStore((state) => state.clearFeedback);
+  /* Settings the user picks the same way on most invoices are restored here.
+     Read in an initializer rather than an effect so a remembered choice is
+     already applied on first paint instead of flipping in after it. */
+  const [initialPrefs] = useState(readInvoiceComposerPrefs);
   const [products, setProducts] = useState<Product[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [companyAccounts, setCompanyAccounts] = useState<CompanyAccount[]>([]);
   const [voucherType, setVoucherType] = useState<'sales' | 'purchase' | 'payment' | 'receipt'>('sales');
   const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [taxInclusive, setTaxInclusive] = useState(false);
-  const [applyRoundOff, setApplyRoundOff] = useState(false);
-  const [invoiceDiscountType, setInvoiceDiscountType] = useState<'percentage' | 'net'>('percentage');
+  const [taxInclusive, setTaxInclusive] = useState(initialPrefs.taxInclusive);
+  const [applyRoundOff, setApplyRoundOff] = useState(initialPrefs.applyRoundOff);
+  const [invoiceDiscountType, setInvoiceDiscountType] = useState<'percentage' | 'net'>(initialPrefs.invoiceDiscountType);
   const [invoiceDiscountValue, setInvoiceDiscountValue] = useState('');
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
   const [referenceNotes, setReferenceNotes] = useState('');
@@ -48,13 +59,23 @@ export default function InvoicesPage() {
   const [paymentReference, setPaymentReference] = useState('');
   const [selectedPaymentAccountId, setSelectedPaymentAccountId] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
-  const [dueDateMode, setDueDateMode] = useState<DueDateMode>('none');
+  const [invoiceDate, setInvoiceDate] = useState(toIsoDate(new Date()));
+  const [dueDateMode, setDueDateMode] = useState<DueDateMode>(initialPrefs.dueDateMode);
   const [dueDate, setDueDate] = useState('');
-  const [dueDateDays, setDueDateDays] = useState('');
+  const [dueDateDays, setDueDateDays] = useState(initialPrefs.dueDateDays);
   const [items, setItems] = useState<InvoiceFormItem[]>([createItem(1)]);
   const [nextItemId, setNextItemId] = useState(2);
+  const [flashItemId, setFlashItemId] = useState<number | null>(null);
+  const [pickerItemId, setPickerItemId] = useState<number | null>(null);
+  /** Tracked lines a submit attempt found empty, so the block is stated where
+   *  the fix is rather than in a toast at the top of the page. */
+  const [serialBlockIds, setSerialBlockIds] = useState<number[]>([]);
+  const [scanTargetItemId, setScanTargetItemId] = useState<number | null>(null);
   const [editingInvoiceId, setEditingInvoiceId] = useState<number | null>(null);
+  /** Everything that is not needed to write an ordinary invoice lives behind
+   *  this. It opens itself when a value inside it is actually in use — editing
+   *  an invoice that carries a discount must not hide the discount. */
+  const [showAdvanced, setShowAdvanced] = useState(initialPrefs.showAdvanced);
   // Shipping address state (sales invoices only)
   const [ledgerAddresses, setLedgerAddresses] = useState<LedgerAddress[]>([]);
   const [shippingSameAsBilling, setShippingSameAsBilling] = useState(true);
@@ -71,6 +92,22 @@ export default function InvoicesPage() {
   const invoiceSearch = '';
   const invoicePageSize = 20;
   const financialYearId = activeFY?.id;
+  const { registerAction } = useShortcuts();
+
+  /* A scanner fires codes faster than React repaints, and each one has to see
+     the lines the one before it produced — otherwise the second handset of a
+     burst opens a second line for a product that already has one. These refs
+     are the synchronous copy the scan handlers read; every render re-syncs them
+     so an edit made with the mouse is never lost. */
+  const itemsRef = useRef(items);
+  const nextItemIdRef = useRef(nextItemId);
+  const scanTargetRef = useRef<number | null>(scanTargetItemId);
+  const scanInputRef = useRef<HTMLInputElement>(null);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    itemsRef.current = items;
+    nextItemIdRef.current = nextItemId;
+  });
 
   const composerQuery = useQuery({
     queryKey: invoiceQueryKeys.composer(invoicePage, invoicePageSize, invoiceSearch, showCancelled, financialYearId),
@@ -115,6 +152,15 @@ export default function InvoicesPage() {
     };
   }, []);
 
+  /* A real handler, registered where the box lives — note that create_invoice
+     and save_invoice are declared in shortcutDefaults with no handler anywhere,
+     so those two combos do nothing today. */
+  useEffect(() => registerAction('focus_scan', () => scanInputRef.current?.focus()), [registerAction]);
+
+  useEffect(() => () => {
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+  }, []);
+
   useEffect(() => {
     if (!composerQuery.data) {
       return;
@@ -134,6 +180,8 @@ export default function InvoicesPage() {
           ...item,
           productId: item.productId || String(defaultProduct?.id ?? ''),
           unit_price: item.unit_price || String(defaultProduct?.price ?? ''),
+          // Filled by the composer, so a scan may still take this line over.
+          autoFilled: item.productId ? item.autoFilled : true,
         };
       })
     );
@@ -170,6 +218,16 @@ export default function InvoicesPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  // Handle ?duplicate=<id> query param — pre-fill create form from existing invoice
+  useEffect(() => {
+    const duplicateId = searchParams.get('duplicate');
+    if (!duplicateId || editingInvoiceId) return;
+    fetchInvoiceById(Number(duplicateId))
+      .then(startDuplicatingInvoice)
+      .catch(() => setError('Unable to load invoice for duplication.'));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   useEffect(() => {
     if (!composerQuery.error) {
       return;
@@ -179,7 +237,9 @@ export default function InvoicesPage() {
 
   const totalAmount = items.reduce((sum, item) => {
     const product = products.find((entry) => entry.id === Number(item.productId));
-    const quantity = Number(item.quantity);
+    /* A tracked line is worth exactly as many units as it has serials — there
+       is no state in which the two can disagree. */
+    const quantity = product?.track_serials ? item.serials.length : Number(item.quantity);
     const unitPrice = item.unit_price ? Number(item.unit_price) : (product?.price || 0);
     const gstRate = product?.gst_rate || 0;
 
@@ -243,6 +303,27 @@ export default function InvoicesPage() {
     daysFromInvoice: dueDateDays,
   });
 
+  /* Which advanced settings this invoice actually uses. It names them on the
+     closed row, so the disclosure is worth reading before opening it. */
+  const advancedInUse = [
+    dueDateMode !== 'none' ? 'due date' : '',
+    supplierInvoiceNumber.trim() || referenceNotes.trim() ? 'reference' : '',
+    voucherType === 'sales' && !shippingSameAsBilling ? 'shipping address' : '',
+    Number(invoiceDiscountValue) > 0 ? 'discount' : '',
+    applyRoundOff ? 'round off' : '',
+  ].filter(Boolean);
+  const advancedSummary = advancedInUse.length > 0
+    ? `In use: ${advancedInUse.join(' · ')}`
+    : 'Due date, reference, shipping address, discount, round off';
+
+  /* Never hide a setting that is in use: an invoice opened for editing can
+     carry any of these, and a closed disclosure would put them out of sight
+     while they still affect the total. */
+  const advancedCount = advancedInUse.length;
+  useEffect(() => {
+    if (advancedCount > 0) setShowAdvanced(true);
+  }, [advancedCount]);
+
   function addItem() {
     const defaultProduct = products[0];
     setItems((current) => [...current, createItem(nextItemId, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))]);
@@ -254,28 +335,260 @@ export default function InvoicesPage() {
   }
 
   function updateItem(id: number, key: 'productId' | 'quantity' | 'unit_price' | 'description' | 'discount_type' | 'discount_value', value: string) {
-    setItems((current) => current.map((item) => (item.id === id ? { ...item, [key]: value } : item)));
+    setItems((current) => current.map((item) => (item.id === id ? { ...item, [key]: value, autoFilled: false } : item)));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Scanning
+  // ---------------------------------------------------------------------------
+
+  function findProduct(productId: number) {
+    return products.find((product) => product.id === productId);
+  }
+
+  function isTrackedLine(item: InvoiceFormItem) {
+    return Boolean(findProduct(Number(item.productId))?.track_serials);
+  }
+
+  function lineQuantity(item: InvoiceFormItem) {
+    return isTrackedLine(item) ? item.serials.length : Number(item.quantity);
+  }
+
+  /** Writes to the ref first so the next queued scan reads the new lines. */
+  function commitItems(next: InvoiceFormItem[]) {
+    itemsRef.current = next;
+    setItems(next);
+  }
+
+  function takeItemId() {
+    const id = nextItemIdRef.current;
+    nextItemIdRef.current = id + 1;
+    setNextItemId(id + 1);
+    return id;
+  }
+
+  function setScanTarget(itemId: number) {
+    scanTargetRef.current = itemId;
+    setScanTargetItemId(itemId);
+  }
+
+  function clearSerialBlock(itemId: number) {
+    setSerialBlockIds((current) => current.filter((entry) => entry !== itemId));
+  }
+
+  /* The line the scan landed on lights up, because the operator is looking at
+     the handset in their hand, not at the screen. Dropping the attribute for a
+     frame is what lets the same line flash twice in a row — an animation does
+     not restart while its selector keeps matching. */
+  function flashLine(itemId: number) {
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    setFlashItemId(null);
+    window.requestAnimationFrame(() => setFlashItemId(itemId));
+    flashTimerRef.current = setTimeout(() => setFlashItemId(null), 1200);
+  }
+
+  /* A serial can name a product that is not in the composer's catalogue page —
+     it loads 500 products, a long catalogue has more. Adopting it keeps the
+     combobox label, the tax rate and the line total correct. */
+  function adoptProduct(product: Product) {
+    setProducts((current) => (current.some((entry) => entry.id === product.id) ? current : [...current, product]));
+  }
+
+  function findLineWithSerial(serialNumber: string) {
+    const wanted = serialNumber.trim().toUpperCase();
+    return itemsRef.current.findIndex((item) => item.serials.some((entry) => entry.trim().toUpperCase() === wanted));
+  }
+
+  /**
+   * The line a scanned product belongs on: an existing line for it, else the
+   * composer's own seeded line if nobody has touched it, else a new one. Taking
+   * the seeded line over is what stops a five-phone invoice starting with a
+   * stray line of whatever product happened to be first in the catalogue.
+   */
+  function lineForProduct(product: Product): { item: InvoiceFormItem; index: number; created: boolean } {
+    const current = itemsRef.current;
+    const existingIndex = current.findIndex((item) => Number(item.productId) === product.id);
+    if (existingIndex >= 0) {
+      return { item: current[existingIndex], index: existingIndex, created: false };
+    }
+
+    const spareIndex = current.findIndex((item) => item.autoFilled && item.serials.length === 0);
+    if (spareIndex >= 0) {
+      const spare: InvoiceFormItem = {
+        ...current[spareIndex],
+        productId: String(product.id),
+        unit_price: String(product.price),
+        quantity: '1',
+        serials: [],
+        autoFilled: false,
+      };
+      const next = [...current];
+      next[spareIndex] = spare;
+      commitItems(next);
+      return { item: spare, index: spareIndex, created: true };
+    }
+
+    const fresh: InvoiceFormItem = {
+      ...createItem(takeItemId(), String(product.id), String(product.price)),
+      autoFilled: false,
+    };
+    commitItems([...current, fresh]);
+    return { item: fresh, index: current.length, created: true };
+  }
+
+  function serialTail(serialNumber: string) {
+    return serialNumber.length > 4 ? `…${serialNumber.slice(-4)}` : serialNumber;
+  }
+
+  function attachSerial(item: InvoiceFormItem, index: number, product: Product, serialNumber: string): ScanOutcome {
+    const serials = [...item.serials, serialNumber];
+    commitItems(itemsRef.current.map((entry) => (entry.id === item.id ? { ...entry, serials, autoFilled: false } : entry)));
+    setScanTarget(item.id);
+    clearSerialBlock(item.id);
+    flashLine(item.id);
+    return {
+      status: 'ok',
+      message: `${product.name} · ${serialTail(serialNumber)} → Line ${index + 1} (qty ${serials.length})`,
+    };
+  }
+
+  function addProductUnit(product: Product): ScanOutcome {
+    const { item, index, created } = lineForProduct(product);
+    const quantity = created ? item.quantity : String(Number(item.quantity || '0') + 1);
+    commitItems(itemsRef.current.map((entry) => (entry.id === item.id ? { ...entry, quantity, autoFilled: false } : entry)));
+    flashLine(item.id);
+    return { status: 'ok', message: `${product.name} → Line ${index + 1} (qty ${quantity})` };
+  }
+
+  /** Purchase mode registers into a line, so it needs one: the last tracked
+   *  line a scan touched, or the only tracked line there is. */
+  function resolveScanTarget() {
+    const tracked = itemsRef.current
+      .map((item, index) => ({ item, index }))
+      .filter((entry) => isTrackedLine(entry.item));
+    return tracked.find((entry) => entry.item.id === scanTargetRef.current) ?? tracked[tracked.length - 1] ?? null;
+  }
+
+  function handleScanResolution(resolution: ScanResolution): ScanOutcome {
+    const purchase = voucherType === 'purchase';
+
+    if (resolution.kind === 'product') {
+      adoptProduct(resolution.product);
+      if (!resolution.product.track_serials) {
+        return addProductUnit(resolution.product);
+      }
+      // A tracked product's own barcode cannot add a unit — a unit is a serial.
+      const { item, index } = lineForProduct(resolution.product);
+      setScanTarget(item.id);
+      flashLine(item.id);
+      return { status: 'info', message: `Line ${index + 1} · ${resolution.product.name} — scan each serial now.` };
+    }
+
+    if (resolution.kind === 'serial') {
+      const serial = resolution.serial;
+      const onLine = findLineWithSerial(serial.serial_number);
+      if (onLine >= 0) {
+        flashLine(itemsRef.current[onLine].id);
+        return { status: 'info', message: `Already added to line ${onLine + 1}.` };
+      }
+
+      if (purchase) {
+        const arrival = serial.purchase_invoice
+          ? ` on ${serial.purchase_invoice.invoice_number ?? `#${serial.purchase_invoice.id}`}`
+          : '';
+        return { status: 'error', message: `Already registered to ${serial.product.name}${arrival}.` };
+      }
+
+      if (serial.status === 'sold') {
+        const ref = serial.sales_invoice;
+        if (!ref) {
+          return { status: 'error', message: 'This serial has already been sold.' };
+        }
+        const label = ref.invoice_number ?? `#${ref.id}`;
+        return {
+          status: 'error',
+          message: `Already sold on ${label} (${formatInvoiceDateLabel(ref.invoice_date)})`,
+          link: { to: `/invoices-view?search=${encodeURIComponent(label)}`, label: 'Open invoice' },
+        };
+      }
+
+      adoptProduct(serial.product);
+      const product = findProduct(serial.product_id) ?? serial.product;
+      const { item, index } = lineForProduct(product);
+      return attachSerial(item, index, product, serial.serial_number);
+    }
+
+    if (!purchase) {
+      return { status: 'error', message: resolution.detail };
+    }
+
+    // Purchase: a code nobody has registered is exactly what should be arriving.
+    const onLine = findLineWithSerial(resolution.code);
+    if (onLine >= 0) {
+      flashLine(itemsRef.current[onLine].id);
+      return { status: 'info', message: `Already added to line ${onLine + 1}.` };
+    }
+
+    const target = resolveScanTarget();
+    if (!target) {
+      /* Nothing to register into, so the caret goes where the fix is. The scan
+         bar leaves it alone from here — it only reclaims focus when nothing
+         else holds it. */
+      const firstItem = itemsRef.current[0];
+      if (firstItem) {
+        document.getElementById(`invoice-product-${firstItem.id}`)?.focus();
+      }
+      return { status: 'error', message: 'Add a serial-tracked product line first — or scan its product barcode.' };
+    }
+
+    const product = findProduct(Number(target.item.productId));
+    if (!product) {
+      return { status: 'error', message: `Choose a product on line ${target.index + 1} first.` };
+    }
+
+    return attachSerial(target.item, target.index, product, resolution.code);
+  }
+
+  function setLineSerials(itemId: number, serials: string[]) {
+    commitItems(itemsRef.current.map((item) => (item.id === itemId ? { ...item, serials, autoFilled: false } : item)));
+    if (serials.length > 0) {
+      setScanTarget(itemId);
+      clearSerialBlock(itemId);
+    }
   }
 
   function resetInvoiceForm() {
+    /* The next invoice starts from the user's standing preferences, not from
+       hard defaults — otherwise every remembered setting would be lost the
+       moment an invoice is created. Read fresh rather than reusing the value
+       from mount, since they may have changed during the session. */
+    const prefs = readInvoiceComposerPrefs();
+    setShowAdvanced(prefs.showAdvanced);
     setEditingInvoiceId(null);
     setSupplierInvoiceNumber('');
     setReferenceNotes('');
-    setTaxInclusive(false);
-    setApplyRoundOff(false);
-    setInvoiceDiscountType('percentage');
+    setTaxInclusive(prefs.taxInclusive);
+    setApplyRoundOff(prefs.applyRoundOff);
+    setInvoiceDiscountType(prefs.invoiceDiscountType);
+    // Per-invoice, never remembered: a carried-over discount would silently
+    // reduce the next invoice's total.
     setInvoiceDiscountValue('');
     setPaymentMode('cash');
     setPaymentReference('');
     setSelectedPaymentAccountId('');
     setPaymentAmount('');
     const defaultProduct = products[0];
-    setItems([createItem(1, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))]);
+    itemsRef.current = [createItem(1, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))];
+    setItems(itemsRef.current);
     setNextItemId(2);
-    setInvoiceDate(new Date().toISOString().slice(0, 10));
-    setDueDateMode('none');
+    setSerialBlockIds([]);
+    setScanTargetItemId(null);
+    scanTargetRef.current = null;
+    setPickerItemId(null);
+    setInvoiceDate(toIsoDate(new Date()));
+    setDueDateMode(prefs.dueDateMode);
     setDueDate('');
-    setDueDateDays('');
+    setDueDateDays(prefs.dueDateDays);
     setShippingSameAsBilling(true);
     setSelectedShippingAddressId(null);
     setNewShippingLabel('');
@@ -304,7 +617,7 @@ export default function InvoicesPage() {
     setInvoiceDiscountType((invoice.discount_type as 'percentage' | 'net') || 'percentage');
     setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
     setSelectedLedgerId(String(invoice.ledger_id));
-    setInvoiceDate(invoice.invoice_date ? invoice.invoice_date.slice(0, 10) : new Date().toISOString().slice(0, 10));
+    setInvoiceDate(invoice.invoice_date ? invoice.invoice_date.slice(0, 10) : toIsoDate(new Date()));
     const dueDateState = createDueDateFormState(invoice.due_date);
     setDueDateMode(dueDateState.mode);
     setDueDate(dueDateState.exactDate);
@@ -318,8 +631,11 @@ export default function InvoicesPage() {
       description: line.description ?? '',
       discount_type: (line.discount_type || '') as '' | 'percentage' | 'net',
       discount_value: line.discount_value != null ? String(line.discount_value) : '',
+      serials: line.serial_numbers ?? [],
+      autoFilled: false,
     }));
 
+    itemsRef.current = nextItems;
     setItems(nextItems);
     setNextItemId(nextItems.length + 1);
     // Restore shipping address state from the invoice being edited
@@ -334,6 +650,70 @@ export default function InvoicesPage() {
       setSelectedShippingAddressId(null);
       setNewShippingLabel('');
       setNewShippingAddress('');
+    }
+  }
+
+  function startDuplicatingInvoice(invoice: Invoice) {
+    if (!invoice.ledger_id) {
+      setError('This invoice is missing its ledger and cannot be duplicated.');
+      return;
+    }
+
+    if (!invoice.items || invoice.items.length === 0) {
+      setError('This invoice has no line items and cannot be duplicated.');
+      return;
+    }
+
+    setError('');
+    setSuccess('Invoice data loaded. Review and click Create Invoice to save.');
+    setEditingInvoiceId(null);
+    setVoucherType(invoice.voucher_type);
+    setSupplierInvoiceNumber(invoice.supplier_invoice_number ?? '');
+    setReferenceNotes(invoice.voucher_type === 'sales' ? (invoice.reference_notes ?? '') : '');
+    setTaxInclusive(invoice.tax_inclusive ?? false);
+    setApplyRoundOff(invoice.apply_round_off ?? false);
+    setInvoiceDiscountType((invoice.discount_type as 'percentage' | 'net') || 'percentage');
+    setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
+    setSelectedLedgerId(String(invoice.ledger_id));
+    setInvoiceDate(toIsoDate(new Date()));
+    setDueDateMode('none');
+    setDueDate('');
+    setDueDateDays('');
+
+    const nextItems = invoice.items.map((line, index) => ({
+      id: index + 1,
+      productId: String(line.product_id),
+      quantity: String(line.quantity),
+      unit_price: String(line.unit_price),
+      description: line.description ?? '',
+      discount_type: (line.discount_type || '') as '' | 'percentage' | 'net',
+      discount_value: line.discount_value != null ? String(line.discount_value) : '',
+      /* Serials are physical units, and the copy is not those units. The
+         duplicate arrives with none, and cannot be saved until they are
+         scanned off the handsets actually going out. */
+      serials: [],
+      autoFilled: false,
+    }));
+
+    itemsRef.current = nextItems;
+    setItems(nextItems);
+    setNextItemId(nextItems.length + 1);
+    // Restore shipping address state from the invoice being duplicated
+    if (invoice.shipping_address) {
+      setShippingSameAsBilling(false);
+      setSelectedShippingAddressId(null);
+      setNewShippingLabel(invoice.shipping_address_label ?? '');
+      setNewShippingAddress(invoice.shipping_address);
+    } else {
+      setShippingSameAsBilling(true);
+      setSelectedShippingAddressId(null);
+      setNewShippingLabel('');
+      setNewShippingAddress('');
+    }
+
+    // Clear the duplicate query param so a refresh doesn't re-trigger
+    if (searchParams.has('duplicate')) {
+      setSearchParams((prev) => { prev.delete('duplicate'); return prev; }, { replace: true });
     }
   }
 
@@ -376,6 +756,17 @@ export default function InvoicesPage() {
       return;
     }
 
+    /* A tracked line with no serials is not an incomplete form, it is an
+       invoice for units nobody has identified. The block is stated on the line
+       itself — a toast at the top of a six-line invoice does not say which. */
+    const missingSerials = items.filter((item) => isTrackedLine(item) && item.serials.length === 0);
+    if (missingSerials.length > 0) {
+      setSerialBlockIds(missingSerials.map((item) => item.id));
+      flashLine(missingSerials[0].id);
+      scanInputRef.current?.focus();
+      return;
+    }
+
     try {
       setSubmitting(true);
       setError('');
@@ -401,11 +792,12 @@ export default function InvoicesPage() {
         } : {}),
         items: items.map((item) => ({
           product_id: Number(item.productId),
-          quantity: Number(item.quantity),
+          quantity: lineQuantity(item),
           unit_price: item.unit_price ? Number(item.unit_price) : undefined,
           description: item.description || undefined,
           discount_type: item.discount_type || null,
           discount_value: item.discount_value ? Number(item.discount_value) : null,
+          serial_numbers: item.serials.length > 0 ? item.serials : undefined,
         })),
       };
 
@@ -438,6 +830,15 @@ export default function InvoicesPage() {
       setSubmitting(false);
     }
   }
+
+  const trackedEntries = items
+    .map((item, index) => ({ item, index }))
+    .filter((entry) => isTrackedLine(entry.item));
+  const scanTargetEntry =
+    trackedEntries.find((entry) => entry.item.id === scanTargetItemId) ?? trackedEntries[trackedEntries.length - 1] ?? null;
+  const hasTrackedProducts = products.some((product) => product.track_serials);
+  const pickerItem = pickerItemId !== null ? items.find((item) => item.id === pickerItemId) ?? null : null;
+  const pickerProduct = pickerItem ? findProduct(Number(pickerItem.productId)) : undefined;
 
   return (
     <div className="page-grid">
@@ -503,6 +904,29 @@ export default function InvoicesPage() {
             ) : null}
           </div>
 
+          {composerQuery.data && (ledgers.length === 0 || products.length === 0) ? (
+            <div className="empty-state stack" data-testid="invoice-first-run" style={{ marginBottom: '1rem' }}>
+              <strong>Add your first customer / product</strong>
+              <p className="muted-text" style={{ margin: 0 }}>
+                An invoice needs a customer ledger and at least one product. Add what is missing to get started.
+              </p>
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                {ledgers.length === 0 ? (
+                  <button type="button" className="button button--primary" onClick={openLedgerCreateModal}>
+                    <Plus size={13} />
+                    Add a customer
+                  </button>
+                ) : null}
+                {products.length === 0 ? (
+                  <button type="button" className="button button--primary" onClick={openProductCreateModal}>
+                    <Plus size={13} />
+                    Add a product
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           <form className="stack" onSubmit={handleSubmitInvoice}>
             <div className="field-grid">
               <div className="field">
@@ -521,7 +945,13 @@ export default function InvoicesPage() {
               </div>
 
               <div className="field">
-                <label htmlFor="invoice-ledger">Ledger</label>
+                <div className="field__label-row">
+                  <label htmlFor="invoice-ledger">Ledger</label>
+                  <button type="button" className="link-button" onClick={openLedgerCreateModal}>
+                    <Plus size={13} />
+                    New ledger
+                  </button>
+                </div>
                 <LedgerCombobox
                   id="invoice-ledger"
                   ledgers={ledgers}
@@ -549,7 +979,23 @@ export default function InvoicesPage() {
                   </p>
                 ) : null}
               </div>
+            </div>
 
+            <label className="form-advanced-toggle">
+              <input
+                type="checkbox"
+                checked={showAdvanced}
+                onChange={(event) => {
+                  setShowAdvanced(event.target.checked);
+                  updateInvoiceComposerPrefs({ showAdvanced: event.target.checked });
+                }}
+              />
+              <span className="form-advanced-toggle__label">Advanced options</span>
+              <span className="form-advanced-toggle__hint">{advancedSummary}</span>
+            </label>
+
+            {showAdvanced ? (
+              <div className="field-grid">
               {voucherType !== 'payment' && voucherType !== 'receipt' ? (
                 <>
                   <div className="field">
@@ -558,7 +1004,11 @@ export default function InvoicesPage() {
                       id="invoice-due-mode"
                       className="select"
                       value={dueDateMode}
-                      onChange={(event) => setDueDateMode(event.target.value as DueDateMode)}
+                      onChange={(event) => {
+                        const mode = event.target.value as DueDateMode;
+                        setDueDateMode(mode);
+                        updateInvoiceComposerPrefs({ dueDateMode: mode });
+                      }}
                     >
                       <option value="none">No due date</option>
                       <option value="exact">Choose exact date</option>
@@ -590,7 +1040,10 @@ export default function InvoicesPage() {
                         min="0"
                         step="1"
                         value={dueDateDays}
-                        onChange={(event) => setDueDateDays(event.target.value)}
+                        onChange={(event) => {
+                          setDueDateDays(event.target.value);
+                          updateInvoiceComposerPrefs({ dueDateDays: event.target.value });
+                        }}
                         placeholder="0"
                       />
                     </div>
@@ -733,39 +1186,20 @@ export default function InvoicesPage() {
                 </div>
               ) : null}
 
-              <div className="button-row">
-                <button type="button" className="button button--secondary" onClick={openLedgerCreateModal} title="Add ledger" aria-label="Add ledger">
-                  Add ledger
-                </button>
-                {voucherType !== 'payment' && voucherType !== 'receipt' ? (
-                  <button type="button" className="button button--secondary" onClick={openProductCreateModal} title="Add product" aria-label="Add product">
-                    Add product
-                  </button>
-                ) : null}
-                {voucherType !== 'payment' && voucherType !== 'receipt' ? (
-                  <button type="button" className="button button--secondary" onClick={openStockUpdateModal} title="Update stock" aria-label="Update stock">
-                    Update stock
-                  </button>
-                ) : null}
               </div>
-            </div>
+            ) : null}
 
-            {voucherType !== 'payment' && voucherType !== 'receipt' ? (
+            {showAdvanced && voucherType !== 'payment' && voucherType !== 'receipt' ? (
               <div className="stack" style={{ gap: '8px' }}>
                 <div className="field" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 0 }}>
-                  <input
-                    id="invoice-tax-inclusive"
-                    type="checkbox"
-                    checked={taxInclusive}
-                    onChange={(event) => setTaxInclusive(event.target.checked)}
-                  />
-                  <label htmlFor="invoice-tax-inclusive" style={{ marginBottom: 0, cursor: 'pointer' }}>Prices include GST</label>
-
                   <input
                     id="invoice-apply-round-off"
                     type="checkbox"
                     checked={applyRoundOff}
-                    onChange={(event) => setApplyRoundOff(event.target.checked)}
+                    onChange={(event) => {
+                      setApplyRoundOff(event.target.checked);
+                      updateInvoiceComposerPrefs({ applyRoundOff: event.target.checked });
+                    }}
                   />
                   <label htmlFor="invoice-apply-round-off" style={{ marginBottom: 0, cursor: 'pointer' }}>Apply round off</label>
                 </div>
@@ -784,7 +1218,10 @@ export default function InvoicesPage() {
                       name="inv-disc-type"
                       value="percentage"
                       checked={invoiceDiscountType === 'percentage'}
-                      onChange={() => setInvoiceDiscountType('percentage')}
+                      onChange={() => {
+                        setInvoiceDiscountType('percentage');
+                        updateInvoiceComposerPrefs({ invoiceDiscountType: 'percentage' });
+                      }}
                     />
                     <label htmlFor="invoice-discount-percentage" style={{ marginBottom: 0, cursor: 'pointer', fontSize: '13px' }}>%</label>
                     <input
@@ -793,7 +1230,10 @@ export default function InvoicesPage() {
                       name="inv-disc-type"
                       value="net"
                       checked={invoiceDiscountType === 'net'}
-                      onChange={() => setInvoiceDiscountType('net')}
+                      onChange={() => {
+                        setInvoiceDiscountType('net');
+                        updateInvoiceComposerPrefs({ invoiceDiscountType: 'net' });
+                      }}
                     />
                     <label htmlFor="invoice-discount-net" style={{ marginBottom: 0, cursor: 'pointer', fontSize: '13px' }}>Flat</label>
                   </div>
@@ -806,6 +1246,7 @@ export default function InvoicesPage() {
                     type="number"
                     step="0.01"
                     min="0"
+                    max={invoiceDiscountType === 'percentage' ? '100' : undefined}
                     value={invoiceDiscountValue}
                     onChange={(e) => setInvoiceDiscountValue(e.target.value)}
                     placeholder={invoiceDiscountType === 'percentage' ? 'e.g. 5%' : 'e.g. 100.00'}
@@ -882,25 +1323,71 @@ export default function InvoicesPage() {
 
             {voucherType !== 'payment' && voucherType !== 'receipt' ? (
               <div className="stack">
+                <div className="line-items__header">
+                  <p className="eyebrow" style={{ margin: 0 }}>Line items</p>
+                  <div className="line-items__tools">
+                    <label className="inline-check" htmlFor="invoice-tax-inclusive">
+                      <input
+                        id="invoice-tax-inclusive"
+                        type="checkbox"
+                        checked={taxInclusive}
+                        onChange={(event) => {
+                          setTaxInclusive(event.target.checked);
+                          updateInvoiceComposerPrefs({ taxInclusive: event.target.checked });
+                        }}
+                      />
+                      Prices include GST
+                    </label>
+                    <button type="button" className="link-button" onClick={openProductCreateModal}>
+                      <Plus size={13} />
+                      New product
+                    </button>
+                    <button type="button" className="link-button" onClick={openStockUpdateModal}>
+                      <Boxes size={13} />
+                      Update stock
+                    </button>
+                  </div>
+                </div>
+                {hasTrackedProducts ? (
+                  <ScanBar
+                    mode={voucherType === 'purchase' ? 'purchase' : 'sales'}
+                    onResolve={handleScanResolution}
+                    target={
+                      scanTargetEntry
+                        ? {
+                            lineNumber: scanTargetEntry.index + 1,
+                            productName: findProduct(Number(scanTargetEntry.item.productId))?.name ?? 'this line',
+                          }
+                        : null
+                    }
+                    inputRef={scanInputRef}
+                  />
+                ) : null}
                 {items.map((item, index) => {
                   const selectedProduct = products.find((product) => product.id === Number(item.productId));
                   const selectedUnit = selectedProduct?.unit || 'Pieces';
                   const allowDecimalQuantity = Boolean(selectedProduct?.allow_decimal);
+                  const tracked = Boolean(selectedProduct?.track_serials);
+                  const quantityValue = tracked ? String(item.serials.length) : item.quantity;
                   const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
                   const gstRate = selectedProduct?.gst_rate || 0;
                   let lineTotal: number;
                   let taxAmount: number;
                   if (taxInclusive) {
-                    lineTotal = unitPrice * Number(item.quantity || 0);
+                    lineTotal = unitPrice * Number(quantityValue || 0);
                     taxAmount = lineTotal - lineTotal / (1 + gstRate / 100);
                   } else {
-                    const taxableAmount = unitPrice * Number(item.quantity || 0);
+                    const taxableAmount = unitPrice * Number(quantityValue || 0);
                     taxAmount = taxableAmount * gstRate / 100;
                     lineTotal = taxableAmount + taxAmount;
                   }
 
                   return (
-                    <div key={item.id} className="line-item">
+                    <div
+                      key={item.id}
+                      className="line-item line-item--discount"
+                      data-flash={flashItemId === item.id ? 'on' : undefined}
+                    >
                       <div className="field">
                         <label htmlFor={`invoice-product-${item.id}`}>Line {index + 1}</label>
                         <ProductCombobox
@@ -916,14 +1403,19 @@ export default function InvoicesPage() {
                       </div>
 
                       <div className="field">
-                        <label htmlFor={`invoice-quantity-${item.id}`}>Qty ({selectedUnit})</label>
+                        <label htmlFor={`invoice-quantity-${item.id}`}>
+                          Qty ({selectedUnit})
+                          {tracked ? <Lock size={11} className="field__lock" aria-hidden="true" /> : null}
+                        </label>
                         <input
                           id={`invoice-quantity-${item.id}`}
                           className="input"
                           type="number"
                           min={allowDecimalQuantity ? '0.001' : '1'}
                           step={allowDecimalQuantity ? '0.001' : '1'}
-                          value={item.quantity}
+                          value={quantityValue}
+                          disabled={tracked}
+                          title={tracked ? 'Quantity follows the serial numbers' : undefined}
                           onChange={(event) => updateItem(item.id, 'quantity', event.target.value)}
                           required
                         />
@@ -943,23 +1435,9 @@ export default function InvoicesPage() {
                         />
                       </div>
 
-                      <div className="line-item__price">
-                        {formatCurrency(lineTotal, activeCurrencyCode)}
-                        <div className="table-subtext">
-                          {formatInvoiceTaxBreakdown({
-                            gstRate,
-                            taxAmount,
-                            currencyCode: activeCurrencyCode,
-                            interstateSupply: composerInterstateSupply,
-                          })}
-                        </div>
-                      </div>
-                      <button type="button" className="button button--danger" onClick={() => removeItem(item.id)} title={`Remove line item ${index + 1}`} aria-label={`Remove line item ${index + 1}`}>
-                        Remove
-                      </button>
-                      {/* Item-level discount */}
-                      <div className="field" style={{ minWidth: '140px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                      <div className="field line-item__discount">
+                        <label htmlFor={`item-disc-value-${item.id}`}>Discount</label>
+                        <div className="line-item__discount-modes">
                           <input
                             id={`item-disc-pct-${item.id}`}
                             type="radio"
@@ -968,7 +1446,7 @@ export default function InvoicesPage() {
                             checked={item.discount_type === 'percentage'}
                             onChange={() => updateItem(item.id, 'discount_type', 'percentage')}
                           />
-                          <label htmlFor={`item-disc-pct-${item.id}`} style={{ marginBottom: 0, cursor: 'pointer', fontSize: '11px' }}>%</label>
+                          <label htmlFor={`item-disc-pct-${item.id}`}>%</label>
                           <input
                             id={`item-disc-net-${item.id}`}
                             type="radio"
@@ -977,7 +1455,7 @@ export default function InvoicesPage() {
                             checked={item.discount_type === 'net'}
                             onChange={() => updateItem(item.id, 'discount_type', 'net')}
                           />
-                          <label htmlFor={`item-disc-net-${item.id}`} style={{ marginBottom: 0, cursor: 'pointer', fontSize: '11px' }}>Flat</label>
+                          <label htmlFor={`item-disc-net-${item.id}`}>Flat</label>
                         </div>
                         <input
                           id={`item-disc-value-${item.id}`}
@@ -985,21 +1463,68 @@ export default function InvoicesPage() {
                           type="number"
                           step="0.01"
                           min="0"
+                          max={item.discount_type === 'percentage' ? '100' : undefined}
                           value={item.discount_value}
                           onChange={(event) => updateItem(item.id, 'discount_value', event.target.value)}
-                          placeholder="Disc"
-                          style={{ width: '100%', padding: '4px 6px', fontSize: '12px' }}
+                          placeholder="0"
                         />
                       </div>
-                      <div className="field" style={{ gridColumn: '1 / -1' }}>
+
+                      <div className="line-item__price">
+                        <span className="line-item__label">Line total</span>
+                        <div className="line-item__price-value">
+                          <span>{formatCurrency(lineTotal, activeCurrencyCode)}</span>
+                          <span className="table-subtext">
+                            {formatInvoiceTaxBreakdown({
+                              gstRate,
+                              taxAmount,
+                              currencyCode: activeCurrencyCode,
+                              interstateSupply: composerInterstateSupply,
+                            })}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="button button--danger button--icon"
+                        onClick={() => removeItem(item.id)}
+                        title={`Remove line item ${index + 1}`}
+                        aria-label={`Remove line item ${index + 1}`}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                      {tracked ? (
+                        <div className="field field--full serial-line">
+                          <SerialChips
+                            value={item.serials}
+                            onChange={(next) => setLineSerials(item.id, next)}
+                            productId={Number(item.productId) || null}
+                            mode={voucherType === 'purchase' ? 'purchase' : 'sales'}
+                            idPrefix={`invoice-line-${item.id}`}
+                            onPickFromStock={voucherType === 'sales' ? () => setPickerItemId(item.id) : undefined}
+                          />
+                          {item.serials.length === 0 ? (
+                            <p
+                              className={`serial-line__message${serialBlockIds.includes(item.id) ? ' serial-line__message--blocking' : ''}`}
+                              role={serialBlockIds.includes(item.id) ? 'alert' : undefined}
+                            >
+                              This product is serial tracked — scan or add at least one serial before saving.
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      <div className="field field--full">
                         <label htmlFor={`invoice-description-${item.id}`}>Description (optional)</label>
+                        {/* One row, resizable: an optional note used to open at two rows and
+                            take up more of the line item than the fields that price it. */}
                         <textarea
                           id={`invoice-description-${item.id}`}
                           className="input"
-                          rows={2}
+                          rows={1}
                           value={item.description}
                           onChange={(event) => updateItem(item.id, 'description', event.target.value)}
-                          placeholder="Serial number, batch code, or item notes"
+                          placeholder={tracked ? 'Condition, box number, or item notes' : 'Serial number, batch code, or item notes'}
                         />
                       </div>
                     </div>
@@ -1051,6 +1576,19 @@ export default function InvoicesPage() {
       <ProductQuickCreateModal />
 
       <StockUpdateModal />
+
+      {pickerItem && pickerProduct ? (
+        <SerialPickerModal
+          productId={pickerProduct.id}
+          productName={pickerProduct.name}
+          selected={pickerItem.serials}
+          onCancel={() => setPickerItemId(null)}
+          onConfirm={(serials) => {
+            setLineSerials(pickerItem.id, serials);
+            setPickerItemId(null);
+          }}
+        />
+      ) : null}
 
       {showReceiptModal && selectedLedgerId ? (
         <ReceiptModal

@@ -6,7 +6,7 @@ test.describe('Financial Year Switcher', () => {
   });
 
   test('FY switcher dropdown button shows active FY label or fallback', async ({ authedPage: page }) => {
-    const fyButton = page.locator('button[aria-haspopup="listbox"]');
+    const fyButton = page.getByTestId('fy-switcher');
     await expect(fyButton).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     // Button must have some text (either a FY label or "No active FY")
     const text = await fyButton.textContent();
@@ -14,7 +14,7 @@ test.describe('Financial Year Switcher', () => {
   });
 
   test('FY dropdown opens and shows FY list or empty state', async ({ authedPage: page }) => {
-    const fyButton = page.locator('button[aria-haspopup="listbox"]');
+    const fyButton = page.getByTestId('fy-switcher');
     await fyButton.click();
 
     // The dropdown listbox should be visible
@@ -23,7 +23,7 @@ test.describe('Financial Year Switcher', () => {
   });
 
   test('FY dropdown shows "+ New FY" button', async ({ authedPage: page }) => {
-    const fyButton = page.locator('button[aria-haspopup="listbox"]');
+    const fyButton = page.getByTestId('fy-switcher');
     await fyButton.click();
 
     const listbox = page.locator('[role="listbox"]');
@@ -32,7 +32,7 @@ test.describe('Financial Year Switcher', () => {
   });
 
   test('clicking outside FY dropdown closes it', async ({ authedPage: page }) => {
-    const fyButton = page.locator('button[aria-haspopup="listbox"]');
+    const fyButton = page.getByTestId('fy-switcher');
     await fyButton.click();
 
     const listbox = page.locator('[role="listbox"]');
@@ -44,7 +44,7 @@ test.describe('Financial Year Switcher', () => {
   });
 
   test('New FY modal opens with all required fields', async ({ authedPage: page }) => {
-    const fyButton = page.locator('button[aria-haspopup="listbox"]');
+    const fyButton = page.getByTestId('fy-switcher');
     await fyButton.click();
 
     const listbox = page.locator('[role="listbox"]');
@@ -65,7 +65,7 @@ test.describe('Financial Year Switcher', () => {
   });
 
   test('New FY modal can be cancelled', async ({ authedPage: page }) => {
-    const fyButton = page.locator('button[aria-haspopup="listbox"]');
+    const fyButton = page.getByTestId('fy-switcher');
     await fyButton.click();
     const listbox = page.locator('[role="listbox"]');
     await expect(listbox).toBeVisible({ timeout: 5_000 });
@@ -79,7 +79,7 @@ test.describe('Financial Year Switcher', () => {
   });
 
   test('New FY modal validates required fields', async ({ authedPage: page }) => {
-    const fyButton = page.locator('button[aria-haspopup="listbox"]');
+    const fyButton = page.getByTestId('fy-switcher');
     await fyButton.click();
     const listbox = page.locator('[role="listbox"]');
     await expect(listbox).toBeVisible({ timeout: 5_000 });
@@ -97,7 +97,7 @@ test.describe('Financial Year Switcher', () => {
     const testYear = 2030;
     const testLabel = '2030-31';
 
-    const fyButton = page.locator('button[aria-haspopup="listbox"]');
+    const fyButton = page.getByTestId('fy-switcher');
     await fyButton.click();
     const listbox = page.locator('[role="listbox"]');
     await expect(listbox).toBeVisible({ timeout: 5_000 });
@@ -127,7 +127,7 @@ test.describe('Financial Year Switcher', () => {
   });
 
   test('cannot create a duplicate financial year', async ({ authedPage: page }) => {
-    const fyButton = page.locator('button[aria-haspopup="listbox"]');
+    const fyButton = page.getByTestId('fy-switcher');
     await fyButton.click();
     const listbox = page.locator('[role="listbox"]');
     await expect(listbox).toBeVisible({ timeout: 5_000 });
@@ -154,7 +154,7 @@ test.describe('Financial Year Switcher', () => {
 
   test('can switch the active financial year', async ({ authedPage: page }) => {
     // First ensure at least two FYs exist — create a second if needed
-    const fyButton = page.locator('button[aria-haspopup="listbox"]');
+    const fyButton = page.getByTestId('fy-switcher');
     await fyButton.click();
 
     const listbox = page.locator('[role="listbox"]');

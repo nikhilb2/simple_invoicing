@@ -1,19 +1,25 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
+import ModalCloseButton from '../components/ModalCloseButton';
 import StatusToasts from '../components/StatusToasts';
+import ScopeBar, { Metric } from '../components/ScopeBar';
+import DateRangePresets from '../components/DateRangePresets';
 import type { CompanyAccount, CompanyProfile, Ledger, Payment, PaymentCreate, PaymentUpdate } from '../types/api';
-import formatCurrency from '../utils/formatting';
+import formatCurrency, { formatDate } from '../utils/formatting';
+import { toIsoDate } from '../utils/dateRanges';
+import { buildCashBankEditPayload } from '../utils/cashBank';
 import { useFY } from '../context/FYContext';
+import { useEscapeClose } from '../hooks/useEscapeClose';
+import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
 
 function defaultDateRange() {
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-  const toIso = (date: Date) => date.toISOString().slice(0, 10);
 
   return {
-    fromDate: toIso(firstDay),
-    toDate: toIso(today),
+    fromDate: toIsoDate(firstDay),
+    toDate: toIsoDate(today),
   };
 }
 
@@ -32,7 +38,21 @@ export default function CashBankPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  /* Citation deep link: /cash-bank?payment_id=12. The register only ever shows
+     one account over one period, so landing on the record means moving both —
+     otherwise the URL opens a page that demonstrably does not contain the
+     payment it names. */
+  const [searchParams] = useSearchParams();
+  const deepLinkPaymentId = numericParam(searchParams, 'payment_id');
+  const [highlightPaymentId, setHighlightPaymentId] = useState<number | null>(null);
+  /* Pinned from the first render rather than once the payment arrives: the
+     account and financial-year defaults below both fire on mount and would
+     otherwise win the race and move the register straight back off it. */
+  const [deepLinkPinned, setDeepLinkPinned] = useState(() => deepLinkPaymentId !== null);
+
   const [showEntryModal, setShowEntryModal] = useState(false);
+
+  useEscapeClose(useCallback(() => setShowEntryModal(false), []));
   const [entrySubmitting, setEntrySubmitting] = useState(false);
   const [editingEntry, setEditingEntry] = useState<null | {
     id: number;
@@ -40,22 +60,26 @@ export default function CashBankPage() {
     amount: number;
     date: string;
     notes: string;
+    ledger_id: number | null;
+    reference: string | null;
+    mode: string | null;
   }>(null);
 
   const [entryForm, setEntryForm] = useState({
     entryType: 'debit' as 'debit' | 'credit',
     amount: 0,
-    date: new Date().toISOString().slice(0, 10),
+    date: toIsoDate(new Date()),
     description: '',
   });
 
   const activeCurrencyCode = company?.currency_code || 'USD';
 
   useEffect(() => {
+    if (deepLinkPinned) return;
     if (selectedAccountId !== '') return;
     if (accounts.length === 0) return;
     setSelectedAccountId(String(accounts[0].id));
-  }, [accounts, selectedAccountId]);
+  }, [accounts, deepLinkPinned, selectedAccountId]);
 
   async function loadData() {
     try {
@@ -86,11 +110,45 @@ export default function CashBankPage() {
   }, [period.fromDate, period.toDate]);
 
   useEffect(() => {
+    if (deepLinkPinned) return;
     setPeriod({
       fromDate: activeFY?.start_date ?? defaultDateRange().fromDate,
       toDate: activeFY?.end_date ?? defaultDateRange().toDate,
     });
-  }, [activeFY]);
+  }, [activeFY, deepLinkPinned]);
+
+  useEffect(() => {
+    if (deepLinkPaymentId === null) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { data } = await api.get<Payment>(`/payments/${deepLinkPaymentId}`);
+        if (cancelled) return;
+        const day = String(data.date).slice(0, 10);
+        setSelectedAccountId(data.account_id != null ? String(data.account_id) : '');
+        // Widened, not replaced: a citation should not silently throw away the
+        // rest of the period the register was showing.
+        setPeriod((current) => ({
+          fromDate: day < current.fromDate ? day : current.fromDate,
+          toDate: day > current.toDate ? day : current.toDate,
+        }));
+        setHighlightPaymentId(data.id);
+      } catch (err) {
+        if (cancelled) return;
+        // Hand the register back its own defaults; the page still works.
+        setDeepLinkPinned(false);
+        setError(getApiErrorMessage(err, `Unable to open payment #${deepLinkPaymentId}`));
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [deepLinkPaymentId]);
+
+  useDeepLinkScroll(
+    highlightPaymentId === null ? null : `payment-row-${highlightPaymentId}`,
+    !loading,
+  );
 
   const selectedAccount = useMemo(() => (
     selectedAccountId ? accounts.find((account) => account.id === Number(selectedAccountId)) ?? null : null
@@ -134,7 +192,7 @@ export default function CashBankPage() {
     setEntryForm({
       entryType: 'debit',
       amount: 0,
-      date: new Date().toISOString().slice(0, 10),
+      date: toIsoDate(new Date()),
       description: '',
     });
   }
@@ -158,6 +216,9 @@ export default function CashBankPage() {
       amount: Number(payment.amount),
       date: payment.date,
       notes: payment.notes || '',
+      ledger_id: payment.ledger_id ?? null,
+      reference: payment.reference ?? null,
+      mode: payment.mode ?? null,
     });
 
     setEntryForm({
@@ -188,14 +249,11 @@ export default function CashBankPage() {
       setError('');
 
       if (editingEntry) {
-        const payload: PaymentUpdate = {
-          voucher_type: voucherType,
-          amount: entryForm.amount,
-          account_id: selectedAccount.id,
-          date: isoDate,
-          mode: selectedAccount.account_type,
-          notes: entryForm.description.trim() || undefined,
-        };
+        const payload: PaymentUpdate = buildCashBankEditPayload(
+          editingEntry,
+          selectedAccount,
+          entryForm,
+        );
         await api.put<Payment>(`/payments/${editingEntry.id}`, payload);
         setSuccess('Entry updated');
       } else {
@@ -280,64 +338,68 @@ export default function CashBankPage() {
         onClearSuccess={() => setSuccess('')}
       />
 
-      <section className="content-grid">
-        <article className="panel stack">
-          <div className="panel__header">
-            <div>
-              <p className="eyebrow">Filters</p>
-              <h2 className="nav-panel__title">Account and period</h2>
-            </div>
-          </div>
+      <ScopeBar
+        presets={(
+          <DateRangePresets
+            value={period}
+            onChange={setPeriod}
+            fy={activeFY}
+          />
+        )}
+        metrics={(
+          <>
+            <Metric
+              label="Available balance"
+              value={formatCurrency(totals.availableBalance, activeCurrencyCode)}
+              tone="accent"
+            />
+            <Metric label="Opening balance" value={formatCurrency(totals.openingBalance, activeCurrencyCode)} />
+            <Metric label="Debit" value={formatCurrency(totals.totalDebit, activeCurrencyCode)} />
+            <Metric label="Credit" value={formatCurrency(totals.totalCredit, activeCurrencyCode)} />
+          </>
+        )}
+      >
+        <div className="field">
+          <label htmlFor="cash-bank-account">Account</label>
+          <select
+            id="cash-bank-account"
+            className="select"
+            value={selectedAccountId}
+            onChange={(event) => setSelectedAccountId(event.target.value)}
+          >
+            <option value="">Unallocated</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.display_name} ({account.account_type})
+              </option>
+            ))}
+          </select>
+        </div>
 
-          <div className="field-grid">
-            <div className="field">
-              <label htmlFor="cash-bank-account">Account</label>
-              <select
-                id="cash-bank-account"
-                className="select"
-                value={selectedAccountId}
-                onChange={(event) => setSelectedAccountId(event.target.value)}
-              >
-                <option value="">Unallocated</option>
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.display_name} ({account.account_type})
-                  </option>
-                ))}
-              </select>
-            </div>
+        <div className="field">
+          <label htmlFor="cash-bank-from">From</label>
+          <input
+            id="cash-bank-from"
+            className="input"
+            type="date"
+            value={period.fromDate}
+            onChange={(event) => setPeriod((current) => ({ ...current, fromDate: event.target.value }))}
+          />
+        </div>
 
-            <div className="field">
-              <label htmlFor="cash-bank-from">From</label>
-              <input
-                id="cash-bank-from"
-                className="input"
-                type="date"
-                value={period.fromDate}
-                onChange={(event) => setPeriod((current) => ({ ...current, fromDate: event.target.value }))}
-              />
-            </div>
+        <div className="field">
+          <label htmlFor="cash-bank-to">To</label>
+          <input
+            id="cash-bank-to"
+            className="input"
+            type="date"
+            value={period.toDate}
+            onChange={(event) => setPeriod((current) => ({ ...current, toDate: event.target.value }))}
+          />
+        </div>
+      </ScopeBar>
 
-            <div className="field">
-              <label htmlFor="cash-bank-to">To</label>
-              <input
-                id="cash-bank-to"
-                className="input"
-                type="date"
-                value={period.toDate}
-                onChange={(event) => setPeriod((current) => ({ ...current, toDate: event.target.value }))}
-              />
-            </div>
-          </div>
-
-          <div className="summary-box">
-            <p className="eyebrow">Account totals</p>
-            <p className="summary-box__value">{formatCurrency(totals.availableBalance, activeCurrencyCode)}</p>
-            <p className="muted-text">Opening available balance {formatCurrency(totals.openingBalance, activeCurrencyCode)}</p>
-            <p className="muted-text">Dr {formatCurrency(totals.totalDebit, activeCurrencyCode)} · Cr {formatCurrency(totals.totalCredit, activeCurrencyCode)}</p>
-          </div>
-        </article>
-
+      <section className="content-grid content-grid--single">
         <article className="panel stack">
           <div className="panel__header">
             <div>
@@ -368,11 +430,15 @@ export default function CashBankPage() {
             ) : null}
             {!loading
               ? accountEntries.map((entry, idx) => (
-                  <div key={`${entry.id}-${idx}`} className="invoice-row">
+                  <div
+                    key={`${entry.id}-${idx}`}
+                    id={`payment-row-${entry.id}`}
+                    className={deepLinkClass(highlightPaymentId === entry.id, 'invoice-row')}
+                  >
                     <div className="invoice-row__meta">
                       <strong>{entry.voucherLabel} #{entry.id}</strong>
                       <span className="table-subtext">
-                        {new Date(entry.date).toLocaleDateString()} · {entry.ledgerName}
+                        {formatDate(entry.date)} · {entry.ledgerName}
                       </span>
                       <span className="table-subtext">{entry.particulars}</span>
                       {entry.description ? <span className="table-subtext">{entry.description}</span> : null}
@@ -415,15 +481,7 @@ export default function CashBankPage() {
             <div className="panel stack">
               <div className="panel__header">
                 <h2 className="nav-panel__title">{editingEntry ? 'Edit entry' : 'Add debit / credit entry'}</h2>
-                <button
-                  type="button"
-                  className="button button--ghost"
-                  onClick={() => setShowEntryModal(false)}
-                  title="Close entry dialog"
-                  aria-label="Close entry dialog"
-                >
-                  ✕
-                </button>
+                <ModalCloseButton onClick={() => setShowEntryModal(false)} label="Close entry dialog" />
               </div>
 
               <form onSubmit={(event) => void handleSubmitEntry(event)} className="stack">

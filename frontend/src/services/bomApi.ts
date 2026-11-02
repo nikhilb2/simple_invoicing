@@ -5,7 +5,6 @@ import type {
   BOMUpdate,
   ProduceRequest,
   ProduceResponse,
-  ProductionTransaction,
   PaginatedProductionTransactions,
 } from '../types/api';
 

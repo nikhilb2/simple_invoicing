@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
+import api from '../api/client';
 import type { Ledger } from '../types/api';
 
 type LedgerComboboxProps = {
@@ -6,11 +8,17 @@ type LedgerComboboxProps = {
   ledgers: Ledger[];
   value: string; // ledger id as string
   onChange: (ledgerId: string) => void;
+  /**
+   * Opt-in clear button, shown only once a ledger is selected. Omit it where
+   * the selection is required (invoice forms) — there, having no ledger is not
+   * a valid state, so there is nothing to clear back to.
+   */
+  onClear?: () => void;
   required?: boolean;
   disabled?: boolean;
 };
 
-export default function LedgerCombobox({ id, ledgers, value, onChange, required, disabled }: LedgerComboboxProps) {
+export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, required, disabled }: LedgerComboboxProps) {
   const formatLedgerLabel = (ledger: Ledger) => ledger.gst ? `${ledger.name} (${ledger.gst})` : ledger.name;
   const formatSearchText = (ledger: Ledger) => `${ledger.name} ${ledger.gst || ''}`.toLowerCase();
   const selectedLedger = ledgers.find((l) => String(l.id) === value);
@@ -18,6 +26,8 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, required,
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [searching, setSearching] = useState(false);
+  const [serverResults, setServerResults] = useState<Ledger[] | null>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -28,19 +38,42 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, required,
     if (l) setQuery(formatLedgerLabel(l));
   }, [value, ledgers]);
 
+  // Server results win when present. Callers hand us only the first page of
+  // ledgers, so on a large book the one being searched for is very likely not
+  // in that slice at all — filtering the prop alone would report "no match" for
+  // a ledger that plainly exists. Mirrors ProductCombobox.
   const suggestions = open
-    ? ledgers.filter((l) =>
-        searching && query.trim() !== ''
-          ? formatSearchText(l).includes(query.toLowerCase())
-          : true
-      )
+    ? serverResults !== null
+      ? serverResults
+      : searching && query.trim() !== ''
+        ? ledgers.filter((l) => formatSearchText(l).includes(query.toLowerCase()))
+        : ledgers
     : [];
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setQuery(e.target.value);
+    const val = e.target.value;
+    setQuery(val);
     setSearching(true);
     setOpen(true);
     setActiveIndex(-1);
+
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (val.trim() === '') {
+      setServerResults(null);
+      return;
+    }
+    searchTimerRef.current = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await api.get<{ items: Ledger[] }>('/ledgers/', {
+            params: { page: 1, page_size: 30, search: val.trim() },
+          });
+          setServerResults(res.data.items);
+        } catch {
+          // silently ignore search errors
+        }
+      })();
+    }, 250);
   }
 
   function handleSelect(ledger: Ledger) {
@@ -103,13 +136,23 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, required,
   }, [value, ledgers]);
 
   const listboxId = `${id}-listbox`;
+  const showClear = Boolean(onClear && value);
+
+  function handleClear() {
+    setQuery('');
+    setOpen(false);
+    setSearching(false);
+    setActiveIndex(-1);
+    onClear?.();
+    inputRef.current?.focus();
+  }
 
   return (
     <div ref={containerRef} className="combobox" style={{ position: 'relative' }}>
       <input
         ref={inputRef}
         id={id}
-        className="input"
+        className={`input${showClear ? ' input--clearable' : ''}`}
         type="text"
         autoComplete="off"
         role="combobox"
@@ -125,6 +168,18 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, required,
         required={required}
         disabled={disabled || ledgers.length === 0}
       />
+      {showClear && (
+        <button
+          type="button"
+          className="combobox__clear"
+          aria-label="Clear selection"
+          // mousedown would fire before the input's blur/outside-click handler
+          // re-syncs the old label back in.
+          onMouseDown={(e) => { e.preventDefault(); handleClear(); }}
+        >
+          <X size={14} aria-hidden="true" />
+        </button>
+      )}
       {open && suggestions.length > 0 && (
         <ul
           ref={listRef}
@@ -142,10 +197,10 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, required,
             margin: 0,
             padding: 0,
             listStyle: 'none',
-            border: '1px solid var(--border, #d1d5db)',
+            border: '1px solid var(--border)',
             borderRadius: '6px',
-            background: 'var(--surface, #fff)',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+            background: 'var(--surface)',
+            boxShadow: '0 4px 12px rgb(var(--rgb-shadow) / 0.12)',
           }}
         >
           {suggestions.map((l, i) => (
@@ -158,13 +213,13 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, required,
               style={{
                 padding: '8px 12px',
                 cursor: 'pointer',
-                background: i === activeIndex ? 'var(--accent, #3b82f6)' : String(l.id) === value ? 'var(--surface-subtle, #f3f4f6)' : 'transparent',
-                color: i === activeIndex ? '#fff' : '#111827',
+                background: i === activeIndex ? 'var(--accent)' : String(l.id) === value ? 'var(--surface-subtle)' : 'transparent',
+                color: i === activeIndex ? 'var(--on-accent)' : 'var(--text)',
               }}
             >
               {l.name}
               {l.gst ? (
-                <span style={{ opacity: 0.75, fontSize: '0.85em', color: i === activeIndex ? '#fff' : '#374151' }}> ({l.gst})</span>
+                <span style={{ opacity: 0.75, fontSize: '0.85em', color: i === activeIndex ? 'var(--on-accent)' : 'var(--muted)' }}> ({l.gst})</span>
               ) : null}
             </li>
           ))}
@@ -179,10 +234,10 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, required,
             right: 0,
             zIndex: 50,
             padding: '8px 12px',
-            border: '1px solid var(--border, #d1d5db)',
+            border: '1px solid var(--border)',
             borderRadius: '6px',
-            background: 'var(--surface, #fff)',
-            color: 'var(--text-muted, #6b7280)',
+            background: 'var(--surface)',
+            color: 'var(--text-muted)',
             fontSize: '0.9em',
           }}
         >

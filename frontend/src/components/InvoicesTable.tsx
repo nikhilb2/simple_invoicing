@@ -1,6 +1,7 @@
 import type { Invoice } from '../types/api';
 import formatCurrency from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
+import OverdueBadge from './OverdueBadge';
 
 interface InvoicesTableProps {
   invoices: Invoice[];
@@ -12,15 +13,16 @@ export default function InvoicesTable({ invoices, currencyCode, onRowClick }: In
   return (
     <div className="invoice-feed-table-wrap">
       <table className="invoice-feed-table">
+        <caption className="sr-only">Invoices</caption>
         <thead>
           <tr>
-            <th>Invoice #</th>
-            <th>Date</th>
-            <th>Due</th>
-            <th>Buyer / Supplier</th>
-            <th>Amount</th>
-            <th>Type</th>
-            <th>Status</th>
+            <th scope="col">Invoice #</th>
+            <th scope="col">Date</th>
+            <th scope="col">Due</th>
+            <th scope="col">Buyer / Supplier</th>
+            <th scope="col">Amount</th>
+            <th scope="col">Type</th>
+            <th scope="col">Status</th>
           </tr>
         </thead>
         <tbody>
@@ -41,8 +43,9 @@ export default function InvoicesTable({ invoices, currencyCode, onRowClick }: In
                 <td>
                   {formatInvoiceDateLabel(invoice.invoice_date)}
                 </td>
-                <td>
-                  {formatInvoiceDateLabel(invoice.due_date)}
+                <td className="invoice-feed-table__due">
+                  <div>{formatInvoiceDateLabel(invoice.due_date)}</div>
+                  <OverdueBadge invoice={invoice} />
                 </td>
                 <td>
                   <div className="invoice-feed-table__ledger">{invoice.ledger?.name || 'Unknown'}</div>

@@ -1,0 +1,13 @@
+{#- verify_email.txt — Plain-text twin of verify_email.html. Same variables. -#}
+Hello,
+
+Thanks for signing up. Open this link to confirm your email address and choose your password:
+
+{{ action_url }}
+
+This link works for {{ valid_for }}.
+
+If you did not create an account, ignore this email. Nothing happens until the link is clicked.
+
+-- 
+{{ company_name }}

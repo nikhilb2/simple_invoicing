@@ -14,7 +14,6 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.models.buyer import Buyer as Ledger
@@ -30,7 +29,10 @@ from src.services.gst_tax_service import (
     money as _money,
 )
 from src.services.inventory_service import InventoryManager
+from src.services.serial_service import SerialManager
+from src.core.config import settings
 from src.services.series import generate_next_number
+from src.services.company_access import company_scope, legacy_default_company
 
 
 # ---------------------------------------------------------------------------
@@ -80,12 +82,14 @@ class InvoiceProcessor:
     """Encapsulates invoice payload application and inventory management.
 
     Inventory operations are fully delegated to the :class:`InventoryManager`
-    instance available as ``self.inventory``.
+    instance available as ``self.inventory``; the per-unit serial / IMEI side of
+    the same operations lives on ``self.serials``.
     """
 
     def __init__(self, db: Session) -> None:
         self.db = db
         self.inventory = InventoryManager(db)
+        self.serials = SerialManager(db)
 
     # ------------------------------------------------------------------
     # Ledger helpers
@@ -99,7 +103,7 @@ class InvoiceProcessor:
         query = self.db.query(Ledger).filter(Ledger.id == ledger_id)
         if company_id is not None:
             query = query.filter(
-                or_(Ledger.company_id == company_id, Ledger.company_id.is_(None))
+                company_scope(Ledger.company_id, company_id)
             )
         ledger = query.first()
         if not ledger:
@@ -142,6 +146,39 @@ class InvoiceProcessor:
         self.inventory.apply_invoice_changes(invoice, payload, company_id=company_id)
 
     # ------------------------------------------------------------------
+    # Serial helpers — delegate to SerialManager
+    # ------------------------------------------------------------------
+
+    def reverse_serials(self, invoice: Invoice) -> None:
+        """Undo the serial effect of an existing invoice's line items.
+
+        Used when cancelling an invoice.  Delegates to
+        :meth:`SerialManager.reverse_invoice_serials`.
+        """
+        self.serials.reverse_invoice_serials(invoice)
+
+    def restore_serials(self, invoice: Invoice, *, company_id: int) -> None:
+        """Re-apply the serial effect of a previously-cancelled invoice.
+
+        Used when restoring an invoice.  Delegates to
+        :meth:`SerialManager.restore_invoice_serials`.
+        """
+        self.serials.restore_invoice_serials(invoice, company_id=company_id)
+
+    def apply_serial_delta_for_update(
+        self,
+        invoice: Invoice,
+        payload: InvoiceCreate,
+        *,
+        company_id: int | None,
+    ) -> None:
+        """Apply the per-product serial set-diff when editing an invoice.
+
+        Delegates to :meth:`SerialManager.apply_invoice_changes`.
+        """
+        self.serials.apply_invoice_changes(invoice, payload, company_id=company_id)
+
+    # ------------------------------------------------------------------
     # Item validation
     # ------------------------------------------------------------------
 
@@ -176,10 +213,7 @@ class InvoiceProcessor:
             )
             if company_id is not None:
                 product_query = product_query.filter(
-                    or_(
-                        Product.company_id == company_id,
-                        Product.company_id.is_(None),
-                    )
+                    company_scope(Product.company_id, company_id)
                 )
             product = product_query.first()
             if not product:
@@ -194,16 +228,30 @@ class InvoiceProcessor:
                     detail=f"Quantity for {product.name} must be a whole number",
                 )
 
-            if apply_inventory_changes and product.maintain_inventory:
-                if voucher_type == "sales":
-                    self.inventory.check_availability(
-                        item.product_id,
-                        quantity_value,
-                        company_id=company_id,
-                        product_name=product.name,
-                    )
-
             validated.append((item, product, quantity_value))
+
+        # Runs once the products are resolved but before any stock is touched, so a
+        # mistyped IMEI produces a clean error rather than a rolled-back half-write.
+        # It also precedes the availability check below so that a serial-tracked
+        # line reports what is actually wrong with it — a missing or already-sold
+        # IMEI — rather than the stock shortfall that follows from it.
+        self.serials.validate_for_items(
+            validated,
+            voucher_type=voucher_type,
+            company_id=company_id,
+            invoice_id=invoice_id,
+        )
+
+        if apply_inventory_changes and voucher_type == "sales":
+            for item_schema, product, quantity_value in validated:
+                if not product.maintain_inventory:
+                    continue
+                self.inventory.check_availability(
+                    item_schema.product_id,
+                    quantity_value,
+                    company_id=company_id,
+                    product_name=product.name,
+                )
         return validated
 
     # ------------------------------------------------------------------
@@ -236,6 +284,12 @@ class InvoiceProcessor:
 
         Accepts the output of :meth:`validate_items` and returns a list of
         dicts with the calculated fields for each line item.
+
+        Note: the discount amount is not persisted — only ``discount_type`` and
+        ``discount_value`` are, and ``taxable_amount`` is stored net of it.
+        :mod:`src.services.invoice_discounts` recovers the amount by inverting
+        the arithmetic below for analytics reporting, so changes to the shape of
+        this calculation must be mirrored there.
         """
         results = []
         for item_schema, product, quantity_value in validated_items:
@@ -244,7 +298,13 @@ class InvoiceProcessor:
                 if item_schema.unit_price is not None
                 else Decimal(str(product.price))
             )
-            gst_rate = Decimal(str(product.gst_rate or 0))
+            # A per-line gst_rate overrides the product master: marketplace purchases
+            # must book the seller's declared rate, or the buyer's purchase invoice
+            # and the seller's sales invoice disagree on tax.
+            item_gst_rate = getattr(item_schema, "gst_rate", None)
+            gst_rate = Decimal(
+                str(item_gst_rate if item_gst_rate is not None else (product.gst_rate or 0))
+            )
 
             if tax_inclusive:
                 line_total = _money(unit_price * quantity_value)
@@ -345,11 +405,14 @@ class InvoiceProcessor:
 
         This is the primary entry-point used by both create and update routes.
         """
-        company = active_company or (
-            self.db.query(CompanyProfile)
-            .order_by(CompanyProfile.id.asc())
-            .first()
-        )
+        company = active_company
+        if company is None:
+            # Only a single-tenant DB may assume "the" company. In shared
+            # hosting the first company is a stranger's, so a caller that
+            # forgot to pass one must fail rather than write into it.
+            if settings.is_shared_hosting:
+                raise ValueError("apply_payload requires the active company in shared hosting")
+            company = legacy_default_company(self.db)
         company_id = company.id if company else None
         ledger = self.require_ledger(payload.ledger_id, company_id)
 
@@ -379,6 +442,30 @@ class InvoiceProcessor:
         # Snapshot terms & conditions as formatted text
         terms = (company.terms or []) if company else []
         invoice.company_terms_text = "\n".join(f"{t.serial_number}. {t.content}" for t in terms) if terms else None
+        if payload.voucher_type != invoice.voucher_type:
+            # A credit note's direction is settled from the invoices it covers
+            # and drives its numbering, its stock effect and whether it is
+            # filed in GSTR-1. Flipping the invoice underneath it would leave
+            # every one of those wrong with nothing to notice.
+            from src.models.credit_note import CreditNote, CreditNoteItem  # noqa: PLC0415
+
+            has_notes = (
+                self.db.query(CreditNoteItem.id)
+                .join(CreditNote, CreditNote.id == CreditNoteItem.credit_note_id)
+                .filter(
+                    CreditNoteItem.invoice_id == invoice.id,
+                    CreditNote.status == "active",
+                )
+                .first()
+            )
+            if has_notes:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Cannot change the voucher type of an invoice that has "
+                        "credit notes against it — cancel them first"
+                    ),
+                )
         invoice.voucher_type = payload.voucher_type
         invoice.supplier_invoice_number = payload.supplier_invoice_number
         invoice.reference_notes = payload.reference_notes
@@ -436,6 +523,12 @@ class InvoiceProcessor:
                 company_id=company_id,
                 invoice_id=invoice.id,
             )
+            self.serials.apply_new_items(
+                validated,
+                payload.voucher_type,
+                company_id=company_id,
+                invoice_id=invoice.id,
+            )
 
         # Calculate per-line totals
         line_results = self.calculate_totals(validated, payload.tax_inclusive)
@@ -455,7 +548,10 @@ class InvoiceProcessor:
                 invoice_id=invoice.id,
                 product_id=result["product"].id,
                 quantity=float(result["quantity_value"]),
-                hsn_sac=result["product"].hsn_sac,
+                hsn_sac=(
+                    getattr(result["item_schema"], "hsn_sac", None)
+                    or result["product"].hsn_sac
+                ),
                 unit_price=float(result["unit_price"]),
                 gst_rate=float(result["gst_rate"]),
                 taxable_amount=float(result["taxable_amount"]),

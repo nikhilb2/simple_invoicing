@@ -1,26 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
+import { formatDateTime } from '../utils/formatting';
 import type {
   BackupCreateResponse,
   BackupPreflightResponse,
   BackupRestoreResponse,
+  BackupScheduleResponse,
   BackupSummary,
 } from '../types/api';
-
-function formatDate(value: string) {
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return value;
-  }
-}
 
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
+
+// Matches AUTO_BACKUP_PREFIX in backend/src/services/backup.py. The prefix is the
+// only thing distinguishing a scheduled archive from a hand-made one, and it is
+// also what retention prunes on, so the list says which is which.
+const AUTO_BACKUP_PREFIX = 'autobackup_';
 
 export default function BackupsPage() {
   const [items, setItems] = useState<BackupSummary[]>([]);
@@ -32,6 +31,8 @@ export default function BackupsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [confirmText, setConfirmText] = useState('');
   const [preflight, setPreflight] = useState<BackupPreflightResponse | null>(null);
+
+  const [schedule, setSchedule] = useState<BackupScheduleResponse | null>(null);
 
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -48,8 +49,20 @@ export default function BackupsPage() {
     }
   }
 
+  // The schedule is server configuration and cannot fail the page: if this call
+  // errors, the panel simply does not render rather than blocking the backup list.
+  async function loadSchedule() {
+    try {
+      const response = await api.get<BackupScheduleResponse>('/backups/schedule');
+      setSchedule(response.data);
+    } catch {
+      setSchedule(null);
+    }
+  }
+
   useEffect(() => {
     void loadBackups();
+    void loadSchedule();
   }, []);
 
   async function handleCreateBackup() {
@@ -226,6 +239,77 @@ export default function BackupsPage() {
             </div>
           </div>
 
+          {schedule ? (
+            <div className="summary-box">
+              <p className="eyebrow">Automatic backup</p>
+              {schedule.enabled ? (
+                <>
+                  <p className="summary-box__value" style={{ fontSize: '1rem' }}>
+                    Daily at {schedule.schedule_time} {schedule.timezone}
+                  </p>
+                  <p className="muted-text">
+                    Keeps the {schedule.keep} most recent automatic backups. Backups you
+                    create yourself are never deleted.
+                  </p>
+                  {schedule.next_run_at ? (
+                    <p className="muted-text">Next run: {formatDateTime(schedule.next_run_at)}</p>
+                  ) : null}
+                  {schedule.last_run_at ? (
+                    <p className="muted-text" style={{ marginTop: '10px' }}>
+                      <span
+                        className={
+                          schedule.last_status === 'failed'
+                            ? 'status-chip status-chip--error'
+                            : 'status-chip status-chip--success'
+                        }
+                      >
+                        {schedule.last_status === 'failed' ? 'Last run failed' : 'Last run succeeded'}
+                      </span>{' '}
+                      {formatDateTime(schedule.last_run_at)}
+                    </p>
+                  ) : (
+                    <p className="muted-text">No automatic backup has run yet on this server.</p>
+                  )}
+                  {schedule.last_error ? <p className="muted-text">{schedule.last_error}</p> : null}
+                  {schedule.email_enabled ? (
+                    schedule.last_email_status ? (
+                      <p className="muted-text" style={{ marginTop: '10px' }}>
+                        <span
+                          className={
+                            schedule.last_email_status === 'failed'
+                              ? 'status-chip status-chip--error'
+                              : 'status-chip status-chip--success'
+                          }
+                        >
+                          {schedule.last_email_status === 'sent'
+                            ? 'Emailed'
+                            : schedule.last_email_status === 'failed'
+                              ? 'Email failed'
+                              : 'Not emailed'}
+                        </span>{' '}
+                        {schedule.last_email_detail}
+                      </p>
+                    ) : (
+                      <p className="muted-text" style={{ marginTop: '10px' }}>
+                        Each backup is emailed to admin users when an SMTP configuration is
+                        active.
+                      </p>
+                    )
+                  ) : null}
+                </>
+              ) : (
+                <p className="muted-text">
+                  Automatic backups are turned off on this server. Set AUTO_BACKUP_ENABLED to
+                  enable them.
+                </p>
+              )}
+              <p className="muted-text" style={{ marginTop: '10px' }}>
+                Backups are stored on the server and are cleared when it restarts. Download the
+                ones you want to keep.
+              </p>
+            </div>
+          ) : null}
+
           {loading ? (
             <div className="empty-state">Loading backups...</div>
           ) : items.length === 0 ? (
@@ -237,7 +321,8 @@ export default function BackupsPage() {
                   <div className="table-row__meta">
                     <strong>{item.file_name}</strong>
                     <span className="table-subtext">
-                      {formatDate(item.created_at)} · {formatSize(item.size_bytes)}
+                      {formatDateTime(item.created_at)} · {formatSize(item.size_bytes)} ·{' '}
+                      {item.file_name.startsWith(AUTO_BACKUP_PREFIX) ? 'Automatic' : 'Manual'}
                     </span>
                     {item.migration_head ? (
                       <span className="table-subtext">Migration head: {item.migration_head}</span>
@@ -297,7 +382,7 @@ export default function BackupsPage() {
               </p>
               {preflight.reason ? <p className="muted-text">{preflight.reason}</p> : null}
               {preflight.backup_created_at ? (
-                <p className="muted-text">Backup created: {formatDate(preflight.backup_created_at)}</p>
+                <p className="muted-text">Backup created: {formatDateTime(preflight.backup_created_at)}</p>
               ) : null}
               {preflight.backup_migration_head ? (
                 <p className="muted-text">Backup migration head: {preflight.backup_migration_head}</p>

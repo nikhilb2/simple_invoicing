@@ -41,7 +41,7 @@ test.describe('Authentication', () => {
   });
 
   test('redirects unauthenticated users to /login', async ({ page }) => {
-    await page.goto('/products');
+    await page.goto('/catalogue');
     await expect(page).toHaveURL(/\/login/, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   });
 

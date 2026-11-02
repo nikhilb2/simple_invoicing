@@ -1,3 +1,4 @@
+import pytest
 
 
 def test_create_product(client):
@@ -45,6 +46,143 @@ def test_invalid_gst(client):
     })
 
     assert response.status_code == 400
+
+
+def test_create_product_rejects_nan_gst_rate(client):
+    response = client.post(
+        "/api/products/",
+        content='{"sku": "PRO102", "name": "TestProduct", "price": 100, "gst_rate": NaN}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "GST rate must be between 0 and 100"
+
+    listing = client.get("/api/products/")
+    assert listing.status_code == 200
+    assert all(item["sku"] != "PRO102" for item in listing.json()["items"])
+
+
+def test_update_product_rejects_nan_gst_rate(client):
+    created = client.post("/api/products/", json={
+        "sku": "PRO103",
+        "name": "TestProduct",
+        "price": 100,
+        "gst_rate": 18,
+    })
+    assert created.status_code == 200
+    product_id = created.json()["id"]
+
+    response = client.put(
+        f"/api/products/{product_id}",
+        content='{"sku": "PRO103", "name": "TestProduct", "price": 100, "gst_rate": NaN}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "GST rate must be between 0 and 100"
+
+    current = client.get(f"/api/products/{product_id}")
+    assert current.status_code == 200
+    assert current.json()["gst_rate"] == 18
+
+
+def test_update_product_with_inventory_rejects_nan_gst_rate(client):
+    created = client.post("/api/products/", json={
+        "sku": "PRO104",
+        "name": "TestProduct",
+        "price": 100,
+        "gst_rate": 5,
+        "initial_quantity": 2,
+    })
+    assert created.status_code == 200
+    product_id = created.json()["id"]
+
+    response = client.put(
+        f"/api/products/{product_id}/with-inventory",
+        content='{"gst_rate": NaN}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "GST rate must be between 0 and 100"
+
+    current = client.get(f"/api/products/{product_id}")
+    assert current.status_code == 200
+    assert current.json()["gst_rate"] == 5
+
+
+@pytest.mark.parametrize("overrides", [
+    {"price": -1},
+    {"purchase_price": -1},
+    {"reorder_level": -1},
+    {"initial_quantity": -1},
+    {"production_cost": -1},
+    {"name": "   "},
+    {"sku": "   "},
+])
+def test_create_product_rejects_negative_values_and_blank_names(client, overrides):
+    payload = {
+        "sku": "NEG100",
+        "name": "TestProduct",
+        "price": 100,
+        "gst_rate": 18,
+    }
+    payload.update(overrides)
+
+    response = client.post('/api/products/', json=payload)
+
+    assert response.status_code == 422
+
+
+def test_create_product_accepts_zero_price_and_zero_purchase_price(client):
+    response = client.post('/api/products/', json={
+        "sku": "FREE100",
+        "name": "FreeItem",
+        "price": 0,
+        "purchase_price": 0,
+        "gst_rate": 18,
+    })
+
+    assert response.status_code == 200
+
+
+def test_update_product_rejects_negative_price_and_blank_name(client):
+    create_response = client.post('/api/products/', json={
+        "sku": "EDIT100",
+        "name": "Editable",
+        "price": 100,
+        "gst_rate": 18,
+    })
+    assert create_response.status_code == 200
+    product_id = create_response.json()["id"]
+
+    base = {
+        "sku": "EDIT100",
+        "name": "Editable",
+        "price": 100,
+        "gst_rate": 18,
+    }
+
+    response = client.put(f"/api/products/{product_id}", json={**base, "price": -1})
+    assert response.status_code == 422
+
+    response = client.put(f"/api/products/{product_id}", json={**base, "name": "   "})
+    assert response.status_code == 422
+
+
+def test_update_product_with_inventory_rejects_negative_prices_and_blank_name(client):
+    create_response = client.post('/api/products/', json={
+        "sku": "EDIT200",
+        "name": "EditableTwo",
+        "price": 100,
+        "gst_rate": 18,
+    })
+    assert create_response.status_code == 200
+    product_id = create_response.json()["id"]
+    url = f"/api/products/{product_id}/with-inventory"
+
+    assert client.put(url, json={"selling_price": -1}).status_code == 422
+    assert client.put(url, json={"purchase_price": -1}).status_code == 422
+    assert client.put(url, json={"reorder_level": -1}).status_code == 422
+    assert client.put(url, json={"name": "   "}).status_code == 422
 
 # Creates a test product and tries to get the data back.
 def test_get_products(client):

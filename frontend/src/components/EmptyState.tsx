@@ -36,7 +36,7 @@ export default function EmptyState({ message, action }: EmptyStateProps) {
     const config = action as { label: string; onClick: () => void };
     if (config.label && config.onClick) {
       return (
-        <button className="button" onClick={config.onClick}>
+        <button className="button button--primary" onClick={config.onClick}>
           {config.label}
         </button>
       );

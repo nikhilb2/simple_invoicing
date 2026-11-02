@@ -3,6 +3,7 @@ from datetime import date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import Request
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
@@ -15,7 +16,7 @@ from src.models.company import CompanyProfile
 from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.financial_year import FinancialYear
 from src.models.invoice import Invoice
-from src.models.payment import Payment
+from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.product import Product
 from src.models.user import User, UserRole
 
@@ -50,7 +51,7 @@ def _seed_basics(db_session):
     ledger = Buyer(
         name="Acme Stores",
         address="42 Market Road",
-        gst="29ABCDE1234F1Z5",
+        gst="29ABCDE1234F1ZW",
         phone_number="9999999999",
         email="ledger@example.com",
     )
@@ -318,6 +319,24 @@ def test_day_book_supports_signed_opening_balance_entries(db_session):
     assert entry_by_id[opening_negative.id].credit == pytest.approx(12.0)
 
 
+
+def _bare_request() -> Request:
+    """The minimum ASGI scope a Request needs.
+
+    These tests call the email coroutines directly rather than over HTTP, so nothing
+    builds a request for them. The route only reads it to work out the origin for a
+    share URL, and that path is inactive here (no active company), but the parameter
+    is required and so must be supplied.
+    """
+    return Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/",
+        "headers": [],
+        "query_string": b"",
+    })
+
+
 def test_payment_reminder_ignores_cancelled_documents_and_cancelled_last_payment(db_session):
     user, ledger, _ = _seed_basics(db_session)
     invoice = _add_invoice(db_session, ledger, user, 100, datetime(2026, 1, 5, 10, 0, 0))
@@ -337,6 +356,7 @@ def test_payment_reminder_ignores_cancelled_documents_and_cancelled_last_payment
     ), patch("src.api.routes.email.send_email", new=AsyncMock()) as send_email_mock:
         asyncio.run(send_payment_reminder_email(
             ledger_id=ledger.id,
+            request=_bare_request(),
             payload=None,
             db=db_session,
             current_user=user,
@@ -352,5 +372,73 @@ def test_payment_reminder_ignores_cancelled_documents_and_cancelled_last_payment
             "due_date": None,
             "amount": "90.00",
         }
+    ]
+    send_email_mock.assert_awaited_once()
+
+
+def _add_allocation(db_session, payment, invoice, amount):
+    allocation = PaymentInvoiceAllocation(
+        payment_id=payment.id,
+        invoice_id=invoice.id,
+        allocated_amount=amount,
+    )
+    db_session.add(allocation)
+    db_session.flush()
+    return allocation
+
+
+def test_payment_reminder_lists_remaining_amount_not_full_amount(db_session):
+    user, ledger, _ = _seed_basics(db_session)
+    paid_invoice = _add_invoice(db_session, ledger, user, 100, datetime(2026, 1, 5, 10, 0, 0))
+    partial_invoice = _add_invoice(db_session, ledger, user, 200, datetime(2026, 1, 6, 10, 0, 0))
+    credited_and_paid_invoice = _add_invoice(db_session, ledger, user, 100, datetime(2026, 1, 7, 10, 0, 0))
+    untouched_invoice = _add_invoice(db_session, ledger, user, 80, datetime(2026, 1, 8, 10, 0, 0))
+    full_payment = _add_payment(db_session, ledger, user, 100, datetime(2026, 1, 20, 10, 0, 0))
+    _add_allocation(db_session, full_payment, paid_invoice, 100)
+    partial_payment = _add_payment(db_session, ledger, user, 50, datetime(2026, 1, 21, 10, 0, 0))
+    _add_allocation(db_session, partial_payment, partial_invoice, 50)
+    _add_credit_note(db_session, ledger, user, credited_and_paid_invoice, 10, datetime(2026, 1, 22, 10, 0, 0))
+    credit_payment = _add_payment(db_session, ledger, user, 30, datetime(2026, 1, 23, 10, 0, 0))
+    _add_allocation(db_session, credit_payment, credited_and_paid_invoice, 30)
+    db_session.commit()
+
+    fake_template = MagicMock()
+    fake_template.render.return_value = "body"
+
+    with patch(
+        "src.api.routes.email._jinja_env.get_template",
+        return_value=fake_template,
+    ), patch("src.api.routes.email.send_email", new=AsyncMock()) as send_email_mock:
+        asyncio.run(send_payment_reminder_email(
+            ledger_id=ledger.id,
+            request=_bare_request(),
+            payload=None,
+            db=db_session,
+            current_user=user,
+        ))
+
+    render_kwargs = fake_template.render.call_args.kwargs
+    # Total sales 480 minus credit note 10 minus all receipts 180; the top
+    # level balance is unchanged by this fix and still counts every receipt.
+    assert render_kwargs["outstanding_balance"] == "290.00"
+    assert render_kwargs["unpaid_invoices"] == [
+        {
+            "invoice_number": partial_invoice.invoice_number,
+            "invoice_date": "06 Jan 2026",
+            "due_date": None,
+            "amount": "150.00",
+        },
+        {
+            "invoice_number": credited_and_paid_invoice.invoice_number,
+            "invoice_date": "07 Jan 2026",
+            "due_date": None,
+            "amount": "60.00",
+        },
+        {
+            "invoice_number": untouched_invoice.invoice_number,
+            "invoice_date": "08 Jan 2026",
+            "due_date": None,
+            "amount": "80.00",
+        },
     ]
     send_email_mock.assert_awaited_once()

@@ -1,7 +1,8 @@
-import { Eye, Pencil, RotateCcw, Trash2, FileText } from 'lucide-react';
+import { Eye, Pencil, RotateCcw, Trash2, FileText, Copy } from 'lucide-react';
 import type { Invoice } from '../types/api';
 import formatCurrency from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
+import OverdueBadge from './OverdueBadge';
 
 interface InvoicesCompactCardProps {
   invoice: Invoice;
@@ -11,9 +12,10 @@ interface InvoicesCompactCardProps {
   onCancel?: (invoice: Invoice) => void;
   onRestore?: (invoice: Invoice) => void;
   onCreditNote?: (invoice: Invoice) => void;
+  onDuplicate?: (invoice: Invoice) => void;
 }
 
-  export default function InvoicesCompactCard({ invoice, currencyCode, onPreview, onEdit, onCancel, onRestore, onCreditNote }: InvoicesCompactCardProps) {
+  export default function InvoicesCompactCard({ invoice, currencyCode, onPreview, onEdit, onCancel, onRestore, onCreditNote, onDuplicate }: InvoicesCompactCardProps) {
   const isCredit = invoice.voucher_type === 'purchase';
   const isCancelled = invoice.status === 'cancelled';
 
@@ -37,6 +39,7 @@ interface InvoicesCompactCardProps {
               )}
             </div>
               <div className="invoice-compact-card__badges">
+              <OverdueBadge invoice={invoice} />
               {isCancelled && (
                   <span className="invoice-compact-card__cancelled-badge">
                   Cancelled
@@ -138,14 +141,24 @@ interface InvoicesCompactCardProps {
               </button>
             )}
             {!isCancelled && (
-              <button
-                  type="button"
-                  className="button button--ghost button--icon"
-                title="Cancel"
-                onClick={() => onCancel?.(invoice)}
-              >
-                <Trash2 size={16} />
-              </button>
+              <>
+                <button
+                    type="button"
+                    className="button button--ghost button--icon"
+                  title="Duplicate invoice"
+                  onClick={() => onDuplicate?.(invoice)}
+                >
+                  <Copy size={16} />
+                </button>
+                <button
+                    type="button"
+                    className="button button--ghost button--icon"
+                  title="Cancel"
+                  onClick={() => onCancel?.(invoice)}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </>
             )}
           </div>
         </div>

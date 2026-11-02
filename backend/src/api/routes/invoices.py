@@ -1,30 +1,49 @@
-from io import BytesIO
+import csv
+import logging
+from io import BytesIO, StringIO
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, joinedload
 from decimal import Decimal
 
+logger = logging.getLogger(__name__)
+
 import weasyprint
+from src.services.pdf_render import safe_url_fetcher
 
 from src.db.session import get_db
 from src.models.company_account import CompanyAccount
 from src.models.company import CompanyProfile
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
+from src.models.product_serial import ProductSerial
 from src.models.user import User
-from src.schemas.invoice import InvoiceCreate, InvoiceOut, PaginatedInvoiceOut
+from src.schemas.invoice import DuesAgeingOut, InvoiceCreate, InvoiceOut, PaginatedInvoiceOut
 from src.api.deps import get_active_company, get_current_user
+from src.core.analytics import distinct_id_for, track
 from src.services.financial_year import get_active_fy, get_fy_for_date
-from src.services.invoice_payments import build_invoice_payment_summaries
+from src.services.invoice_payments import (
+    build_invoice_payment_summaries,
+    is_offset_by_payables,
+    open_amounts_by_ledger,
+)
 from src.services.pdf_templates import (
     _build_invoice_html,
     _build_multi_copy_invoice_html,
     _copy_label,
 )
 from src.services.invoice_processor import InvoiceProcessor
+from src.services.serial_service import SerialManager
+from src.services.share_documents import (
+    RESOURCE_INVOICE,
+    document_share_url,
+    get_invoice as get_shared_invoice,
+    render_invoice_pdf,
+)
+from src.services.series import generate_next_number
 
 router = APIRouter()
 
@@ -47,6 +66,19 @@ def _enrich_items_with_product_names(invoices: list[Invoice], db: Session, activ
         for item in (inv.items or []):
             prod = product_map.get(item.product_id)
             setattr(item, "product_name", prod.name if prod else None)
+
+
+def _enrich_items_with_serials(invoices: list[Invoice], db: Session) -> None:
+    """Attach serial_numbers to each InvoiceItem across all given invoices.
+
+    One query for the whole page: the serials of every invoice are fetched
+    together and bucketed per invoice and product.
+    """
+    serials_by_invoice = SerialManager(db).serials_for_invoices(invoices)
+    for inv in invoices:
+        by_product = serials_by_invoice.get(inv.id, {})
+        for item in (inv.items or []):
+            setattr(item, "serial_numbers", by_product.get(item.product_id, []))
 
 
 def _to_invoice_out(
@@ -111,16 +143,131 @@ def create_invoice(
 
         summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
         _enrich_items_with_product_names([invoice], db, active_company.id)
+        _enrich_items_with_serials([invoice], db)
         result = _to_invoice_out(invoice, payment_summary=summary)
         result.warnings = warnings
-        return result
     except HTTPException:
         db.rollback()
         raise
-    except Exception as e:
-        print(f"Error creating invoice: {e}")
+    except Exception:
+        logger.exception("Error creating invoice")
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to create invoice")
+
+    # The app's core conversion event. Captured after the try block, not inside
+    # it: the handler turns any stray exception into a 500, and an invoice that
+    # is committed and returned must not be reported as a failure because the
+    # analytics host was unreachable.
+    track(
+        "invoice_created",
+        distinct_id_for(current_user),
+        {
+            "invoice_id": invoice.id,
+            "voucher_type": invoice.voucher_type,
+            "line_item_count": len(payload.items),
+            "total_amount": float(invoice.total_amount or 0),
+            "total_tax_amount": float(invoice.total_tax_amount or 0),
+            "tax_inclusive": payload.tax_inclusive,
+            "has_invoice_discount": bool(payload.discount_value),
+            "serial_line_count": sum(
+                1 for line in payload.items if line.serial_numbers
+            ),
+            "outside_active_fy": "invoice_date_outside_fy" in warnings,
+        },
+    )
+    return result
+
+
+def _apply_invoice_filters(
+    query,
+    db: Session,
+    active_company: CompanyProfile,
+    *,
+    search: str = "",
+    show_cancelled: bool = False,
+    financial_year_id: int | None = None,
+    product_id: int | None = None,
+    include_description: bool = False,
+    voucher_type: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+):
+    """Apply the Invoice Feed filters to a base query. Shared by the list and CSV export endpoints."""
+    if not show_cancelled:
+        query = query.filter(Invoice.status == "active")
+    if financial_year_id is not None:
+        query = query.filter(Invoice.financial_year_id == financial_year_id)
+    if voucher_type is not None:
+        query = query.filter(Invoice.voucher_type == voucher_type)
+    if date_from is not None:
+        query = query.filter(func.date(Invoice.invoice_date) >= date_from)
+    if date_to is not None:
+        query = query.filter(func.date(Invoice.invoice_date) <= date_to)
+    if search.strip():
+        cleaned = search.strip()
+        term = f"%{cleaned}%"
+        product_match = Product.name.ilike(term)
+        if include_description:
+            product_match = or_(product_match, InvoiceItem.description.ilike(term))
+        product_match_subq = (
+            db.query(InvoiceItem.invoice_id)
+            .join(Product, Product.id == InvoiceItem.product_id)
+            .filter(
+                Product.company_id == active_company.id,
+                product_match,
+            )
+            .subquery()
+        )
+        # Serials are stored exactly as the operator typed them but are compared
+        # case-insensitively everywhere else (the unique index is on
+        # ``upper(serial_number)``), so both sides are upper-cased here too
+        # instead of leaning on ilike's collation.
+        #
+        # Contains-match rather than exact or prefix: an operator reading a
+        # handset's box types the whole IMEI, but one reading the sticker on the
+        # unit usually types only its last few digits, and both have to land on
+        # the same invoice.  A leading wildcard cannot seek in
+        # ``ux_product_serials_company_number``, but ``company_id`` is that
+        # index's leading column, so Postgres still narrows to this company's
+        # rows and matches the pattern from the index rather than the heap.
+        #
+        # Void rows are deliberately included: a unit whose purchase was later
+        # cancelled must still lead back to the voucher it arrived on, which is
+        # exactly the trace an operator is doing when they type an IMEI.
+        serial_term = f"%{cleaned.upper()}%"
+        serial_matches = db.query(ProductSerial).filter(
+            # Tenancy: the serial rows themselves are scoped, not just the
+            # invoices they point at — a serial must never be able to name an
+            # invoice belonging to another company.
+            ProductSerial.company_id == active_company.id,
+            func.upper(ProductSerial.serial_number).like(serial_term),
+        )
+        # scalar_subquery() rather than subquery(): these feed IN() directly,
+        # and a plain Subquery is coerced with a SAWarning on every call.
+        serial_purchase_subq = serial_matches.with_entities(
+            ProductSerial.purchase_invoice_id
+        ).scalar_subquery()
+        serial_sales_subq = serial_matches.with_entities(
+            ProductSerial.sales_invoice_id
+        ).scalar_subquery()
+        query = query.filter(
+            or_(
+                Invoice.ledger_name.ilike(term),
+                # Our own document number, plus the counterparty's number as
+                # recorded on a purchase — an operator typing "the invoice
+                # number" means whichever of the two is printed on the paper in
+                # front of them.
+                Invoice.invoice_number.ilike(term),
+                Invoice.supplier_invoice_number.ilike(term),
+                Invoice.id.in_(product_match_subq),
+                Invoice.id.in_(serial_purchase_subq),
+                Invoice.id.in_(serial_sales_subq),
+            )
+        )
+    if product_id is not None:
+        product_subq = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id).subquery()
+        query = query.filter(Invoice.id.in_(product_subq))
+    return query
 
 
 @router.get("", response_model=PaginatedInvoiceOut, include_in_schema=False)
@@ -132,21 +279,28 @@ def list_invoices(
     show_cancelled: bool = Query(False),
     financial_year_id: int | None = Query(None),
     product_id: int | None = Query(None),
+    include_description: bool = Query(False),
+    voucher_type: str | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     try:
-      base = db.query(Invoice).filter(Invoice.company_id == active_company.id)
-      if not show_cancelled:
-        base = base.filter(Invoice.status == "active")
-      if financial_year_id is not None:
-        base = base.filter(Invoice.financial_year_id == financial_year_id)
-      if search.strip():
-        base = base.filter(Invoice.ledger_name.ilike(f"%{search.strip()}%"))
-      if product_id is not None:
-        product_subq = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id).subquery()
-        base = base.filter(Invoice.id.in_(product_subq))
+      base = _apply_invoice_filters(
+        db.query(Invoice).filter(Invoice.company_id == active_company.id),
+        db,
+        active_company,
+        search=search,
+        show_cancelled=show_cancelled,
+        financial_year_id=financial_year_id,
+        product_id=product_id,
+        include_description=include_description,
+        voucher_type=voucher_type,
+        date_from=date_from,
+        date_to=date_to,
+      )
 
       summary_row = base.with_entities(
         func.coalesce(func.sum(Invoice.total_amount), 0),
@@ -174,6 +328,7 @@ def list_invoices(
 
       payment_summaries = build_invoice_payment_summaries(db, invoices)
       _enrich_items_with_product_names(invoices, db, active_company.id)
+      _enrich_items_with_serials(invoices, db)
       items = [_to_invoice_out(invoice, payment_summary=payment_summaries.get(invoice.id)) for invoice in invoices]
 
       visible_page_total = sum((Decimal(str(item.total_amount or 0)) for item in items), Decimal("0"))
@@ -198,8 +353,227 @@ def list_invoices(
           financial_year_id=financial_year_id,
         ),
       )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error listing invoices")
+        raise HTTPException(status_code=500, detail="Failed to list invoices")
+
+
+_VOUCHER_TYPE_LABELS = {"sales": "Sales", "purchase": "Purchase"}
+
+_CSV_COLUMNS = [
+    "Invoice Number",
+    "Invoice Date",
+    "Voucher Type",
+    "Party Name",
+    "GSTIN",
+    "Taxable Value",
+    "CGST",
+    "SGST",
+    "IGST",
+    "Grand Total",
+    "Payment Status",
+]
+
+
+@router.get("/export")
+def export_invoices_csv(
+    search: str = Query(""),
+    show_cancelled: bool = Query(False),
+    financial_year_id: int | None = Query(None),
+    product_id: int | None = Query(None),
+    include_description: bool = Query(False),
+    voucher_type: str | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Export every invoice matching the current Invoice Feed filters as CSV (all pages)."""
+    try:
+        base = _apply_invoice_filters(
+            db.query(Invoice).filter(Invoice.company_id == active_company.id),
+            db,
+            active_company,
+            search=search,
+            show_cancelled=show_cancelled,
+            financial_year_id=financial_year_id,
+            product_id=product_id,
+            include_description=include_description,
+            voucher_type=voucher_type,
+            date_from=date_from,
+            date_to=date_to,
+        )
+
+        invoices = (
+            base.options(joinedload(Invoice.ledger))
+            .order_by(Invoice.id.desc())
+            .all()
+        )
+        payment_summaries = build_invoice_payment_summaries(db, invoices)
+
+        buffer = StringIO(newline="")
+        writer = csv.writer(buffer)
+        writer.writerow(_CSV_COLUMNS)
+        for invoice in invoices:
+            summary = payment_summaries.get(invoice.id)
+            payment_status = summary.payment_status if summary else "unpaid"
+            invoice_date = invoice.invoice_date.date().isoformat() if invoice.invoice_date else ""
+            writer.writerow([
+                invoice.invoice_number or "",
+                invoice_date,
+                _VOUCHER_TYPE_LABELS.get(invoice.voucher_type, invoice.voucher_type or ""),
+                invoice.ledger_name or "",
+                invoice.ledger_gst or "",
+                f"{Decimal(invoice.taxable_amount or 0):.2f}",
+                f"{Decimal(invoice.cgst_amount or 0):.2f}",
+                f"{Decimal(invoice.sgst_amount or 0):.2f}",
+                f"{Decimal(invoice.igst_amount or 0):.2f}",
+                f"{Decimal(invoice.total_amount or 0):.2f}",
+                payment_status,
+            ])
+
+        # utf-8-sig: the BOM makes Excel read non-ASCII party names / symbols correctly.
+        csv_bytes = buffer.getvalue().encode("utf-8-sig")
+        filename = f"invoices_{date.today().isoformat()}.csv"
+        return StreamingResponse(
+            BytesIO(csv_bytes),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception:
+        logger.exception("Error exporting invoices")
+        raise HTTPException(status_code=500, detail="Failed to export invoices")
+
+
+def _outstanding_due_invoices(
+    db: Session,
+    company_id: int,
+    search: str = "",
+    ledger_id: int | None = None,
+    due_date_from: date | None = None,
+    due_date_to: date | None = None,
+):
+    """Shared dues query for the list and the ageing summary.
+
+    Returns the outstanding sales invoices with a due date, after dropping
+    invoices with nothing remaining and ledgers whose receivable is fully
+    offset by payables. Both surfaces read the same rows, so the tiles and
+    the list can never disagree about which invoices count.
+    """
+    base = (
+        db.query(Invoice)
+        .options(joinedload(Invoice.ledger), joinedload(Invoice.items))
+        .filter(
+            Invoice.company_id == company_id,
+            Invoice.voucher_type == "sales",
+            Invoice.status == "active",
+            Invoice.due_date.isnot(None),
+        )
+    )
+
+    if ledger_id is not None:
+        base = base.filter(Invoice.ledger_id == ledger_id)
+    if search.strip():
+        base = base.filter(Invoice.ledger_name.ilike(f"%{search.strip()}%"))
+    if due_date_from is not None:
+        base = base.filter(Invoice.due_date >= datetime.combine(due_date_from, datetime.min.time()))
+    if due_date_to is not None:
+        base = base.filter(Invoice.due_date <= datetime.combine(due_date_to, datetime.max.time()))
+
+    invoices = base.order_by(Invoice.due_date.asc(), Invoice.invoice_date.asc(), Invoice.id.asc()).all()
+    payment_summaries = build_invoice_payment_summaries(db, invoices)
+    outstanding_invoices = [
+        invoice
+        for invoice in invoices
+        if payment_summaries[invoice.id].remaining_amount > 0
+    ]
+
+    # Ledgers that are also suppliers: what we owe them is shown next to the dues,
+    # and a ledger whose receivable is fully offset by payables is not chased.
+    open_amounts = open_amounts_by_ledger(
+        db,
+        list({invoice.ledger_id for invoice in outstanding_invoices if invoice.ledger_id is not None}),
+        company_id=company_id,
+    )
+    outstanding_invoices = [
+        invoice
+        for invoice in outstanding_invoices
+        if not is_offset_by_payables(*open_amounts.get(invoice.ledger_id, (0.0, 0.0)))
+    ]
+    return outstanding_invoices, payment_summaries, open_amounts
+
+
+_AGEING_BUCKETS = [
+    ("not_yet_due", "Not yet due"),
+    ("1_30", "1 to 30 days overdue"),
+    ("31_60", "31 to 60 days overdue"),
+    ("61_90", "61 to 90 days overdue"),
+    ("over_90", "Over 90 days overdue"),
+]
+
+
+def _ageing_bucket_key(days_overdue: int) -> str:
+    if days_overdue <= 0:
+        return "not_yet_due"
+    if days_overdue <= 30:
+        return "1_30"
+    if days_overdue <= 60:
+        return "31_60"
+    if days_overdue <= 90:
+        return "61_90"
+    return "over_90"
+
+
+@router.get("/dues/ageing", response_model=DuesAgeingOut)
+def dues_ageing_summary(
+    search: str = Query(""),
+    ledger_id: int | None = Query(None),
+    due_date_from: date | None = Query(None),
+    due_date_to: date | None = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Bucket outstanding dues by days past the due date.
+
+    Uses the server date, the same definition of overdue as the dashboard,
+    so the two surfaces agree. An invoice due today counts as not yet due.
+    """
+    try:
+        today = date.today()
+        outstanding_invoices, payment_summaries, _ = _outstanding_due_invoices(
+            db,
+            active_company.id,
+            search=search,
+            ledger_id=ledger_id,
+            due_date_from=due_date_from,
+            due_date_to=due_date_to,
+        )
+        totals: dict[str, Decimal] = {key: Decimal("0") for key, _ in _AGEING_BUCKETS}
+        counts: dict[str, int] = {key: 0 for key, _ in _AGEING_BUCKETS}
+        for invoice in outstanding_invoices:
+            days_overdue = (today - invoice.due_date.date()).days
+            key = _ageing_bucket_key(days_overdue)
+            totals[key] += Decimal(str(payment_summaries[invoice.id].remaining_amount or 0))
+            counts[key] += 1
+        return DuesAgeingOut(
+            as_of_date=today,
+            buckets=[
+                {
+                    "key": key,
+                    "label": label,
+                    "invoice_count": counts[key],
+                    "total_remaining": float(totals[key]),
+                }
+                for key, label in _AGEING_BUCKETS
+            ],
+            total_invoice_count=len(outstanding_invoices),
+            total_remaining=float(sum(totals.values(), Decimal("0"))),
+        )
+    except Exception:
+        logger.exception("Error building dues ageing summary")
+        raise HTTPException(status_code=500, detail="Failed to load dues ageing summary")
 
 
 @router.get("/dues", response_model=PaginatedInvoiceOut)
@@ -215,40 +589,27 @@ def list_due_invoices(
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     try:
-        base = (
-            db.query(Invoice)
-            .options(joinedload(Invoice.ledger), joinedload(Invoice.items))
-            .filter(
-                Invoice.company_id == active_company.id,
-                Invoice.voucher_type == "sales",
-                Invoice.status == "active",
-                Invoice.due_date.isnot(None),
-            )
+        outstanding_invoices, payment_summaries, open_amounts = _outstanding_due_invoices(
+            db,
+            active_company.id,
+            search=search,
+            ledger_id=ledger_id,
+            due_date_from=due_date_from,
+            due_date_to=due_date_to,
         )
-
-        if ledger_id is not None:
-            base = base.filter(Invoice.ledger_id == ledger_id)
-        if search.strip():
-            base = base.filter(Invoice.ledger_name.ilike(f"%{search.strip()}%"))
-        if due_date_from is not None:
-            base = base.filter(Invoice.due_date >= datetime.combine(due_date_from, datetime.min.time()))
-        if due_date_to is not None:
-            base = base.filter(Invoice.due_date <= datetime.combine(due_date_to, datetime.max.time()))
-
-        invoices = base.order_by(Invoice.due_date.asc(), Invoice.invoice_date.asc(), Invoice.id.asc()).all()
-        payment_summaries = build_invoice_payment_summaries(db, invoices)
-        outstanding_invoices = [
-            invoice
-            for invoice in invoices
-            if payment_summaries[invoice.id].remaining_amount > 0
-        ]
 
         total = len(outstanding_invoices)
         page_start = (page - 1) * page_size
         page_end = page_start + page_size
         paged_invoices = outstanding_invoices[page_start:page_end]
         _enrich_items_with_product_names(paged_invoices, db, active_company.id)
+        _enrich_items_with_serials(paged_invoices, db)
         items = [_to_invoice_out(invoice, payment_summary=payment_summaries.get(invoice.id)) for invoice in paged_invoices]
+
+        for item in items:
+            receivable, payable = open_amounts.get(item.ledger_id, (0.0, 0.0))
+            item.ledger_payable_amount = payable
+            item.ledger_net_receivable = round(receivable - payable, 2)
 
         total_listed = sum((Decimal(str(invoice.total_amount or 0)) for invoice in outstanding_invoices), Decimal("0"))
         visible_page_total = sum((Decimal(str(item.total_amount or 0)) for item in items), Decimal("0"))
@@ -273,8 +634,9 @@ def list_due_invoices(
                 financial_year_id=None,
             ),
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error listing due invoices")
+        raise HTTPException(status_code=500, detail="Failed to list due invoices")
 
 
 @router.get("/{invoice_id}", response_model=InvoiceOut)
@@ -293,6 +655,7 @@ def get_invoice(
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
     _enrich_items_with_product_names([invoice], db, active_company.id)
+    _enrich_items_with_serials([invoice], db)
     summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
     return _to_invoice_out(invoice, payment_summary=summary)
 
@@ -302,7 +665,7 @@ def update_invoice(
     invoice_id: int,
     payload: InvoiceCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     invoice = (
@@ -324,6 +687,23 @@ def update_invoice(
         active_fy = get_active_fy(db, company_id=active_company.id)
 
         processor = InvoiceProcessor(db)
+        # Validate before either delta touches stock. apply_payload validates
+        # again later, but by then the inventory delta has already run and a
+        # serial-tracked line would report the stock shortfall that follows
+        # from a missing IMEI rather than the missing IMEI itself. Reads only,
+        # so running it twice costs nothing.
+        processor.validate_items(
+            payload.items,
+            active_company.id,
+            payload.voucher_type,
+            apply_inventory_changes=False,
+            invoice_id=invoice.id,
+        )
+        processor.apply_serial_delta_for_update(
+            invoice,
+            payload,
+            company_id=active_company.id,
+        )
         processor.apply_inventory_delta_for_update(
             invoice,
             payload,
@@ -352,15 +732,29 @@ def update_invoice(
 
         summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
         _enrich_items_with_product_names([invoice], db, active_company.id)
+        _enrich_items_with_serials([invoice], db)
         result = _to_invoice_out(invoice, payment_summary=summary)
         result.warnings = warnings
-        return result
     except HTTPException:
         db.rollback()
         raise
-    except Exception as e:
+    except Exception:
+        logger.exception("Error updating invoice")
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to update invoice")
+
+    track(
+        "invoice_updated",
+        distinct_id_for(current_user),
+        {
+            "invoice_id": invoice.id,
+            "voucher_type": invoice.voucher_type,
+            "line_item_count": len(payload.items),
+            "total_amount": float(invoice.total_amount or 0),
+            "tax_inclusive": payload.tax_inclusive,
+        },
+    )
+    return result
 
 
 
@@ -368,18 +762,18 @@ def update_invoice(
 
 
 
-def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], active_company: CompanyProfile | None = None) -> BytesIO:
+def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "") -> BytesIO:
     show_sku = active_company.show_sku_on_pdf if active_company else True
-    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku)
-    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+    html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html)
+    pdf_bytes = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
 
 
-def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, active_company: CompanyProfile | None = None) -> BytesIO:
+def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "") -> BytesIO:
     show_sku = active_company.show_sku_on_pdf if active_company else True
-    html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies, show_sku=show_sku)
-    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+    html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies, show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html)
+    pdf_bytes = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
 
@@ -387,43 +781,46 @@ def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], inv
 @router.get("/{invoice_id}/pdf")
 def download_invoice_pdf(
     invoice_id: int,
+    request: Request,
     copies: int = Query(default=1, ge=1, le=10),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
-    invoice = (
-        db.query(Invoice)
-        .options(joinedload(Invoice.items), joinedload(Invoice.ledger))
-        .filter(Invoice.id == invoice_id, Invoice.company_id == active_company.id)
-        .first()
-    )
+    # The rendering itself lives in src/services/share_documents so that the
+    # owner's copy and the copy a customer downloads from a public share link are
+    # byte-for-byte the same document. Do not inline it back here.
+    invoice = get_shared_invoice(db, active_company.id, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
 
-    product_ids = [item.product_id for item in (invoice.items or [])]
-    products = (
-      db.query(Product)
-      .filter(Product.id.in_(product_ids), Product.company_id == active_company.id)
-      .all()
-      if product_ids
-      else []
-    )
+    # Returns None -- and prints no QR -- unless the company has opted in. When it
+    # has, this mints the invoice's share link if it does not already have one, so
+    # `request` is needed for the origin the printed URL will carry.
+    share_url = None
+    if invoice.status == "active":
+        share_url = document_share_url(
+            db, request, active_company, RESOURCE_INVOICE, invoice_id, user_id=current_user.id
+        )
 
-    invoice_bank_accounts = (
-      db.query(CompanyAccount)
-      .filter(
-        CompanyAccount.is_active.is_(True),
-        CompanyAccount.account_type == "bank",
-        CompanyAccount.display_on_invoice.is_(True),
-        CompanyAccount.company_id == active_company.id,
-      )
-      .order_by(CompanyAccount.display_name.asc(), CompanyAccount.id.asc())
-      .all()
+    pdf_buffer = render_invoice_pdf(
+        db, active_company.id, invoice_id, copies=copies, share_url=share_url
     )
-
-    pdf_buffer = _build_multi_copy_invoice_pdf(invoice, products, invoice_bank_accounts, copies, active_company=active_company)
     filename = f"invoice_{invoice.invoice_number or invoice.id}.pdf"
+
+    # The preview pane fetches this endpoint too, so this counts renders rather
+    # than saves -- the browser event it replaces fired only on the Download
+    # button. Read it as "how often is this invoice put on paper", not as a
+    # download count.
+    track(
+        "invoice_pdf_downloaded",
+        distinct_id_for(current_user),
+        {
+            "invoice_id": invoice.id,
+            "voucher_type": invoice.voucher_type,
+            "copies": copies,
+        },
+    )
 
     return StreamingResponse(
         pdf_buffer,
@@ -436,7 +833,7 @@ def download_invoice_pdf(
 def cancel_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     invoice = (
@@ -453,17 +850,31 @@ def cancel_invoice(
 
     try:
         processor = InvoiceProcessor(db)
+        # Serials first: cancelling a purchase whose units are already sold is
+        # refused, and that message is more useful than a stock shortfall.
+        processor.reverse_serials(invoice)
         processor.reverse_inventory(invoice)
         invoice.status = "cancelled"
         db.commit()
         db.refresh(invoice)
-        return invoice
     except HTTPException:
         db.rollback()
         raise
-    except Exception as e:
+    except Exception:
+        logger.exception("Error cancelling invoice")
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to cancel invoice")
+
+    track(
+        "invoice_cancelled",
+        distinct_id_for(current_user),
+        {
+            "invoice_id": invoice.id,
+            "voucher_type": invoice.voucher_type,
+            "total_amount": float(invoice.total_amount or 0),
+        },
+    )
+    return invoice
 
 
 @router.post("/{invoice_id}/restore", response_model=InvoiceOut)
@@ -487,6 +898,7 @@ def restore_invoice(
 
     try:
         processor = InvoiceProcessor(db)
+        processor.restore_serials(invoice, company_id=active_company.id)
         processor.restore_inventory(invoice, company_id=active_company.id)
         invoice.status = "active"
         db.commit()
@@ -495,6 +907,131 @@ def restore_invoice(
     except HTTPException:
         db.rollback()
         raise
-    except Exception as e:
+    except Exception:
+        logger.exception("Error restoring invoice")
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to restore invoice")
+
+
+@router.post("/{invoice_id}/duplicate")
+def duplicate_invoice(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    active_company: CompanyProfile = Depends(get_active_company),
+):
+    """Duplicate an existing invoice as a new DRAFT invoice.
+
+    Copies customer, billing/shipping details, line items, notes, and terms.
+    Generates a new invoice number and sets status to 'active'.
+    Does NOT copy: original invoice number, creation date, payment status,
+    e-invoice refs, e-way bill refs, audit info.
+    """
+    original = (
+        db.query(Invoice)
+        .options(joinedload(Invoice.items))
+        .filter(Invoice.id == invoice_id, Invoice.company_id == active_company.id)
+        .first()
+    )
+    if not original:
+        raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
+
+    try:
+        active_fy = get_active_fy(db, company_id=active_company.id)
+        fy_id = active_fy.id if active_fy else None
+
+        new_invoice = Invoice(
+            total_amount=float(original.total_amount),
+            created_by=original.created_by,
+            company_id=active_company.id,
+            # Copy snapshot fields from original
+            ledger_id=original.ledger_id,
+            ledger_name=original.ledger_name,
+            ledger_address=original.ledger_address,
+            ledger_gst=original.ledger_gst,
+            ledger_phone=original.ledger_phone,
+            company_name=original.company_name,
+            company_address=original.company_address,
+            company_gst=original.company_gst,
+            company_phone=original.company_phone,
+            company_email=original.company_email,
+            company_website=original.company_website,
+            company_currency_code=original.company_currency_code,
+            company_bank_name=original.company_bank_name,
+            company_branch_name=original.company_branch_name,
+            company_account_name=original.company_account_name,
+            company_account_number=original.company_account_number,
+            company_ifsc_code=original.company_ifsc_code,
+            voucher_type=original.voucher_type,
+            supplier_invoice_number=original.supplier_invoice_number,
+            reference_notes=original.reference_notes,
+            tax_inclusive=original.tax_inclusive,
+            apply_round_off=original.apply_round_off,
+            discount_type=original.discount_type,
+            discount_value=original.discount_value,
+            financial_year_id=fy_id,
+            shipping_address=original.shipping_address,
+            shipping_address_label=original.shipping_address_label,
+            company_logo_data=original.company_logo_data,
+            company_logo_mime_type=original.company_logo_mime_type,
+            company_additional_info=original.company_additional_info,
+            company_terms_text=original.company_terms_text,
+            # NEW fields
+            status="active",
+            taxable_amount=original.taxable_amount,
+            total_tax_amount=original.total_tax_amount,
+            cgst_amount=original.cgst_amount,
+            sgst_amount=original.sgst_amount,
+            igst_amount=original.igst_amount,
+            round_off_amount=original.round_off_amount,
+        )
+        db.add(new_invoice)
+        db.flush()
+
+        # Generate new invoice number
+        new_invoice.invoice_number = generate_next_number(
+            db,
+            new_invoice.voucher_type,
+            fy_id,
+            datetime.utcnow().date(),
+            fy_id,
+            company_id=active_company.id,
+        )
+
+        # Copy line items. Serials are deliberately NOT copied — every unit is
+        # unique, so the duplicate starts empty and blocks submit until the
+        # shopkeeper scans the handsets actually going out on it.
+        for item in (original.items or []):
+            new_item = InvoiceItem(
+                invoice_id=new_invoice.id,
+                product_id=item.product_id,
+                hsn_sac=item.hsn_sac,
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                gst_rate=item.gst_rate,
+                taxable_amount=item.taxable_amount,
+                tax_amount=item.tax_amount,
+                cgst_amount=item.cgst_amount,
+                sgst_amount=item.sgst_amount,
+                igst_amount=item.igst_amount,
+                line_total=item.line_total,
+                description=item.description,
+                discount_type=item.discount_type,
+                discount_value=item.discount_value,
+            )
+            db.add(new_item)
+
+        # Restore original invoice's snapshot for the new one's `invoice_date`
+        new_invoice.invoice_date = datetime.utcnow()
+
+        db.commit()
+        db.refresh(new_invoice)
+
+        return {"id": new_invoice.id, "invoice_number": new_invoice.invoice_number}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        logger.exception("Error duplicating invoice")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to duplicate invoice")

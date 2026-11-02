@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from pydantic import BaseModel, Field, field_validator
 
-from src.core.validation import normalize_gstin
+from src.core.validation import normalize_gstin, normalize_gstin_format
 
 
 class LedgerCreate(BaseModel):
@@ -23,6 +23,21 @@ class LedgerCreate(BaseModel):
     def validate_gst(cls, value: str | None) -> str | None:
         return normalize_gstin(value)
 
+    @field_validator("name", "address")
+    @classmethod
+    def validate_required_text_not_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Value must not be blank")
+        return normalized
+
+    @field_validator("phone_number")
+    @classmethod
+    def validate_phone_number(cls, value: str) -> str:
+        # Optional today: test_request_schemas_normalize_valid_gstin builds a
+        # LedgerCreate with an empty phone number, so strip without rejecting.
+        return value.strip()
+
 
 class LedgerOut(BaseModel):
     id: int
@@ -30,6 +45,9 @@ class LedgerOut(BaseModel):
     address: str
     gst: str = ""
     opening_balance: float | None = None
+    # Closing balance to date (debit - credit); only populated where the caller
+    # asks for it, since it costs extra aggregates.
+    balance: float | None = None
     phone_number: str
     email: str | None = None
     website: str | None = None
@@ -42,7 +60,7 @@ class LedgerOut(BaseModel):
     @field_validator("gst", mode="before")
     @classmethod
     def normalize_gst_output(cls, value: str | None) -> str:
-        normalized = normalize_gstin(value)
+        normalized = normalize_gstin_format(value)
         return normalized or ""
 
     class Config:
@@ -77,6 +95,12 @@ class LedgerStatementEntry(BaseModel):
     credit: float
     account_display_name: str | None = None
     account_type: str | None = None
+    # The cheque no / txn id the user typed on the voucher. Distinct from
+    # reference_number above, which is the voucher's own number.
+    payment_reference: str | None = None
+    # Free-text note the user typed on the voucher; surfaced on the statement so
+    # it does not stay buried in the receipt.
+    notes: str | None = None
     invoice_allocations: list[LedgerStatementInvoiceAllocation] = Field(default_factory=list)
 
 
@@ -129,6 +153,8 @@ class TaxLedgerEntry(BaseModel):
     particulars: str
     gst_rate: float
     taxable_amount: float
+    debit_taxable: float = 0.0
+    credit_taxable: float = 0.0
     debit_cgst: float
     debit_sgst: float
     debit_igst: float
@@ -140,6 +166,9 @@ class TaxLedgerEntry(BaseModel):
 
 
 class TaxLedgerTotals(BaseModel):
+    debit_taxable: float = 0.0
+    credit_taxable: float = 0.0
+    net_taxable: float = 0.0
     debit_cgst: float
     debit_sgst: float
     debit_igst: float
@@ -152,6 +181,32 @@ class TaxLedgerTotals(BaseModel):
     net_sgst: float
     net_igst: float
     net_total_tax: float
+    # Taxable value plus the tax on it — what the voucher was actually raised
+    # for, and the figure that has to tie back to the books.
+    debit_gross: float = 0.0
+    credit_gross: float = 0.0
+    net_gross: float = 0.0
+
+
+class TaxLiabilityBucket(BaseModel):
+    """One tax head's road from what was collected to what has to be paid."""
+
+    output_tax: float = 0.0
+    input_credit: float = 0.0
+    credit_used: float = 0.0
+    payable: float = 0.0
+    credit_carried_forward: float = 0.0
+
+
+class TaxLiability(BaseModel):
+    cgst: TaxLiabilityBucket = TaxLiabilityBucket()
+    sgst: TaxLiabilityBucket = TaxLiabilityBucket()
+    igst: TaxLiabilityBucket = TaxLiabilityBucket()
+    output_tax: float = 0.0
+    input_credit: float = 0.0
+    credit_used: float = 0.0
+    payable: float = 0.0
+    credit_carried_forward: float = 0.0
 
 
 class TaxLedgerOut(BaseModel):
@@ -161,6 +216,7 @@ class TaxLedgerOut(BaseModel):
     gst_rate: float | None = None
     entries: list[TaxLedgerEntry]
     totals: TaxLedgerTotals
+    liability: TaxLiability = TaxLiability()
     fy_label: str | None = None
     financial_year_id: int | None = None
 

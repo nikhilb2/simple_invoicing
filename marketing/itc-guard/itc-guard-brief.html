@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ITC Guard — Feature Brief</title>
+<style>
+  @page {
+    size: A4;
+    margin: 16mm 15mm 14mm 15mm;
+    @bottom-center {
+      content: "ITC Guard · Feature Brief · Confidential — " counter(page) " / " counter(pages);
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 7.5pt;
+      color: #898781;
+    }
+  }
+  @page :first { margin-top: 20mm; }
+
+  * { box-sizing: border-box; }
+
+  html {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 9.6pt;
+    line-height: 1.5;
+    color: #0b0b0b;
+  }
+  body { margin: 0; }
+
+  /* ---------- tokens ---------- */
+  :root {
+    --accent:    #2a78d6;
+    --critical:  #d03b3b;
+    --good:      #0ca30c;
+    --ink:       #0b0b0b;
+    --ink-2:     #52514e;
+    --muted:     #898781;
+    --rule:      #e1e0d9;
+    --baseline:  #c3c2b7;
+    --deemph:    #b4b2aa;
+    --wash:      #f4f7fc;
+    --wash-red:  #fdf3f3;
+    --surface:   #fcfcfb;
+  }
+
+  /* ---------- type ---------- */
+  h1 { font-size: 25pt; line-height: 1.12; margin: 0 0 6px; letter-spacing: -0.6px; font-weight: 700; }
+  h2 {
+    font-size: 13pt; margin: 0 0 10px; letter-spacing: -0.2px; font-weight: 700;
+    padding-bottom: 5px; border-bottom: 2px solid var(--ink);
+  }
+  h3 { font-size: 10pt; margin: 16px 0 5px; font-weight: 700; }
+  p  { margin: 0 0 8px; }
+  ul { margin: 0 0 8px; padding-left: 15px; }
+  li { margin-bottom: 3px; }
+  strong { font-weight: 700; }
+  .lede { font-size: 11pt; line-height: 1.45; color: var(--ink-2); margin-bottom: 14px; }
+  .eyebrow {
+    font-size: 7.5pt; letter-spacing: 1.4px; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; margin-bottom: 10px;
+  }
+  .muted { color: var(--ink-2); }
+  .fine { font-size: 8pt; color: var(--muted); line-height: 1.45; }
+  code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 8.2pt; background: #f2f1ed; padding: 0.5px 3px; border-radius: 2px;
+  }
+
+  .page-break { break-before: page; }
+  section { break-inside: avoid; }
+
+  /* ---------- cover ---------- */
+  .cover-rule { height: 4px; background: var(--accent); width: 58px; margin-bottom: 20px; }
+  .cover-meta {
+    margin-top: 26px; padding-top: 10px; border-top: 1px solid var(--rule);
+    font-size: 8.2pt; color: var(--muted);
+  }
+
+  /* ---------- KPI row ---------- */
+  /* WeasyPrint 63 ignores flex `gap` — spacing is done with margins throughout. */
+  .kpi-row { display: flex; margin: 20px 0 6px; }
+  .kpi {
+    flex: 1; border: 1px solid var(--rule); border-top: 3px solid var(--accent);
+    padding: 11px 12px 12px; background: var(--surface); margin-right: 9px;
+  }
+  .kpi:last-child { margin-right: 0; }
+  .kpi.is-critical { border-top-color: var(--critical); }
+  .kpi-label {
+    font-size: 7pt; letter-spacing: 0.9px; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; margin-bottom: 5px;
+  }
+  .kpi-value { font-size: 21pt; line-height: 1; font-weight: 700; letter-spacing: -0.8px; }
+  .kpi-value.is-critical { color: var(--critical); }
+  .kpi-value.is-accent { color: var(--accent); }
+  .kpi-sub { font-size: 7.8pt; color: var(--ink-2); margin-top: 5px; line-height: 1.35; }
+
+  /* ---------- callout ---------- */
+  .callout {
+    background: var(--wash); border-left: 3px solid var(--accent);
+    padding: 11px 13px; margin: 12px 0;
+  }
+  .callout.is-critical { background: var(--wash-red); border-left-color: var(--critical); }
+  .callout p:last-child { margin-bottom: 0; }
+
+  /* ---------- tables ---------- */
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 10px; font-size: 8.8pt; }
+  th {
+    text-align: left; font-size: 7pt; letter-spacing: 0.8px; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; padding: 0 8px 5px 0;
+    border-bottom: 1.5px solid var(--baseline);
+  }
+  td { padding: 5.5px 8px 5.5px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; padding-right: 18px; }
+  td.num:last-child, th.num:last-child { padding-right: 0; }
+  tr:last-child td { border-bottom: none; }
+
+  /* ---------- charts ---------- */
+  figure { margin: 10px 0 6px; break-inside: avoid; }
+  figcaption { font-size: 9.2pt; font-weight: 700; margin-bottom: 2px; }
+  .fig-sub { font-size: 8pt; color: var(--ink-2); margin-bottom: 11px; }
+
+  .bar-row { display: flex; align-items: center; margin-bottom: 6px; }
+  .bar-label {
+    width: 132px; flex-shrink: 0; font-size: 8.3pt; color: var(--ink-2);
+    padding-right: 9px; text-align: right; line-height: 1.25;
+  }
+  .bar-label.is-accent { color: var(--ink); font-weight: 700; }
+  .bar-track { flex: 1; display: flex; align-items: center; border-left: 1px solid var(--baseline); padding-left: 0; }
+  .bar {
+    height: 15px; background: var(--deemph); border-radius: 0 4px 4px 0; min-width: 2px;
+  }
+  .bar.is-accent   { background: var(--accent); }
+  .bar.is-critical { background: var(--critical); }
+  .bar-value {
+    font-size: 8.3pt; font-variant-numeric: tabular-nums; color: var(--ink-2);
+    padding-left: 7px; white-space: nowrap;
+  }
+  .bar-value.is-accent { color: var(--ink); font-weight: 700; }
+  .bar-value.is-critical { color: var(--critical); font-weight: 700; }
+
+  /* ---------- mock UI ---------- */
+  .mock { border: 1px solid var(--baseline); background: #fff; margin: 10px 0 8px; }
+  .mock-bar {
+    background: #f2f1ed; border-bottom: 1px solid var(--baseline);
+    padding: 6px 11px; font-size: 8pt; color: var(--ink-2); font-weight: 700;
+    display: flex; justify-content: space-between;
+  }
+  .mock-body { padding: 12px 13px 13px; }
+  .mock-hero { display: flex; align-items: baseline; margin-bottom: 3px; }
+  .mock-hero-num {
+    font-size: 27pt; font-weight: 700; letter-spacing: -1px; color: var(--critical); line-height: 1;
+    margin-right: 10px;
+  }
+  .mock-hero-cap { font-size: 9pt; color: var(--ink-2); }
+  .mock-table { font-size: 8.3pt; margin: 11px 0 0; }
+  .mock-table th { font-size: 6.6pt; }
+  .mock-table td { padding: 4.5px 8px 4.5px 0; }
+  .pill {
+    display: inline-block; font-size: 6.8pt; font-weight: 700; letter-spacing: 0.5px;
+    padding: 1.5px 6px; border-radius: 9px; text-transform: uppercase; white-space: nowrap;
+  }
+  .pill-ok   { background: #e7f6e7; color: #076b07; }
+  .pill-risk { background: #fbe6e6; color: #a52c2c; }
+  .pill-rev  { background: #fdf0e6; color: #9c5320; }
+  .mock-btn {
+    display: inline-block; background: var(--accent); color: #fff; font-size: 8pt;
+    font-weight: 700; padding: 6px 12px; border-radius: 4px; margin-top: 11px;
+  }
+  .mock-note { font-size: 7.5pt; color: var(--muted); margin-top: 7px; }
+
+  /* ---------- two column ---------- */
+  .cols { display: flex; }
+  .col { flex: 1; margin-right: 18px; }
+  .col:last-child { margin-right: 0; }
+
+  /* ---------- step list ---------- */
+  .steps { counter-reset: s; list-style: none; padding: 0; margin: 8px 0; }
+  .steps li {
+    counter-increment: s; position: relative; padding-left: 24px; margin-bottom: 7px;
+  }
+  .steps li::before {
+    content: counter(s); position: absolute; left: 0; top: 0.5px;
+    width: 16px; height: 16px; border-radius: 50%; background: var(--accent); color: #fff;
+    font-size: 7.5pt; font-weight: 700; text-align: center; line-height: 16px;
+  }
+
+  .flow { display: flex; align-items: stretch; gap: 0; margin: 12px 0 8px; }
+  .flow-step {
+    flex: 1; border: 1px solid var(--rule); border-top: 3px solid var(--accent);
+    padding: 9px 10px; background: var(--surface);
+  }
+  .flow-arrow {
+    flex-shrink: 0; width: 20px; display: flex; align-items: center; justify-content: center;
+    color: var(--baseline); font-size: 13pt;
+  }
+  .flow-num {
+    font-size: 6.8pt; letter-spacing: 0.9px; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; margin-bottom: 3px;
+  }
+  .flow-title { font-size: 9pt; font-weight: 700; margin-bottom: 3px; line-height: 1.25; }
+  .flow-body { font-size: 7.6pt; color: var(--ink-2); line-height: 1.35; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════ PAGE 1 ══════════════ -->
+<div class="cover-rule"></div>
+<div class="eyebrow">Feature Brief · Simple Invoicing</div>
+<h1>ITC&nbsp;Guard</h1>
+<p class="lede">
+  Turn our purchase-side accounting data into recovered cash — by catching the input tax credit
+  our customers are silently losing every month.
+</p>
+
+<div class="callout">
+  <p><strong>The proposal in one sentence.</strong> Build a GSTR-2B reconciliation module that
+  matches a customer's purchase invoices against what their suppliers actually filed, puts a
+  rupee figure on the credit at risk, and chases the defaulting suppliers by email — sold as a
+  paid add-on to the accounting product we already ship.</p>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi is-critical">
+    <div class="kpi-label">Trapped per customer</div>
+    <div class="kpi-value is-critical">₹1.62L</div>
+    <div class="kpi-sub">Input credit stuck or lost per year, at ₹5&nbsp;cr turnover</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Build effort</div>
+    <div class="kpi-value">3 wks</div>
+    <div class="kpi-sub">One engineer, entirely on primitives already in the codebase</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Add-on price</div>
+    <div class="kpi-value is-accent">₹999</div>
+    <div class="kpi-sub">Per month, per company — a 13× return for the customer</div>
+  </div>
+</div>
+
+<h3>Why this, and why now</h3>
+<p>
+  Since the July&nbsp;2025 tax period, GSTR-3B outward tables are <strong>hard-locked</strong> —
+  liability flows from GSTR-1 and cannot be edited. The credit side is moving the same way through
+  the Invoice Management System. The practical consequence for every one of our customers is that
+  <strong>when a supplier files late or files wrong, their money stops moving</strong>, and past the
+  §16(4) window it is gone for good.
+</p>
+<p>
+  Nobody at the small-business end of the market solves this well. Tally sells it as an add-on.
+  The billing apps our customers compare us to — Vyapar, myBillBook, Swipe — cannot solve it at all,
+  because they are sales-first tools that never recorded a purchase invoice in the first place.
+  <strong>We already record both sides.</strong> That is the whole opportunity.
+</p>
+
+<h3>What we are asking for</h3>
+<ul>
+  <li>Approval to spend <strong>three engineering weeks</strong> on ITC Guard as the next feature.</li>
+  <li>Agreement to <strong>pilot it with the seven existing tenants</strong> at ₹999/month before any wider go-to-market spend.</li>
+  <li>A decision on the two <strong>platform blockers</strong> on the final page, which gate anything sold as hosted.</li>
+</ul>
+
+<div class="cover-meta">
+  Prepared 26 August 2026 · Owner: Nikhil Bhatia · Status: proposal, pending approval<br>
+  Market figures verified August 2026; sources listed on the final page.
+</div>
+
+<!-- ══════════════ PAGE 2 ══════════════ -->
+<div class="page-break"></div>
+<div class="eyebrow">01 · The problem</div>
+<h2>Our customers are financing their suppliers' bad paperwork</h2>
+
+<p>
+  Input tax credit is not an accounting abstraction — it is cash. A manufacturer pays GST on
+  everything it buys and reclaims it against the GST it collects. That reclaim is only allowed if
+  the <em>supplier</em> has correctly reported the same invoice in their own GSTR-1, so that it
+  appears in the buyer's GSTR-2B.
+</p>
+<p>
+  If the supplier is late, sloppy, or simply never files, the buyer's credit does not appear.
+  The buyer has already paid the tax. They just cannot use it.
+</p>
+
+<h3>Worked example — a customer we already host</h3>
+<table>
+  <tr><td>Annual turnover</td><td class="num">₹5,00,00,000</td></tr>
+  <tr><td>Purchases, at ~72% of turnover</td><td class="num">₹3,60,00,000</td></tr>
+  <tr><td>Input tax credit at 18%</td><td class="num">₹64,80,000&nbsp;/&nbsp;yr</td></tr>
+  <tr><td>Monthly credit to reconcile</td><td class="num">₹5,40,000</td></tr>
+  <tr><td><strong>Credit unmatched at 2.5% — trapped or lost</strong></td><td class="num"><strong>₹1,62,000&nbsp;/&nbsp;yr</strong></td></tr>
+</table>
+<p class="fine">
+  A 2–3% mismatch rate is ordinary for an SMB buying from small, unorganised suppliers.
+  Delayed credit costs working capital; credit never claimed before the §16(4) deadline is a
+  permanent write-off.
+</p>
+
+<h3>How they cope today</h3>
+<p>
+  They download the GSTR-2B JSON from the portal, hand it to their accountant, and the accountant
+  eyeballs it against a purchase register in Excel. It takes a day a month, it is done badly, and it
+  is done <em>after</em> the filing deadline — which is precisely when it is too late to act.
+  The failure is not effort. It is that <strong>the purchase register and the 2B file never meet
+  inside one system.</strong>
+</p>
+
+<div class="callout is-critical">
+  <p><strong>The insight.</strong> We are the only tool in our price band that already holds the
+  other half of the equation. Every field the match needs is in our schema today: supplier GSTIN,
+  supplier invoice number, invoice date, taxable value, and the CGST/SGST/IGST split — on every
+  purchase voucher our customers have already entered.</p>
+</div>
+
+<h3>Why this is a product, not a report</h3>
+<ul>
+  <li><strong>It is denominated in the customer's own rupees.</strong> The screen opens with the amount at risk, not a list of exceptions.</li>
+  <li><strong>It is recurring.</strong> Reconciliation is a monthly obligation, so the value is felt twelve times a year.</li>
+  <li><strong>It is actionable inside our product.</strong> We can email the defaulting supplier — we already have the address, the invoice, and the mail infrastructure.</li>
+  <li><strong>It compounds into data nobody else has.</strong> See page 6.</li>
+</ul>
+
+<!-- ══════════════ PAGE 3 ══════════════ -->
+<div class="page-break"></div>
+<div class="eyebrow">02 · The feature</div>
+<h2>Upload, match, chase</h2>
+
+<div class="flow">
+  <div class="flow-step">
+    <div class="flow-num">Step 1</div>
+    <div class="flow-title">Upload 2B</div>
+    <div class="flow-body">The customer downloads the GSTR-2B JSON from the GST portal and drops it into Simple Invoicing.</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="flow-num">Step 2</div>
+    <div class="flow-title">Match</div>
+    <div class="flow-body">We match every row against purchase vouchers on GSTIN, invoice number, date and taxable value, with paise tolerance.</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="flow-num">Step 3</div>
+    <div class="flow-title">Quantify</div>
+    <div class="flow-body">Four buckets, and one headline number: the rupees of credit at risk this period.</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="flow-num">Step 4</div>
+    <div class="flow-title">Chase</div>
+    <div class="flow-body">One click emails every defaulting supplier, with the invoice detail attached and the send logged.</div>
+  </div>
+</div>
+
+<h3>The screen</h3>
+<div class="mock">
+  <div class="mock-bar">
+    <span>ITC Reconciliation — July 2026</span>
+    <span>GSTR-2B uploaded 11 Aug 2026 · 153 rows</span>
+  </div>
+  <div class="mock-body">
+    <div class="mock-hero">
+      <span class="mock-hero-num">₹13,500</span>
+      <span class="mock-hero-cap">of input credit at risk across <strong>6 suppliers</strong></span>
+    </div>
+    <div class="mock-note">₹1,62,000 annualised at the current mismatch rate</div>
+
+    <table class="mock-table">
+      <tr>
+        <th>Bucket</th><th class="num">Invoices</th><th class="num">Credit value</th><th style="text-align:right">Status</th>
+      </tr>
+      <tr>
+        <td>Matched — credit safe</td><td class="num">142</td><td class="num">₹5,26,500</td>
+        <td style="text-align:right"><span class="pill pill-ok">✓ OK</span></td>
+      </tr>
+      <tr>
+        <td><strong>Missing in 2B — supplier has not filed</strong></td><td class="num">6</td><td class="num"><strong>₹13,500</strong></td>
+        <td style="text-align:right"><span class="pill pill-risk">▲ At risk</span></td>
+      </tr>
+      <tr>
+        <td>In 2B, absent from our books</td><td class="num">3</td><td class="num">₹4,200</td>
+        <td style="text-align:right"><span class="pill pill-rev">● Review</span></td>
+      </tr>
+      <tr>
+        <td>Value mismatch beyond tolerance</td><td class="num">2</td><td class="num">₹1,850</td>
+        <td style="text-align:right"><span class="pill pill-rev">● Review</span></td>
+      </tr>
+    </table>
+
+    <div style="margin-top:13px; font-size:7pt; letter-spacing:0.9px; text-transform:uppercase; color:#898781; font-weight:700;">
+      At risk — by supplier
+    </div>
+    <table class="mock-table">
+      <tr>
+        <th>Supplier</th><th>GSTIN</th><th class="num">Inv.</th><th class="num">Credit at risk</th>
+      </tr>
+      <tr><td>Shakti Steel Traders</td><td>27AABCS1429F1ZK</td><td class="num">2</td><td class="num">₹6,200</td></tr>
+      <tr><td>Nova Polymers</td><td>24AACCN8871J1Z3</td><td class="num">1</td><td class="num">₹3,100</td></tr>
+      <tr><td>Anand Fasteners</td><td>27AAECA5560L1ZQ</td><td class="num">1</td><td class="num">₹2,400</td></tr>
+      <tr><td>Kiran Packaging</td><td>29AADCK2018M1Z7</td><td class="num">1</td><td class="num">₹900</td></tr>
+      <tr><td>Vertex Tooling</td><td>27AAFCV6642P1ZB</td><td class="num">1</td><td class="num">₹550</td></tr>
+      <tr><td>Meera Chemicals</td><td>24AAGCM3307R1ZN</td><td class="num">1</td><td class="num">₹350</td></tr>
+    </table>
+
+    <div class="mock-btn">✉ Email all 6 suppliers</div>
+    <div class="mock-note">Illustrative data. Layout follows the existing Tax Ledger page.</div>
+  </div>
+</div>
+
+<p class="fine">
+  Scope note — the customer uploads the 2B file by hand, exactly as they already download our
+  GSTR-1 export by hand. That deliberately avoids a GSP contract in v1 (see page 4).
+</p>
+
+<!-- ══════════════ PAGE 4 ══════════════ -->
+<div class="page-break"></div>
+<div class="eyebrow">03 · Cost to build</div>
+<h2>Three weeks, because we have built all of it before</h2>
+
+<p>
+  ITC Guard is the mirror image of the GSTR-1 export we shipped in June. That feature validates,
+  summarises and exports our <em>sales</em> data against a government format. This one ingests a
+  government file and validates our <em>purchase</em> data against it. The architecture is already
+  in the repository — we are pointing it in the other direction.
+</p>
+
+<table>
+  <tr>
+    <th style="width:33%">What ITC Guard needs</th>
+    <th>What it reuses</th>
+  </tr>
+  <tr>
+    <td>Accept an uploaded 2B file</td>
+    <td>The <code>UploadFile</code> pattern already used for product CSV import and backup restore</td>
+  </tr>
+  <tr>
+    <td>Reconciliation endpoints</td>
+    <td>Direct mirror of the <code>gstr1_validate</code> / <code>summary</code> / <code>export</code> triad in <code>routes/ledgers.py</code></td>
+  </tr>
+  <tr>
+    <td>Source data to match against</td>
+    <td>Purchase vouchers we already store — <code>ledger_gst</code>, <code>supplier_invoice_number</code>, date, taxable value, tax split</td>
+  </tr>
+  <tr>
+    <td>Chase the supplier</td>
+    <td>Existing SMTP config, the four-template mail system, and the delivery audit log — this is a fifth template</td>
+  </tr>
+  <tr>
+    <td>Export for the accountant</td>
+    <td>WeasyPrint, same as the GSTR-1 and ledger statement PDFs</td>
+  </tr>
+  <tr>
+    <td>Manually link a stubborn row</td>
+    <td>The same manual-link pattern built for marketplace product resolution</td>
+  </tr>
+</table>
+
+<div class="callout">
+  <p><strong>No GSP contract, no certification, no per-call minimum.</strong> Pulling 2B through an
+  API would mean a GST Suvidha Provider agreement — contact-sales pricing, per-GSTIN fees, and a
+  minimum commitment around ₹9,000/year before we have a single paying customer. Manual upload gets
+  the same result in v1 at zero marginal cost, and the API becomes an upsell once volume justifies it.</p>
+</div>
+
+<h3>Delivery plan</h3>
+<ol class="steps">
+  <li><strong>Week 1 — Ingest and match.</strong> 2B JSON parser, the matching engine and its tolerance rules, new tables and migration.</li>
+  <li><strong>Week 2 — API and buckets.</strong> The reconcile / summary / export endpoints, the four-bucket classification, supplier aggregation.</li>
+  <li><strong>Week 3 — Surface and act.</strong> React page under the Tax Ledger section, the supplier-chase email template, PDF export, tests.</li>
+</ol>
+<p class="fine">
+  Sequenced so there is something demonstrable at the end of each week. Week 1 alone produces the
+  headline number, which is the part worth showing a customer.
+</p>
+
+<h3>What we are explicitly not building in v1</h3>
+<ul>
+  <li>Automated 2B pull via a GSP API — deferred until pilot volume justifies the contract.</li>
+  <li>GSTR-3B preparation or filing — we quantify the exposure; the accountant still files.</li>
+  <li>E-invoicing / IRN generation — only binds above ₹5&nbsp;cr turnover and Tally bundles it; not our wedge.</li>
+  <li>The Invoice Management System accept/reject workflow — worth revisiting once the mandate is actually notified.</li>
+</ul>
+
+<!-- ══════════════ PAGE 5 ══════════════ -->
+<div class="page-break"></div>
+<div class="eyebrow">04 · Price and position</div>
+<h2>Priced against recovered cash, not against a competitor</h2>
+
+<figure>
+  <figcaption>Return to the customer, per year</figcaption>
+  <div class="fig-sub">At ₹5 cr turnover and a 2.5% mismatch rate. Bundle price shown.</div>
+  <div class="bar-row">
+    <div class="bar-label">Input credit recovered</div>
+    <div class="bar-track">
+      <div class="bar is-critical" style="width: 100%"></div>
+      <div class="bar-value is-critical">₹1,62,000</div>
+    </div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label is-accent">What they pay us</div>
+    <div class="bar-track">
+      <div class="bar is-accent" style="width: 11.1%"></div>
+      <div class="bar-value is-accent">₹18,000</div>
+    </div>
+  </div>
+  <p class="fine" style="margin-top:8px">
+    A 9× return on the full bundle, 13× on the ₹999/month add-on alone. This is the single slide
+    that closes the sale — the customer is buying back their own money at a discount.
+  </p>
+</figure>
+
+<figure style="margin-top:20px">
+  <figcaption>Annual list price — Indian SMB accounting software</figcaption>
+  <div class="fig-sub">Full-suite comparison. Simple Invoicing with ITC Guard highlighted.</div>
+
+  <div class="bar-row">
+    <div class="bar-label">Swipe Pro</div>
+    <div class="bar-track"><div class="bar" style="width:10.5%"></div><div class="bar-value">₹2,542</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">myBillBook Diamond</div>
+    <div class="bar-track"><div class="bar" style="width:14.4%"></div><div class="bar-value">₹3,490</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">Vyapar Combo</div>
+    <div class="bar-track"><div class="bar" style="width:19.7%"></div><div class="bar-value">₹4,799</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">Busy Blue</div>
+    <div class="bar-track"><div class="bar" style="width:20.6%"></div><div class="bar-value">₹5,000</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">TallyPrime Silver, rental</div>
+    <div class="bar-track"><div class="bar" style="width:33.3%"></div><div class="bar-value">₹8,100</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">Zoho Books Standard</div>
+    <div class="bar-track"><div class="bar" style="width:37.0%"></div><div class="bar-value">₹8,988</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label is-accent">Simple Invoicing<br>+ ITC Guard</div>
+    <div class="bar-track"><div class="bar is-accent" style="width:74.1%"></div><div class="bar-value is-accent">₹18,000</div></div>
+  </div>
+  <div class="bar-row">
+    <div class="bar-label">TallyPrime Gold, rental</div>
+    <div class="bar-track"><div class="bar" style="width:100%"></div><div class="bar-value">₹24,300</div></div>
+  </div>
+</figure>
+
+<h3>The packaging</h3>
+<table>
+  <tr>
+    <th>Tier</th><th class="num">Price</th><th>Who it is for</th>
+  </tr>
+  <tr>
+    <td><strong>Core</strong> — accounting, inventory, GSTR-1</td>
+    <td class="num">₹6,000&nbsp;/&nbsp;yr</td>
+    <td>Below ₹1 cr turnover. Undercuts Tally Silver, holds the door open.</td>
+  </tr>
+  <tr>
+    <td><strong>ITC Guard</strong> add-on</td>
+    <td class="num">₹999&nbsp;/&nbsp;mo</td>
+    <td>Anyone with a real purchase ledger. The revenue driver.</td>
+  </tr>
+  <tr>
+    <td><strong>Complete</strong> — Core + ITC Guard</td>
+    <td class="num">₹18,000&nbsp;/&nbsp;yr</td>
+    <td>Our ₹5 cr manufacturers. Below Tally Gold, and it pays for itself 9×.</td>
+  </tr>
+</table>
+
+<div class="callout">
+  <p><strong>Do not paywall GST compliance itself.</strong> GSTR-1 export stays in the free core.
+  Compliance is what wins the customer; ITC recovery is what they pay for. This mirrors how Odoo
+  draws its line at accounting depth rather than at statutory filing — and it avoids the churn
+  that per-seat limits inflicted on comparable open-source products.</p>
+</div>
+
+<p class="fine">
+  Validating the price point costs nothing: the seven tenants we already host are all in the target
+  profile. If they will not pay ₹999/month to recover ₹13,500/month, we learn that in a fortnight
+  and before any go-to-market spend.
+</p>
+
+<!-- ══════════════ PAGE 6 ══════════════ -->
+<div class="page-break"></div>
+<div class="eyebrow">05 · Strategy</div>
+<h2>What ITC Guard unlocks next</h2>
+
+<p>
+  The revenue case above stands on its own. But the reason to build <em>this</em> feature rather
+  than a hosted control plane or an e-invoicing module is what it accumulates: <strong>a filing
+  reliability record for every supplier our customers buy from.</strong> Who files on time. Who
+  strands other people's cash. Nobody else in this market is assembling that.
+</p>
+
+<div class="flow" style="margin-top:16px">
+  <div class="flow-step">
+    <div class="flow-num">Now — 3 weeks</div>
+    <div class="flow-title">ITC Guard</div>
+    <div class="flow-body">Recovered cash, sold as a subscription. Generates a supplier reliability score as a by-product.</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="flow-num">Next</div>
+    <div class="flow-title">Guaranteed-credit trade</div>
+    <div class="flow-body">Our marketplace posts both sides of a trade from one matched record. Buy through it and the credit <em>cannot</em> mismatch.</div>
+  </div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">
+    <div class="flow-num">Later</div>
+    <div class="flow-title">Credit referral</div>
+    <div class="flow-body">Matched trade records plus real days-to-pay is stronger underwriting data than GST returns. Referral fees run 1–2.5% of disbursal.</div>
+  </div>
+</div>
+
+<h3>The marketplace stops being speculative</h3>
+<p>
+  We shipped the marketplace this month, and today the pitch for joining it is discovery — a weak
+  reason to change how a business buys. ITC Guard replaces that pitch with a financial one:
+  <strong>a marketplace trade posts a sales invoice and a purchase invoice from the same matched
+  record, agreeing to the paisa, so the credit can never mismatch.</strong> Guaranteed input credit
+  is a reason to switch suppliers. No incumbent can copy it, because none of them hold both sides
+  of the books.
+</p>
+<p>
+  ITC Guard is what makes that argument legible. It is hard to sell certainty about a problem the
+  customer has not yet measured.
+</p>
+
+<h3>Two blockers that gate anything hosted</h3>
+<p>
+  Neither affects the pilot — the seven tenants are isolated by separate databases — but both must
+  be closed before we sell a hosted seat to a stranger.
+</p>
+<table>
+  <tr>
+    <th style="width:38%">Issue</th><th>Consequence</th>
+  </tr>
+  <tr>
+    <td><strong>No user-to-company membership check.</strong> The active company is resolved from a request header, and the code only verifies the company exists.</td>
+    <td>Any authenticated user can switch into any company in the same deployment. Masked today by one database per tenant; a cross-tenant data leak the moment two customers share an instance.</td>
+  </tr>
+  <tr>
+    <td><strong>Placeholder signing key in all seven deployments</strong>, alongside a shared database password, committed to the repository.</td>
+    <td>Identical JWT signing keys mean a session token minted on one tenant validates on another. Needs rotation regardless of what we build next.</td>
+  </tr>
+</table>
+<p class="fine">
+  Also worth flagging, though not a security matter: onboarding a tenant is currently a manual
+  afternoon — copy the manifests, hand-create the database, configure DNS. Workable at seven
+  customers, untenable at seventy. The right problem to solve <em>after</em> a price point is proven.
+</p>
+
+<h3 style="margin-top:12px">Recommendation</h3>
+<div class="callout">
+  <p>Build ITC Guard next. Sell it to the seven tenants we already host at ₹999/month, and use what
+  it reveals about supplier reliability as the wedge that makes the marketplace worth joining.
+  Roughly ₹84,000 of committed annual revenue from the existing base would validate the price point
+  before we spend anything on a control plane.</p>
+</div>
+
+<h3 style="margin-top:14px">Sources and caveats</h3>
+<p class="fine">
+  Pricing verified August 2026 from vendor pages where published (tallysolutions.com, zoho.com/in/books,
+  mybillbook.in); Busy, Marg and Swipe figures are aggregator-sourced and not vendor-confirmed.
+  GSTR-3B hard-locking per GSTN advisory, effective the July 2025 tax period. E-invoicing threshold
+  remains ₹5 cr AATO, unchanged since 1 August 2023. The Invoice Management System mandate date and
+  Table-4 credit locking are <strong>not yet notified</strong> — the case above does not depend on
+  either. Turnover, purchase ratio and the 2.5% mismatch rate are <strong>modelled assumptions, not
+  measured from customer data</strong>; validating them is an explicit goal of the pilot.
+</p>
+
+</body>
+</html>

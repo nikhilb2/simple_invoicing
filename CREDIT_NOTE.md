@@ -4,6 +4,17 @@
 
 Credit notes allow adjusting previously issued invoices for returns, corrections, or discounts, with proportional GST reversal. A single credit note can cover **multiple invoices from the same ledger**.
 
+Notes run in two **directions**:
+
+| Direction | Against | What it is |
+|-----------|---------|------------|
+| `outward` | a sales invoice | A note **we issue**. Lowers our output tax and is filed in GSTR-1 (CDNR/CDNUR, and its series in Table 13). |
+| `inward` | a purchase invoice | The **supplier's own** credit note, recorded on our side. Tally calls this voucher a Debit Note. |
+
+Under s.34 CGST only the supplier issues a credit or debit note against their tax invoice, so there is **nothing for us to file** on an inward note: the supplier declares it in their GSTR-1 and it reaches us through GSTR-2B as a reduction of input credit. What we record is *their* document — their number and date are what reconcile against GSTR-2B — plus our own `DN-` number for the audit trail.
+
+One note covers one voucher type; mixing sales and purchase invoices is rejected with a 400.
+
 Implementation is tracked under [Epic #259](https://github.com/nikhilb2/simple_invoicing/issues/259) across four phases.
 
 ---
@@ -36,6 +47,9 @@ credit_notes
 | `financial_year_id` | FK → financial_years | |
 | `created_by` | FK → users | |
 | `credit_note_type` | `return\|discount\|adjustment` | Default `return` |
+| `direction` | `outward\|inward` | Default `outward`; derived from the referenced invoices' `voucher_type` |
+| `supplier_credit_note_number` | string nullable | The supplier's own number. Required on `inward`, rejected on `outward` |
+| `supplier_credit_note_date` | date nullable | The supplier's own date. Same rule |
 | `reason` | text nullable | |
 | `status` | `active\|cancelled` | Default `active` |
 | `taxable_amount`, `cgst_amount`, `sgst_amount`, `igst_amount`, `total_amount` | Decimal(10,2) | Aggregated from items |
@@ -109,7 +123,8 @@ POST /api/credit-notes/{id}/cancel — Cancel
 | `ledger_id` | int | Filter CNs by ledger |
 | `invoice_id` | int | Filter via credit_note_invoice_refs join |
 | `status` | string | `active` or `cancelled` |
-| `search` | string | ilike on credit_note_number |
+| `direction` | string | `outward` or `inward` (`outward` also matches rows predating the column) |
+| `search` | string | ilike on credit_note_number **or** supplier_credit_note_number |
 | `date_from`, `date_to` | date | CN creation date range |
 | `page`, `page_size` | int | Pagination |
 
@@ -136,10 +151,28 @@ POST /api/credit-notes/{id}/cancel — Cancel
 }
 ```
 
+An inward note carries the supplier's document instead of a reason alone:
+
+```json
+{
+  "ledger_id": 42,
+  "invoice_ids": [305],
+  "credit_note_type": "return",
+  "direction": "inward",
+  "supplier_credit_note_number": "SUP/CN/12",
+  "supplier_credit_note_date": "2026-09-01",
+  "items": [{ "invoice_id": 305, "invoice_item_id": 902, "quantity": 4 }]
+}
+```
+
 **Validation rules:**
 - All `invoice_ids` must belong to `ledger_id` → 400 if mismatch
 - Each item's `invoice_id` must be in `invoice_ids` → 400 if mismatch
 - Sum of existing active CN items + new quantity ≤ original item quantity per `invoice_item_id`
+- All referenced invoices must share one `voucher_type` → 400 on a mix
+- The declared `direction` must match what those invoices imply → 400 otherwise
+- On `inward`, the same `supplier_credit_note_number` cannot already be active for that ledger → 400 (a duplicate would reverse the input credit twice)
+- An invoice's `voucher_type` cannot be changed while active credit notes reference it → 400
 
 ---
 
@@ -149,10 +182,10 @@ POST /api/credit-notes/{id}/cancel — Cancel
 
 | Route | Page | Notes |
 |-------|------|-------|
-| `/credit-notes` | `CreditNotesPage.tsx` | Split: create form (left) + list (right) |
+| `/credit-notes` | `CreditNotesPage.tsx` | Split: create form (left) + list (right). A **Voucher** select at the top of the form switches between Sales (outward) and Purchase (inward), and filters the invoice picker to that voucher type |
 | `/credit-notes?ledger=<id>` | `CreditNotesPage.tsx` | Ledger pre-selected via `useSearchParams` |
 
-Sidebar entry: **Credit Notes**, under Main group after Invoices.
+Sidebar entry: **Credit / Debit Notes**, under Sales after Invoices — one page for both directions, the same shape as Invoices, which hosts purchases behind its own voucher toggle.
 
 ### Create Form — Ledger-First Flow
 
@@ -174,9 +207,38 @@ Sidebar entry: **Credit Notes**, under Main group after Invoices.
 
 ## Numbering
 
-Credit notes use a dedicated `credit_note` voucher type in `InvoiceSeries`, scoped to the active financial year. Series configuration (prefix, suffix, pad digits) mirrors the invoice series setup.
+Two series, both scoped to the active financial year and configured like the invoice series (prefix, suffix, pad digits):
+
+| Direction | `InvoiceSeries.voucher_type` | Default prefix |
+|-----------|------------------------------|----------------|
+| `outward` | `credit_note` | `CN` |
+| `inward`  | `debit_note`  | `DN` |
+
+They are kept apart because GSTR-1 Table 13 declares the outward series as a `from`/`to` range with a count. Numbers spent on documents we never issued would make that range wrong.
 
 ---
+
+## Stock and Serials
+
+A return undoes what its invoice did to stock, so the direction decides the sign:
+
+| Direction | Source invoice did | The return does |
+|-----------|--------------------|-----------------|
+| `outward` | a sale took units out | brings them back in; sold serials return to `in_stock` |
+| `inward`  | a purchase brought units in | sends them back out; serials are **voided**, as on a cancelled purchase |
+
+Serials are voided rather than deleted: the unit existed and the note is the record of where it went, and a voided row sits outside `ux_product_serials_company_number`, so the supplier can ship the same IMEI again later. Cancelling the note reverses either movement, matching rows on the note text it stamped so one of several returns against the same invoice can be cancelled alone.
+
+`discount` and `adjustment` notes do not move stock in either direction.
+
+## Reporting
+
+| Surface | Outward | Inward |
+|---------|---------|--------|
+| Party ledger / day book | Credits the ledger (receivable falls) | **Debits** the ledger (payable falls), labelled `Debit Note` and naming the supplier's number |
+| Tax ledger | Reduces output tax | Reduces input credit, so GST payable rises |
+| GSTR-1 | CDNR/CDNUR + Table 13 nature 5 | **Excluded entirely** |
+| Invoice dues / reminders | Reduces the sales invoice's outstanding | Untouched — only ever touches a purchase invoice |
 
 ## Immutability & Cancellation
 

@@ -1,0 +1,17 @@
+{% extends "share_base.html" %}
+
+{% block social %}
+{# Deliberately generic: the preview card a crawler draws for a revoked or
+   cancelled document must not leak the party, the amount or the number. #}
+<meta property="og:type" content="website">
+<meta property="og:title" content="Document unavailable">
+<meta property="og:description" content="This document is no longer available.">
+<meta name="description" content="This document is no longer available.">
+{% endblock %}
+
+{% block content %}
+<main class="card notice">
+  <h1>This document is no longer available</h1>
+  <p>The link may have been withdrawn, or the document was cancelled. Please ask the sender for an up-to-date copy.</p>
+</main>
+{% endblock %}

@@ -7,12 +7,13 @@ from sqlalchemy.pool import StaticPool
 
 from fastapi import HTTPException
 
-from src.api.routes.ledgers import get_tax_ledger, gstr1_export_csv, gstr1_export_json, gstr1_summary, gstr1_validate
+from src.api.routes.ledgers import _doc_range, get_tax_ledger, gstr1_export_csv, gstr1_export_json, gstr1_summary, gstr1_validate
 from src.db.base import Base
 from src.models.buyer import Buyer
 from src.models.company import CompanyProfile
 from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.invoice import Invoice, InvoiceItem
+from src.models.product import Product
 from src.models.user import User, UserRole
 
 
@@ -44,7 +45,7 @@ def _seed_basics(db_session):
     ledger = Buyer(
         name="Acme Stores",
         address="42 Market Road",
-        gst="29ABCDE1234F1Z5",
+        gst="29ABCDE1234F1ZW",
         phone_number="9999999999",
         email="ledger@example.com",
     )
@@ -127,13 +128,16 @@ def _add_credit_note_item(
     cgst_amount: float,
     sgst_amount: float,
     igst_amount: float,
+    credit_note_type: str = "return",
+    direction: str = "outward",
 ):
     total_tax = cgst_amount + sgst_amount + igst_amount
     credit_note = CreditNote(
         credit_note_number=number,
         ledger_id=ledger.id,
         created_by=user.id,
-        credit_note_type="return",
+        credit_note_type=credit_note_type,
+        direction=direction,
         status="active",
         taxable_amount=taxable_amount,
         cgst_amount=cgst_amount,
@@ -162,7 +166,7 @@ def _add_credit_note_item(
     return credit_note
 
 
-def _make_company(name="Test Co", gst="29TESTT1234X1Z5"):
+def _make_company(name="Test Co", gst="29TESTT1234X1ZE"):
     return CompanyProfile(
         name=name,
         address="Somewhere",
@@ -260,6 +264,182 @@ def test_tax_ledger_includes_invoice_tax_and_credit_note_reversals(db_session):
     assert response.totals.credit_igst == pytest.approx(36.0)
     assert response.totals.credit_total_tax == pytest.approx(45.0)
     assert response.totals.net_total_tax == pytest.approx(-9.0)
+
+    # Taxable value follows the same side as the tax on it, so the summary
+    # figures net purchases and credit notes off sales the way the tax does.
+    assert response.totals.debit_taxable == pytest.approx(200.0)   # S-001 + CN-P-001
+    assert response.totals.credit_taxable == pytest.approx(250.0)  # P-001 + CN-S-001
+    assert response.totals.net_taxable == pytest.approx(-50.0)
+
+    assert response.totals.debit_gross == pytest.approx(236.0)
+    assert response.totals.credit_gross == pytest.approx(295.0)
+    assert response.totals.net_gross == pytest.approx(-59.0)
+    assert response.totals.net_gross == pytest.approx(
+        response.totals.net_taxable + response.totals.net_total_tax
+    )
+
+
+def test_tax_liability_sets_off_credit_within_each_head(db_session):
+    """Intra-state sales against intra-state purchases: like clears like."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="sales", invoice_number="S-100",
+        when=datetime(2026, 1, 10, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=90, sgst_amount=90, igst_amount=0,
+    )
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="purchase", invoice_number="P-100",
+        when=datetime(2026, 1, 11, 9, 0, 0), gst_rate=18,
+        taxable_amount=400, cgst_amount=36, sgst_amount=36, igst_amount=0,
+    )
+    db_session.commit()
+
+    liability = get_tax_ledger(
+        from_date=date(2026, 1, 1), to_date=date(2026, 1, 31),
+        voucher_type=None, gst_rate=None, db=db_session, _=user,
+    ).liability
+
+    assert liability.cgst.output_tax == pytest.approx(90.0)
+    assert liability.cgst.input_credit == pytest.approx(36.0)
+    assert liability.cgst.credit_used == pytest.approx(36.0)
+    assert liability.cgst.payable == pytest.approx(54.0)
+    assert liability.sgst.payable == pytest.approx(54.0)
+    assert liability.igst.payable == pytest.approx(0.0)
+
+    assert liability.payable == pytest.approx(108.0)
+    assert liability.credit_carried_forward == pytest.approx(0.0)
+
+
+def test_tax_liability_does_not_set_cgst_credit_against_sgst(db_session):
+    """The case a plain net of the three heads gets wrong.
+
+    CGST credit cannot touch an SGST liability, so cash is still due even
+    though the heads sum to zero between them.
+    """
+    user, ledger = _seed_basics(db_session)
+
+    # Sales carrying SGST only, purchases carrying CGST only. Contrived, but it
+    # is exactly the shape that separates a real set-off from a subtraction.
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="sales", invoice_number="S-200",
+        when=datetime(2026, 1, 10, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=0, sgst_amount=100, igst_amount=0,
+    )
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="purchase", invoice_number="P-200",
+        when=datetime(2026, 1, 11, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=100, sgst_amount=0, igst_amount=0,
+    )
+    db_session.commit()
+
+    response = get_tax_ledger(
+        from_date=date(2026, 1, 1), to_date=date(2026, 1, 31),
+        voucher_type=None, gst_rate=None, db=db_session, _=user,
+    )
+
+    # Netting the heads together says nothing is owed...
+    assert response.totals.net_total_tax == pytest.approx(0.0)
+    # ...but the SGST has to be paid in cash and the CGST credit carries over.
+    assert response.liability.sgst.payable == pytest.approx(100.0)
+    assert response.liability.sgst.credit_used == pytest.approx(0.0)
+    assert response.liability.payable == pytest.approx(100.0)
+    assert response.liability.cgst.credit_carried_forward == pytest.approx(100.0)
+    assert response.liability.credit_carried_forward == pytest.approx(100.0)
+
+
+def test_tax_liability_spends_igst_credit_across_heads(db_session):
+    """IGST credit clears IGST first, then crosses into CGST and SGST."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="sales", invoice_number="S-300",
+        when=datetime(2026, 1, 10, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=50, sgst_amount=50, igst_amount=30,
+    )
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="purchase", invoice_number="P-300",
+        when=datetime(2026, 1, 11, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=0, sgst_amount=0, igst_amount=100,
+    )
+    db_session.commit()
+
+    liability = get_tax_ledger(
+        from_date=date(2026, 1, 1), to_date=date(2026, 1, 31),
+        voucher_type=None, gst_rate=None, db=db_session, _=user,
+    ).liability
+
+    # 100 of IGST credit: 30 to IGST, then 50 to CGST, leaving 20 for SGST.
+    assert liability.igst.payable == pytest.approx(0.0)
+    assert liability.cgst.credit_used == pytest.approx(50.0)
+    assert liability.cgst.payable == pytest.approx(0.0)
+    assert liability.sgst.credit_used == pytest.approx(20.0)
+    assert liability.sgst.payable == pytest.approx(30.0)
+    assert liability.payable == pytest.approx(30.0)
+    assert liability.credit_carried_forward == pytest.approx(0.0)
+
+
+def test_tax_liability_nets_credit_notes_off_their_own_side(db_session):
+    """A sales credit note reduces output tax; a purchase one reduces credit."""
+    user, ledger = _seed_basics(db_session)
+
+    sales_invoice = _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="sales", invoice_number="S-400",
+        when=datetime(2026, 1, 10, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=90, sgst_amount=90, igst_amount=0,
+    )
+    purchase_invoice = _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="purchase", invoice_number="P-400",
+        when=datetime(2026, 1, 11, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=50, sgst_amount=50, igst_amount=0,
+    )
+    _add_credit_note_item(
+        db_session, user, ledger, sales_invoice, number="CN-S-400",
+        when=datetime(2026, 1, 12, 9, 0, 0), gst_rate=18,
+        taxable_amount=200, cgst_amount=18, sgst_amount=18, igst_amount=0,
+    )
+    _add_credit_note_item(
+        db_session, user, ledger, purchase_invoice, number="CN-P-400",
+        when=datetime(2026, 1, 13, 9, 0, 0), gst_rate=18,
+        taxable_amount=200, cgst_amount=10, sgst_amount=10, igst_amount=0,
+    )
+    db_session.commit()
+
+    liability = get_tax_ledger(
+        from_date=date(2026, 1, 1), to_date=date(2026, 1, 31),
+        voucher_type=None, gst_rate=None, db=db_session, _=user,
+    ).liability
+
+    assert liability.cgst.output_tax == pytest.approx(72.0)   # 90 - 18
+    assert liability.cgst.input_credit == pytest.approx(40.0)  # 50 - 10
+    assert liability.cgst.payable == pytest.approx(32.0)
+    assert liability.payable == pytest.approx(64.0)
+
+
+def test_tax_liability_carries_surplus_credit_forward(db_session):
+    """Buying more than you sell leaves credit, not a negative amount due."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="sales", invoice_number="S-500",
+        when=datetime(2026, 1, 10, 9, 0, 0), gst_rate=18,
+        taxable_amount=100, cgst_amount=9, sgst_amount=9, igst_amount=0,
+    )
+    _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="purchase", invoice_number="P-500",
+        when=datetime(2026, 1, 11, 9, 0, 0), gst_rate=18,
+        taxable_amount=1000, cgst_amount=90, sgst_amount=90, igst_amount=0,
+    )
+    db_session.commit()
+
+    liability = get_tax_ledger(
+        from_date=date(2026, 1, 1), to_date=date(2026, 1, 31),
+        voucher_type=None, gst_rate=None, db=db_session, _=user,
+    ).liability
+
+    assert liability.payable == pytest.approx(0.0)
+    assert liability.cgst.credit_carried_forward == pytest.approx(81.0)
+    assert liability.credit_carried_forward == pytest.approx(162.0)
 
 
 def test_tax_ledger_supports_voucher_type_and_gst_rate_filters(db_session):
@@ -380,7 +560,7 @@ def test_tax_ledger_includes_ledger_gst(db_session):
     )
 
     assert len(response.entries) == 1
-    assert response.entries[0].ledger_gst == "29ABCDE1234F1Z5"
+    assert response.entries[0].ledger_gst == "29ABCDE1234F1ZW"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -421,6 +601,57 @@ def test_gstr1_validate_passes_for_valid_sales_invoices(db_session):
     assert result.valid_invoices == 1
     assert result.invalid_invoices == 0
     assert len(result.errors) == 0
+
+
+def test_gstr1_validate_ignores_purchase_invoices(db_session):
+    user, ledger = _seed_basics(db_session)
+
+    purchase = _add_invoice_with_item(
+        db_session,
+        ledger,
+        user,
+        voucher_type="purchase",
+        invoice_number="GP-BAD",
+        when=datetime(2026, 4, 11, 9, 0, 0),
+        gst_rate=17.99,
+        taxable_amount=0,
+        cgst_amount=0,
+        sgst_amount=0,
+        igst_amount=0,
+    )
+    purchase.ledger_gst = "INVALID"
+    purchase.items[0].hsn_sac = None
+
+    sales = _add_invoice_with_item(
+        db_session,
+        ledger,
+        user,
+        voucher_type="sales",
+        invoice_number="GS-BAD-MIXED",
+        when=datetime(2026, 4, 12, 9, 0, 0),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+    )
+    sales.ledger_gst = "INVALID"
+    db_session.commit()
+
+    result = gstr1_validate(
+        from_date=date(2026, 4, 1),
+        to_date=date(2026, 4, 30),
+        db=db_session,
+        _=user,
+        active_company=None,
+    )
+
+    assert result.status == "invalid"
+    assert result.total_invoices == 1
+    assert result.valid_invoices == 0
+    assert result.invalid_invoices == 1
+    assert all(error.invoice_number != "GP-BAD" for error in result.errors)
+    assert any(error.invoice_number == "GS-BAD-MIXED" and "Invalid GSTIN" in error.message for error in result.errors)
 
 
 def test_gstr1_validate_detects_missing_gstin(db_session):
@@ -581,6 +812,101 @@ def test_gstr1_validate_detects_missing_hsn(db_session):
     assert any("Missing HSN" in e.message for e in result.errors)
 
 
+def test_gstr1_validate_detects_hsn_of_illegal_length(db_session):
+    """5- and 7-digit HSN codes are rejected by the portal, so flag them here."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="GS-BADHSN",
+        when=datetime(2026, 8, 10, 9, 0, 0),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    inv = db_session.query(Invoice).filter(Invoice.invoice_number == "GS-BADHSN").first()
+    inv.items[0].hsn_sac = "8507600"  # 7 digits — a truncated 85076000
+    db_session.commit()
+
+    result = gstr1_validate(
+        from_date=date(2026, 8, 1),
+        to_date=date(2026, 8, 31),
+        db=db_session,
+        _=user,
+        active_company=None,
+    )
+
+    assert result.status == "invalid"
+    assert any("7 digits" in e.message for e in result.errors)
+
+
+def test_gstr1_validate_detects_non_slab_gst_rate(db_session):
+    """A rate of 17.99 lands in Table 12 verbatim and fails the upload."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="GS-BADRATE",
+        when=datetime(2026, 8, 10, 9, 0, 0),
+        gst_rate=17.99,
+        taxable_amount=1000,
+        cgst_amount=89.95,
+        sgst_amount=89.95,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    result = gstr1_validate(
+        from_date=date(2026, 8, 1),
+        to_date=date(2026, 8, 31),
+        db=db_session,
+        _=user,
+        active_company=None,
+    )
+
+    assert result.status == "invalid"
+    assert any("not a GST slab" in e.message for e in result.errors)
+
+
+def test_gstr1_json_export_blocked_on_malformed_hsn(db_session):
+    """Export refuses rather than shipping a file the portal will drop."""
+    user, ledger = _seed_basics(db_session)
+
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="BADHSN-001",
+        when=datetime(2027, 1, 10),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    inv = db_session.query(Invoice).filter(Invoice.invoice_number == "BADHSN-001").first()
+    inv.items[0].hsn_sac = "99842"  # 5 digits
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        gstr1_export_json(
+            from_date=date(2027, 1, 1),
+            to_date=date(2027, 1, 31),
+            db=db_session,
+            _=user,
+            active_company=_make_company(gst="29TESTT1234X1ZE"),
+        )
+    assert exc_info.value.status_code == 400
+    assert "99842" in exc_info.value.detail
+
+
 def test_gstr1_summary_classifies_b2b(db_session):
     user, ledger = _seed_basics(db_session)
 
@@ -684,12 +1010,168 @@ def test_gstr1_export_json_structure(db_session):
     content = response.body
 
     data = _json.loads(content)
-    assert data["gstin"] == "29TESTT1234X1Z5"
+    assert data["gstin"] == "29TESTT1234X1ZE"
     assert len(data["b2b"]) == 1
-    assert data["b2b"][0]["ctin"] == "29ABCDE1234F1Z5"
+    assert data["b2b"][0]["ctin"] == "29ABCDE1234F1ZW"
     assert len(data["b2b"][0]["inv"]) == 1
     assert data["b2b"][0]["inv"][0]["inum"] == "JSON-001"
     assert "doc_issue" in data
+
+
+def test_gstr1_export_json_consolidates_same_rate_items(db_session):
+    """Multiple invoice items with the same GST rate must be consolidated
+    into a single itms entry to avoid RET191117."""
+    user, ledger = _seed_basics(db_session)
+
+    total_taxable = 3000 + 2000
+    total_cgst = 270 + 180
+    total_sgst = 270 + 180
+    invoice = Invoice(
+        invoice_number="JSON-MULTI",
+        ledger_id=ledger.id,
+        ledger_name=ledger.name,
+        ledger_address=ledger.address,
+        ledger_gst=ledger.gst,
+        ledger_phone=ledger.phone_number,
+        company_name="Respawn Pvt Ltd",
+        company_address="1 Billing Street",
+        company_gst="29RESP1234N1Z1",
+        company_phone="8888888888",
+        company_email="accounts@example.com",
+        company_currency_code="INR",
+        voucher_type="sales",
+        status="active",
+        created_by=user.id,
+        taxable_amount=total_taxable,
+        total_tax_amount=total_cgst + total_sgst,
+        cgst_amount=total_cgst,
+        sgst_amount=total_sgst,
+        igst_amount=0,
+        total_amount=total_taxable + total_cgst + total_sgst,
+        invoice_date=datetime(2026, 11, 10),
+    )
+    db_session.add(invoice)
+    db_session.flush()
+
+    for i, (taxable, cgst, sgst) in enumerate([
+        (3000, 270, 270),
+        (2000, 180, 180),
+    ], start=1):
+        db_session.add(InvoiceItem(
+            invoice_id=invoice.id,
+            product_id=i,
+            hsn_sac="84713010",
+            quantity=1,
+            unit_price=taxable,
+            gst_rate=18,
+            taxable_amount=taxable,
+            tax_amount=cgst + sgst,
+            cgst_amount=cgst,
+            sgst_amount=sgst,
+            igst_amount=0,
+            line_total=taxable + cgst + sgst,
+        ))
+    db_session.commit()
+
+    company = _make_company()
+    response = gstr1_export_json(
+        from_date=date(2026, 11, 1),
+        to_date=date(2026, 11, 30),
+        db=db_session,
+        _=user,
+        active_company=company,
+    )
+
+    import json as _json
+    data = _json.loads(response.body)
+    inv = data["b2b"][0]["inv"][0]
+    assert len(inv["itms"]) == 1
+    det = inv["itms"][0]["itm_det"]
+    assert det["rt"] == 18
+    assert det["txval"] == round(total_taxable, 2)
+    assert det["camt"] == round(total_cgst, 2)
+    assert det["samt"] == round(total_sgst, 2)
+
+
+def test_gstr1_export_json_keeps_different_rate_items_separate(db_session):
+    """Items with different GST rates must remain separate itms entries."""
+    user, ledger = _seed_basics(db_session)
+
+    total_taxable = 1000 + 2000
+    total_cgst = 60 + 240
+    total_sgst = 60 + 240
+    invoice = Invoice(
+        invoice_number="JSON-RATES",
+        ledger_id=ledger.id,
+        ledger_name=ledger.name,
+        ledger_address=ledger.address,
+        ledger_gst=ledger.gst,
+        ledger_phone=ledger.phone_number,
+        company_name="Respawn Pvt Ltd",
+        company_address="1 Billing Street",
+        company_gst="29RESP1234N1Z1",
+        company_phone="8888888888",
+        company_email="accounts@example.com",
+        company_currency_code="INR",
+        voucher_type="sales",
+        status="active",
+        created_by=user.id,
+        taxable_amount=total_taxable,
+        total_tax_amount=total_cgst + total_sgst,
+        cgst_amount=total_cgst,
+        sgst_amount=total_sgst,
+        igst_amount=0,
+        total_amount=total_taxable + total_cgst + total_sgst,
+        invoice_date=datetime(2026, 11, 11),
+    )
+    db_session.add(invoice)
+    db_session.flush()
+
+    db_session.add(InvoiceItem(
+        invoice_id=invoice.id,
+        product_id=1,
+        hsn_sac="84713010",
+        quantity=1,
+        unit_price=1000,
+        gst_rate=12,
+        taxable_amount=1000,
+        tax_amount=120,
+        cgst_amount=60,
+        sgst_amount=60,
+        igst_amount=0,
+        line_total=1120,
+    ))
+    db_session.add(InvoiceItem(
+        invoice_id=invoice.id,
+        product_id=2,
+        hsn_sac="84713020",
+        quantity=1,
+        unit_price=2000,
+        gst_rate=24,
+        taxable_amount=2000,
+        tax_amount=480,
+        cgst_amount=240,
+        sgst_amount=240,
+        igst_amount=0,
+        line_total=2480,
+    ))
+    db_session.commit()
+
+    company = _make_company()
+    response = gstr1_export_json(
+        from_date=date(2026, 11, 1),
+        to_date=date(2026, 11, 30),
+        db=db_session,
+        _=user,
+        active_company=company,
+    )
+
+    import json as _json
+    data = _json.loads(response.body)
+    inv = data["b2b"][0]["inv"][0]
+    assert len(inv["itms"]) == 2
+    rates = {it["itm_det"]["rt"] for it in inv["itms"]}
+    assert rates == {12, 24}
 
 
 def test_gstr1_validate_warns_missing_place_of_supply(db_session):
@@ -797,7 +1279,7 @@ def test_gstr1_b2b_pos_uses_customer_state_code(db_session):
     """B2B JSON export should set POS to customer's state code (ctin[:2])."""
     user, ledger = _seed_basics(db_session)
     # Customer GSTIN starts with "27" (Maharashtra)
-    ledger.gst = "27ABCDE1234F1Z5"
+    ledger.gst = "27ABCDE1234F1Z0"
     db_session.flush()
 
     _add_invoice_with_item(
@@ -814,7 +1296,7 @@ def test_gstr1_b2b_pos_uses_customer_state_code(db_session):
     db_session.commit()
 
     # Company GSTIN starts with "29" (Karnataka)
-    company = _make_company(gst="29TESTT1234X1Z5")
+    company = _make_company(gst="29TESTT1234X1ZE")
 
     response = gstr1_export_json(
         from_date=date(2027, 3, 1),
@@ -828,7 +1310,7 @@ def test_gstr1_b2b_pos_uses_customer_state_code(db_session):
     data = _json.loads(response.body)
     assert len(data["b2b"]) == 1
     # POS should be "27" (customer's state), NOT "29" (company's state)
-    assert data["b2b"][0]["ctin"] == "27ABCDE1234F1Z5"
+    assert data["b2b"][0]["ctin"] == "27ABCDE1234F1Z0"
     assert data["b2b"][0]["inv"][0]["pos"] == "27"
 
 
@@ -862,7 +1344,7 @@ def test_gstr1_cdnr_ctin_from_invoice_id(db_session):
     )
     db_session.commit()
 
-    company = _make_company(gst="29TESTT1234X1Z5")
+    company = _make_company(gst="29TESTT1234X1ZE")
 
     response = gstr1_export_json(
         from_date=date(2027, 4, 1),
@@ -876,10 +1358,63 @@ def test_gstr1_cdnr_ctin_from_invoice_id(db_session):
     data = _json.loads(response.body)
     # CDNR is grouped by customer GSTIN, with notes under "nt".
     assert len(data["cdnr"]) == 1
-    assert data["cdnr"][0]["ctin"] == "29ABCDE1234F1Z5"
+    assert data["cdnr"][0]["ctin"] == "29ABCDE1234F1ZW"
     assert len(data["cdnr"][0]["nt"]) == 1
     assert data["cdnr"][0]["nt"][0]["nt_num"] == "CDNR-CN-001"
     assert data["cdnr"][0]["nt"][0]["pos"] == "29"
+
+
+def test_gstr1_discount_credit_note_is_reported_as_a_credit_note(db_session):
+    """A discount note still lowers the liability, so it is ntty "C", not "D"."""
+    user, ledger = _seed_basics(db_session)
+
+    sales_invoice = _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="DISC-INV-001",
+        when=datetime(2027, 4, 10),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    _add_credit_note_item(
+        db_session, user, ledger, sales_invoice,
+        number="DISC-CN-001",
+        when=datetime(2027, 4, 15),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+        credit_note_type="discount",
+    )
+    db_session.commit()
+
+    response = gstr1_export_json(
+        from_date=date(2027, 4, 1),
+        to_date=date(2027, 4, 30),
+        db=db_session,
+        _=user,
+        active_company=_make_company(gst="29TESTT1234X1ZE"),
+    )
+
+    import json as _json
+    data = _json.loads(response.body)
+    note = data["cdnr"][0]["nt"][0]
+    assert note["nt_num"] == "DISC-CN-001"
+    assert note["ntty"] == "C"
+    assert note["itms"][0]["itm_det"]["camt"] == 90.0
+    assert note["itms"][0]["itm_det"]["samt"] == 90.0
+
+    doc_nums = [d["doc_num"] for d in data["doc_issue"]["doc_det"]]
+    assert 4 not in doc_nums  # no debit note series is ever issued
+    cn_doc = next(d for d in data["doc_issue"]["doc_det"] if d["doc_num"] == 5)
+    assert cn_doc["docs"][0]["from"] == "DISC-CN-001"
+    assert cn_doc["docs"][0]["totnum"] == 1
 
 
 def test_gstr1_csv_export_blocked_when_company_has_no_gstin(db_session):
@@ -944,7 +1479,7 @@ def test_gstr1_b2cs_uses_gstn_schema_fields(db_session):
         igst_amount=0,
     )
     db_session.commit()
-    company = _make_company(gst="29TESTT1234X1Z5")
+    company = _make_company(gst="29TESTT1234X1ZE")
 
     data = _export_json_data(db_session, user, company, date(2026, 4, 1), date(2026, 4, 30))
 
@@ -992,7 +1527,7 @@ def test_gstr1_doc_issue_uses_nature_code_and_ranges(db_session):
         igst_amount=0,
     )
     db_session.commit()
-    company = _make_company(gst="29TESTT1234X1Z5")
+    company = _make_company(gst="29TESTT1234X1ZE")
 
     data = _export_json_data(db_session, user, company, date(2026, 4, 1), date(2026, 4, 30))
 
@@ -1004,6 +1539,132 @@ def test_gstr1_doc_issue_uses_nature_code_and_ranges(db_session):
     assert rng["to"] == "DOC-002"
     assert rng["totnum"] == 2
     assert rng["net_issue"] == 2
+
+
+@pytest.mark.parametrize(
+    ("numbers", "first", "last"),
+    [
+        # Padded counter that outgrows its pad: text order would give 1000..999.
+        (["INV-2026-998", "INV-2026-1001", "INV-2026-999", "INV-2026-1000"], "INV-2026-998", "INV-2026-1001"),
+        (["S-98", "S-100", "S-99"], "S-98", "S-100"),
+        (["INV-10", "INV-9"], "INV-9", "INV-10"),
+        # The financial-year digits must not confuse the order of the counter.
+        (["INV-2026-27-010", "INV-2026-27-009", "INV-2025-26-999"], "INV-2025-26-999", "INV-2026-27-010"),
+        (["A/10", "A/2", "a/1"], "a/1", "A/10"),
+    ],
+)
+def test_gstr1_doc_range_sorts_numbers_in_issue_order(numbers, first, last):
+    rng = _doc_range(numbers)
+    assert rng["from"] == first
+    assert rng["to"] == last
+    assert rng["totnum"] == len(numbers)
+    assert rng["net_issue"] == len(numbers)
+
+
+def test_gstr1_doc_range_single_empty_and_null_numbers():
+    rng = _doc_range(["INV-001", None, ""], num=5)
+    assert rng == {"num": 5, "from": "INV-001", "to": "INV-001", "totnum": 1, "cancel": 0, "net_issue": 1}
+    assert _doc_range([]) is None
+    assert _doc_range([None, ""]) is None
+
+
+def test_gstr1_doc_issue_range_survives_counter_outgrowing_pad(db_session):
+    """Table 13 from/to follow issue order once a padded counter reaches 1000."""
+    user, ledger = _seed_basics(db_session)
+    for day, number in enumerate(["INV-998", "INV-999", "INV-1000", "INV-1001"], start=1):
+        _add_invoice_with_item(
+            db_session, ledger, user,
+            voucher_type="sales",
+            invoice_number=number,
+            when=datetime(2026, 4, day),
+            gst_rate=18,
+            taxable_amount=1000,
+            cgst_amount=90,
+            sgst_amount=90,
+            igst_amount=0,
+        )
+    db_session.commit()
+    company = _make_company(gst="29TESTT1234X1ZE")
+
+    data = _export_json_data(db_session, user, company, date(2026, 4, 1), date(2026, 4, 30))
+
+    inv_doc = next(d for d in data["doc_issue"]["doc_det"] if d["doc_num"] == 1)
+    rng = inv_doc["docs"][0]
+    assert rng["from"] == "INV-998"
+    assert rng["to"] == "INV-1001"
+    assert rng["totnum"] == 4
+
+
+def test_gstr1_doc_issue_keeps_b2b_and_b2c_in_same_invoice_series(db_session):
+    """Table 13 must not split one invoice series by recipient registration."""
+    user, ledger = _seed_basics(db_session)
+    company = _make_company(gst="29TESTT1234X1ZE")
+
+    # B2B invoice — ledger has GSTIN
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="INV-2026-27-068",
+        when=datetime(2026, 6, 14),
+        gst_rate=18,
+        taxable_amount=10000,
+        cgst_amount=900,
+        sgst_amount=900,
+        igst_amount=0,
+    )
+
+    # B2C invoice — no GSTIN on ledger; use a fresh Buyer without gst
+    b2c_ledger = Buyer(
+        name="B2C Customer",
+        address="Some Street",
+        gst=None,
+        phone_number="8888888888",
+    )
+    db_session.add(b2c_ledger)
+    db_session.commit()
+    db_session.refresh(b2c_ledger)
+
+    _add_invoice_with_item(
+        db_session, b2c_ledger, user,
+        voucher_type="sales",
+        invoice_number="INV-2026-27-069",
+        when=datetime(2026, 6, 15),
+        gst_rate=18,
+        taxable_amount=216,
+        cgst_amount=19,
+        sgst_amount=19,
+        igst_amount=0,
+    )
+
+    # Another B2B invoice after the B2C invoice makes a registration-based split
+    # produce overlapping 068-070 and 069-069 ranges.
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="INV-2026-27-070",
+        when=datetime(2026, 6, 16),
+        gst_rate=18,
+        taxable_amount=2000,
+        cgst_amount=180,
+        sgst_amount=180,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    data = _export_json_data(db_session, user, company, date(2026, 6, 1), date(2026, 6, 30))
+
+    doc_det = data["doc_issue"]["doc_det"]
+    inv_doc = next(d for d in doc_det if d["doc_num"] == 1)
+    docs = inv_doc["docs"]
+
+    assert len(docs) == 1
+    invoice_series = docs[0]
+    assert invoice_series["num"] == 1
+    assert invoice_series["from"] == "INV-2026-27-068"
+    assert invoice_series["to"] == "INV-2026-27-070"
+    assert invoice_series["totnum"] == 3
+    assert invoice_series["cancel"] == 0
+    assert invoice_series["net_issue"] == 3
 
 
 def test_gstr1_hsn_section_splits_b2b_with_rate(db_session):
@@ -1022,7 +1683,7 @@ def test_gstr1_hsn_section_splits_b2b_with_rate(db_session):
         igst_amount=0,
     )
     db_session.commit()
-    company = _make_company(gst="29TESTT1234X1Z5")
+    company = _make_company(gst="29TESTT1234X1ZE")
 
     data = _export_json_data(db_session, user, company, date(2026, 4, 1), date(2026, 4, 30))
 
@@ -1032,3 +1693,255 @@ def test_gstr1_hsn_section_splits_b2b_with_rate(db_session):
     assert row["hsn_sc"] == "84713010"
     assert row["rt"] == 18
     assert row["txval"] == 5000.0
+
+
+def test_gstr1_hsn_row_uses_product_unit_and_trimmed_desc(db_session):
+    """UQC comes from the product unit; desc is one line of at most 30 chars."""
+    user, ledger = _seed_basics(db_session)
+
+    product = Product(name="Copper wire", sku="CW-1", price=100, gst_rate=18, unit="Kg")
+    db_session.add(product)
+    db_session.commit()
+
+    invoice = _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="UQC-001",
+        when=datetime(2027, 5, 10),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+    )
+    invoice.items[0].product_id = product.id
+    invoice.items[0].description = "ZAD04NV203095, ZAD04NV705458,\n ZAD04NV203097"
+    db_session.commit()
+
+    response = gstr1_export_json(
+        from_date=date(2027, 5, 1),
+        to_date=date(2027, 5, 31),
+        db=db_session,
+        _=user,
+        active_company=_make_company(gst="29TESTT1234X1ZE"),
+    )
+
+    import json as _json
+    row = _json.loads(response.body)["hsn"]["hsn_b2b"][0]
+    assert row["uqc"] == "KGS"
+    assert len(row["desc"]) <= 30
+    assert "\n" not in row["desc"]
+    assert row["desc"] == "ZAD04NV203095, ZAD04NV705458,"
+
+
+def test_gstr1_hsn_desc_is_populated(db_session):
+    """HSN rows must include a non-empty 'desc' field (mandatory per GSTN portal schema).
+
+    The portal rejects exports where desc is absent or empty. We use the first
+    non-empty InvoiceItem.description for the HSN group; if none is set we fall
+    back to the HSN code itself so the field is always present and non-empty.
+    """
+    user, ledger = _seed_basics(db_session)
+    company = _make_company(gst="29TESTT1234X1ZE")
+
+    invoice = _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="DESC-001",
+        when=datetime(2026, 4, 5),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    # Patch the item with a description after creation.
+    db_session.query(InvoiceItem).filter_by(invoice_id=invoice.id).update({"description": "Laptop Computer"})
+    db_session.commit()
+
+    data = _export_json_data(db_session, user, company, date(2026, 4, 1), date(2026, 4, 30))
+
+    row = data["hsn"]["hsn_b2b"][0]
+    # desc must be present and non-empty
+    assert "desc" in row, "HSN row missing mandatory 'desc' field"
+    assert row["desc"], "HSN row 'desc' must not be empty"
+    assert row["desc"] == "Laptop Computer"
+
+
+def test_gstr1_hsn_desc_falls_back_to_hsn_code_when_no_description(db_session):
+    """When no item description is set, desc falls back to the HSN code itself.
+
+    This ensures the field is always present and non-empty even for invoices
+    where the item description was left blank.
+    """
+    user, ledger = _seed_basics(db_session)
+    company = _make_company(gst="29TESTT1234X1ZE")
+
+    _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="DESC-002",
+        when=datetime(2026, 4, 6),
+        gst_rate=18,
+        taxable_amount=3000,
+        cgst_amount=270,
+        sgst_amount=270,
+        igst_amount=0,
+    )
+    # No description set on item — helper leaves it NULL.
+    db_session.commit()
+
+    data = _export_json_data(db_session, user, company, date(2026, 4, 1), date(2026, 4, 30))
+
+    row = data["hsn"]["hsn_b2b"][0]
+    assert "desc" in row, "HSN row missing mandatory 'desc' field"
+    assert row["desc"], "HSN row 'desc' must not be empty even when item description is NULL"
+    # Fallback: desc equals the HSN code
+    assert row["desc"] == row["hsn_sc"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Notes received from suppliers stay out of GSTR-1
+#
+# GSTR-1 is a return of outward supplies. A note against a purchase is the
+# supplier's own credit note, which they declare in their GSTR-1 and which
+# reaches us through GSTR-2B as a reduction of input credit. Filing it here
+# would lower our output liability instead, and declare in Table 13 a document
+# we never issued.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _seed_one_of_each_note(db_session):
+    """A sales note and a supplier's note in the same period."""
+    user, ledger = _seed_basics(db_session)
+
+    sales_invoice = _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="sales",
+        invoice_number="MIX-INV-001",
+        when=datetime(2027, 6, 5),
+        gst_rate=18,
+        taxable_amount=5000,
+        cgst_amount=450,
+        sgst_amount=450,
+        igst_amount=0,
+    )
+    purchase_invoice = _add_invoice_with_item(
+        db_session, ledger, user,
+        voucher_type="purchase",
+        invoice_number="MIX-PINV-001",
+        when=datetime(2027, 6, 6),
+        gst_rate=18,
+        taxable_amount=3000,
+        cgst_amount=270,
+        sgst_amount=270,
+        igst_amount=0,
+    )
+    db_session.commit()
+
+    _add_credit_note_item(
+        db_session, user, ledger, sales_invoice,
+        number="MIX-CN-001",
+        when=datetime(2027, 6, 10),
+        gst_rate=18,
+        taxable_amount=1000,
+        cgst_amount=90,
+        sgst_amount=90,
+        igst_amount=0,
+    )
+    _add_credit_note_item(
+        db_session, user, ledger, purchase_invoice,
+        number="MIX-DN-001",
+        when=datetime(2027, 6, 11),
+        gst_rate=18,
+        taxable_amount=500,
+        cgst_amount=45,
+        sgst_amount=45,
+        igst_amount=0,
+        direction="inward",
+    )
+    db_session.commit()
+    return user, ledger
+
+
+def test_gstr1_summary_excludes_notes_received_from_suppliers(db_session):
+    user, _ = _seed_one_of_each_note(db_session)
+
+    result = gstr1_summary(
+        from_date=date(2027, 6, 1),
+        to_date=date(2027, 6, 30),
+        db=db_session,
+        _=user,
+        active_company=_make_company(gst="29TESTT1234X1ZE"),
+    )
+
+    # Only the outward note counts: 1000 taxable, not 1500.
+    assert result.credit_notes.invoice_count == 1
+    assert result.credit_notes.taxable_value == 1000
+    assert result.credit_notes.cgst == 90
+    assert result.doc_summary.total_credit_notes == 1
+    assert result.doc_summary.total_debit_notes == 0
+
+
+def test_gstr1_export_json_excludes_supplier_notes_from_cdnr(db_session):
+    user, _ = _seed_one_of_each_note(db_session)
+
+    response = gstr1_export_json(
+        from_date=date(2027, 6, 1),
+        to_date=date(2027, 6, 30),
+        db=db_session,
+        _=user,
+        active_company=_make_company(gst="29TESTT1234X1ZE"),
+    )
+
+    import json as _json
+    data = _json.loads(response.body)
+
+    note_numbers = [
+        note["nt_num"]
+        for group in data.get("cdnr", [])
+        for note in group["nt"]
+    ] + [note["nt_num"] for note in data.get("cdnur", [])]
+    assert note_numbers == ["MIX-CN-001"]
+
+
+def test_gstr1_doc_issue_excludes_the_debit_note_series(db_session):
+    """Table 13 declares a from/to range, so a DN number inside it would be a lie."""
+    user, _ = _seed_one_of_each_note(db_session)
+
+    response = gstr1_export_json(
+        from_date=date(2027, 6, 1),
+        to_date=date(2027, 6, 30),
+        db=db_session,
+        _=user,
+        active_company=_make_company(gst="29TESTT1234X1ZE"),
+    )
+
+    import json as _json
+    data = _json.loads(response.body)
+
+    doc_det = data["doc_issue"]["doc_det"]
+    assert 4 not in [d["doc_num"] for d in doc_det]  # still no debit note series
+    cn_doc = next(d for d in doc_det if d["doc_num"] == 5)
+    assert cn_doc["docs"][0]["from"] == "MIX-CN-001"
+    assert cn_doc["docs"][0]["to"] == "MIX-CN-001"
+    assert cn_doc["docs"][0]["totnum"] == 1
+    assert cn_doc["docs"][0]["net_issue"] == 1
+
+
+def test_supplier_note_still_reverses_input_credit(db_session):
+    """It leaves GSTR-1 alone, but it must still cut the ITC we claimed."""
+    user, _ = _seed_one_of_each_note(db_session)
+
+    result = get_tax_ledger(
+        from_date=date(2027, 6, 1),
+        to_date=date(2027, 6, 30),
+        voucher_type=None,
+        gst_rate=None,
+        db=db_session,
+        _=user,
+    )
+
+    # Purchase brought in 540 of credit; the supplier's note takes back 90.
+    assert result.liability.input_credit == 450.0
+    # Output tax is the sale's 900 less the 180 our own note reversed.
+    assert result.liability.output_tax == 720.0

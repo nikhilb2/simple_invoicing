@@ -2,26 +2,41 @@ from datetime import date
 from pathlib import Path
 
 import weasyprint
-from fastapi import APIRouter, Body, Depends, HTTPException
+from src.services.pdf_render import safe_url_fetcher
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from src.api.deps import get_active_company, require_roles
+from src.api.deps import get_active_company, require_company_role
+from src.core.analytics import distinct_id_for, track
 from src.api.routes.invoices import _build_invoice_pdf
+from src.services.serial_service import SerialManager
 from src.api.routes.ledgers import _build_ledger_statement_data, _build_statement_html
+from src.api.routes.public_share import ad_context
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
-from src.models.company_account import CompanyAccount
 from src.models.company import CompanyProfile
 from src.models.invoice import Invoice
 from src.models.payment import Payment
 from src.models.product import Product
 from src.models.user import User, UserRole
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
-from src.services.invoice_payments import build_invoice_payment_summaries
+from src.services.invoice_payments import (
+    build_invoice_payment_summaries,
+    is_offset_by_payables,
+    open_amounts_by_ledger,
+)
 from src.services.mail import send_email
+from src.services.share_documents import (
+    RESOURCE_INVOICE,
+    RESOURCE_STATEMENT,
+    build_pay_qr_card_html,
+    document_share_url,
+    invoice_bank_accounts,
+)
+from src.services.company_access import company_scope, legacy_default_company
 
 router = APIRouter()
 
@@ -62,6 +77,48 @@ class DueRemindersRequest(BaseModel):
     message: str | None = None
 
 
+def _reminder_statement_window(db: Session, ledger_id: int, company_id: int | None) -> tuple[date, date]:
+    """The period a reminder's "view and pay" statement link should cover.
+
+    The reminder itself is all-time -- it has no date range of its own -- but a
+    statement share link needs one. Anchoring the start at the ledger's earliest
+    voucher and ending today makes the statement's closing balance the same all-time
+    figure the reminder body prints, which matters: a pay button priced differently
+    from the number above it is a support ticket.
+    """
+    today = date.today()
+    query = db.query(func.min(Invoice.invoice_date)).filter(
+        Invoice.ledger_id == ledger_id, Invoice.status == "active"
+    )
+    if company_id is not None:
+        query = query.filter(company_scope(Invoice.company_id, company_id))
+    earliest = query.scalar()
+    start = earliest.date() if earliest is not None else today
+    return min(start, today), today
+
+
+def _last_receipt_date(db: Session, ledger_id: int, company_id: int | None) -> str | None:
+    """The ledger's most recent receipt, formatted for the reminder body.
+
+    Only receipts count. A payment voucher is money paid *out* to the party and an
+    opening-balance entry is not a payment at all, so filtering on ``status`` alone
+    picks whichever row happens to be newest and reports money you paid as money
+    they paid. A ledger that is both customer and supplier has both kinds, which is
+    exactly where this used to go wrong.
+    """
+    query = db.query(Payment).filter(
+        Payment.ledger_id == ledger_id,
+        Payment.voucher_type == "receipt",
+        Payment.status == "active",
+    )
+    if company_id is not None:
+        query = query.filter(company_scope(Payment.company_id, company_id))
+    last_receipt = query.order_by(Payment.date.desc()).first()
+    if last_receipt is None or last_receipt.date is None:
+        return None
+    return last_receipt.date.strftime("%d %b %Y")
+
+
 # ---------------------------------------------------------------------------
 # POST /invoice/{invoice_id}
 # ---------------------------------------------------------------------------
@@ -69,9 +126,10 @@ class DueRemindersRequest(BaseModel):
 @router.post("/invoice/{invoice_id}")
 async def send_invoice_email(
     invoice_id: int,
+    request: Request,
     payload: EmailSendRequest | None = Body(default=None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
@@ -84,7 +142,7 @@ async def send_invoice_email(
         .filter(Invoice.id == invoice_id)
     )
     if company_id is not None:
-        invoice_query = invoice_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+        invoice_query = invoice_query.filter(company_scope(Invoice.company_id, company_id))
     invoice = invoice_query.first()
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
@@ -96,7 +154,7 @@ async def send_invoice_email(
             detail="No recipient email address. Provide 'to' in the request body or add an email to the ledger.",
         )
 
-    company = active_company if company_id is not None else db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    company = active_company if company_id is not None else legacy_default_company(db)
     currency_code = invoice.company_currency_code or (company.currency_code if company else "INR")
 
     product_ids = [item.product_id for item in (invoice.items or [])]
@@ -104,23 +162,31 @@ async def send_invoice_email(
     if product_ids:
         product_query = db.query(Product).filter(Product.id.in_(product_ids))
         if company_id is not None:
-            product_query = product_query.filter(or_(Product.company_id == company_id, Product.company_id.is_(None)))
+            product_query = product_query.filter(company_scope(Product.company_id, company_id))
         products = product_query.all()
 
-    invoice_bank_accounts = (
-        db.query(CompanyAccount)
-        .filter(
-            CompanyAccount.is_active.is_(True),
-            CompanyAccount.account_type == "bank",
-            CompanyAccount.display_on_invoice.is_(True),
-        )
-        .order_by(CompanyAccount.display_name.asc(), CompanyAccount.id.asc())
-    )
-    if company_id is not None:
-        invoice_bank_accounts = invoice_bank_accounts.filter(or_(CompanyAccount.company_id == company_id, CompanyAccount.company_id.is_(None)))
-    invoice_bank_accounts = invoice_bank_accounts.all()
+    # The same query the downloaded PDF uses. It used to be a near-copy with a looser
+    # company filter, which meant the emailed copy and the downloaded copy of one
+    # invoice could carry different bank cards -- and would now be able to carry
+    # different UPI addresses.
+    bank_accounts = invoice_bank_accounts(db, company_id) if company_id is not None else []
 
-    pdf_buf = _build_invoice_pdf(invoice, products, invoice_bank_accounts, active_company=active_company)
+    share_url = None
+    if company_id is not None and invoice.status == "active":
+        share_url = document_share_url(
+            db, request, active_company, RESOURCE_INVOICE, invoice_id, user_id=current_user.id
+        )
+
+    # Emailed and downloaded copies of the same invoice must agree; without this
+    # the customer's copy would silently omit the IMEIs the shop's copy prints.
+    pdf_buf = _build_invoice_pdf(
+        invoice,
+        products,
+        bank_accounts,
+        active_company=active_company,
+        serials=SerialManager(db).serials_for_invoice(invoice),
+        pay_qr_html=build_pay_qr_card_html(share_url),
+    )
     pdf_bytes = pdf_buf.read()
 
     inv_number = invoice.invoice_number or f"#{invoice.id}"
@@ -140,6 +206,11 @@ async def send_invoice_email(
         items_count=len(invoice.items or []),
         currency=_symbol(currency_code),
         message=payload.message,
+        ad=ad_context("email_invoice", source="email"),
+        # A link, not an embedded QR: the reader is already in something that can
+        # open a URL, and a QR they would have to scan with a second device is
+        # friction. It also keeps this path clear of inline-image MIME entirely.
+        share_url=share_url,
     )
 
     subject = payload.subject or f"Invoice {inv_number}"
@@ -162,6 +233,17 @@ async def send_invoice_email(
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    track(
+        "document_emailed",
+        distinct_id_for(current_user),
+        {
+            "document_type": "invoice",
+            "entity_id": invoice_id,
+            "has_cc": bool(payload.cc and payload.cc.strip()),
+            "has_message": bool(payload.message and payload.message.strip()),
+        },
+    )
+
     return {"message": f"Invoice email sent successfully to {to_email}"}
 
 
@@ -174,7 +256,7 @@ async def send_ledger_statement_email(
     ledger_id: int,
     payload: StatementEmailSendRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
@@ -183,7 +265,7 @@ async def send_ledger_statement_email(
 
     ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
     if company_id is not None:
-        ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+        ledger_query = ledger_query.filter(company_scope(Ledger.company_id, company_id))
     ledger = ledger_query.first()
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
@@ -195,7 +277,7 @@ async def send_ledger_statement_email(
             detail="No recipient email address. Provide 'to' in the request body or add an email to the ledger.",
         )
 
-    company = active_company if company_id is not None else db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    company = active_company if company_id is not None else legacy_default_company(db)
     currency_code = company.currency_code if company and company.currency_code else "INR"
 
     statement_data = _build_ledger_statement_data(db, ledger, payload.from_date, payload.to_date, company_id=company_id)
@@ -212,7 +294,7 @@ async def send_ledger_statement_email(
         entries=statement_data.entries,
         currency=currency_code,
     )
-    pdf_bytes: bytes = weasyprint.HTML(string=html_pdf).write_pdf() or b""
+    pdf_bytes: bytes = weasyprint.HTML(string=html_pdf, url_fetcher=safe_url_fetcher).write_pdf() or b""
 
     # Summarise invoice debits and payment credits separately for the email body
     total_invoiced = sum(entry.debit for entry in statement_data.entries if entry.entry_type == "invoice")
@@ -232,6 +314,7 @@ async def send_ledger_statement_email(
         balance=_fmt(statement_data.closing_balance),
         currency=_symbol(currency_code),
         message=payload.message,
+        ad=ad_context("email_statement", source="email"),
     )
 
     safe_name = ledger.name.replace(" ", "_").replace("/", "_")[:30]
@@ -255,6 +338,17 @@ async def send_ledger_statement_email(
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    track(
+        "document_emailed",
+        distinct_id_for(current_user),
+        {
+            "document_type": "statement",
+            "entity_id": ledger_id,
+            "has_cc": bool(payload.cc and payload.cc.strip()),
+            "has_message": bool(payload.message and payload.message.strip()),
+        },
+    )
+
     return {"message": "Ledger statement email sent successfully"}
 
 
@@ -265,9 +359,10 @@ async def send_ledger_statement_email(
 @router.post("/payment-reminder/{ledger_id}")
 async def send_payment_reminder_email(
     ledger_id: int,
+    request: Request,
     payload: EmailSendRequest | None = Body(default=None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
@@ -276,7 +371,7 @@ async def send_payment_reminder_email(
 
     ledger_query = db.query(Ledger).filter(Ledger.id == ledger_id)
     if company_id is not None:
-        ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+        ledger_query = ledger_query.filter(company_scope(Ledger.company_id, company_id))
     ledger = ledger_query.first()
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {ledger_id} not found")
@@ -288,7 +383,7 @@ async def send_payment_reminder_email(
             detail="No recipient email address. Provide 'to' in the request body or add an email to the ledger.",
         )
 
-    company = active_company if company_id is not None else db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    company = active_company if company_id is not None else legacy_default_company(db)
     currency_code = company.currency_code if company and company.currency_code else "INR"
 
     credit_note_summary = get_credit_note_ledger_summary(db, ledger_id=ledger_id, company_id=company_id)
@@ -299,7 +394,7 @@ async def send_payment_reminder_email(
         .filter(Invoice.ledger_id == ledger_id, Invoice.voucher_type == "sales", Invoice.status == "active")
     )
     if company_id is not None:
-        total_sales_query = total_sales_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+        total_sales_query = total_sales_query.filter(company_scope(Invoice.company_id, company_id))
     total_sales = float(total_sales_query.scalar())
 
     total_receipts_query = (
@@ -307,35 +402,51 @@ async def send_payment_reminder_email(
         .filter(Payment.ledger_id == ledger_id, Payment.voucher_type == "receipt", Payment.status == "active")
     )
     if company_id is not None:
-        total_receipts_query = total_receipts_query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+        total_receipts_query = total_receipts_query.filter(company_scope(Payment.company_id, company_id))
     total_receipts = float(total_receipts_query.scalar())
     outstanding_balance = total_sales - credit_note_summary.sales_credit_total - total_receipts
 
-    last_payment_query = db.query(Payment).filter(Payment.ledger_id == ledger_id, Payment.status == "active")
-    if company_id is not None:
-        last_payment_query = last_payment_query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
-    last_payment = last_payment_query.order_by(Payment.date.desc()).first()
-    last_payment_date = last_payment.date.strftime("%d %b %Y") if last_payment else None
+    last_payment_date = _last_receipt_date(db, ledger_id, company_id)
 
     sales_invoices_query = (
         db.query(Invoice)
         .filter(Invoice.ledger_id == ledger_id, Invoice.voucher_type == "sales", Invoice.status == "active")
     )
     if company_id is not None:
-        sales_invoices_query = sales_invoices_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+        sales_invoices_query = sales_invoices_query.filter(company_scope(Invoice.company_id, company_id))
     sales_invoices = sales_invoices_query.order_by(Invoice.invoice_date.asc(), Invoice.id.asc()).all()
+    # Rows use allocated payments as well as credit notes, so they can add up to
+    # more than outstanding_balance when the ledger has unallocated receipts.
+    payment_summaries = build_invoice_payment_summaries(db, sales_invoices)
     unpaid_invoices = []
     for inv in sales_invoices:
-        net_amount = float(inv.total_amount) - credit_note_summary.sales_credit_by_invoice.get(inv.id, 0.0)
-        if net_amount <= 0:
+        summary = payment_summaries.get(inv.id)
+        if summary is None or summary.remaining_amount <= 0:
             continue
         unpaid_invoices.append(
             {
                 "invoice_number": inv.invoice_number or f"#{inv.id}",
                 "invoice_date": inv.invoice_date.strftime("%d %b %Y") if inv.invoice_date else "N/A",
                 "due_date": inv.due_date.strftime("%d %b %Y") if inv.due_date else None,
-                "amount": _fmt(net_amount),
+                "amount": _fmt(summary.remaining_amount),
             }
+        )
+
+    # Points at the ledger's statement page, which is where the pay-by-UPI offer for
+    # the whole outstanding balance lives. None unless the company opted in, in which
+    # case the button simply does not render.
+    share_url = None
+    if company_id is not None and outstanding_balance > 0:
+        from_date, to_date = _reminder_statement_window(db, ledger_id, company_id)
+        share_url = document_share_url(
+            db,
+            request,
+            company,
+            RESOURCE_STATEMENT,
+            ledger_id,
+            from_date=from_date,
+            to_date=to_date,
+            user_id=current_user.id,
         )
 
     template = _jinja_env.get_template("payment_reminder.html")
@@ -350,6 +461,8 @@ async def send_payment_reminder_email(
         last_payment_date=last_payment_date,
         message=payload.message,
         unpaid_invoices=unpaid_invoices,
+        share_url=share_url,
+        ad=ad_context("email_reminder", source="email"),
     )
 
     subject = payload.subject or f"Payment Reminder \u2014 {ledger.name}"
@@ -370,6 +483,17 @@ async def send_payment_reminder_email(
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    track(
+        "document_emailed",
+        distinct_id_for(current_user),
+        {
+            "document_type": "reminder",
+            "entity_id": ledger_id,
+            "has_cc": bool(payload.cc and payload.cc.strip()),
+            "has_message": bool(payload.message and payload.message.strip()),
+        },
+    )
+
     return {"message": "Payment reminder sent successfully"}
 
 
@@ -379,9 +503,10 @@ async def send_payment_reminder_email(
 
 @router.post("/due-reminders")
 async def send_due_reminders(
+    request: Request,
     payload: DueRemindersRequest | None = Body(default=None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Send payment-reminder emails to all ledgers that have outstanding dues."""
@@ -389,7 +514,7 @@ async def send_due_reminders(
     if payload is None:
         payload = DueRemindersRequest()
 
-    company = active_company if company_id is not None else db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    company = active_company if company_id is not None else legacy_default_company(db)
     currency_code = company.currency_code if company and company.currency_code else "INR"
 
     # Find all active sales invoices
@@ -412,6 +537,9 @@ async def send_due_reminders(
 
     # Compute payment summaries for all invoices at once
     payment_summaries = build_invoice_payment_summaries(db, all_invoices)
+    # What we owe each ledger on open purchase invoices; a ledger that is also a
+    # supplier is not chased for what it is already owed back.
+    open_amounts = open_amounts_by_ledger(db, list(invoices_by_ledger), company_id=active_company.id)
 
     # Identify ledgers with outstanding dues and build per-ledger unpaid lists
     sent: list[dict] = []
@@ -445,18 +573,48 @@ async def send_due_reminders(
         to_email = ledger.email if ledger else None
         ledger_name = ledger.name if ledger else (ledger_invoices[0].ledger_name or f"Ledger #{ledger_id}")
 
-        if not to_email:
-            skipped.append({"ledger_id": ledger_id, "ledger_name": ledger_name, "reason": "No email address"})
+        receivable, payable = open_amounts.get(ledger_id, (outstanding_balance, 0.0))
+        net_receivable = round(receivable - payable, 2)
+        if is_offset_by_payables(receivable, payable):
+            skipped.append(
+                {
+                    "ledger_id": ledger_id,
+                    "ledger_name": ledger_name,
+                    "reason": "Net balance is nil after open purchase invoices",
+                    "reason_code": "net_payable_offset",
+                    "net_receivable": net_receivable,
+                }
+            )
             continue
 
-        last_payment_query = (
-            db.query(Payment)
-            .filter(Payment.ledger_id == ledger_id, Payment.voucher_type == "receipt", Payment.status == "active")
-        )
+        if not to_email:
+            skipped.append(
+                {
+                    "ledger_id": ledger_id,
+                    "ledger_name": ledger_name,
+                    "reason": "No email address",
+                    "reason_code": "no_email",
+                }
+            )
+            continue
+
+        last_payment_date = _last_receipt_date(db, ledger_id, company_id)
+
+        # One statement link per ledger. document_share_url is idempotent, so a ledger
+        # reminded every month keeps the same URL rather than accumulating tokens.
+        share_url = None
         if company_id is not None:
-            last_payment_query = last_payment_query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
-        last_payment = last_payment_query.order_by(Payment.date.desc()).first()
-        last_payment_date = last_payment.date.strftime("%d %b %Y") if last_payment else None
+            from_date, to_date = _reminder_statement_window(db, ledger_id, company_id)
+            share_url = document_share_url(
+                db,
+                request,
+                company,
+                RESOURCE_STATEMENT,
+                ledger_id,
+                from_date=from_date,
+                to_date=to_date,
+                user_id=current_user.id,
+            )
 
         html_body = template.render(
             company_name=company.name if company else "",
@@ -469,6 +627,8 @@ async def send_due_reminders(
             last_payment_date=last_payment_date,
             message=payload.message,
             unpaid_invoices=outstanding_list,
+            share_url=share_url,
+            ad=ad_context("email_reminder", source="email"),
         )
 
         subject = f"Payment Reminder \u2014 {ledger_name}"

@@ -44,7 +44,7 @@ def db_session():
         Base.metadata.drop_all(bind=engine)
 
 
-def _seed_common(db_session, ledger_gst: str = "07ABCDE1234F1Z5"):
+def _seed_common(db_session, ledger_gst: str = "07ABCDE1234F1Z2"):
     user = User(
         email="admin@example.com",
         full_name="Admin",
@@ -237,7 +237,7 @@ def test_intrastate_three_line_case_keeps_tax_exact_with_balanced_split(db_sessi
 
 
 def test_interstate_item_tax_is_stored_as_igst_and_rendered_in_pdf(db_session):
-    user, ledger = _seed_common(db_session, ledger_gst="27ABCDE1234F1Z5")
+    user, ledger = _seed_common(db_session, ledger_gst="27ABCDE1234F1Z0")
     product = _create_product_with_inventory(db_session, "IGST01", 100.00, 18)
     invoice = _new_invoice(db_session)
 

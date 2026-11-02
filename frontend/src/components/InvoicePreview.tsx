@@ -1,10 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Check, Copy, Download, FileJson, Mail, Printer, Share2 } from 'lucide-react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyProfile, Invoice } from '../types/api';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
+import { copyTextToClipboard } from '../utils/clipboard';
+import formatCurrency from '../utils/formatting';
 import SendEmailModal from './SendEmailModal';
 import EwayBillModal from './EwayBillModal';
+import ShareModal from './ShareModal';
+import PreviewToolbar from './PreviewToolbar';
+import CopiesStepper from './CopiesStepper';
 
 type InvoicePreviewProps = {
   invoice: Invoice;
@@ -15,15 +21,36 @@ type InvoicePreviewProps = {
 export default function InvoicePreview({ invoice, onClose, onError }: InvoicePreviewProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showEwayBillModal, setShowEwayBillModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [copies, setCopies] = useState(1);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
   const [previewFailed, setPreviewFailed] = useState(false);
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<'idle' | 'copied' | 'error'>('idle');
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const copyFeedbackTimer = useRef<number | null>(null);
+  const copyAttempt = useRef(0);
+  const invoiceLabel = invoice.invoice_number || `#${invoice.id}`;
 
-  useEscapeClose(onClose);
+  useEffect(() => {
+    setCopyFeedback('idle');
+    return () => {
+      copyAttempt.current += 1;
+      if (copyFeedbackTimer.current !== null) window.clearTimeout(copyFeedbackTimer.current);
+    };
+  }, [invoiceLabel]);
+
+  // The email and share modals stacked on top close themselves on Escape;
+  // without this guard the same keypress tears down the preview behind them.
+  useEscapeClose(useCallback(() => {
+    // Escape closes the open menu first, then the preview -- otherwise opening
+    // the menu and hitting Escape would dismiss the whole dialog underneath it.
+    if (menuOpen) { setMenuOpen(false); return; }
+    if (!showEmailModal && !showShareModal && !showEwayBillModal) onClose();
+  }, [menuOpen, showEmailModal, showShareModal, showEwayBillModal, onClose]));
 
   // Fetch company profile for E-Way Bill visibility rules
   useEffect(() => {
@@ -102,96 +129,95 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
     window.open(pdfUrl, '_blank', 'noopener,noreferrer');
   };
 
+  const handleCopyInvoiceNumber = async () => {
+    const attempt = ++copyAttempt.current;
+    const copied = await copyTextToClipboard(invoiceLabel);
+    if (attempt !== copyAttempt.current) return;
+
+    setCopyFeedback(copied ? 'copied' : 'error');
+    if (copyFeedbackTimer.current !== null) window.clearTimeout(copyFeedbackTimer.current);
+    copyFeedbackTimer.current = window.setTimeout(() => {
+      if (attempt === copyAttempt.current) setCopyFeedback('idle');
+    }, 2000);
+  };
+  // The backend reads voucher_type off the invoice, so one share button covers
+  // both books — only the wording the customer reads has to change.
+  const documentNoun = invoice.voucher_type === 'purchase' ? 'Purchase invoice' : 'Invoice';
+
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="invoice-preview-title">
       <div className="modal-panel modal-panel--invoice-preview">
-        <div className="panel__header no-print">
-          <div>
-            <p className="eyebrow">Invoice preview</p>
-            <h2 id="invoice-preview-title" className="nav-panel__title">PDF invoice {invoice.invoice_number || `#${invoice.id}`}</h2>
-            <p className="muted-text" style={{ margin: '6px 0 0' }}>
-              Invoice date: {formatInvoiceDateLabel(invoice.invoice_date)}
-              {invoice.due_date ? ` · Due date: ${formatInvoiceDateLabel(invoice.due_date)}` : ' · No due date'}
-            </p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151', whiteSpace: 'nowrap', fontWeight: '500' }}>
-              Copies
-              <input
-                type="number"
-                min={1}
-                max={10}
-                value={copies}
-                onChange={(e) => {
-                  const newValue = e.target.value;
-                  if (newValue === '') {
-                    // Allow empty input while typing
-                    setCopies(0);
-                  } else {
-                    const parsed = parseInt(newValue, 10);
-                    if (!isNaN(parsed)) {
-                      setCopies(Math.min(10, Math.max(1, parsed)));
-                    }
-                  }
-                }}
-                onBlur={() => {
-                  // Set to 1 if empty when leaving the input
-                  if (copies === 0) {
-                    setCopies(1);
-                  }
-                }}
-                style={{ 
-                  width: '70px', 
-                  padding: '6px 8px', 
-                  border: '1px solid #d1d5db', 
-                  borderRadius: '6px', 
-                  fontSize: '13px', 
-                  textAlign: 'center',
-                  fontWeight: '500',
-                  transition: 'border-color 0.2s',
-                  color: '#d1d5db',
-                }}
-              />
-            </label>
-            <div className="button-row">
-            <button type="button" className="button button--secondary" onClick={handlePrintPdf} disabled={!pdfUrl || loadingPdf || previewFailed} title="Print invoice" aria-label="Print invoice">
-              Print
-            </button>
-            <button
-              type="button"
-              className="button button--primary"
-              title="Download invoice PDF"
-              aria-label="Download invoice PDF"
-              onClick={handleDownloadPdf}
-            >
-              Download PDF
-            </button>
-            <button
-              type="button"
-              className="button button--primary"
-              onClick={() => setShowEmailModal(true)}
-              title="Email invoice"
-              aria-label="Email invoice"
-            >
-              Email Invoice
-            </button>
-            {invoice.voucher_type === 'sales' && invoice.status === 'active' && companyProfile?.eway_enabled !== false && (
+        <PreviewToolbar
+          eyebrow="Invoice preview"
+          titleId="invoice-preview-title"
+          title={`${documentNoun} ${invoice.invoice_number || `#${invoice.id}`}`}
+          titleAdornment={
+            <span className="invoice-number-copy">
               <button
                 type="button"
-                className="button button--secondary"
-                onClick={() => setShowEwayBillModal(true)}
-                title="Generate E-Way Bill JSON"
-                aria-label="Generate E-Way Bill"
+                className="invoice-number-copy__button"
+                onClick={() => void handleCopyInvoiceNumber()}
+                title="Copy invoice number"
+                aria-label="Copy invoice number"
               >
-                Generate E-Way Bill
+                {copyFeedback === 'copied' ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
               </button>
-            )}
-            <button type="button" className="button button--ghost" onClick={onClose} title="Close invoice preview" aria-label="Close invoice preview">
-              Close
-            </button>
-            </div>
-          </div>
-        </div>
+              <span className="invoice-number-copy__feedback" role="status" aria-live="polite">
+                {copyFeedback === 'copied' ? 'Copied' : copyFeedback === 'error' ? 'Unable to copy' : ''}
+              </span>
+            </span>
+          }
+          meta={
+            <>
+              {formatInvoiceDateLabel(invoice.invoice_date)}
+              {invoice.due_date ? ` · Due ${formatInvoiceDateLabel(invoice.due_date)}` : ' · No due date'}
+            </>
+          }
+          primary={{
+            label: 'Share',
+            icon: <Share2 size={16} aria-hidden="true" />,
+            onClick: () => setShowShareModal(true),
+            title: 'Share a link to this invoice',
+          }}
+          secondary={[
+            {
+              // Emailing the invoice is one of the two ways it reaches the
+              // customer at all, so it belongs in the row beside Share. Folded
+              // into the overflow menu it stopped being used entirely — nobody
+              // opens a "…" hunting for the thing they came here to do.
+              label: 'Email',
+              icon: <Mail size={16} aria-hidden="true" />,
+              onClick: () => setShowEmailModal(true),
+              title: 'Email invoice',
+            },
+            {
+              label: 'Print',
+              icon: <Printer size={16} aria-hidden="true" />,
+              onClick: handlePrintPdf,
+              disabled: !pdfUrl || loadingPdf || previewFailed,
+              title: 'Print invoice',
+            },
+            {
+              label: 'Download',
+              icon: <Download size={16} aria-hidden="true" />,
+              onClick: handleDownloadPdf,
+              title: 'Download invoice PDF',
+            },
+          ]}
+          menu={invoice.voucher_type === 'sales' && invoice.status === 'active' && companyProfile?.eway_enabled !== false ? [
+            {
+              label: 'Generate E-Way Bill',
+              icon: <FileJson size={16} aria-hidden="true" />,
+              onClick: () => setShowEwayBillModal(true),
+              title: 'Generate E-Way Bill JSON',
+            },
+          ] : []}
+          menuExtra={<CopiesStepper value={copies} onChange={setCopies} />}
+          menuOpen={menuOpen}
+          onMenuOpenChange={setMenuOpen}
+          onClose={onClose}
+          closeLabel="Close invoice preview"
+        />
 
         <div className="invoice-pdf-viewer" aria-live="polite">
           {loadingPdf ? <p className="muted-text">Loading PDF preview...</p> : null}
@@ -245,6 +271,17 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
             // Could show success toast here if needed
           }}
           onError={(message) => onError?.(message)}
+        />
+      )}
+
+      {showShareModal && (
+        <ShareModal
+          resourceType="invoice"
+          resourceId={invoice.id}
+          label={`${documentNoun} ${invoiceLabel}`}
+          messageLead={`${documentNoun} ${invoiceLabel}${invoice.company_name ? ` from ${invoice.company_name}` : ''} — ${formatCurrency(invoice.total_amount, invoice.company_currency_code || 'INR')}`}
+          phone={invoice.ledger_phone}
+          onClose={() => setShowShareModal(false)}
         />
       )}
     </div>

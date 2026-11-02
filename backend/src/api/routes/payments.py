@@ -1,15 +1,12 @@
 from datetime import datetime
 from html import escape
-from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-import weasyprint
-
-from src.api.deps import get_active_company, get_current_user, require_roles
+from src.api.deps import get_active_company, get_current_user, require_company_role
+from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
 from src.models.company_account import CompanyAccount
@@ -19,7 +16,9 @@ from src.models.user import User, UserRole
 from src.schemas.payment import PaymentCreate, PaymentOut, PaymentUpdate
 from src.services.series import generate_next_number
 from src.services.financial_year import get_active_fy, get_fy_for_date
-from src.services.invoice_payments import build_invoice_payment_summaries, sync_payment_allocations
+from src.services.invoice_payments import sync_payment_allocations
+from src.services.share_documents import get_payment as get_shared_payment, render_receipt_pdf
+from src.services.company_access import company_scope
 
 router = APIRouter()
 
@@ -30,7 +29,7 @@ def _get_active_account(db: Session, account_id: int, company_id: int | None) ->
         CompanyAccount.is_active.is_(True),
     )
     if company_id is not None:
-        query = query.filter(or_(CompanyAccount.company_id == company_id, CompanyAccount.company_id.is_(None)))
+        query = query.filter(company_scope(CompanyAccount.company_id, company_id))
     account = query.first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -68,7 +67,7 @@ def _find_existing_opening_balance(
         Payment.status == "active",
     )
     if company_id is not None:
-      query = query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+      query = query.filter(company_scope(Payment.company_id, company_id))
     if exclude_payment_id is not None:
         query = query.filter(Payment.id != exclude_payment_id)
     return query.first()
@@ -102,7 +101,7 @@ def _ensure_single_opening_balance(
 def create_payment(
     payload: PaymentCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
@@ -111,7 +110,7 @@ def create_payment(
     if payload.ledger_id is not None:
         ledger_query = db.query(Ledger).filter(Ledger.id == payload.ledger_id)
         if company_id is not None:
-          ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+          ledger_query = ledger_query.filter(company_scope(Ledger.company_id, company_id))
         ledger = ledger_query.first()
         if not ledger:
             raise HTTPException(status_code=404, detail="Ledger not found")
@@ -178,6 +177,32 @@ def create_payment(
 
     result = _to_payment_out(payment)
     result.warnings = warnings
+
+    # One endpoint, two events, because that is how the funnels were already
+    # built: money coming in was `payment_recorded` and money going out was
+    # `payment_voucher_created` back when each had its own screen. voucher_type
+    # is the same distinction the two screens encoded. An opening balance is
+    # neither -- it is a ledger's starting position, not a transaction -- and
+    # stays uncounted, as it always was.
+    event = {
+        "receipt": "payment_recorded",
+        "payment": "payment_voucher_created",
+    }.get(payment.voucher_type)
+    if event:
+        track(
+            event,
+            distinct_id_for(current_user),
+            {
+                "payment_id": payment.id,
+                "voucher_type": payment.voucher_type,
+                "amount": float(payment.amount or 0),
+                "mode": payment.mode or None,
+                "has_account": payment.account_id is not None,
+                "allocated_invoice_count": len(payload.invoice_allocations or []),
+                "outside_active_fy": bool(warnings),
+            },
+        )
+
     return result
 
 
@@ -196,7 +221,7 @@ def list_payments(
         joinedload(Payment.invoice_allocations).joinedload(PaymentInvoiceAllocation.invoice),
     )
     if company_id is not None:
-      query = query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+      query = query.filter(company_scope(Payment.company_id, company_id))
     if ledger_id is not None:
         query = query.filter(Payment.ledger_id == ledger_id)
     if not include_cancelled:
@@ -214,7 +239,7 @@ def get_payment(
     company_id = getattr(active_company, "id", None)
     filter_args = [Payment.id == payment_id]
     if company_id is not None:
-      filter_args.append(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+      filter_args.append(company_scope(Payment.company_id, company_id))
     payment = (
         db.query(Payment)
         .options(
@@ -234,13 +259,13 @@ def update_payment(
     payment_id: int,
     payload: PaymentUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
     payment_filters = [Payment.id == payment_id, Payment.status == "active"]
     if company_id is not None:
-      payment_filters.append(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+      payment_filters.append(company_scope(Payment.company_id, company_id))
     payment = (
         db.query(Payment)
         .options(joinedload(Payment.invoice_allocations))
@@ -259,6 +284,26 @@ def update_payment(
         exclude_payment_id=payment.id,
     )
 
+    # A missing invoice_allocations field means "leave the existing rows
+    # alone", not "remove them all": PaymentUpdate defaults it to None, while
+    # an explicitly sent empty list still clears them, as before. Kept rows
+    # must still be consistent with the edit, so validate them before
+    # mutating anything: a voucher type change would point them at the wrong
+    # kind of invoice, and a smaller amount must still cover their total.
+    kept_allocations = list(payment.invoice_allocations or [])
+    if payload.invoice_allocations is None and kept_allocations:
+        if payload.voucher_type != payment.voucher_type:
+            raise HTTPException(
+                status_code=400,
+                detail="Changing the voucher type would invalidate the existing invoice allocations",
+            )
+        kept_total = sum(float(allocation.allocated_amount or 0) for allocation in kept_allocations)
+        if kept_total > float(payload.amount or 0):
+            raise HTTPException(
+                status_code=400,
+                detail="Allocated total cannot exceed the receipt/payment amount",
+            )
+
     selected_account = None
     if payload.account_id is not None:
         selected_account = _get_active_account(db, payload.account_id, company_id)
@@ -271,13 +316,14 @@ def update_payment(
     payment.mode = payload.mode.strip() if payload.mode else None
     payment.reference = payload.reference.strip() if payload.reference else None
     payment.notes = payload.notes.strip() if payload.notes else None
-    sync_payment_allocations(
-      db,
-      payment=payment,
-      invoice_allocations=payload.invoice_allocations,
-      exclude_payment_id=payment.id,
-      company_id=company_id,
-    )
+    if payload.invoice_allocations is not None:
+        sync_payment_allocations(
+          db,
+          payment=payment,
+          invoice_allocations=payload.invoice_allocations,
+          exclude_payment_id=payment.id,
+          company_id=company_id,
+        )
     db.commit()
     db.refresh(payment)
     result = _to_payment_out(payment)
@@ -288,13 +334,13 @@ def update_payment(
 def delete_payment(
     payment_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
     query = db.query(Payment).filter(Payment.id == payment_id, Payment.status == "active")
     if company_id is not None:
-      query = query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+      query = query.filter(company_scope(Payment.company_id, company_id))
     payment = query.first()
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
@@ -698,39 +744,15 @@ def download_payment_pdf(
     _: User = Depends(get_current_user),
   active_company: CompanyProfile = Depends(get_active_company),
 ):
-    company_id = getattr(active_company, "id", None)
-    payment_filters = [Payment.id == payment_id, Payment.status == "active"]
-    if company_id is not None:
-      payment_filters.append(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
-    payment = (
-        db.query(Payment)
-      .options(
-        joinedload(Payment.ledger),
-        joinedload(Payment.account),
-        joinedload(Payment.invoice_allocations).joinedload(PaymentInvoiceAllocation.invoice),
-      )
-        .filter(*payment_filters)
-        .first()
-    )
+    # The rendering itself lives in src/services/share_documents so that the owner's
+    # copy and the copy a customer downloads from a public share link are
+    # byte-for-byte the same document. Do not inline it back here.
+    company_id = active_company.id
+    payment = get_shared_payment(db, company_id, payment_id)
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
 
-    company = db.query(CompanyProfile).filter(CompanyProfile.id == company_id).first() if company_id is not None else db.query(CompanyProfile).first()
-
-    allocations_by_invoice_id = {
-      allocation.invoice.id: allocation.invoice
-      for allocation in payment.invoice_allocations
-      if allocation.invoice is not None
-    }
-    invoice_summaries = build_invoice_payment_summaries(db, list(allocations_by_invoice_id.values()))
-    allocation_status_by_invoice_id = {
-      invoice_id: summary.payment_status
-      for invoice_id, summary in invoice_summaries.items()
-    }
-
-    html = _build_receipt_html(payment, company, allocation_status_by_invoice_id)
-    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
-    buf = BytesIO(pdf_bytes)
+    buf = render_receipt_pdf(db, company_id, payment_id)
 
     filename = f"receipt_{payment.payment_number or payment_id}.pdf"
     return StreamingResponse(

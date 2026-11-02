@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.models.buyer import Buyer as Ledger
@@ -12,21 +12,44 @@ from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
 from src.schemas.credit_note import CreditNoteCreate, CreditNoteOut
 from src.services.financial_year import get_active_fy, get_fy_for_date
+from src.services.serial_service import SerialManager
 from src.services.series import generate_next_number
 from src.services.gst_tax_service import money as _money, is_interstate_supply as _is_interstate
+from src.services.inventory_service import InventoryManager
+from src.services.company_access import company_scope
+
+
+def _return_note(credit_note_number: str) -> str:
+    """The mark a return stamps on each unit it takes back.
+
+    ``cancel_credit_note`` deletes the credit note row, so the serials it moved
+    have to carry their own link back to it — this is what lets one of several
+    returns against the same invoice be cancelled without disturbing the units
+    the others brought in.
+    """
+    return f"Returned on credit note {credit_note_number}"
+
+
+def _supplier_return_note(credit_note_number: str) -> str:
+    """The mark a purchase return stamps on each unit it sends back.
+
+    A separate namespace from `_return_note` so the two kinds of return can
+    never reverse each other's units.
+    """
+    return f"Returned to supplier on credit note {credit_note_number}"
 
 
 def _change_inventory_quantity(
     db: Session,
     product_id: int,
-    quantity_delta: int,
+    quantity_delta: Decimal | int,
     *,
     context: str,
     company_id: int | None = None,
 ) -> None:
     inventory_query = db.query(Inventory).filter(Inventory.product_id == product_id)
     if company_id is not None:
-        inventory_query = inventory_query.filter(or_(Inventory.company_id == company_id, Inventory.company_id.is_(None)))
+        inventory_query = inventory_query.filter(company_scope(Inventory.company_id, company_id))
     inventory = inventory_query.first()
     if not inventory:
         inventory = Inventory(product_id=product_id, quantity=0, company_id=company_id)
@@ -42,13 +65,12 @@ def _recompute_credit_status(invoice_id: int, db: Session, company_id: int | Non
     """Recalculate and persist credit_status for a single invoice."""
     invoice_query = db.query(Invoice).filter(Invoice.id == invoice_id)
     if company_id is not None:
-        invoice_query = invoice_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+        invoice_query = invoice_query.filter(company_scope(Invoice.company_id, company_id))
     invoice = invoice_query.first()
     if not invoice:
         return
 
     # Sum line_total of active CN items targeting this invoice
-    from sqlalchemy import func
     from src.models.credit_note import CreditNoteItem as CNItem, CreditNote as CN
 
     result_query = (
@@ -60,10 +82,14 @@ def _recompute_credit_status(invoice_id: int, db: Session, company_id: int | Non
         )
     )
     if company_id is not None:
-        result_query = result_query.filter(or_(CN.company_id == company_id, CN.company_id.is_(None)))
+        result_query = result_query.filter(company_scope(CN.company_id, company_id))
     result = result_query.scalar()
     credited_total = Decimal(str(result or 0))
-    invoice_total = Decimal(str(invoice.taxable_amount or 0))
+    # line_total includes tax, so compare against total_amount (which also
+    # includes tax) — taxable_amount excludes tax and would mark an invoice
+    # fully credited too early. Fall back to taxable_amount for legacy rows
+    # that never stored a total.
+    invoice_total = Decimal(str(invoice.total_amount or invoice.taxable_amount or 0))
 
     if credited_total <= 0:
         invoice.credit_status = "not_credited"
@@ -82,7 +108,7 @@ def create_credit_note(
     # ── 1. Validate ledger ───────────────────────────────────────────────────
     ledger_query = db.query(Ledger).filter(Ledger.id == payload.ledger_id)
     if company_id is not None:
-        ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+        ledger_query = ledger_query.filter(company_scope(Ledger.company_id, company_id))
     ledger = ledger_query.first()
     if not ledger:
         raise HTTPException(status_code=404, detail=f"Ledger {payload.ledger_id} not found")
@@ -90,7 +116,7 @@ def create_credit_note(
     # ── 2. Validate all invoices belong to this ledger ───────────────────────
     invoices_query = db.query(Invoice).filter(Invoice.id.in_(payload.invoice_ids))
     if company_id is not None:
-        invoices_query = invoices_query.filter(or_(Invoice.company_id == company_id, Invoice.company_id.is_(None)))
+        invoices_query = invoices_query.filter(company_scope(Invoice.company_id, company_id))
     invoices = invoices_query.all()
     found_ids = {inv.id for inv in invoices}
     missing = set(payload.invoice_ids) - found_ids
@@ -111,15 +137,66 @@ def create_credit_note(
             detail=f"Cannot credit cancelled invoices: {cancelled_invoices}",
         )
 
+    # ── 2b. Settle which way the note runs ───────────────────────────────────
+    # A note against a sales invoice is one we issued; a note against a
+    # purchase is the supplier's own, and reverses input tax rather than
+    # output. The two move stock in opposite directions and number out of
+    # different series, so one note cannot be both. The `or "sales"` matters:
+    # an Invoice built but never flushed has no column default applied yet.
+    voucher_types = {(inv.voucher_type or "sales") for inv in invoices}
+    if len(voucher_types) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="A credit note cannot cover both sales and purchase invoices",
+        )
+    source_voucher_type = voucher_types.pop()
+    direction = "inward" if source_voucher_type == "purchase" else "outward"
+    if payload.direction != direction:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"These are {source_voucher_type} invoices, so this note must be "
+                f"recorded as {direction}, not {payload.direction}"
+            ),
+        )
+
+    if direction == "inward":
+        # Recording the same supplier note twice reverses the input tax twice,
+        # and nothing downstream would notice.
+        supplier_number = payload.supplier_credit_note_number.strip()
+        duplicate_query = (
+            db.query(CreditNote.credit_note_number)
+            .filter(
+                CreditNote.ledger_id == payload.ledger_id,
+                CreditNote.status == "active",
+                func.upper(CreditNote.supplier_credit_note_number) == supplier_number.upper(),
+            )
+        )
+        if company_id is not None:
+            duplicate_query = duplicate_query.filter(
+                company_scope(CreditNote.company_id, company_id)
+            )
+        duplicate = duplicate_query.first()
+        if duplicate:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Supplier credit note {supplier_number} is already recorded "
+                    f"for this ledger as {duplicate[0]}"
+                ),
+            )
+
     invoice_map = {inv.id: inv for inv in invoices}
 
     # ── 3. Load invoice items and validate quantity limits ───────────────────
     item_ids = [it.invoice_item_id for it in payload.items]
-    invoice_items = (
-        db.query(InvoiceItem)
-        .filter(InvoiceItem.id.in_(item_ids))
-        .all()
-    )
+    item_query = db.query(InvoiceItem).filter(InvoiceItem.id.in_(item_ids))
+    if company_id is not None:
+        # Another company's item is "not found", not "belongs to another invoice".
+        item_query = item_query.join(Invoice, Invoice.id == InvoiceItem.invoice_id).filter(
+            company_scope(Invoice.company_id, company_id)
+        )
+    invoice_items = item_query.all()
     invoice_item_map = {ii.id: ii for ii in invoice_items}
 
     missing_items = set(item_ids) - set(invoice_item_map)
@@ -141,7 +218,6 @@ def create_credit_note(
             )
 
     # Check cumulative credited quantities per invoice_item_id
-    from sqlalchemy import func
     from src.models.credit_note import CreditNote as CN
 
     if payload.credit_note_type != "discount":
@@ -155,7 +231,7 @@ def create_credit_note(
                 )
             )
             if company_id is not None:
-                already_credited_query = already_credited_query.filter(or_(CN.company_id == company_id, CN.company_id.is_(None)))
+                already_credited_query = already_credited_query.filter(company_scope(CN.company_id, company_id))
             already_credited = already_credited_query.scalar() or 0
 
             original_qty = invoice_item_map[cn_item.invoice_item_id].quantity
@@ -178,9 +254,12 @@ def create_credit_note(
     fy_id = fy.id if fy else None
 
     # ── 5. Generate CN number ────────────────────────────────────────────────
+    # An inward note numbers out of its own series: the outward one is declared
+    # to the portal as a from/to range in GSTR-1 Table 13, and numbers spent on
+    # documents we never issued would make that range wrong.
     cn_number = generate_next_number(
         db,
-        "credit_note",
+        "debit_note" if direction == "inward" else "credit_note",
         fy_id,
         cn_date,
         active_fy.id if active_fy else None,
@@ -257,6 +336,9 @@ def create_credit_note(
         financial_year_id=fy_id,
         created_by=current_user_id,
         credit_note_type=payload.credit_note_type,
+        direction=direction,
+        supplier_credit_note_number=payload.supplier_credit_note_number,
+        supplier_credit_note_date=payload.supplier_credit_note_date,
         reason=payload.reason,
         status="active",
         taxable_amount=taxable_total,
@@ -277,22 +359,67 @@ def create_credit_note(
         db.add(CreditNoteItem(credit_note_id=cn.id, company_id=company_id, **item_data))
 
     if payload.credit_note_type == "return":
-        for item_data in built_items:
+        serials = SerialManager(db)
+        # built_items is appended one-per-payload item, in order.
+        for cn_item, item_data in zip(payload.items, built_items):
             product_query = db.query(Product).filter(Product.id == item_data["product_id"])
             if company_id is not None:
-                product_query = product_query.filter(or_(Product.company_id == company_id, Product.company_id.is_(None)))
+                product_query = product_query.filter(company_scope(Product.company_id, company_id))
             product = product_query.first()
             if not product:
                 raise HTTPException(status_code=404, detail=f"Product {item_data['product_id']} not found")
+
+            codes = SerialManager.normalize_codes(cn_item.serial_numbers)
+            if getattr(product, "track_serials", False):
+                if len(codes) != item_data["quantity"]:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"{product.name} is serial-tracked — provide "
+                            f"{item_data['quantity']} serial "
+                            f"number{'' if item_data['quantity'] == 1 else 's'} "
+                            f"for this return ({len(codes)} provided)"
+                        ),
+                    )
+                if direction == "inward":
+                    serials.apply_credit_note_supplier_return(
+                        codes,
+                        product_id=product.id,
+                        company_id=company_id,
+                        invoice_id=item_data["invoice_id"],
+                        note=_supplier_return_note(cn_number),
+                    )
+                else:
+                    serials.apply_credit_note_return(
+                        codes,
+                        product_id=product.id,
+                        company_id=company_id,
+                        invoice_id=item_data["invoice_id"],
+                        note=_return_note(cn_number),
+                    )
+            elif codes:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{product.name} is not serial-tracked — remove the serial numbers",
+                )
+
             if not getattr(product, "maintain_inventory", True):
                 continue
 
             kwargs = {"company_id": company_id} if company_id is not None else {}
+            # A return undoes what its invoice did to stock: a sale took units
+            # out so they come back, a purchase brought them in so they go out.
             _change_inventory_quantity(
                 db,
                 item_data["product_id"],
-                item_data["quantity"],
-                context=f"creating return credit note {cn.id}",
+                -InventoryManager.effect_for_voucher_type(
+                    item_data["quantity"], source_voucher_type
+                ),
+                context=(
+                    f"returning stock to the supplier on credit note {cn.id}"
+                    if direction == "inward"
+                    else f"creating return credit note {cn.id}"
+                ),
                 **kwargs,
             )
 
@@ -311,7 +438,7 @@ def create_credit_note(
 def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -> CreditNoteOut:
     query = db.query(CreditNote).filter(CreditNote.id == cn_id)
     if company_id is not None:
-        query = query.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
+        query = query.filter(company_scope(CreditNote.company_id, company_id))
     cn = query.first()
     if not cn:
         raise HTTPException(status_code=404, detail="Credit note not found")
@@ -326,23 +453,49 @@ def cancel_credit_note(cn_id: int, db: Session, company_id: int | None = None) -
     snapshot = CreditNoteOut.model_validate(cn)
     snapshot.invoice_ids = [ref.invoice_id for ref in cn.invoice_refs]
 
+    # Rows written before the direction column existed are all outward.
+    direction = cn.direction or "outward"
+    source_voucher_type = "purchase" if direction == "inward" else "sales"
+
     if was_active and cn.credit_note_type == "return":
+        serials = SerialManager(db)
         for item in cn.items:
             if item.product_id and item.quantity:
                 product_query = db.query(Product).filter(Product.id == item.product_id)
                 if company_id is not None:
-                    product_query = product_query.filter(or_(Product.company_id == company_id, Product.company_id.is_(None)))
+                    product_query = product_query.filter(company_scope(Product.company_id, company_id))
                 product = product_query.first()
                 if not product:
                     raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
+
+                if getattr(product, "track_serials", False):
+                    if direction == "inward":
+                        serials.reverse_credit_note_supplier_return(
+                            product_id=product.id,
+                            company_id=company_id,
+                            invoice_id=item.invoice_id,
+                            note=_supplier_return_note(cn.credit_note_number),
+                            quantity=int(item.quantity),
+                        )
+                    else:
+                        serials.reverse_credit_note_return(
+                            product_id=product.id,
+                            company_id=company_id,
+                            invoice_id=item.invoice_id,
+                            note=_return_note(cn.credit_note_number),
+                            quantity=int(item.quantity),
+                        )
+
                 if not getattr(product, "maintain_inventory", True):
                     continue
 
                 kwargs = {"company_id": company_id} if company_id is not None else {}
+                # Creating the note negated the invoice's effect on stock, so
+                # cancelling it simply applies that effect again.
                 _change_inventory_quantity(
                     db,
                     item.product_id,
-                    -item.quantity,
+                    InventoryManager.effect_for_voucher_type(item.quantity, source_voucher_type),
                     context=f"cancelling return credit note {cn.id}",
                     **kwargs,
                 )

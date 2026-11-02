@@ -285,18 +285,25 @@ def _build_statement_html(
     closing_balance: float,
     entries: list[LedgerStatementEntry],
     currency: str = "INR",
+    pay_qr_html: str = "",
 ) -> str:
     entry_rows = ""
     for entry in entries:
         entry_date = entry.date.strftime("%d %b %Y") if entry.date else "N/A"
         dr = _fmt_inr(entry.debit, currency) if entry.debit > 0 else ""
         cr = _fmt_inr(entry.credit, currency) if entry.credit > 0 else ""
-        ref_number = _e(entry.reference_number) if entry.reference_number else f"#{entry.entry_id}"
+        ref_number = (
+            _e(entry.reference_number)
+            if entry.reference_number
+            else f"{_e(entry.voucher_type)} #{entry.entry_id}".strip()
+        )
+        note = f'<span class=\"entry-note\">{_e(entry.notes)}</span>' if entry.notes else ""
+        ref = f' &middot; Ref: {_e(entry.payment_reference)}' if entry.payment_reference else ""
         entry_rows += f"""
         <tr>
           <td>{_e(entry_date)}</td>
           <td>{ref_number}</td>
-          <td>{_e(entry.particulars)}</td>
+          <td>{_e(entry.particulars)}{ref}{note}</td>
           <td class=\"right\">{dr}</td>
           <td class=\"right\">{cr}</td>
         </tr>"""
@@ -306,9 +313,13 @@ def _build_statement_html(
     company_gst = f"GST: {_e(company.gst)}" if company and company.gst else ""
     company_phone = f"Phone: {_e(company.phone_number)}" if company and company.phone_number else ""
     company_details = " &middot; ".join(p for p in [company_gst, company_phone] if p)
+    company_email = f"Email: {_e(company.email)}" if company and company.email else ""
+    company_website = f"Web: {_e(company.website)}" if company and company.website else ""
+    company_contact = " &middot; ".join(p for p in [company_email, company_website] if p)
     ledger_gst = f"GST: {_e(ledger.gst)}" if ledger.gst else ""
     ledger_phone = f"Phone: {_e(ledger.phone_number)}" if ledger.phone_number else ""
-    ledger_details = " &middot; ".join(p for p in [ledger_gst, ledger_phone] if p)
+    ledger_email = _e(ledger.email) if ledger.email else ""
+    ledger_details = " &middot; ".join(p for p in [ledger_gst, ledger_phone, ledger_email] if p)
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -444,11 +455,18 @@ def _build_statement_html(
   tbody td {{
     padding: 6px 8px;
     border-bottom: 1px solid #e5e7eb;
-    vertical-align: middle;
+    vertical-align: top;
   }}
   tbody td.right {{ text-align: right; }}
   tbody tr:last-child td {{
     border-bottom: 2px solid #d1d5db;
+  }}
+  .entry-note {{
+    display: block;
+    margin-top: 2px;
+    font-size: 8px;
+    font-style: italic;
+    color: #6b7280;
   }}
   .footer {{
     margin-top: 8px;
@@ -468,6 +486,25 @@ def _build_statement_html(
     color: #1a56db;
   }}
   .muted {{ font-size: 8px; color: #9ca3af; }}
+  .pay-qr {{
+    margin-top: 10px;
+    text-align: right;
+  }}
+  .pay-qr__title {{
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6b7280;
+    margin-bottom: 3px;
+  }}
+  .pay-qr__img {{
+    width: 110px;
+    height: 110px;
+    display: inline-block;
+    image-rendering: pixelated;
+  }}
+  .pay-qr__hint {{ font-size: 8px; color: #9ca3af; }}
 </style>
 </head>
 <body>
@@ -478,6 +515,7 @@ def _build_statement_html(
       <h3>{company_name}</h3>
       <p>{company_address}</p>
       <p>{company_details}</p>
+      <p>{company_contact}</p>
     </div>
     <div class=\"sheet__meta\">
       <span class=\"badge\">Ledger Statement</span>
@@ -532,6 +570,7 @@ def _build_statement_html(
   <section class=\"footer\">
     <p class=\"total-label\">Closing Balance</p>
     <p class=\"total-value\">{_fmt_inr(closing_balance, currency)}</p>
+    {pay_qr_html}
     <p class=\"muted\">Generated on {datetime.utcnow().strftime('%d %b %Y %H:%M UTC')}</p>
   </section>
 </div>

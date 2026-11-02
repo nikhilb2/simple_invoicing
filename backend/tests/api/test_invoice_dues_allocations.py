@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 
 def _create_ledger(client):
@@ -8,7 +8,7 @@ def _create_ledger(client):
         json={
             "name": "Dues Ledger",
             "address": "Mumbai",
-            "gst": "27ABCDE1234F1Z5",
+            "gst": "27ABCDE1234F1Z0",
             "phone_number": "9999999999",
             "email": "ledger@example.com",
             "website": "",
@@ -227,3 +227,90 @@ def test_ledger_statement_payment_entry_includes_invoice_allocations(client):
         assert allocation["invoice_number"] == invoice["invoice_number"]
         assert allocation["allocated_amount"] == 120
         assert allocation["payment_status"] == "partial"
+
+
+def _create_purchase_invoice(client, ledger_id, product_id, unit_price, invoice_date, number):
+    response = client.post(
+        "/api/invoices/",
+        json={
+            "ledger_id": ledger_id,
+            "voucher_type": "purchase",
+            "supplier_invoice_number": number,
+            "tax_inclusive": False,
+            "apply_round_off": False,
+            "invoice_date": invoice_date,
+            "items": [{"product_id": product_id, "quantity": 1, "unit_price": unit_price}],
+        },
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _seed_customer_and_supplier(client, sales_price, purchase_price):
+    today = datetime.utcnow().date()
+    numbers = iter(["INV-000001", "PINV-000001"])
+    with patch(
+        "src.services.invoice_processor.generate_next_number",
+        side_effect=lambda *args, **kwargs: next(numbers),
+    ):
+        ledger_id = _create_ledger(client)
+        product_id = _create_product(client)
+        _add_inventory(client, product_id)
+        _create_invoice(
+            client, ledger_id, product_id, sales_price,
+            (today - timedelta(days=5)).isoformat(), today.isoformat(),
+        )
+        _create_purchase_invoice(client, ledger_id, product_id, purchase_price, today.isoformat(), "SUP-1")
+    return ledger_id
+
+
+def test_dues_endpoint_reports_open_payable_for_dual_role_ledger(client):
+    ledger_id = _seed_customer_and_supplier(client, 100, 60)
+
+    response = client.get("/api/invoices/dues")
+    assert response.status_code == 200, response.text
+    items = response.json()["items"]
+
+    # The sales invoice stays listed, with the counter-party's payable alongside.
+    assert len(items) == 1
+    assert items[0]["ledger_id"] == ledger_id
+    assert items[0]["remaining_amount"] == 100
+    assert items[0]["ledger_payable_amount"] == 60
+    assert items[0]["ledger_net_receivable"] == 40
+
+
+def test_due_reminders_skip_ledger_whose_net_is_zero(client):
+    _seed_customer_and_supplier(client, 100, 100)
+
+    with patch("src.api.routes.email.send_email", new=AsyncMock()) as send_email_mock:
+        response = client.post("/api/email/due-reminders", json={})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["sent"] == []
+    assert len(body["skipped"]) == 1
+    assert body["skipped"][0]["reason_code"] == "net_payable_offset"
+    assert body["skipped"][0]["net_receivable"] == 0
+    send_email_mock.assert_not_awaited()
+
+
+def test_dues_endpoint_hides_ledger_whose_net_is_zero(client):
+    _seed_customer_and_supplier(client, 100, 100)
+
+    body = client.get("/api/invoices/dues").json()
+
+    assert body["items"] == []
+    assert body["total"] == 0
+
+
+def test_due_reminders_still_sent_when_sales_exceed_purchases(client):
+    _seed_customer_and_supplier(client, 100, 60)
+
+    with patch("src.api.routes.email.send_email", new=AsyncMock()) as send_email_mock:
+        response = client.post("/api/email/due-reminders", json={})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body["sent"]) == 1
+    assert body["skipped"] == []
+    send_email_mock.assert_awaited_once()

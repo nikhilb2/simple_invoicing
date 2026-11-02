@@ -1,0 +1,23 @@
+{% extends "share_base.html" %}
+
+{% block social %}
+{# These tags are the whole reason this page is server-rendered. WhatsApp fetches
+   the URL once, reads them, and draws the preview card the recipient actually
+   sees in the chat — long before anybody taps anything. #}
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="{{ og.site_name }}">
+<meta property="og:title" content="{{ og.title }}">
+<meta property="og:description" content="{{ og.description }}">
+<meta property="og:url" content="{{ og.url }}">
+{% if og.image %}<meta property="og:image" content="{{ og.image }}">
+<meta property="og:image:alt" content="{{ og.site_name }}">{% endif %}
+<meta name="twitter:card" content="{{ 'summary' if og.image else 'summary' }}">
+<meta name="twitter:title" content="{{ og.title }}">
+<meta name="twitter:description" content="{{ og.description }}">
+{% if og.image %}<meta name="twitter:image" content="{{ og.image }}">{% endif %}
+<meta name="description" content="{{ og.description }}">
+{% endblock %}
+
+{# No `content` block on purpose. The whole page is the panel in the base
+   template: the document's own summary and its download button live inside it,
+   above the pitch, so there is nothing to render before it. #}

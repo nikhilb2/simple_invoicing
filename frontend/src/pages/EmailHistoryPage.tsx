@@ -4,9 +4,13 @@ import { getApiErrorMessage } from '../api/client';
 import { listEmailLogs } from '../api/emailLogs';
 import type { EmailLog } from '../api/emailLogs';
 import StatusToasts from '../components/StatusToasts';
+import ScopeBar, { Metric } from '../components/ScopeBar';
+import DateRangePresets from '../components/DateRangePresets';
 import EmptyState from '../components/EmptyState';
-
-const PAGE_SIZE = 20;
+import LoadingState from '../components/LoadingState';
+import PageSizeSelect, { readStoredPageSize, storePageSize } from '../components/PageSizeSelect';
+import { formatDateTime } from '../utils/formatting';
+import { downloadCsv } from '../utils/csv';
 
 const EMAIL_TYPE_LABELS: Record<string, string> = {
   invoice: 'Invoice',
@@ -26,6 +30,7 @@ function monthStart() {
 
 export default function EmailHistoryPage() {
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(() => readStoredPageSize('email-history-page-size'));
   const [fromDate, setFromDate] = useState(monthStart());
   const [toDate, setToDate] = useState(today());
   const [emailType, setEmailType] = useState('');
@@ -33,11 +38,11 @@ export default function EmailHistoryPage() {
   const [expandedError, setExpandedError] = useState<number | null>(null);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['email-logs', page, fromDate, toDate, emailType, status],
+    queryKey: ['email-logs', page, pageSize, fromDate, toDate, emailType, status],
     queryFn: () =>
       listEmailLogs({
         page,
-        page_size: PAGE_SIZE,
+        page_size: pageSize,
         from_date: fromDate || undefined,
         to_date: toDate || undefined,
         email_type: emailType || undefined,
@@ -46,20 +51,30 @@ export default function EmailHistoryPage() {
     placeholderData: keepPreviousData,
   });
 
+  const failedOnPage = data?.items.filter((log) => log.status === 'failed').length ?? 0;
+
   function handleFilterChange() {
     setPage(1);
   }
 
-  function formatDate(iso: string) {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  function handlePageSizeChange(nextPageSize: number) {
+    storePageSize('email-history-page-size', nextPageSize);
+    setPageSize(nextPageSize);
+    setPage(1);
+  }
+
+  function handleExportEmailCsv() {
+    if (!data) return;
+    downloadCsv(
+      `email_history_${new Date().toISOString().slice(0, 10)}.csv`,
+      ['Date', 'Recipient', 'Subject', 'Status'],
+      data.items.map((log) => [
+        formatDateTime(log.sent_at),
+        log.to_email,
+        log.subject,
+        log.status,
+      ]),
+    );
   }
 
   return (
@@ -75,77 +90,102 @@ export default function EmailHistoryPage() {
 
       <StatusToasts error={error ? getApiErrorMessage(error) : ''} onClearError={() => {}} onClearSuccess={() => {}} />
 
-      <section className="content-grid">
-        <article className="panel stack">
-          <div className="panel__header">
-            <div>
-              <p className="eyebrow">Filters</p>
-              <h2 className="nav-panel__title">Narrow results</h2>
-            </div>
-          </div>
+      <ScopeBar
+        presets={(
+          <DateRangePresets
+            value={{ fromDate, toDate }}
+            onChange={(range) => {
+              setFromDate(range.fromDate);
+              setToDate(range.toDate);
+              handleFilterChange();
+            }}
+          />
+        )}
+        metrics={data ? (
+          <>
+            <Metric label="Emails" value={data.total} />
+            {/* The list endpoint returns one page of rows and a grand total, but
+                no failure total — so this counts only what is on screen and says
+                so, rather than reading as "3 failures in the whole period". */}
+            <Metric
+              label="Failed on this page"
+              value={failedOnPage}
+              tone={failedOnPage > 0 ? 'danger' : undefined}
+            />
+          </>
+        ) : undefined}
+      >
+        <div className="field">
+          <label htmlFor="email-log-from">From date</label>
+          <input
+            id="email-log-from"
+            className="input"
+            type="date"
+            value={fromDate}
+            onChange={e => { setFromDate(e.target.value); handleFilterChange(); }}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="email-log-to">To date</label>
+          <input
+            id="email-log-to"
+            className="input"
+            type="date"
+            value={toDate}
+            onChange={e => { setToDate(e.target.value); handleFilterChange(); }}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="email-log-type">Email type</label>
+          <select
+            id="email-log-type"
+            className="input"
+            value={emailType}
+            onChange={e => { setEmailType(e.target.value); handleFilterChange(); }}
+          >
+            <option value="">All types</option>
+            <option value="invoice">Invoice</option>
+            <option value="ledger_statement">Ledger Statement</option>
+            <option value="payment_reminder">Payment Reminder</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="email-log-status">Status</label>
+          <select
+            id="email-log-status"
+            className="input"
+            value={status}
+            onChange={e => { setStatus(e.target.value); handleFilterChange(); }}
+          >
+            <option value="">All</option>
+            <option value="sent">Sent</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
+      </ScopeBar>
 
-          <div className="field-grid">
-            <div className="field">
-              <label htmlFor="email-log-from">From date</label>
-              <input
-                id="email-log-from"
-                className="input"
-                type="date"
-                value={fromDate}
-                onChange={e => { setFromDate(e.target.value); handleFilterChange(); }}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="email-log-to">To date</label>
-              <input
-                id="email-log-to"
-                className="input"
-                type="date"
-                value={toDate}
-                onChange={e => { setToDate(e.target.value); handleFilterChange(); }}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="email-log-type">Email type</label>
-              <select
-                id="email-log-type"
-                className="input"
-                value={emailType}
-                onChange={e => { setEmailType(e.target.value); handleFilterChange(); }}
-              >
-                <option value="">All types</option>
-                <option value="invoice">Invoice</option>
-                <option value="ledger_statement">Ledger Statement</option>
-                <option value="payment_reminder">Payment Reminder</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="email-log-status">Status</label>
-              <select
-                id="email-log-status"
-                className="input"
-                value={status}
-                onChange={e => { setStatus(e.target.value); handleFilterChange(); }}
-              >
-                <option value="">All</option>
-                <option value="sent">Sent</option>
-                <option value="failed">Failed</option>
-              </select>
-            </div>
-          </div>
-        </article>
-
+      <section className="content-grid content-grid--single">
         <article className="panel stack">
           <div className="panel__header">
             <div>
               <p className="eyebrow">Log</p>
               <h2 className="nav-panel__title">Sent emails</h2>
             </div>
+            <div className="button-row">
+              <button
+                type="button"
+                className="button button--secondary button--small"
+                disabled={isLoading || !data || data.items.length === 0}
+                onClick={handleExportEmailCsv}
+              >
+                Export CSV
+              </button>
+            </div>
           </div>
 
           <div className="invoice-list">
-            {isLoading && <EmptyState message="Loading emails..." />}
+            {isLoading && <LoadingState message="Loading emails..." />}
             {!isLoading && (!data || data.items.length === 0) && (
               <EmptyState message="No emails found for the selected filters." />
             )}
@@ -165,14 +205,14 @@ export default function EmailHistoryPage() {
                       {log.cc ? ` · CC: ${log.cc}` : ''}
                     </span>
                     <span className="table-subtext">
-                      {formatDate(log.sent_at)} · {EMAIL_TYPE_LABELS[log.email_type] ?? log.email_type}
+                      {formatDateTime(log.sent_at)} · {EMAIL_TYPE_LABELS[log.email_type] ?? log.email_type}
                     </span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
                     <span
                       className={`status-chip ${log.status === 'sent' ? 'status-chip--active' : 'status-chip--cancelled'}`}
                     >
-                      {log.status === 'sent' ? 'Sent' : 'Failed'}
+                      {log.status === 'sent' ? 'Sent' : log.status === 'sending' ? 'Sending' : 'Failed'}
                     </span>
                     {log.error_message && (
                       <span className="table-subtext">tap to {expandedError === log.id ? 'hide' : 'show'} error</span>
@@ -183,11 +223,11 @@ export default function EmailHistoryPage() {
                   <div
                     style={{
                       padding: '8px 16px',
-                      background: 'var(--color-surface-raised, #fef2f2)',
-                      borderLeft: '3px solid var(--color-error, #e53e3e)',
+                      background: 'var(--color-surface-raised)',
+                      borderLeft: '3px solid var(--color-error)',
                       fontSize: '0.8rem',
                       fontFamily: 'monospace',
-                      color: 'var(--color-error, #c53030)',
+                      color: 'var(--color-error)',
                       marginBottom: '2px',
                     }}
                   >
@@ -198,8 +238,9 @@ export default function EmailHistoryPage() {
             ))}
           </div>
 
-          {data && data.total_pages > 1 && (
+          {data && (
             <div className="button-row">
+              <PageSizeSelect id="email-history-page-size" value={pageSize} onChange={handlePageSizeChange} />
               <button
                 type="button"
                 className="button button--secondary"

@@ -6,7 +6,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from src.api.deps import get_db, get_current_user, require_roles, get_active_company
+from src.api.deps import get_db, get_current_user, require_company_role, get_active_company
 from src.models.company import CompanyProfile
 from src.models.user import UserRole, User
 from src.models.product import Product
@@ -52,7 +52,7 @@ def get_product_bom(
 def create_bom_entry(
     bom_create: BOMCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """
@@ -125,7 +125,7 @@ def update_bom_entry(
     bom_id: int,
     bom_update: BOMUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """
@@ -150,7 +150,7 @@ def update_bom_entry(
 def delete_bom_entry(
     bom_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """

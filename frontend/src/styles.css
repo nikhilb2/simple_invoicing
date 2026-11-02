@@ -4,34 +4,369 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* Colour tokens.
+
+   Every colour in the app resolves to one of these custom properties, so a
+   theme is just a different set of values. Default (no data-theme attribute)
+   is the dark palette, so nothing changes if the bootstrap script in
+   index.html has not run.
+
+   Conventions:
+   - `--rgb-<name>: R G B;` is a bare, space-separated RGB triplet for a hue
+     that is used at several alphas. Consume it as `rgb(var(--rgb-<name>))`
+     (opaque) or `rgb(var(--rgb-<name>) / 0.12)` (keep the alpha exactly as it
+     was written). This renders identically to the old `rgba(R, G, B, 0.12)`.
+   - Plain tokens (`--text-soft: #c7d7f4;`) hold an opaque colour that is only
+     used solid.
+   - Names describe the ROLE, not today's value: `--rgb-overlay` is white on
+     the dark theme but becomes a dark ink on the light one, `--rgb-shadow` is
+     whatever casts shadows, and the `--text-on-*-tint` pastels are text meant
+     to sit on a tinted chip, which needs a darker counterpart on light.
+   - Do not tokenise `.invoice-sheet*`, `.invoice-badge*`, the `@media print`
+     block or `.invoice-print-root`: they are deliberately light paper. */
+:root,
+:root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #08111f;
+}
+
+/* Light palette. Overrides every colour token declared in the dark :root
+   block below (that block has the role comments). Derived tokens such as
+   --bg, --text or --accent are built from the triplets there, so they follow
+   automatically; only the opaque ones are repeated here. Navy text on
+   off-white surfaces, a darker teal accent (#0f766e) that clears 4.5:1 as
+   text, and --rgb-overlay turned into navy ink so the dark theme's white
+   sheens become faint tints. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Hue triplets */
+  --rgb-overlay: 15 29 48;
+  --rgb-shadow: 0 0 0;
+  --rgb-scrim: 51 65 85;
+  --rgb-text: 10 20 36;
+  --rgb-muted: 52 64 86;
+  --rgb-accent: 11 100 93;
+  --rgb-on-accent: 255 255 255;
+  --rgb-accent-2: 37 99 235;
+  --rgb-accent-violet: 99 102 241;
+  --rgb-info: 52 98 186;
+  --rgb-tag-line: 100 116 139;
+  --rgb-danger: 180 35 24;
+  --rgb-danger-strong: 220 38 38;
+  --rgb-warning: 115 75 0;
+  --rgb-success: 21 128 61;
+  --rgb-orange: 154 52 10;
+  --rgb-highlight: 59 130 246;
+
+  /* Navy surfaces become white / near-white surfaces */
+  --rgb-bg: 244 247 251;
+  --rgb-panel: 255 255 255;
+  --rgb-panel-top: 255 255 255;
+  --rgb-panel-raised: 255 255 255;
+  --rgb-panel-hover-top: 236 244 252;
+  --rgb-panel-hover-bottom: 248 250 253;
+  --rgb-panel-sticky: 248 250 252;
+  --rgb-panel-alt: 255 255 255;
+  --rgb-panel-row: 255 255 255;
+  --rgb-card-strong: 255 255 255;
+  --rgb-panel-well: 236 241 248;
+  --rgb-panel-field: 255 255 255;
+  --rgb-panel-section: 248 250 252;
+  --rgb-hero-top: 228 238 250;
+  --rgb-hero-bottom: 244 247 251;
+
+  /* Avatar tones: dark enough to read as text on their own tint */
+  --rgb-avatar-default: 40 72 140;
+  --rgb-avatar-1: 12 92 86;
+  --rgb-avatar-2: 52 72 170;
+  --rgb-avatar-3: 98 56 170;
+  --rgb-avatar-4: 120 80 0;
+  --rgb-avatar-5: 160 30 60;
+  --rgb-avatar-6: 20 100 56;
+
+  /* Core */
+  --bg-soft: #e9eff7;
+  --bg-card: rgba(255, 255, 255, 0.9);
+  --line: rgba(15, 29, 48, 0.14);
+  --accent-deep: #115e59;
+  --shadow: 0 24px 60px rgb(15 29 48 / 0.12);
+  --body-bg: #f4f7fb;
+  --page-bg:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 26%),
+    linear-gradient(160deg, #f8fafc 0%, #f4f7fb 50%, #eaf0f8 100%);
+
+  /* Fills and ink on fills */
+  --accent-bright: #0f7a70;
+  --secondary-start: #3b6fd8;
+  --secondary-end: #2852b8;
+  --on-secondary: #ffffff;
+  --on-warning: #fffaf0;
+  --strength-weak: #c2410c;
+  --strength-strong: #15803d;
+  --outline-info: #2563eb;
+
+  /* Opaque surfaces */
+  --bg-pdf-frame: #e9eff7;
+  --bg-sticky-head: #f1f5fa;
+  --bg-pinned-hover: #e2edf0;
+  --bg-pinned-hover-info: #eaeff8;
+  --bg-pinned-editing: #e6eff2;
+
+  /* Text tones */
+  --text-strong: #0b1626;
+  --text-soft: #334155;
+  --text-tax-grid: #334a6b;
+  --text-allocation-amount: #334155;
+  --text-bank-facts: #1e293b;
+  --text-summary-stat: #0f1d30;
+  --text-tip-strong: #1e3a6e;
+  --text-debit: #1d5aa0;
+  --text-credit: #a8401a;
+  --text-balance-debit: #024a36;
+  --text-balance-credit: #7c2a0e;
+  --text-sales: #3f6212;
+  --text-danger-soft: #b91c1c;
+  --text-on-danger-tint: #991b1b;
+  --text-on-danger-tint-2: #991b1b;
+  --text-on-danger-tint-3: #991b1b;
+  --text-on-accent-tint: #07433d;
+  --text-on-accent-tint-2: #0b5952;
+  --text-on-accent-tint-3: #0b5952;
+  --text-on-accent-tint-4: #0b5952;
+  --text-on-info-tint: #1e3a7a;
+  --text-on-info-tint-2: #1e3a7a;
+  --text-on-info-tint-3: #1e3a7a;
+  --text-on-success-tint: #166534;
+  --text-on-orange-tint: #9a3412;
+  --text-placeholder: #64748b;
+  --line-neutral: #e2e8f0;
+  --line-neutral-strong: #cbd5e1;
+  --logo-frame-bg: #f9fafb;
+
+  /* Charts (series checked against the white chart card) */
+  --chart-sales: #2563eb;
+  --chart-secondary: #b45309;
+  --chart-revenue: #047857;
+  --chart-profit: #047857;
+  --chart-loss: #dc2626;
+  --chart-purchases: #4f63c8;
+  --chart-axis: rgb(var(--rgb-muted));
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-text: rgb(var(--rgb-text));
+
+  /* Sidebar follows the theme */
+  --sidebar-bg: #ffffff;
+  --sidebar-text: rgb(var(--rgb-text));
+  --sidebar-muted: rgb(var(--rgb-muted));
+  --sidebar-section-label: rgb(var(--rgb-muted) / 0.9);
+  --sidebar-active-text: #115e59;
+
+  /* --color-* aliases with literal values */
+  --color-success: #0d5c32;
+  --color-success-text: #0d5c32;
+}
+
+/* Light-only rule fixes where a token alone cannot reach 4.5:1. */
+:root[data-theme="light"] .step-rail__item--current .step-rail__index,
+:root[data-theme="light"] .step-rail__item--done .step-rail__index {
+  color: var(--text-on-accent-tint);
+}
+
+:root {
+  /* --- Hue triplets (consume as rgb(var(--rgb-x) / alpha)) --- */
+  --rgb-overlay: 255 255 255;        /* sheen/hover/fill laid over a surface */
+  --rgb-shadow: 0 0 0;               /* drop shadows, scrims, dark count badges */
+  --rgb-scrim: 4 9 16;               /* modal overlay */
+  --rgb-text: 230 238 251;           /* = --text */
+  --rgb-muted: 156 173 207;          /* = --muted */
+  --rgb-accent: 87 209 201;          /* = --accent (teal) */
+  --rgb-on-accent: 5 45 42;          /* = --on-accent (ink on teal fills) */
+  --rgb-accent-2: 79 125 255;        /* secondary blue glow in hover/backdrop gradients */
+  --rgb-accent-violet: 126 141 255;  /* end of the ledger-card accent bar */
+  --rgb-info: 148 184 255;           /* cool-blue lines and info tints (= --line-strong hue) */
+  --rgb-tag-line: 168 185 220;       /* tax-ledger note tag border */
+  --rgb-danger: 255 139 139;         /* = --danger */
+  --rgb-danger-strong: 239 68 68;    /* unpaid allocation chip tint */
+  --rgb-warning: 246 214 123;        /* = --warning */
+  --rgb-success: 34 197 94;          /* green: sales, paid, done */
+  --rgb-orange: 251 146 60;          /* orange: purchase */
+  --rgb-highlight: 59 130 246;       /* setup-highlight ring (CompanyPage inline style) */
+
+  /* Navy surfaces. Several near-identical shades exist; each keeps its own
+     token so the dark theme stays pixel-identical. Grouped by role so the
+     light theme can map them onto a few light surfaces. */
+  --rgb-bg: 8 17 31;                 /* = --bg: page colour, frosted page header, sticky feed thead */
+  --rgb-panel: 9 17 31;              /* cards: login, oauth, stat-card base, modal base */
+  --rgb-panel-top: 11 20 34;         /* modal top, register day bar (= --bg-modal-header) */
+  --rgb-panel-raised: 12 23 40;      /* stat-card top */
+  --rgb-panel-hover-top: 16 31 53;   /* linked stat-card hover, top */
+  --rgb-panel-hover-bottom: 11 21 38;/* linked stat-card hover, bottom */
+  --rgb-panel-sticky: 13 25 42;      /* sticky bars: scope bar, register head/foot */
+  --rgb-panel-alt: 9 18 33;          /* toast, password-guide items */
+  --rgb-panel-row: 10 22 40;         /* row cards (invoice row, ledger card) gradient start, ledger skeleton */
+  --rgb-card-strong: 15 29 48;       /* = --bg-card-strong hue; row-card gradient end */
+  --rgb-panel-well: 8 16 29;         /* inset wells inside cards (tax grid, totals, notes, catalogue table) */
+  --rgb-panel-field: 7 13 24;        /* inputs and tab tracks */
+  --rgb-panel-section: 6 12 22;      /* form sections */
+  --rgb-hero-top: 7 14 24;           /* login hero gradient, top */
+  --rgb-hero-bottom: 10 20 35;       /* login hero gradient, bottom */
+
+  /* Ledger avatar tones (consumed through --tone). */
+  --rgb-avatar-default: 148 184 255;
+  --rgb-avatar-1: 87 209 201;
+  --rgb-avatar-2: 141 171 255;
+  --rgb-avatar-3: 183 155 255;
+  --rgb-avatar-4: 246 214 123;
+  --rgb-avatar-5: 255 152 164;
+  --rgb-avatar-6: 126 231 166;
+
+  /* --- Core tokens --- */
+  --bg: rgb(var(--rgb-bg));
   --bg-soft: #101c2f;
   --bg-card: rgba(10, 19, 33, 0.82);
-  --bg-card-strong: rgba(15, 29, 48, 0.96);
+  --bg-card-strong: rgb(var(--rgb-card-strong) / 0.96);
   --line: rgba(142, 169, 214, 0.18);
-  --line-strong: rgba(148, 184, 255, 0.32);
-  --text: #e6eefb;
-  --muted: #9cadcf;
-  --accent: #57d1c9;
+  --line-strong: rgb(var(--rgb-info) / 0.32);
+  --text: rgb(var(--rgb-text));
+  --muted: rgb(var(--rgb-muted));
+  --accent: rgb(var(--rgb-accent));
   --accent-deep: #1e7e88;
-  --danger: #ff8b8b;
-  --warning: #f6d67b;
-  --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+  --danger: rgb(var(--rgb-danger));
+  --warning: rgb(var(--rgb-warning));
+  --shadow: 0 24px 80px rgb(var(--rgb-shadow) / 0.35);
+  /* Matches the top of the .modal-panel gradient, but fully opaque: the pinned
+     dialog header has form fields sliding underneath it, and at 0.98 alpha
+     their text ghosts through. */
+  --bg-modal-header: rgb(var(--rgb-panel-top));
+
+  /* The body colour that actually shows behind the app. It used to come from a
+     Tailwind bg-slate-950 class on <body>, which hid the html gradient below. */
+  --body-bg: #020617;
+
+  /* The whole page background (html rule): a blue glow over a navy ramp. */
+  --page-bg:
+    radial-gradient(circle at top right, rgba(63, 133, 255, 0.14), transparent 26%),
+    linear-gradient(160deg, #050b14 0%, #08111f 50%, #0d1730 100%);
+
+  /* --- Fills and ink on coloured fills --- */
+  --on-accent: rgb(var(--rgb-on-accent)); /* text on the teal primary button */
+  --accent-bright: #7ff1d6;               /* primary button gradient end */
+  --secondary-start: #8fb8ff;             /* secondary button gradient */
+  --secondary-end: #5e8fff;
+  /* Ink on the blue secondary button. Was white, which is 2.5:1 on the light
+     end of the gradient; this navy is 5.6:1 on the dark end. */
+  --on-secondary: #0a1a3d;
+  --on-warning: #2c2103;                  /* text on a solid --warning fill */
+  --strength-weak: #ffae70;               /* password strength bar */
+  --strength-strong: #7ddfa5;
+  --outline-info: #5585e8;                /* invoice-number copy button focus outline */
+
+  /* --- Opaque surfaces --- */
+  --bg-pdf-frame: #111827;          /* PDF iframe before the PDF paints */
+  --bg-sticky-head: #0d1a2b;        /* sticky tax-ledger thead */
+  /* Row-hover tints pre-mixed over --bg for pinned (sticky) first cells. */
+  --bg-pinned-hover: #0e202d;       /* accent 8% (product performance) */
+  --bg-pinned-hover-info: #10203a;  /* catalogue row hover */
+  --bg-pinned-editing: #0e2733;     /* catalogue row being edited */
+
+  /* --- Text tones. Pale pastels written for a dark background; the light
+     theme needs darker counterparts. --- */
+  --text-strong: #e9f0ff;           /* emphasised figures in voucher/allocation strips */
+  --text-soft: #c7d7f4;             /* secondary labels: meta chips, strip titles, ledger chips */
+  --text-tax-grid: #bdd0f2;
+  --text-allocation-amount: #cdd9ef;
+  --text-bank-facts: #dce7fb;
+  --text-summary-stat: #e6edfa;
+  --text-tip-strong: #d9edff;
+  --text-debit: #a9d8ff;            /* register debit column */
+  --text-credit: #ffc9a6;           /* register credit column */
+  --text-balance-debit: #7ee2b8;    /* ledger card balance */
+  --text-balance-credit: #ffab8f;
+  --text-sales: #84cc16;            /* lime: sales amounts and labels */
+  --text-purchase: rgb(var(--rgb-orange)); /* orange: purchase amounts and labels */
+  --text-danger-soft: #fca5a5;      /* unpaid / cancelled figures */
+  --text-on-danger-tint: #ffc1c1;   /* on rgb(--rgb-danger) tints: tags, error toast, low pill */
+  --text-on-danger-tint-2: #ffc7c7; /* feed error, cancelled status/badge */
+  --text-on-danger-tint-3: #ffd9d9; /* overdue badge */
+  --text-on-accent-tint: #bffbf6;   /* status chips */
+  --text-on-accent-tint-2: #bcfff9; /* success toast, ok pill */
+  --text-on-accent-tint-3: #9af4de; /* password card badge */
+  --text-on-accent-tint-4: #a8f0e8; /* ledger GST / WhatsApp chips */
+  --text-on-info-tint: #dbe7ff;     /* update toast */
+  --text-on-info-tint-2: #bcd3ff;   /* register payment/receipt tag */
+  --text-on-info-tint-3: #c8d8ff;   /* tax-ledger note tag */
+  --text-on-success-tint: #8ce7b4;  /* register sales tag */
+  --text-on-orange-tint: #ffc48a;   /* register purchase tag */
+  --text-placeholder: #9ca3af;      /* CompanyPage upload/empty hints (inline styles) */
+  --line-neutral: #e5e7eb;          /* CompanyPage logo frame / term cards (inline styles) */
+  --line-neutral-strong: #d1d5db;   /* CompanyPage dashed upload box (inline style) */
+  --logo-frame-bg: #f9fafb;         /* CompanyPage logo preview: light on purpose */
+
+  /* --- Charts (pages/analytics/charts/chartTheme.ts and .chart__*) --- */
+  --chart-sales: #6ea8fe;
+  --chart-secondary: #f6d67b;
+  --chart-revenue: #7ee0c0;
+  --chart-profit: #7ee0c0;
+  --chart-loss: #ff8b8b;
+  --chart-purchases: #6f8bd8;
+  --chart-grid: rgb(var(--rgb-info) / 0.14);
+  --chart-axis: rgb(var(--rgb-muted) / 0.75);
+  --chart-cursor: rgb(var(--rgb-info) / 0.08);
+  --chart-tooltip-bg: #0d1426;
+  --chart-tooltip-text: #e6eefb;
+  --chart-tooltip-border: rgb(var(--rgb-info) / 0.24);
 
   /* Sidebar tokens */
   --sidebar-width: 240px;
   --sidebar-bg: #0d1426;
-  --sidebar-border: rgba(148, 184, 255, 0.12);
+  --sidebar-border: rgb(var(--rgb-info) / 0.12);
   --sidebar-text: #e6eefb;
-  --sidebar-muted: rgba(156, 173, 207, 0.55);
-  --sidebar-active-bg: rgba(87, 209, 201, 0.12);
-  --sidebar-active-border: rgba(87, 209, 201, 0.25);
+  /* 0.55 over --sidebar-bg is 3.29:1 and 0.45 is 2.61:1 — both under the 4.5:1
+     WCAG AA floor for the brand tagline and the nav section headings. Same
+     hue, raised alpha: 5.3:1 and 4.6:1, with the two still a step apart. */
+  --sidebar-muted: rgb(var(--rgb-muted) / 0.78);
+  --sidebar-active-bg: rgb(var(--rgb-accent) / 0.12);
+  --sidebar-active-border: rgb(var(--rgb-accent) / 0.25);
   --sidebar-active-text: #57d1c9;
-  --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
-  --sidebar-section-label: rgba(156, 173, 207, 0.45);
-  --sidebar-footer-bg: rgba(148, 184, 255, 0.06);
+  --sidebar-hover-bg: rgb(var(--rgb-overlay) / 0.05);
+  --sidebar-section-label: rgb(var(--rgb-muted) / 0.7);
+  --sidebar-footer-bg: rgb(var(--rgb-info) / 0.06);
+
+  /* Aliases for a --color-* naming that a number of pages reach for inline
+     (ApiKeys, SmtpSettings, EmailHistory, Company, ProduceItems, BOMConfig,
+     KeyboardShortcuts). None of them were ever declared, so every one of those
+     sites was falling through to its hard-coded fallback — and those fallbacks
+     are light-theme values: `green`, `red`, #f4f4f5, #fef2f2, #c6f6d5. They
+     only surface on error, success and expiry states, which is why they went
+     unnoticed, but a success message rendering as pure green on near-black is
+     the design system leaking. Mapped onto the real tokens so those states
+     inherit the dark palette; the inline fallbacks then never apply. */
+  --color-text: var(--text);
+  --color-text-muted: var(--muted);
+  --color-muted-text: var(--muted);
+  --color-border: var(--line);
+  --color-primary: var(--accent);
+  --color-danger: var(--danger);
+  --color-error: var(--danger);
+  --color-success: #7ce9b0;
+  --color-success-text: #7ce9b0;
+  --color-surface-2: rgb(var(--rgb-overlay) / 0.04);
+  --color-surface-raised: rgb(var(--rgb-overlay) / 0.04);
+  --color-error-bg: rgb(var(--rgb-danger) / 0.12);
+  --color-success-bg: rgb(var(--rgb-success) / 0.15);
+  --color-muted-bg: rgb(var(--rgb-info) / 0.1);
+  --color-focus-ring: rgb(var(--rgb-accent) / 0.18);
+
+  /* Same story for a second naming used by inline styles in .tsx files
+     (Ledger/ProductCombobox, CreditNotes, CompanySelector, SidebarFYSwitcher,
+     InvoiceDues). Undeclared until now, so their light-theme fallbacks
+     (#fff popups, #d1d5db borders, #ef4444 errors, #155724 success) applied. */
+  --border: var(--line);
+  --text-muted: var(--muted);
+  --surface: var(--bg);
+  --surface-subtle: var(--color-surface-2);
+  --error: var(--danger);
+  --success-color: var(--color-success);
 }
 
 * {
@@ -40,9 +375,7 @@
 
 html {
   min-height: 100%;
-  background:
-    radial-gradient(circle at top right, rgba(63, 133, 255, 0.14), transparent 26%),
-    linear-gradient(160deg, #050b14 0%, #08111f 50%, #0d1730 100%);
+  background: var(--page-bg);
 }
 
 body {
@@ -50,7 +383,7 @@ body {
   min-height: 100vh;
   font-family: 'Manrope', sans-serif;
   color: var(--text);
-  background: transparent;
+  background: var(--body-bg);
 }
 
 #root {
@@ -92,6 +425,10 @@ textarea {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  /* A grid item's automatic minimum is its content's min-content, so without
+     this a wide table or a long unbroken string widens the whole page instead
+     of scrolling inside its own container. */
+  min-width: 0;
   padding: 0;               /* padding moves to inner elements */
 }
 
@@ -143,10 +480,8 @@ textarea {
   gap: 4px;
 }
 
-.sidebar__group {
-  margin-bottom: 8px;
-}
-
+/* The heading above the company and financial-year switchers. The nav's own
+   group headings went away with the flat list — sections label themselves. */
 .sidebar__group-label {
   font-size: 0.65rem;
   font-weight: 700;
@@ -189,7 +524,7 @@ textarea {
   background: var(--sidebar-footer-bg);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .sidebar__user {
@@ -218,6 +553,10 @@ textarea {
   font-weight: 600;
   color: var(--sidebar-text);
   display: block;
+  /* An email has no break opportunity and the rail cannot grow. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar__user-role {
@@ -229,6 +568,13 @@ textarea {
 /* Sidebar close button — visible only on mobile */
 .sidebar__close {
   display: none;
+  /* Drawer dismiss is a thumb target and was 34x30 from padding alone. The
+     mobile rule switches it to flex, so the glyph needs centring once the box
+     is taller than the text. */
+  min-width: 40px;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: 1px solid var(--sidebar-border);
   color: var(--sidebar-text);
@@ -275,7 +621,7 @@ textarea {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgb(var(--rgb-shadow) / 0.55);
   z-index: 299;
 }
 
@@ -293,13 +639,13 @@ textarea {
 .app-shell__backdrop--left {
   top: 4rem;
   left: -8rem;
-  background: rgba(87, 209, 201, 0.2);
+  background: rgb(var(--rgb-accent) / 0.2);
 }
 
 .app-shell__backdrop--right {
   right: -6rem;
   bottom: 5rem;
-  background: rgba(79, 125, 255, 0.18);
+  background: rgb(var(--rgb-accent-2) / 0.18);
 }
 
 .page-header {
@@ -309,7 +655,7 @@ textarea {
   justify-content: flex-end;
   padding: 0 clamp(16px, 3vw, 36px);
   border-bottom: 1px solid var(--line);
-  background: rgba(8, 17, 31, 0.75);
+  background: rgb(var(--rgb-bg) / 0.75);
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
@@ -317,16 +663,62 @@ textarea {
 }
 
 .page-header__shortcut-hint {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
   font-size: 0.75rem;
   color: var(--muted);
+  cursor: pointer;
 }
 
-.page-header__shortcut-hint kbd {
-  background: rgba(255, 255, 255, 0.08);
+.page-header__shortcut-hint:hover {
+  color: var(--text);
+}
+
+.page-header__shortcut-hint kbd,
+.shortcut-cheat-sheet kbd {
+  background: rgb(var(--rgb-overlay) / 0.08);
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 1px 5px;
   font-size: 0.7rem;
+}
+
+.shortcut-cheat-sheet {
+  max-width: 440px;
+}
+
+.shortcut-cheat-sheet:focus {
+  outline: none;
+}
+
+.shortcut-cheat-sheet__list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.shortcut-cheat-sheet__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.shortcut-cheat-sheet__row dd {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.shortcut-cheat-sheet__footer {
+  margin: 16px 0 0;
+  font-size: 0.85rem;
+}
+
+.shortcut-cheat-sheet__footer a {
+  color: var(--accent);
 }
 
 .page-frame,
@@ -349,14 +741,46 @@ textarea {
 .empty-state,
 .table-subtext {
   color: var(--muted);
+  /* Emails, URLs and SKUs are unbreakable tokens; without this they run out of
+     their grid track and over the next column. */
+  overflow-wrap: anywhere;
+}
+
+/* An inline validation message under a field, shown before the form is sent. */
+.field-error {
+  color: var(--danger);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ledger-contact-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ledger-contact-link:hover {
+  color: var(--accent-deep);
+}
+
+.ledger-contact-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ledger-contact-link--whatsapp {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
 }
 
 .empty-state {
   padding: 48px 20px;
   text-align: center;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px dashed rgba(148, 184, 255, 0.15);
+  background: rgb(var(--rgb-overlay) / 0.02);
+  border: 1px dashed rgb(var(--rgb-info) / 0.15);
   margin: 12px 0;
 }
 
@@ -366,9 +790,9 @@ textarea {
   gap: 8px;
   padding: 10px 14px;
   border-radius: 10px;
-  background: rgba(246, 214, 123, 0.15);
-  border: 1px solid rgba(246, 214, 123, 0.4);
-  color: #f6d67b;
+  background: rgb(var(--rgb-warning) / 0.15);
+  border: 1px solid rgb(var(--rgb-warning) / 0.4);
+  color: var(--warning);
   font-size: 0.84rem;
   line-height: 1.45;
   margin-top: 6px;
@@ -380,7 +804,7 @@ textarea {
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(156, 173, 207, 0.8);
+  color: rgb(var(--rgb-muted) / 0.8);
 }
 
 .section-card {
@@ -393,6 +817,12 @@ textarea {
 
 .page-frame {
   display: grid;
+  /* The implicit `auto` column is sized by its content's min-content, so one
+     nowrap cell — the Top-products name on the dashboard — made the column
+     391px inside a 362px content box and the whole document scrolled sideways
+     at 390px. A minmax(0, 1fr) track is capped at the frame, so an unshrinkable
+     child truncates or scrolls inside its own panel instead. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   padding: 32px clamp(20px, 4vw, 48px) 48px;
 }
@@ -404,11 +834,43 @@ textarea {
   align-items: end;
 }
 
+/* The prose column is what absorbs a narrow page; whatever trails it — a chip,
+   a button, a cluster of both — is sized by its own content. */
+.page-hero > :first-child {
+  min-width: 0;
+}
+
+.page-hero > :not(:first-child) {
+  flex-shrink: 0;
+}
+
+/* A hero that trails more than one thing — a count chip and the link to the
+   page that used to be this page's second tab. They sit on one line and stay
+   sized by their own content, like any single trailing child would. */
+.page-hero__aside {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .page-title {
   margin: 0;
   font-size: clamp(1.8rem, 3vw, 2.6rem);
   line-height: 1;
   letter-spacing: -0.05em;
+}
+
+/* The panel heading. It is an <h2> in 86 places and had no rule of its own, so
+   every one of them was carrying the user-agent's 0.83em block margins — which
+   is what opened the gap under the eyebrow and left the header's chip floating
+   level with the eyebrow rather than the title. */
+.nav-panel__title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
 }
 
 .page-grid,
@@ -417,6 +879,13 @@ textarea {
 .two-column-grid {
   display: grid;
   gap: 20px;
+}
+
+/* Same reason as .page-frame: an implicit `auto` track is sized by its
+   content's minimum, which is how one unshrinkable cell used to widen the page
+   rather than scroll inside its own panel. */
+.page-grid {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .stats-grid {
@@ -432,8 +901,565 @@ textarea {
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* A short form beside a long, paginated list. The plain .content-grid gives the
+   wider track to the first column, which on Products meant the ~600px create
+   form held the wide half while 20 product rows were squeezed into the narrow
+   one — every row's metadata wrapped to three lines, and the form left several
+   thousand pixels of dead space beside the list. The list leads; the form takes
+   the narrow track and sticks, so it stays reachable while the list scrolls. */
+.content-grid--aside-form {
+  grid-template-columns: minmax(320px, 0.72fr) minmax(0, 1.28fr);
+}
+
+.content-grid--aside-form > :first-child {
+  position: sticky;
+  top: 20px;
+  /* Long forms must still be able to scroll past their own height. */
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
 .two-column-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* ── Scope bar ────────────────────────────────────────────────────── */
+/* The report pages — day book, cash & bank, email log, invoice dues — were all
+   built as a plain .content-grid: the filter panel in the *wide* 1.15fr track
+   and the register it filters squeezed into the 0.85fr one. Two date inputs
+   held more than half the page while every voucher wrapped its particulars
+   onto three lines and the money column had no room to form.
+
+   Filters are a *scope*, not content. They belong on one full-width line above
+   the result, which then gets the whole page. The bar sticks under the app
+   header so the range, the totals and the exports stay reachable however far
+   the register scrolls — and it publishes its own height as --scope-bar-h so a
+   table header below it can stick directly underneath (see ScopeBar.tsx). */
+.scope-bar {
+  position: sticky;
+  /* .page-header is sticky at top: 0 and 52px tall. */
+  top: 52px;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px 20px;
+  padding: 14px 18px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgb(var(--rgb-panel-sticky) / 0.94);
+  backdrop-filter: blur(14px);
+}
+
+/* The fields are what absorbs a narrowing page: auto-fit reflows them from one
+   row to two to a single column with no breakpoint to keep in sync. They lead
+   the bar, so they take the slack and the trailing cluster never wraps first. */
+.scope-bar__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px 12px;
+  align-items: start;
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+/* A bar-height label, against the 0.92rem the panel form uses: at form size the
+   labels alone made the bar taller than the controls in it. */
+.scope-bar .field > label,
+.scope-bar .field--full > label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.scope-bar .field,
+.scope-bar .field--full {
+  gap: 6px;
+}
+
+.scope-bar .input,
+.scope-bar .select {
+  min-height: 38px;
+  padding: 8px 12px;
+  font-size: 0.88rem;
+}
+
+/* Totals and exports. Sized by their own content — the fields give up width
+   first — and pushed to the far edge so the bar reads left-to-right as
+   scope → result → act. */
+.scope-bar__trailing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 18px;
+  flex: 0 1 auto;
+  margin-left: auto;
+}
+
+.scope-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* A full-width line inside the bar, for the preset chips that sit above the
+   fields rather than beside them. */
+.scope-bar__row {
+  flex: 1 1 100%;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgb(var(--rgb-info) / 0.1);
+}
+
+/* ── Scope presets ────────────────────────────────────────────────── */
+/* A date range is almost never typed twice — it is "this month", "last month",
+   "the financial year". The chips make the common ranges one click and leave
+   the two date inputs for the range that is genuinely custom. */
+.scope-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.scope-preset {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(var(--rgb-overlay) / 0.03);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.scope-preset:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.scope-preset--on {
+  background: rgb(var(--rgb-accent) / 0.14);
+  border-color: rgb(var(--rgb-accent) / 0.42);
+  color: var(--accent);
+}
+
+/* ── Step rail ────────────────────────────────────────────────────── */
+/* Where you are in a multi-step return. As a tab inside the tax ledger the
+   GSTR-1 wizard had no such marker at all: each step replaced the one before
+   it, so there was nothing on screen saying how many were left or how you got
+   here. Same chip vocabulary as .scope-preset, since it reads as the same kind
+   of thing — a position along a short row. */
+.step-rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step-rail__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(var(--rgb-overlay) / 0.03);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.step-rail__item--done {
+  border-color: rgb(var(--rgb-accent) / 0.24);
+  color: var(--text);
+}
+
+.step-rail__item--current {
+  border-color: rgb(var(--rgb-accent) / 0.42);
+  background: rgb(var(--rgb-accent) / 0.14);
+  color: var(--accent);
+}
+
+/* Fixed square so a "1" and a "✓" leave the label on the same x. */
+.step-rail__index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: rgb(var(--rgb-overlay) / 0.06);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.step-rail__item--current .step-rail__index,
+.step-rail__item--done .step-rail__index {
+  background: rgb(var(--rgb-accent) / 0.22);
+}
+
+/* ── GSTR-1 categories ────────────────────────────────────────────── */
+/* One comparable set of six, not two panels of unequal height. auto-fit so the
+   row reflows from six across to three to one on its own. */
+.gstr1-categories {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+}
+
+.gstr1-category {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgb(var(--rgb-overlay) / 0.03);
+  border: 1px solid rgb(var(--rgb-info) / 0.08);
+}
+
+/* A category with nothing in it still has to be present — a reader checking a
+   return needs to see that B2CL is empty, not wonder where it went — but it
+   should not compete with the ones carrying value. */
+.gstr1-category--empty {
+  opacity: 0.55;
+}
+
+.gstr1-category__value {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  /* Currency strings have no break opportunity of their own. */
+  overflow-wrap: anywhere;
+}
+
+.gstr1-category__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* ── Metric strip ─────────────────────────────────────────────────── */
+/* The inline form of .summary-box. A 2rem figure in a 22px-padded box is right
+   when the totals are the only thing in a column of their own; on one line
+   beside the filters they only have to be *read*, so they drop to label-over-
+   figure and let the register have the vertical space. */
+.metric-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px 20px;
+  min-width: 0;
+}
+
+.metric {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.metric__label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.metric__value {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  /* Figures read by comparing magnitudes, which needs a shared digit width. */
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.metric--accent .metric__value {
+  color: var(--accent);
+}
+
+.metric--danger .metric__value {
+  color: var(--danger);
+}
+
+/* ── Register ─────────────────────────────────────────────────────── */
+/* A ledger register at full page width. The card-per-voucher list it replaces
+   put the date, the ledger and the particulars on three stacked lines and the
+   figure in one cell reading "Dr 1,200" or "Cr 1,200" — so nothing formed a
+   column and debit could not be compared against credit at all. Real columns,
+   a header that names them, and Dr/Cr split into two tracks. */
+.register {
+  --register-head-h: 38px;
+  display: grid;
+  min-width: 0;
+}
+
+.register-scroll {
+  min-width: 0;
+}
+
+.register__head,
+.register__row,
+.register__foot {
+  display: grid;
+  grid-template-columns:
+    minmax(88px, 0.6fr) minmax(150px, 1.4fr) minmax(110px, 1.15fr)
+    minmax(130px, 1.6fr) minmax(96px, 0.8fr) minmax(96px, 0.8fr);
+  gap: 12px 14px;
+  align-items: baseline;
+  padding: 11px 14px;
+}
+
+/* The voucher kind and its number read as one label, so they share a cell and
+   wrap together rather than the number dropping under the tag mid-column. */
+.register__voucher {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+/* Sticks directly under .scope-bar, whose measured height ScopeBar publishes on
+   the page. The fallback keeps the header pinned to the app bar alone on a page
+   that has no scope bar. */
+.register__head {
+  position: sticky;
+  top: calc(52px + var(--scope-bar-h, 0px));
+  z-index: 3;
+  /* Fixed rather than content-sized: the day separators stick directly beneath
+     it, and --register-head-h is what tells them how far down that is. */
+  height: var(--register-head-h);
+  padding-block: 0;
+  align-items: center;
+  background: rgb(var(--rgb-panel-sticky) / 0.96);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line-strong);
+  border-radius: 12px 12px 0 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.register__row {
+  border-bottom: 1px solid rgb(var(--rgb-info) / 0.08);
+  transition: background 140ms ease;
+}
+
+/* A day's band of rows. Only a grouping box — its children carry the tracks —
+   but it still needs the automatic minimum overridden or a long particulars
+   string widens the whole register instead of wrapping in its own cell. */
+.register__day-group {
+  min-width: 0;
+}
+
+.register__row:hover {
+  background: rgb(var(--rgb-accent) / 0.06);
+}
+
+/* One line per day, the way a day book is actually read. Without it a hundred
+   vouchers are an undifferentiated run and the date column is repeated on every
+   row for no gain. */
+.register__day {
+  position: sticky;
+  top: calc(52px + var(--scope-bar-h, 0px) + var(--register-head-h));
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 14px 14px 8px;
+  background: rgb(var(--rgb-panel-top) / 0.94);
+  backdrop-filter: blur(10px);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.register__day-count {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+}
+
+/* The period totals, aligned to the very columns they total. A summary box off
+   to one side cannot do that — the whole point is reading the footer straight
+   down from the figures above it. */
+.register__foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin-top: 4px;
+  border-top: 1px solid var(--line-strong);
+  border-radius: 0 0 12px 12px;
+  background: rgb(var(--rgb-panel-sticky) / 0.96);
+  backdrop-filter: blur(12px);
+  font-weight: 800;
+}
+
+.register__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.register__cell {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.register__ref {
+  font-weight: 700;
+}
+
+.register__date {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Debit and credit are the one distinction a register exists to make, and at
+   equal weight in adjacent columns they are easy to read across. A zero is
+   dropped to a dash so the eye lands only on the side that carries a figure. */
+.register__debit {
+  color: var(--text-debit);
+}
+
+.register__credit {
+  color: var(--text-credit);
+}
+
+.register__nil {
+  color: rgb(var(--rgb-muted) / 0.8);
+}
+
+/* The voucher kind, as a tag rather than a word in a sentence. Kept small on
+   purpose: the reference number shares its cell, and at label size the two
+   together no longer fit on one line. */
+.register__tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgb(var(--rgb-overlay) / 0.04);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+
+.register__tag--sales {
+  border-color: rgb(var(--rgb-success) / 0.38);
+  background: rgb(var(--rgb-success) / 0.12);
+  color: var(--text-on-success-tint);
+}
+
+.register__tag--purchase {
+  border-color: rgb(var(--rgb-orange) / 0.38);
+  background: rgb(var(--rgb-orange) / 0.12);
+  color: var(--text-on-orange-tint);
+}
+
+.register__tag--payment,
+.register__tag--receipt {
+  border-color: rgb(var(--rgb-info) / 0.38);
+  background: rgb(var(--rgb-info) / 0.12);
+  color: var(--text-on-info-tint-2);
+}
+
+.register__tag--credit-note,
+.register__tag--debit-note {
+  border-color: rgb(var(--rgb-danger) / 0.38);
+  background: rgb(var(--rgb-danger) / 0.12);
+  color: var(--text-on-danger-tint);
+}
+
+/* Six tracks stop fitting here. The per-row date is the column to lose first:
+   the day band above every run of rows already says which day they fell on, so
+   it is the one cell in the register that repeats information the reader can
+   see without it. Particulars keeps a real minimum throughout — squeezed to the
+   slack left over it collapsed to about 30px and set one character per line. */
+@media (max-width: 1120px) {
+  .register__date {
+    display: none;
+  }
+
+  .register__head,
+  .register__row,
+  .register__foot {
+    grid-template-columns:
+      minmax(150px, 1.4fr) minmax(110px, 1.15fr) minmax(130px, 1.6fr)
+      minmax(96px, 0.8fr) minmax(96px, 0.8fr);
+  }
+}
+
+/* Even five tracks no longer fit, so the register scrolls sideways inside its
+   own panel rather than widening the page — the columns are the whole point of
+   it, and collapsing them back into stacked cards would undo the change.
+
+   A scroll container is also a scrollport, and that is where a sticky
+   descendant positions itself: left sticky, the header and the day bands would
+   offset themselves down inside a box that never scrolls vertically and land
+   under the rows they label. They go back into the flow here instead. */
+@media (max-width: 1020px) {
+  .register-scroll {
+    overflow-x: auto;
+    /* A trackpad swipe across the table is meant to move the table, not trigger
+       the browser's back gesture. */
+    overscroll-behavior-x: contain;
+  }
+
+  .register-scroll > .register {
+    min-width: 640px;
+  }
+
+  .register__head,
+  .register__day,
+  .register__foot {
+    position: static;
+  }
+}
+
+/* Stacked, the bar wraps to three or four rows — pinned, that is most of a
+   phone screen. It scrolls away with the page instead. */
+@media (max-width: 720px) {
+  .scope-bar {
+    position: static;
+    padding: 14px;
+  }
+
+  .scope-bar__trailing {
+    margin-left: 0;
+    flex: 1 1 100%;
+    justify-content: space-between;
+  }
 }
 
 .stat-card,
@@ -444,8 +1470,24 @@ textarea {
 
 .stat-card {
   border: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(12, 23, 40, 0.92) 0%, rgba(9, 17, 31, 0.82) 100%);
+  background: linear-gradient(180deg, rgb(var(--rgb-panel-raised) / 0.92) 0%, rgb(var(--rgb-panel) / 0.82) 100%);
   border-radius: 24px;
+}
+
+/* A stat card that navigates. It stays visually identical at rest — the point
+   is the figure, not the affordance — and only declares itself on hover and
+   keyboard focus, so a grid of eight cards does not turn into a grid of eight
+   buttons. */
+.stat-card--link {
+  display: block;
+  cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.stat-card--link:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-2px);
+  background: linear-gradient(180deg, rgb(var(--rgb-panel-hover-top) / 0.95) 0%, rgb(var(--rgb-panel-hover-bottom) / 0.86) 100%);
 }
 
 .stat-card__value {
@@ -468,7 +1510,20 @@ textarea {
   justify-content: space-between;
   gap: 12px;
   align-items: start;
+  flex-wrap: wrap;
   margin-bottom: 20px;
+}
+
+/* The title block is what gives up width when the panel narrows — without this
+   the chip or button beside it is crushed and wraps mid-label instead. */
+.panel__header > :first-child,
+.stack-header > :first-child {
+  min-width: 0;
+}
+
+.panel__header > .button-row,
+.stack-header > .button-row {
+  flex-shrink: 0;
 }
 
 .stack {
@@ -481,6 +1536,133 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   align-items: start;
+}
+
+/* A row of summary cards shares a row height — otherwise a card whose label
+   wraps to two lines leaves its neighbours short. */
+.field-grid > .summary-box {
+  align-self: stretch;
+}
+
+/* A field label with an inline action beside it — "Ledger    + New ledger".
+   The shortcut sits where you discover you need it, rather than in a row of
+   buttons competing with the form's own submit. */
+.field__label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* A quiet, text-weight action. For maintenance shortcuts that must stay
+   reachable without reading as a primary action. */
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.link-button > svg {
+  flex-shrink: 0;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.link-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+/* A checkbox and its label on one line, for options that read as a sentence
+   rather than as a labelled field. */
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.inline-check input {
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* The advanced-options disclosure: everything an ordinary invoice does not
+   need. The hint names what is inside, and what is currently set. */
+.form-advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgb(var(--rgb-overlay) / 0.02);
+  cursor: pointer;
+}
+
+.form-advanced-toggle input {
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.form-advanced-toggle__label {
+  font-weight: 800;
+  font-size: 0.92rem;
+}
+
+.form-advanced-toggle__hint {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* Line items get a header carrying the price-entry mode and the catalogue
+   shortcuts, so both sit with the fields they govern. */
+.line-items__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.line-items__tools {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* Opt-in for a row of plain label+control fields: a label that wraps to two
+   lines must not drop its own control below the one beside it, so the label
+   row takes the slack and the controls stay on one line. Only for fields whose
+   heights differ by their *labels* — a row holding a textarea wants the
+   default top alignment instead. */
+.field-grid--align-controls {
+  align-items: stretch;
+}
+
+.field-grid--align-controls > .field {
+  grid-template-rows: 1fr auto;
+}
+
+.field-grid--align-controls > .field > label {
+  align-self: start;
 }
 
 .field,
@@ -503,11 +1685,15 @@ textarea {
 .select,
 .textarea {
   width: 100%;
-  border: 1px solid rgba(148, 184, 255, 0.14);
-  background: rgba(7, 13, 24, 0.82);
+  border: 1px solid rgb(var(--rgb-info) / 0.14);
+  background: rgb(var(--rgb-panel-field) / 0.82);
   color: var(--text);
-  border-radius: 16px;
-  padding: 13px 14px;
+  border-radius: 12px;
+  /* Matches .button — see the control scale note there. */
+  min-height: 38px;
+  padding: 8px 13px;
+  font-size: 0.9rem;
+  line-height: 1.35;
   outline: none;
   transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
@@ -515,12 +1701,12 @@ textarea {
 .input:focus,
 .select:focus,
 .textarea:focus {
-  border-color: rgba(87, 209, 201, 0.55);
-  box-shadow: 0 0 0 4px rgba(87, 209, 201, 0.12);
+  border-color: rgb(var(--rgb-accent) / 0.55);
+  box-shadow: 0 0 0 4px rgb(var(--rgb-accent) / 0.12);
 }
 
 .textarea {
-  min-height: 110px;
+  min-height: 96px;
   resize: vertical;
 }
 
@@ -549,9 +1735,9 @@ textarea {
   display: grid;
   gap: 14px;
   padding: 18px;
-  border: 1px solid rgba(148, 184, 255, 0.1);
+  border: 1px solid rgb(var(--rgb-info) / 0.1);
   border-radius: 22px;
-  background: rgba(6, 12, 22, 0.4);
+  background: rgb(var(--rgb-panel-section) / 0.4);
 }
 
 .form-section + .form-section {
@@ -595,7 +1781,7 @@ textarea {
   align-items: center;
   flex-wrap: wrap;
   padding-top: 18px;
-  border-top: 1px solid rgba(148, 184, 255, 0.1);
+  border-top: 1px solid rgb(var(--rgb-info) / 0.1);
 }
 
 .form-action-bar__meta {
@@ -611,10 +1797,24 @@ textarea {
 }
 
 .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  line-height: 1.2;
+  white-space: nowrap;
   border: 0;
-  border-radius: 16px;
-  padding: 12px 18px;
-  font-weight: 800;
+  border-radius: 12px;
+  /* The control scale. .button, .input, .select and .textarea all land on the
+     same 38px box so a button sitting beside a field or a search box lines up
+     without per-site height overrides. Body text is 16px; a control's label is
+     a step below it at 14px, and 700 carries the emphasis 800 was doing with
+     size. */
+  min-height: 38px;
+  padding: 9px 16px;
+  font-size: 0.875rem;
+  font-weight: 700;
   cursor: pointer;
   transition: transform 160ms ease, opacity 160ms ease, background 160ms ease;
 }
@@ -623,38 +1823,57 @@ textarea {
   transform: translateY(-1px);
 }
 
+/* Lucide icons are inline SVGs — without this they are shrinkable flex items
+   and squash before the label does. */
+.button > svg {
+  flex-shrink: 0;
+}
+
+/* A disabled button is usually not busy — it is waiting on input, like Apply
+   before an adjustment is typed. `wait` claimed the opposite. Draining the
+   saturation matters as much as the opacity: a list of 20 rows each carrying a
+   disabled gradient button read as a wall of solid colour competing with the
+   data, at 0.6 opacity alone. `is-busy` keeps the wait cursor for the genuine
+   in-flight case. */
 .button:disabled {
-  opacity: 0.6;
-  cursor: wait;
+  opacity: 0.45;
+  filter: saturate(0.35);
+  cursor: not-allowed;
   transform: none;
 }
 
+.button:disabled.is-busy {
+  cursor: wait;
+}
+
 .button--primary {
-  background: linear-gradient(135deg, var(--accent) 0%, #7ff1d6 100%);
-  color: #052d2a;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-bright) 100%);
+  color: var(--on-accent);
 }
 
 .button--secondary {
-  background: linear-gradient(135deg, #8fb8ff 0%, #5e8fff 100%);
-  color: white;
+  background: linear-gradient(135deg, var(--secondary-start) 0%, var(--secondary-end) 100%);
+  color: var(--on-secondary);
 }
 
 .button--ghost {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgb(var(--rgb-overlay) / 0.04);
   color: var(--text);
   border: 1px solid var(--line);
 }
 
 .button--danger {
-  background: rgba(255, 139, 139, 0.12);
+  background: rgb(var(--rgb-danger) / 0.12);
   color: var(--danger);
 }
 
 .button--small {
-  padding: 8px 12px;
-  font-size: 0.85rem;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 11px;
+  font-size: 0.8125rem;
   font-weight: 700;
-  border-radius: 12px;
+  border-radius: 9px;
 }
 
 .button--small:hover {
@@ -663,34 +1882,51 @@ textarea {
 
 /* Icon-only square button */
 .button--icon {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
+  min-height: 0;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 9px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
 
+/* A sort affordance inside a table header. Undefined until now, so it carried
+   full .button padding and inflated every sortable column's minimum width. */
+.inventory-sort-btn {
+  gap: 4px;
+  min-height: 0;
+  padding: 4px 6px;
+  font-size: 0.78rem;
+  border-radius: 8px;
+  background: transparent;
+  border-color: transparent;
+}
+
+.inventory-sort-btn--active {
+  border-color: var(--line);
+}
+
 /* Split button group: primary action + caret dropdown trigger */
 .split-button {
   display: inline-flex;
   align-items: stretch;
-  border-radius: 16px;
+  border-radius: 12px;
 }
 
 .split-button__main {
-  border-radius: 16px 0 0 16px !important;
+  border-radius: 12px 0 0 12px !important;
   gap: 6px;
   display: inline-flex;
   align-items: center;
 }
 
 .split-button__caret {
-  border-radius: 0 16px 16px 0 !important;
-  border-left: 1px solid rgba(5, 45, 42, 0.25) !important;
-  width: 34px;
+  border-radius: 0 12px 12px 0 !important;
+  border-left: 1px solid rgb(var(--rgb-on-accent) / 0.25) !important;
+  width: 30px;
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -715,7 +1951,7 @@ textarea {
   display: grid;
   gap: 2px;
   z-index: 200;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 24px rgb(var(--rgb-shadow) / 0.4);
 }
 
 .action-dropdown__item {
@@ -736,7 +1972,7 @@ textarea {
 }
 
 .action-dropdown__item:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgb(var(--rgb-overlay) / 0.07);
 }
 
 .toast-stack {
@@ -756,28 +1992,61 @@ textarea {
   gap: 12px;
   padding: 14px 16px;
   border-radius: 18px;
-  border: 1px solid rgba(148, 184, 255, 0.16);
-  background: rgba(9, 18, 33, 0.92);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  border: 1px solid rgb(var(--rgb-info) / 0.16);
+  background: rgb(var(--rgb-panel-alt) / 0.92);
+  box-shadow: 0 18px 48px rgb(var(--rgb-shadow) / 0.28);
   backdrop-filter: blur(12px);
   animation: toast-slide-in 180ms ease-out;
   pointer-events: auto;
 }
 
 .toast--error {
-  border-color: rgba(255, 139, 139, 0.28);
-  color: #ffc1c1;
+  border-color: rgb(var(--rgb-danger) / 0.28);
+  color: var(--text-on-danger-tint);
 }
 
 .toast--success {
-  border-color: rgba(87, 209, 201, 0.28);
-  color: #bcfff9;
+  border-color: rgb(var(--rgb-accent) / 0.28);
+  color: var(--text-on-accent-tint-2);
+}
+
+/* The app-level stack (update prompts from Layout) sits in the opposite corner
+   from the per-page `.toast-stack`, which every page pins to the top right. */
+.toast-stack--app {
+  top: auto;
+  bottom: 24px;
+}
+
+.toast--update {
+  border-color: rgb(var(--rgb-info) / 0.32);
+  color: var(--text-on-info-tint);
+}
+
+.toast__action {
+  justify-self: start;
+  margin-top: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--rgb-info) / 0.32);
+  background: rgb(var(--rgb-info) / 0.14);
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.toast__action:hover {
+  background: rgb(var(--rgb-info) / 0.22);
 }
 
 .toast__content {
   display: grid;
   gap: 4px;
   flex: 1;
+  /* Error copy carries hosts and addresses — unbreakable tokens that would
+     otherwise push the dismiss button out of the toast. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .toast__title {
@@ -791,6 +2060,7 @@ textarea {
 }
 
 .toast__dismiss {
+  flex-shrink: 0;
   border: none;
   background: transparent;
   color: inherit;
@@ -812,7 +2082,7 @@ textarea {
   gap: 12px;
   padding-bottom: 14px;
   margin-bottom: 4px;
-  border-bottom: 1px solid rgba(148, 184, 255, 0.16);
+  border-bottom: 1px solid rgb(var(--rgb-info) / 0.16);
 }
 
 .change-password-card__eyebrow {
@@ -834,9 +2104,9 @@ textarea {
 .change-password-card__badge {
   white-space: nowrap;
   border-radius: 999px;
-  border: 1px solid rgba(87, 209, 201, 0.4);
-  background: rgba(87, 209, 201, 0.14);
-  color: #9af4de;
+  border: 1px solid rgb(var(--rgb-accent) / 0.4);
+  background: rgb(var(--rgb-accent) / 0.14);
+  color: var(--text-on-accent-tint-3);
   font-size: 0.76rem;
   font-weight: 700;
   padding: 6px 10px;
@@ -864,6 +2134,32 @@ textarea {
   transform: translateY(calc(-50% - 1px));
 }
 
+/* Shared password field toggle (PasswordInput). The button sits inside the
+   input's right padding, so the input keeps its full width and the surrounding
+   layout does not move, including at mobile widths. */
+.password-input-wrap {
+  position: relative;
+}
+
+.password-input-wrap .input {
+  padding-right: 44px;
+}
+
+.password-input-wrap__toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  padding: 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
 .change-password-strength {
   margin-top: 6px;
   display: grid;
@@ -874,7 +2170,7 @@ textarea {
   width: 100%;
   height: 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgb(var(--rgb-overlay) / 0.06);
   overflow: hidden;
 }
 
@@ -886,19 +2182,19 @@ textarea {
 }
 
 .change-password-strength__fill--very-weak {
-  background: #ff8b8b;
+  background: var(--danger);
 }
 
 .change-password-strength__fill--weak {
-  background: #ffae70;
+  background: var(--strength-weak);
 }
 
 .change-password-strength__fill--fair {
-  background: #f6d67b;
+  background: var(--warning);
 }
 
 .change-password-strength__fill--strong {
-  background: #7ddfa5;
+  background: var(--strength-strong);
 }
 
 .change-password-strength__fill--very-strong {
@@ -929,8 +2225,8 @@ textarea {
 }
 
 .change-password-guide__list li {
-  border: 1px solid rgba(148, 184, 255, 0.14);
-  background: rgba(9, 18, 33, 0.55);
+  border: 1px solid rgb(var(--rgb-info) / 0.14);
+  background: rgb(var(--rgb-panel-alt) / 0.55);
   border-radius: 12px;
   padding: 9px 12px;
   color: var(--muted);
@@ -940,13 +2236,13 @@ textarea {
 .change-password-guide__list li::before {
   content: '○';
   margin-right: 8px;
-  color: rgba(156, 173, 207, 0.8);
+  color: rgb(var(--rgb-muted) / 0.8);
 }
 
 .change-password-guide__list li.is-pass {
   color: var(--text);
-  border-color: rgba(87, 209, 201, 0.34);
-  background: rgba(87, 209, 201, 0.12);
+  border-color: rgb(var(--rgb-accent) / 0.34);
+  background: rgb(var(--rgb-accent) / 0.12);
 }
 
 .change-password-guide__list li.is-pass::before {
@@ -957,15 +2253,15 @@ textarea {
 .change-password-guide__tip {
   margin-top: 4px;
   border-radius: 14px;
-  border: 1px solid rgba(148, 184, 255, 0.16);
+  border: 1px solid rgb(var(--rgb-info) / 0.16);
   padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--rgb-overlay) / 0.03);
 }
 
 .change-password-guide__tip strong {
   display: block;
   margin-bottom: 4px;
-  color: #d9edff;
+  color: var(--text-tip-strong);
   font-size: 0.82rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -990,16 +2286,46 @@ textarea {
   }
 }
 
+/* A chip is sized by its own short label — the prose or buttons beside it must
+   absorb a narrowing panel, never squeeze the chip into two lines. */
 .status-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
   border-radius: 999px;
   padding: 8px 12px;
-  background: rgba(87, 209, 201, 0.1);
-  color: #bffbf6;
+  background: rgb(var(--rgb-accent) / 0.1);
+  color: var(--text-on-accent-tint);
   font-size: 0.84rem;
   font-weight: 700;
+}
+
+/* Same reason as `.button > svg` — an inline SVG is a shrinkable flex item. */
+.status-chip > svg,
+.action-dropdown__item > svg {
+  flex-shrink: 0;
+}
+
+/* Escape hatch for a chip holding arbitrary text (a URL, an opaque id) rather
+   than a short label: it wraps instead of running past the panel edge. */
+.status-chip--breakable {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Used by the tax-ledger validation chip; without these it fell back to the
+   neutral teal and an invalid state read as a passing one. */
+.status-chip--success {
+  background: rgb(var(--rgb-accent) / 0.12);
+  color: var(--text-on-accent-tint);
+}
+
+.status-chip--error {
+  background: rgb(var(--rgb-danger) / 0.12);
+  color: var(--danger);
 }
 
 .table-list,
@@ -1009,17 +2335,45 @@ textarea {
   gap: 12px;
 }
 
-.table-row,
-.invoice-row,
+/* Inventory rows carry four cells (meta, stock, dates, adjust controls) and
+   their children already carry `flex:` values, so they stay on flex — the
+   shared three-track .table-row grid dropped the fourth onto its own line. */
 .mini-row,
+.inventory-feed-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* .table-row and .invoice-row declare grid tracks further down. They used to
+   share the flex rule above, which silently discarded those tracks: every
+   trailing cell sat wherever the meta text happened to end, so a column of
+   pills or prices came out ragged instead of aligned. They own their own
+   display so the tracks they declare actually apply.
+
+   Inventory rows carry both classes and are excluded throughout: they have a
+   fourth cell the tracks below do not describe, so the grid drops their adjust
+   controls onto a line of their own. */
+.table-row:not(.inventory-feed-row),
+.invoice-row {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+}
+
+.inventory-feed-row > .table-row__meta {
+  min-width: 0;
+}
+
 .line-item {
   display: grid;
   gap: 12px;
   align-items: center;
   padding: 16px;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(148, 184, 255, 0.08);
+  background: rgb(var(--rgb-overlay) / 0.03);
+  border: 1px solid rgb(var(--rgb-info) / 0.08);
   transition: all 200ms ease;
 }
 
@@ -1028,40 +2382,181 @@ textarea {
   align-items: start;
   padding: 20px;
   border-radius: 24px;
-  background: linear-gradient(135deg, rgba(10, 22, 40, 0.6) 0%, rgba(15, 29, 48, 0.4) 100%);
-  border: 1px solid rgba(148, 184, 255, 0.12);
+  background: linear-gradient(135deg, rgb(var(--rgb-panel-row) / 0.6) 0%, rgb(var(--rgb-card-strong) / 0.4) 100%);
+  border: 1px solid rgb(var(--rgb-info) / 0.12);
   gap: 18px;
 }
 
+/* Rows that are themselves the control — a button or a link wrapping the whole
+   row, rather than a div with a "View" button parked at the end. A button
+   element brings its own centring, font and colour, none of which belong on a
+   row of data. */
+button.invoice-row,
+a.invoice-row {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
 .invoice-row:hover {
-  background: linear-gradient(135deg, rgba(87, 209, 201, 0.08) 0%, rgba(79, 125, 255, 0.08) 100%);
-  border-color: rgba(148, 184, 255, 0.24);
+  background: linear-gradient(135deg, rgb(var(--rgb-accent) / 0.08) 0%, rgb(var(--rgb-accent-2) / 0.08) 100%);
+  border-color: rgb(var(--rgb-info) / 0.24);
   transform: translateY(-2px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 32px rgb(var(--rgb-shadow) / 0.2);
+}
+
+/* Two tracks fit meta + price. A row that also carries actions needs a third,
+   or they auto-place onto a second row under the meta. */
+.invoice-row:has(> .invoice-row__actions) {
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 .invoice-row--sales {
-  border-left: 4px solid rgba(34, 197, 94, 0.4);
+  border-left: 4px solid rgb(var(--rgb-success) / 0.4);
 }
 
 .invoice-row--sales:hover {
-  border-left-color: rgba(34, 197, 94, 0.8);
+  border-left-color: rgb(var(--rgb-success) / 0.8);
 }
 
 .invoice-row--purchase {
-  border-left: 4px solid rgba(251, 146, 60, 0.4);
+  border-left: 4px solid rgb(var(--rgb-orange) / 0.4);
 }
 
 .invoice-row--purchase:hover {
-  border-left-color: rgba(251, 146, 60, 0.8);
+  border-left-color: rgb(var(--rgb-orange) / 0.8);
 }
 
-.table-row {
-  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr) auto;
+/* Most rows are meta + one trailing cell (actions, or a figure). Two tracks
+   pin that cell to the right edge of every row in the list, so a column of
+   buttons lines up regardless of how long each row's name runs. */
+.table-row:not(.inventory-feed-row) {
+  grid-template-columns: minmax(0, 1.8fr) auto;
 }
 
+/* Rows that also carry a figure between the meta and the trailing cell need a
+   third track, or the figure and the actions share one. The middle track holds
+   a currency figure or a quantity pill, neither of which has a break
+   opportunity — floored at min-content it takes its width from the 1.8fr meta
+   column instead of overflowing into the actions beside it. */
+.table-row:not(.inventory-feed-row):has(> .table-row__price),
+.table-row:not(.inventory-feed-row):has(> .pill) {
+  /* Each row is its own grid, so the middle track has to be a fraction rather
+     than auto: fractions resolve identically row to row, which is what keeps
+     the figures in a column, whereas auto would size each row to its own
+     content and go ragged again. It only needs to hold a currency figure, so
+     it is kept well under the meta track — at the 1fr it used to carry it took
+     roughly a third of the row and pushed every product's metadata onto a
+     second line. */
+  grid-template-columns: minmax(0, 2.4fr) minmax(min-content, 0.6fr) auto;
+}
+
+/* Product · Qty · Price · Discount · Line total · Remove, with the description
+   spanning underneath. Every cell that belongs to the row now has a track of
+   its own — the discount used to auto-place onto a second row by itself. */
 .line-item {
-  grid-template-columns: minmax(0, 1.5fr) 100px 130px minmax(0, 1fr) auto;
+  /* The numeric tracks are minmax(0, Npx) rather than a bare Npx so they can
+     give ground when the row is short of space. A fixed track contributes its
+     full width to the grid's min-content, and that minimum propagated up
+     through .content-grid and .page-grid and widened the whole document: at an
+     820px viewport /invoices scrolled sideways by 33px. Above roughly 900px
+     there is slack, the tracks sit at their maximum, and nothing moves. */
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 100px) minmax(0, 150px) minmax(min-content, 1fr) auto;
+  align-items: stretch;
+  gap: 12px 10px;
+}
+
+/* Same trade the .field-grid--align-controls rows make, for the same reason:
+   the cells carry labels of unequal height ("Qty (Pieces)" wraps in its narrow
+   track where "Price" does not, and the discount stacks its %/Flat toggle
+   under its label), so bottom-aligning the row put the five labels on five
+   different baselines. The label row takes the slack instead — every label
+   starts on one line and every control still ends on one line. */
+.line-item > .field:not(.field--full) {
+  grid-template-rows: 1fr auto;
+}
+
+.line-item > .field:not(.field--full) > label {
+  align-self: start;
+}
+
+/* Trailing cells are a single block, not a label+control stack: stretching
+   them would drag a 36px icon button up to the full height of the row. */
+.line-item > .button,
+.line-item > .line-item__price {
+  align-self: end;
+}
+
+/* Except the composer's total, which carries its own "Line total" label and so
+   splits into the same two bands as the fields beside it. */
+.line-item > .line-item__price:has(> .line-item__label) {
+  align-self: stretch;
+  grid-template-rows: 1fr auto;
+}
+
+/* Only the composer's rows carry a per-line discount. The quick-create modal
+   uses .line-item with one cell fewer, so the extra track is opt-in — without
+   this its line total would sit in the narrow discount column. */
+.line-item--discount {
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 88px) minmax(0, 124px) minmax(0, 128px) minmax(min-content, 1fr) auto;
+}
+
+/* Matches .field label so an unlabelled cell reads like a labelled one. */
+.line-item__label {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+/* The line total is a figure plus a tax breakdown. Only the figure is a single
+   unbreakable token — the breakdown beneath it must wrap rather than run over
+   the Remove button beside it. */
+.line-item__price {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+  text-align: right;
+}
+
+/* Figure and breakdown are one block so they sit in the control band together,
+   level with the inputs, rather than spreading across the slack the label row
+   above them gives up. */
+.line-item__price-value {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+}
+
+.line-item__price .table-subtext {
+  white-space: normal;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+/* Discount cell: unit toggle above, value below, inside one narrow track. */
+.line-item__discount {
+  display: grid;
+  gap: 4px;
+}
+
+.line-item__discount-modes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.line-item__discount-modes label {
+  margin: 0;
+  cursor: pointer;
+}
+
+.line-item__discount-modes input {
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .invoice-row__type-indicator {
@@ -1084,15 +2579,15 @@ textarea {
 }
 
 .invoice-type-badge--sales {
-  background: rgba(34, 197, 94, 0.2);
-  color: #84cc16;
-  border: 1px solid rgba(34, 197, 94, 0.4);
+  background: rgb(var(--rgb-success) / 0.2);
+  color: var(--text-sales);
+  border: 1px solid rgb(var(--rgb-success) / 0.4);
 }
 
 .invoice-type-badge--purchase {
-  background: rgba(251, 146, 60, 0.2);
-  color: #fb923c;
-  border: 1px solid rgba(251, 146, 60, 0.4);
+  background: rgb(var(--rgb-orange) / 0.2);
+  color: var(--text-purchase);
+  border: 1px solid rgb(var(--rgb-orange) / 0.4);
 }
 
 .invoice-row__header {
@@ -1139,9 +2634,9 @@ textarea {
   padding: 6px 10px;
   font-size: 0.78rem;
   font-weight: 700;
-  color: #c7d7f4;
-  background: rgba(148, 184, 255, 0.1);
-  border: 1px solid rgba(148, 184, 255, 0.2);
+  color: var(--text-soft);
+  background: rgb(var(--rgb-info) / 0.1);
+  border: 1px solid rgb(var(--rgb-info) / 0.2);
 }
 
 .invoice-row__items,
@@ -1157,12 +2652,12 @@ textarea {
   gap: 8px;
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(8, 16, 29, 0.66);
-  border: 1px solid rgba(148, 184, 255, 0.14);
+  background: rgb(var(--rgb-panel-well) / 0.66);
+  border: 1px solid rgb(var(--rgb-info) / 0.14);
 }
 
 .invoice-row__tax-grid span {
-  color: #bdd0f2;
+  color: var(--text-tax-grid);
   font-size: 0.82rem;
   font-weight: 600;
 }
@@ -1172,16 +2667,56 @@ textarea {
 .invoice-row__meta {
   display: grid;
   gap: 6px;
+  /* Emails, filenames and migration hashes are single unbreakable tokens; the
+     automatic minimum would otherwise push them past the panel edge. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .receipt-allocation-strip {
   margin-top: 8px;
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(8, 16, 29, 0.56);
-  border: 1px solid rgba(148, 184, 255, 0.14);
+  background: rgb(var(--rgb-panel-well) / 0.56);
+  border: 1px solid rgb(var(--rgb-info) / 0.14);
   display: grid;
   gap: 8px;
+}
+
+.voucher-note {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgb(var(--rgb-panel-well) / 0.56);
+  border: 1px solid rgb(var(--rgb-info) / 0.14);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.78rem;
+  /* Notes are free text; keep long ones inside the card. */
+  overflow-wrap: anywhere;
+}
+
+.voucher-note__label {
+  color: var(--text-soft);
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.voucher-note__text {
+  color: var(--text-strong);
+}
+
+.statement-entry-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  font-style: italic;
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .receipt-allocation-strip__header {
@@ -1192,15 +2727,19 @@ textarea {
 }
 
 .receipt-allocation-strip__title {
-  color: #c7d7f4;
+  color: var(--text-soft);
   font-size: 0.78rem;
   font-weight: 700;
 }
 
 .receipt-allocation-strip__total {
-  color: #e9f0ff;
+  color: var(--text-strong);
   font-size: 0.78rem;
   font-weight: 800;
+  /* The strip sits inside .invoice-row__meta, which breaks anywhere so that
+     emails and references stay in their track. A currency figure must not:
+     let the title beside it take the narrowness instead. */
+  white-space: nowrap;
 }
 
 .receipt-allocation-strip__chips {
@@ -1217,13 +2756,13 @@ textarea {
   gap: 6px;
   border-radius: 999px;
   padding: 4px 10px;
-  border: 1px solid rgba(148, 184, 255, 0.24);
-  background: rgba(148, 184, 255, 0.1);
+  border: 1px solid rgb(var(--rgb-info) / 0.24);
+  background: rgb(var(--rgb-info) / 0.1);
   white-space: nowrap;
 }
 
 .receipt-allocation-chip__invoice {
-  color: #e9f0ff;
+  color: var(--text-strong);
   font-size: 0.76rem;
   font-weight: 700;
 }
@@ -1238,22 +2777,22 @@ textarea {
 }
 
 .receipt-allocation-chip__status--full {
-  color: #7ce9b0;
-  background: rgba(34, 197, 94, 0.15);
+  color: var(--color-success);
+  background: rgb(var(--rgb-success) / 0.15);
 }
 
 .receipt-allocation-chip__status--partial {
-  color: #f6d67b;
-  background: rgba(246, 214, 123, 0.16);
+  color: var(--warning);
+  background: rgb(var(--rgb-warning) / 0.16);
 }
 
 .receipt-allocation-chip__status--unpaid {
-  color: #fca5a5;
-  background: rgba(239, 68, 68, 0.16);
+  color: var(--text-danger-soft);
+  background: rgb(var(--rgb-danger-strong) / 0.16);
 }
 
 .receipt-allocation-chip__amount {
-  color: #cdd9ef;
+  color: var(--text-allocation-amount);
   font-size: 0.74rem;
   font-weight: 700;
 }
@@ -1272,6 +2811,13 @@ textarea {
   flex-wrap: wrap;
 }
 
+/* Buttons that act on the same voucher — view its receipt, edit it, cancel it —
+   and so sit tighter to each other than to anything else in the actions strip. */
+.invoice-row__actions-group {
+  display: flex;
+  gap: 4px;
+}
+
 .invoice-row__aside {
   display: grid;
   justify-items: end;
@@ -1286,8 +2832,8 @@ textarea {
   gap: 6px;
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(8, 16, 29, 0.66);
-  border: 1px solid rgba(148, 184, 255, 0.14);
+  background: rgb(var(--rgb-panel-well) / 0.66);
+  border: 1px solid rgb(var(--rgb-info) / 0.14);
 }
 
 .invoice-row__amount {
@@ -1298,18 +2844,23 @@ textarea {
 }
 
 .invoice-row__amount--sales {
-  color: rgba(34, 197, 94, 0.8);
+  color: rgb(var(--rgb-success) / 0.8);
 }
 
 .invoice-row__amount--purchase {
-  color: rgba(251, 146, 60, 0.8);
+  color: rgb(var(--rgb-orange) / 0.8);
 }
 
 .line-item__price,
+/* Right-aligned so the figures form a column against the actions beside them
+   rather than starting wherever their own track does — money is read by
+   comparing magnitudes down a list, which needs a shared right edge. */
 .table-row__price,
 .invoice-row__price {
   font-weight: 800;
   font-size: 1.22rem;
+  white-space: nowrap;
+  text-align: right;
 }
 
 .pill {
@@ -1320,30 +2871,57 @@ textarea {
   border-radius: 999px;
   padding: 8px 12px;
   font-weight: 800;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--rgb-overlay) / 0.05);
 }
 
 .pill--low {
-  background: rgba(255, 139, 139, 0.12);
-  color: #ffc1c1;
+  background: rgb(var(--rgb-danger) / 0.12);
+  color: var(--text-on-danger-tint);
 }
 
 .pill--ok {
-  background: rgba(87, 209, 201, 0.12);
-  color: #bcfff9;
+  background: rgb(var(--rgb-accent) / 0.12);
+  color: var(--text-on-accent-tint-2);
 }
 
 .summary-box {
   padding: 18px;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(148, 184, 255, 0.08);
+  background: rgb(var(--rgb-overlay) / 0.03);
+  border: 1px solid rgb(var(--rgb-info) / 0.08);
 }
 
 .summary-box__value {
   margin: 10px 0 0;
   font-size: 2rem;
   font-weight: 800;
+  /* Currency strings have no spaces, so at 2rem in a narrow grid track they
+     overflow the box instead of wrapping. */
+  overflow-wrap: anywhere;
+}
+
+/* The opening/debit/credit figures behind the headline balance. One sentence
+   with middots while there is room for one, because that is how the figures are
+   spoken; the middots are drawn by the list so the labels stay real markup. */
+.summary-box__breakdown {
+  margin: 12px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.summary-box__stat {
+  display: flex;
+  gap: 6px;
+}
+
+.summary-box__stat + .summary-box__stat::before {
+  content: '·';
+}
+
+.summary-box__stat dt,
+.summary-box__stat dd {
+  margin: 0;
 }
 
 .login-page {
@@ -1371,12 +2949,12 @@ textarea {
 
 .login-hero {
   background:
-    radial-gradient(circle at top left, rgba(87, 209, 201, 0.18), transparent 34%),
-    linear-gradient(180deg, rgba(7, 14, 24, 0.92) 0%, rgba(10, 20, 35, 0.88) 100%);
+    radial-gradient(circle at top left, rgb(var(--rgb-accent) / 0.18), transparent 34%),
+    linear-gradient(180deg, rgb(var(--rgb-hero-top) / 0.92) 0%, rgb(var(--rgb-hero-bottom) / 0.88) 100%);
 }
 
 .login-card {
-  background: rgba(9, 17, 31, 0.94);
+  background: rgb(var(--rgb-panel) / 0.94);
   box-shadow: var(--shadow);
   width: min(460px, 100%);
   justify-self: end;
@@ -1400,8 +2978,8 @@ textarea {
 .login-metric {
   padding: 18px;
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(148, 184, 255, 0.08);
+  background: rgb(var(--rgb-overlay) / 0.04);
+  border: 1px solid rgb(var(--rgb-info) / 0.08);
 }
 
 .login-metric strong {
@@ -1414,6 +2992,20 @@ textarea {
   text-align: right;
 }
 
+/* Used for the sort-direction announcement in table headers. It had no rule at
+   all, so "(asc)" was rendering as visible text inside the sort button. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -1423,7 +3015,7 @@ textarea {
   padding: 20px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: rgba(4, 9, 16, 0.72);
+  background: rgb(var(--rgb-scrim) / 0.72);
   backdrop-filter: blur(6px);
 }
 
@@ -1434,8 +3026,42 @@ textarea {
   border-radius: 24px;
   padding: 22px;
   overflow-y: auto;
-  background: linear-gradient(180deg, rgba(11, 20, 34, 0.98) 0%, rgba(9, 17, 31, 0.96) 100%);
+  background: linear-gradient(180deg, rgb(var(--rgb-panel-top) / 0.98) 0%, rgb(var(--rgb-panel) / 0.96) 100%);
   box-shadow: var(--shadow);
+}
+
+/* A handful of dialogs wrap their body in a nested .panel — a frame inside a
+   frame, indenting the content twice. Strip the inner frame so its header sits
+   at the same inset as every other modal's and can pin the same way below. */
+.modal-panel > .panel {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+/* Long forms — create ledger, create product, record receipt — scroll inside
+   the panel, and the only way out used to be the Cancel button at the very
+   bottom. Pinning the header keeps its close button reachable from anywhere in
+   the form. The negative margins pull the bar out to the panel's padding edge
+   so content scrolls under something opaque, not past a floating strip, and the
+   negative `top` parks the panel's own top padding off-screen when pinned. */
+.modal-panel > .panel__header,
+.modal-panel > .panel > .panel__header {
+  position: sticky;
+  top: -22px;
+  z-index: 2;
+  margin: -22px -22px 20px;
+  padding: 22px 22px 14px;
+  border-radius: 23px 23px 0 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-modal-header);
+}
+
+/* The wrapper is a .stack grid, so its 16px gap already separates the header
+   from the body — the extra bottom margin would double the gap. */
+.modal-panel > .panel > .panel__header {
+  margin-bottom: 0;
 }
 
 .modal-panel--invoice-preview {
@@ -1449,7 +3075,7 @@ textarea {
   place-items: center;
   border: 1px solid var(--line-strong);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgb(var(--rgb-overlay) / 0.02);
   overflow: hidden;
 }
 
@@ -1457,7 +3083,7 @@ textarea {
   width: 100%;
   min-height: 72vh;
   border: none;
-  background: #111827;
+  background: var(--bg-pdf-frame);
 }
 
 .restore-progress-panel {
@@ -1479,8 +3105,8 @@ textarea {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  border: 3px solid rgba(255, 255, 255, 0.12);
-  border-top-color: var(--accent, #3b82f6);
+  border: 3px solid rgb(var(--rgb-overlay) / 0.12);
+  border-top-color: var(--accent);
   animation: restore-spin 0.8s linear infinite;
   margin-bottom: 20px;
 }
@@ -1489,8 +3115,8 @@ textarea {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: rgba(34, 197, 94, 0.18);
-  color: #22c55e;
+  background: rgb(var(--rgb-success) / 0.18);
+  color: rgb(var(--rgb-success));
   font-size: 1.5rem;
   display: flex;
   align-items: center;
@@ -1595,6 +3221,43 @@ textarea {
   border: 1px solid #d9e2f2;
 }
 
+.table-scroll {
+  /* Contain absolutely positioned screen-reader labels as well as the table. */
+  position: relative;
+  overflow-x: auto;
+}
+
+/* Generic settings-page tables. Both class names were used in markup but
+   defined nowhere, so their cells had no padding and collided. */
+.table,
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td,
+.data-table th,
+.data-table td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.table th,
+.data-table th {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.table tr:last-child td,
+.data-table tr:last-child td {
+  border-bottom: 0;
+}
+
 .invoice-sheet__table-wrap {
   overflow-x: auto;
 }
@@ -1648,7 +3311,7 @@ textarea {
 }
 
 .skeleton {
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 25%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.04) 75%);
+  background: linear-gradient(90deg, rgb(var(--rgb-overlay) / 0.04) 25%, rgb(var(--rgb-overlay) / 0.1) 50%, rgb(var(--rgb-overlay) / 0.04) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s infinite;
   border-radius: 8px;
@@ -1674,14 +3337,136 @@ textarea {
 }
 
 .invoice-feed-view__controls {
-  display: grid;
-  grid-template-columns: auto auto minmax(240px, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+/* Toolbar row: search grows, actions pinned right */
+.invoice-feed-view__toolbar {
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
 }
 
 .invoice-feed-view__search {
+  flex: 1 1 260px;
   min-width: 0;
+}
+
+/* Names what the search box matches. Its own grid row under the toolbar rather
+   than a child of that flex row, so it never drags the action buttons out of
+   line with the input. */
+.invoice-feed-view__search-hint {
+  margin: -4px 0 0;
+  padding-left: 2px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.invoice-feed-view__toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.invoice-feed-view__toolbar-actions .button,
+.invoice-feed-view__view-tabs .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Segmented view switcher (Card / Table), styled as tabs */
+.invoice-feed-view__view-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgb(var(--rgb-panel-field) / 0.55);
+  flex-shrink: 0;
+}
+
+.invoice-feed-view__view-tabs .button {
+  border-radius: 8px;
+}
+
+.invoice-feed-view__view-tabs .button--ghost {
+  background: transparent;
+  border: 0;
+}
+
+.invoice-feed-view__filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgb(var(--rgb-shadow) / 0.28);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.invoice-feed-view__chevron {
+  transition: transform 160ms ease;
+  opacity: 0.8;
+}
+
+/* Collapsible advanced-filters panel */
+.invoice-feed-view__advanced {
+  margin-top: 14px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  animation: invoice-feed-view__reveal 160ms ease;
+}
+
+@keyframes invoice-feed-view__reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Filters row: labeled fields aligned along their bottom edge */
+.invoice-feed-view__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 20px;
+  align-items: flex-end;
+}
+
+.invoice-feed-view__field {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.invoice-feed-view__field-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.invoice-feed-view__field .button-row {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.invoice-feed-view__toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  align-items: center;
+  margin-top: 12px;
 }
 
 .invoice-feed-view__checkbox {
@@ -1702,9 +3487,9 @@ textarea {
 }
 
 .invoice-feed-view__error {
-  border: 1px solid rgba(255, 139, 139, 0.3);
-  background: rgba(255, 139, 139, 0.12);
-  color: #ffc7c7;
+  border: 1px solid rgb(var(--rgb-danger) / 0.3);
+  background: rgb(var(--rgb-danger) / 0.12);
+  color: var(--text-on-danger-tint-2);
   border-radius: 14px;
   padding: 10px 14px;
 }
@@ -1762,7 +3547,7 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 12px;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgb(var(--rgb-overlay) / 0.02);
   text-align: center;
 }
 
@@ -1779,15 +3564,15 @@ textarea {
 }
 
 .invoice-feed-breakdown__value--purchase {
-  color: #fb923c;
+  color: var(--text-purchase);
 }
 
 .invoice-feed-breakdown__value--sales {
-  color: #84cc16;
+  color: var(--text-sales);
 }
 
 .invoice-feed-breakdown__value--cancelled {
-  color: #fca5a5;
+  color: var(--text-danger-soft);
 }
 
 .invoice-feed-breakdown__value--active {
@@ -1814,7 +3599,7 @@ textarea {
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
-  background: rgba(8, 17, 31, 0.95);
+  background: rgb(var(--rgb-bg) / 0.95);
 }
 
 .invoice-feed-table tbody td {
@@ -1829,7 +3614,7 @@ textarea {
 }
 
 .invoice-feed-table tbody tr:hover {
-  background: rgba(87, 209, 201, 0.08);
+  background: rgb(var(--rgb-accent) / 0.08);
 }
 
 .invoice-feed-table tbody tr.is-cancelled {
@@ -1862,15 +3647,252 @@ textarea {
 }
 
 .invoice-feed-table__status--active {
-  color: #bffbf6;
-  background: rgba(87, 209, 201, 0.14);
-  border: 1px solid rgba(87, 209, 201, 0.25);
+  color: var(--text-on-accent-tint);
+  background: rgb(var(--rgb-accent) / 0.14);
+  border: 1px solid rgb(var(--rgb-accent) / 0.25);
 }
 
 .invoice-feed-table__status--cancelled {
-  color: #ffc7c7;
-  background: rgba(255, 139, 139, 0.14);
-  border: 1px solid rgba(255, 139, 139, 0.25);
+  color: var(--text-on-danger-tint-2);
+  background: rgb(var(--rgb-danger) / 0.14);
+  border: 1px solid rgb(var(--rgb-danger) / 0.25);
+}
+
+/* Tax ledger — period totals ────────────────────────────────────────────
+   Taxable value + GST = gross value. The three figures are one equation, so
+   they sit on a single row with the operators between them; a plain card grid
+   left the reader to work out that two of the three add up to the third. */
+.tax-total-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 14px;
+}
+
+.tax-total-flow__op {
+  align-self: center;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: rgb(var(--rgb-muted) / 0.5);
+}
+
+.tax-bucket-group {
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid rgb(var(--rgb-info) / 0.1);
+}
+
+.tax-bucket-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.tax-total {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 18px;
+  border-radius: 22px;
+  background: rgb(var(--rgb-overlay) / 0.03);
+  border: 1px solid rgb(var(--rgb-info) / 0.08);
+}
+
+/* The gross figure is the one that has to tie back to the books, so it is the
+   only tile that carries the accent; the two it is built from stay quiet. */
+.tax-total--headline {
+  background: linear-gradient(140deg, rgb(var(--rgb-accent) / 0.16), rgb(var(--rgb-accent) / 0.03));
+  border-color: rgb(var(--rgb-accent) / 0.28);
+}
+
+.tax-total__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+}
+
+/* Lowercase and unspaced, so it reads as a gloss on the label rather than a
+   second label competing with it. */
+.tax-total__hint {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: rgb(var(--rgb-muted) / 0.9);
+}
+
+/* The eyebrow's 0.8 alpha is 4.3:1 on the teal headline tint; full --muted
+   clears 4.5:1 there. */
+.tax-total--headline .tax-total__label {
+  color: var(--muted);
+}
+
+.tax-total__value {
+  margin: 2px 0 0;
+  font-family: 'Space Grotesk', sans-serif;
+  /* A rupee figure in lakhs is 15 unbreakable characters. At a fixed size it
+     wrapped mid-number ("₹90,67,680.2 / 5") on every width between the
+     breakpoints, so the type scales with the room the tile actually has. */
+  font-size: clamp(1.15rem, 2.6vw - 10px, 1.78rem);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  /* Currency strings hold no spaces and overflow their track otherwise. */
+  overflow-wrap: anywhere;
+}
+
+.tax-total--headline .tax-total__value {
+  color: var(--accent);
+}
+
+/* A net total below zero means the input side outweighed the output side —
+   worth reading as a different state, not just a minus sign. */
+.tax-total--negative .tax-total__value,
+.tax-total--headline.tax-total--negative .tax-total__value {
+  color: var(--warning);
+}
+
+.tax-total--compact .tax-total__value {
+  font-size: clamp(1rem, 1.9vw - 7px, 1.35rem);
+}
+
+/* Dr and Cr each stay whole, so a narrow tile breaks between them and reads as
+   the two-line pair it is rather than splitting a figure down the middle. */
+.tax-total__split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tax-total__split > span {
+  white-space: nowrap;
+}
+
+.tax-total__split b {
+  font-weight: 700;
+  color: rgb(var(--rgb-text) / 0.85);
+}
+
+/* The payable figure leads and the set-off working sits beside it, so the
+   answer is readable at a glance and the arithmetic is there to be checked. */
+.tax-payable-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(0, 2fr);
+  gap: 14px;
+  /* The headline and its working are one unit, so they share an edge rather
+     than leaving the shorter card floating against the taller table. */
+  align-items: stretch;
+}
+
+.tax-setoff {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 22px;
+  background: rgb(var(--rgb-overlay) / 0.03);
+  border: 1px solid rgb(var(--rgb-info) / 0.08);
+  /* Five money columns; on a narrow panel the table scrolls in place rather
+     than widening the page. */
+  overflow-x: auto;
+}
+
+.tax-setoff__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tax-setoff__table th,
+.tax-setoff__table td {
+  padding: 8px 10px;
+}
+
+.tax-setoff__table thead th {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(var(--rgb-muted) / 0.8);
+  text-align: left;
+  border-bottom: 1px solid rgb(var(--rgb-info) / 0.12);
+}
+
+.tax-setoff__table tbody th,
+.tax-setoff__table tfoot th {
+  text-align: left;
+  font-weight: 700;
+}
+
+.tax-setoff__table tfoot th,
+.tax-setoff__table tfoot td {
+  border-top: 1px solid rgb(var(--rgb-info) / 0.16);
+}
+
+/* The column the row is read for. */
+.tax-setoff__payable {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.tax-setoff__table tfoot .tax-setoff__payable {
+  color: var(--accent);
+}
+
+.tax-setoff__note {
+  margin: 0;
+  font-size: 0.78rem;
+  white-space: normal;
+}
+
+.tax-setoff__note strong {
+  color: rgb(var(--rgb-text) / 0.9);
+}
+
+@media (max-width: 1100px) {
+  .tax-payable-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The equation is worth more than the type size, so the row tightens before it
+   breaks: three stacked full-width tiles push the entries table off-screen. */
+@media (max-width: 1100px) {
+  .tax-total-flow,
+  .tax-bucket-grid {
+    gap: 10px;
+  }
+
+  .tax-total {
+    padding: 15px;
+  }
+}
+
+@media (max-width: 900px) {
+  .tax-total-flow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Stacked, the operators are the joints between tiles rather than a column
+     of stray glyphs, so they centre instead of sitting mid-height. */
+  .tax-total-flow__op {
+    justify-self: center;
+  }
+}
+
+@media (max-width: 720px) {
+  .tax-bucket-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .tax-ledger-scroll {
@@ -1887,7 +3909,7 @@ textarea {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: var(--panel-bg, #0d1a2b);
+  background: var(--bg-sticky-head);
 }
 
 .tax-ledger-table tbody tr {
@@ -1895,17 +3917,17 @@ textarea {
 }
 
 .tax-ledger-table tbody tr:hover {
-  background: rgba(87, 209, 201, 0.04);
+  background: rgb(var(--rgb-accent) / 0.04);
 }
 
 .tax-ledger-table tbody tr.tax-ledger-row--sales {
-  box-shadow: inset 3px 0 0 rgba(34, 197, 94, 0.55);
-  background: linear-gradient(90deg, rgba(34, 197, 94, 0.08) 0%, rgba(34, 197, 94, 0.01) 22%, transparent 60%);
+  box-shadow: inset 3px 0 0 rgb(var(--rgb-success) / 0.55);
+  background: linear-gradient(90deg, rgb(var(--rgb-success) / 0.08) 0%, rgb(var(--rgb-success) / 0.01) 22%, transparent 60%);
 }
 
 .tax-ledger-table tbody tr.tax-ledger-row--purchase {
-  box-shadow: inset 3px 0 0 rgba(251, 146, 60, 0.55);
-  background: linear-gradient(90deg, rgba(251, 146, 60, 0.08) 0%, rgba(251, 146, 60, 0.01) 22%, transparent 60%);
+  box-shadow: inset 3px 0 0 rgb(var(--rgb-orange) / 0.55);
+  background: linear-gradient(90deg, rgb(var(--rgb-orange) / 0.08) 0%, rgb(var(--rgb-orange) / 0.01) 22%, transparent 60%);
 }
 
 .tax-ledger-type-cell {
@@ -1923,30 +3945,30 @@ textarea {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #c8d8ff;
-  border: 1px solid rgba(168, 185, 220, 0.28);
-  background: rgba(148, 184, 255, 0.12);
+  color: var(--text-on-info-tint-3);
+  border: 1px solid rgb(var(--rgb-tag-line) / 0.28);
+  background: rgb(var(--rgb-info) / 0.12);
 }
 
 .invoice-compact-card {
   border-radius: 20px;
-  border: 1px solid rgba(148, 184, 255, 0.12);
-  background: linear-gradient(135deg, rgba(10, 22, 40, 0.6) 0%, rgba(15, 29, 48, 0.45) 100%);
+  border: 1px solid rgb(var(--rgb-info) / 0.12);
+  background: linear-gradient(135deg, rgb(var(--rgb-panel-row) / 0.6) 0%, rgb(var(--rgb-card-strong) / 0.45) 100%);
   padding: 16px;
   transition: border-color 180ms ease, transform 180ms ease;
 }
 
 .invoice-compact-card:hover {
   transform: translateY(-1px);
-  border-color: rgba(148, 184, 255, 0.24);
+  border-color: rgb(var(--rgb-info) / 0.24);
 }
 
 .invoice-compact-card--sales {
-  border-left: 4px solid rgba(34, 197, 94, 0.45);
+  border-left: 4px solid rgb(var(--rgb-success) / 0.45);
 }
 
 .invoice-compact-card--purchase {
-  border-left: 4px solid rgba(251, 146, 60, 0.45);
+  border-left: 4px solid rgb(var(--rgb-orange) / 0.45);
 }
 
 .invoice-compact-card--cancelled {
@@ -1955,7 +3977,9 @@ textarea {
 
 .invoice-compact-card__grid {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  /* The side column holds a fixed-width row of icon buttons; sizing it by
+     content stops the two text columns from starving it into wrapping. */
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
   gap: 14px;
   align-items: start;
 }
@@ -1983,15 +4007,39 @@ textarea {
   display: inline-flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+/* Compact overdue pill. No minimum width, unlike .pill, so it fits in a
+   table cell and beside a due date. The clock icon and day count keep it
+   distinct from the Cancelled badge, which shares the danger colour. */
+.overdue-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--rgb-danger) / 0.45);
+  color: var(--text-on-danger-tint-3);
+  background: rgb(var(--rgb-danger) / 0.22);
+  font-size: 0.74rem;
+  font-weight: 800;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.invoice-feed-table__due .overdue-badge {
+  margin-top: 4px;
 }
 
 .invoice-compact-card__cancelled-badge {
   display: inline-flex;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 139, 139, 0.3);
-  color: #ffc7c7;
-  background: rgba(255, 139, 139, 0.14);
+  border: 1px solid rgb(var(--rgb-danger) / 0.3);
+  color: var(--text-on-danger-tint-2);
+  background: rgb(var(--rgb-danger) / 0.14);
   font-size: 0.76rem;
   font-weight: 700;
 }
@@ -2041,11 +4089,11 @@ textarea {
 }
 
 .invoice-compact-card__amount--sales {
-  color: #84cc16;
+  color: var(--text-sales);
 }
 
 .invoice-compact-card__amount--purchase {
-  color: #fb923c;
+  color: var(--text-purchase);
 }
 
 .invoice-compact-card__actions {
@@ -2089,6 +4137,14 @@ textarea {
   .two-column-grid,
   .login-shell {
     grid-template-columns: 1fr;
+  }
+
+  /* Stacked, the form sits above the list rather than beside it — sticking it
+     would pin it over the list it is meant to sit next to. */
+  .content-grid--aside-form > :first-child {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
   }
 
   .page-hero {
@@ -2175,6 +4231,22 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  /* The selector has to repeat the `:has()` from the wide layout, ugly as that
+     is. A media query adds no specificity, so a plain `.invoice-row` here loses
+     to `.invoice-row:has(> .invoice-row__actions)` and the row keeps its three
+     desktop tracks on a phone — actions off the screen edge, meta text crushed
+     onto the price. Simplify this back to one selector and that returns. */
+  .invoice-row:has(> .invoice-row__actions) {
+    grid-template-columns: 1fr;
+  }
+
+  /* Collapsed to one column, the price and the actions are full-width rows of
+     their own rather than a right-hand column, so they read left-aligned with
+     the meta above them. */
+  .invoice-row > .invoice-row__price {
+    text-align: left;
+  }
+
   .opening-balance-group {
     grid-template-columns: 1fr;
   }
@@ -2219,6 +4291,45 @@ textarea {
     flex: 1 1 auto;
   }
 
+  /* The grouped buttons are nested a level deeper, so the rule above stretches
+     them inside the group but leaves the group itself content-sized. */
+  .invoice-row__actions-group {
+    flex: 1 1 auto;
+  }
+
+  /* A whole chip — invoice number, status pill and amount — is wider than a
+     phone-width row, and the strip scrolls on its own axis rather than letting
+     it spill, so the amount is simply cut off. Let the chip take two lines. */
+  .receipt-allocation-chip {
+    flex-wrap: wrap;
+    white-space: normal;
+    border-radius: 14px;
+  }
+
+  /* One sentence's worth of figures no longer fits on a phone: run as prose it
+     wraps mid-amount and the last label falls off the end. Stacked as rows, the
+     label stays with its figure and every one of them is readable. */
+  .summary-box__breakdown {
+    display: grid;
+    gap: 6px;
+  }
+
+  .summary-box__stat {
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  /* Stacked, the figures form a column of their own; the extra weight is what
+     tells that column apart from the labels facing it. */
+  .summary-box__stat dd {
+    color: var(--text-summary-stat);
+    font-weight: 600;
+  }
+
+  .summary-box__stat + .summary-box__stat::before {
+    content: none;
+  }
+
   .button-row {
     width: 100%;
     flex-direction: column;
@@ -2239,7 +4350,69 @@ textarea {
   }
 
   .invoice-feed-view__controls {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* Stack the toolbar: search on top, actions in tidy shared rows below */
+  .invoice-feed-view__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .invoice-feed-view__search {
+    flex: 1 1 auto;
+  }
+
+  .invoice-feed-view__toolbar-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .invoice-feed-view__header .panel__header {
+    flex-wrap: wrap;
+  }
+
+  .invoice-feed-view__view-tabs {
+    flex: 1 1 100%;
+  }
+
+  .invoice-feed-view__view-tabs .button {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .invoice-feed-view__toolbar-actions > .button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  /* Filters: single full-width column */
+  .invoice-feed-view__filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .invoice-feed-view__field {
+    width: 100%;
+  }
+
+  /* Keep quick-range presets as a wrapping row, not stacked */
+  .invoice-feed-view__field .button-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .invoice-feed-view__field .button-row .button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .invoice-feed-view__toggles {
+    margin-left: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
   }
 
   .invoice-feed-breakdown__grid {
@@ -2257,4 +4430,4079 @@ textarea {
   .invoice-compact-card__actions {
     justify-content: flex-start;
   }
+}
+
+/* ============================================================
+   Dashboard metrics, charts & visualizations
+   ============================================================ */
+
+.stats-grid--dense {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.stat-card__value--danger {
+  color: var(--danger);
+}
+
+.stat-card__value--warning {
+  color: var(--warning);
+}
+
+/* Monthly trend chart -------------------------------------- */
+.chart {
+  display: grid;
+  gap: 14px;
+}
+
+.chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.chart__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.chart__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.chart__swatch--sales {
+  background: var(--accent);
+}
+
+.chart__swatch--purchases {
+  background: var(--chart-purchases);
+}
+
+.chart__swatch--receipts {
+  background: var(--warning);
+}
+
+.chart__svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart__empty {
+  padding: 40px 0;
+  text-align: center;
+}
+
+.chart__gridline {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.chart__bar--sales {
+  fill: var(--accent);
+}
+
+.chart__bar--purchases {
+  fill: var(--chart-purchases);
+}
+
+.chart__line {
+  stroke: var(--warning);
+  stroke-width: 2;
+}
+
+.chart__dot {
+  fill: var(--warning);
+}
+
+.chart__xlabel {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+/* Payment status donut ------------------------------------- */
+.donut {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.donut__svg {
+  width: 150px;
+  height: 150px;
+  flex-shrink: 0;
+}
+
+.donut__track {
+  stroke: var(--line);
+}
+
+.donut__arc--paid {
+  stroke: var(--accent);
+}
+
+.donut__arc--partial {
+  stroke: var(--warning);
+}
+
+.donut__arc--unpaid {
+  stroke: var(--danger);
+}
+
+.donut__total {
+  fill: var(--text);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.donut__caption {
+  fill: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.donut__legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+  min-width: 140px;
+}
+
+.donut__legend-item {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.donut__legend-item strong {
+  color: var(--text);
+}
+
+.donut__legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.donut__legend-swatch--paid {
+  background: var(--accent);
+}
+
+.donut__legend-swatch--partial {
+  background: var(--warning);
+}
+
+.donut__legend-swatch--unpaid {
+  background: var(--danger);
+}
+
+/* Top products ---------------------------------------------- */
+.top-products {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 16px;
+}
+
+/* A flex row here made the whole document scroll sideways at 390px: the name
+   is nowrap, so the row's min-content was the untruncated name plus the figure
+   — 345px inside a 318px panel — and that minimum travelled all the way up
+   through the auto grid tracks to the page. A minmax(0, 1fr) track has a zero
+   minimum, so the name truncates as it was always meant to. Same two columns,
+   same spacing. */
+.top-products__meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 7px;
+  font-size: 0.92rem;
+}
+
+.top-products__name {
+  font-weight: 600;
+  color: var(--text);
+  /* Override the auto minimum so a long name truncates instead of pushing the
+     figure beside it out of the panel. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-products__value {
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.top-products__track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.top-products__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-deep), var(--accent));
+}
+
+@media (max-width: 1100px) {
+  .stats-grid--dense {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ── Sidebar icons & collapsible desktop rail ─────────────────────── */
+
+.sidebar__link svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.sidebar__header {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The rail handle. It sits on the sidebar's own right edge — the edge it
+   moves — so the control is where the result is. Resting state is a bare
+   glyph rather than a boxed button: nothing in the header outranks the
+   brand until you reach for it. */
+.sidebar__collapse {
+  display: none;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--sidebar-muted);
+  cursor: pointer;
+  padding: 0;
+  border-radius: 9px;
+  line-height: 1;
+  align-items: center;
+  justify-content: center;
+  transition: background 180ms ease, color 180ms ease, border-color 180ms ease,
+    transform 180ms ease;
+}
+
+.sidebar__collapse:hover {
+  background: var(--sidebar-hover-bg);
+  border-color: var(--sidebar-border);
+  color: var(--sidebar-text);
+}
+
+.sidebar__collapse:active {
+  transform: scale(0.9);
+}
+
+/* One chevron, two states. The overshoot on the turn is what sells it as the
+   panel swinging shut rather than an icon quietly being swapped. */
+.sidebar__collapse svg {
+  transition: transform 320ms cubic-bezier(0.34, 1.32, 0.64, 1);
+}
+
+.sidebar__collapse--collapsed svg {
+  transform: rotate(180deg);
+}
+
+/* A 2px lean towards where the rail is about to go. Local -X after the
+   rotation is screen +X, so the collapsed chevron leans right — outwards,
+   the direction it would reopen. */
+.sidebar__collapse:hover svg {
+  transform: translateX(-2px);
+}
+
+.sidebar__collapse--collapsed:hover svg {
+  transform: rotate(180deg) translateX(-2px);
+}
+
+.sidebar__fy {
+  padding: 12px 10px;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+.sidebar__user-meta {
+  min-width: 0;
+}
+
+/* The rail is desktop-only: the mobile drawer is always full width, so every
+   rule below stays inside this breakpoint. */
+@media (min-width: 768px) {
+  .sidebar__collapse {
+    display: flex;
+  }
+
+  /* Brand left, handle hard against the right edge, both on one optical
+     line — no stray row of its own under the logo. */
+  .sidebar__header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .sidebar__brand {
+    min-width: 0;
+  }
+
+  .app-shell,
+  .sidebar {
+    transition: grid-template-columns 180ms ease, width 180ms ease;
+  }
+
+  /* --sidebar-width is consumed by both .app-shell's grid and .sidebar's
+     width, so overriding the token here is the whole rail mechanic. */
+  .app-shell--rail {
+    --sidebar-width: 68px;
+  }
+
+  .app-shell--rail .sidebar__link {
+    justify-content: center;
+    padding: 9px 0;
+  }
+
+  .app-shell--rail .sidebar__nav,
+  .app-shell--rail .sidebar__header,
+  .app-shell--rail .sidebar__footer {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  /* Labels are clipped rather than display:none'd so they stay in the
+     accessibility tree; the NavLink title attribute supplies a hover tooltip. */
+  .app-shell--rail .sidebar__link-label,
+  .app-shell--rail .sidebar__brand-name,
+  .app-shell--rail .sidebar__brand-tagline,
+  .app-shell--rail .sidebar__user-meta {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .app-shell--rail .sidebar__brand {
+    justify-content: center;
+  }
+
+  /* 68px has no room for a row, so the handle stacks under the mark and
+     both centre on the rail's axis. */
+  .app-shell--rail .sidebar__header {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .app-shell--rail .sidebar__collapse {
+    align-self: center;
+  }
+
+  /* 68px cannot hold a company name or an FY label. */
+  .app-shell--rail .sidebar__fy {
+    display: none;
+  }
+
+  .app-shell--rail .sidebar__user {
+    justify-content: center;
+  }
+
+  .app-shell--rail .sidebar__logout {
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+.sidebar__logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* ── Sidebar sections (accordion) ─────────────────────────────────── */
+/* One section is open at a time, so the rail holds ~10 rows however many
+   sections exist. The toggle reuses .sidebar__link so a parent row and a leaf
+   row share a hit target and a resting colour. */
+
+.sidebar__section {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar__section-toggle {
+  position: relative;
+  width: 100%;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+/* The section that owns the current route. Deliberately quieter than
+   --active: the leaf inside it carries the accent, and two accented rows in
+   one column read as two current pages. */
+.sidebar__section-toggle--current {
+  color: var(--sidebar-text);
+}
+
+/* A 2px tick in the gutter — enough to say "the page you are on is in here"
+   without competing with the accent on the active leaf itself. */
+.sidebar__section-toggle--current::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  width: 2px;
+  height: 16px;
+  margin-top: -8px;
+  border-radius: 2px;
+  background: var(--sidebar-active-text);
+}
+
+.sidebar__chevron {
+  margin-left: auto;
+  opacity: 0.6;
+  transition: transform 180ms ease;
+}
+
+.sidebar__chevron--open {
+  transform: rotate(90deg);
+}
+
+/* AnimatePresence animates the height, so the wrapper must clip. */
+.sidebar__section-items {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* The guide rail that ties children to their parent. */
+  margin: 2px 0 2px 19px;
+  padding-left: 11px;
+  border-left: 1px solid var(--sidebar-border);
+}
+
+.sidebar__link--child {
+  font-size: 0.83rem;
+  padding: 7px 10px;
+  gap: 9px;
+}
+
+.sidebar__link--child svg {
+  width: 15px;
+  height: 15px;
+  opacity: 0.85;
+}
+
+/* Settings sits in the footer rather than the nav: it is navigation, but not
+   the kind you scan past on the way to work. The rail rules for .sidebar__link
+   already centre it at 68px. */
+.sidebar__link--settings {
+  margin: 0 -6px 2px;
+}
+
+
+/* ── Tabs ─────────────────────────────────────────────────────────── */
+/* Segmented control — same padded, bordered pill as the invoice feed's
+   Card/Table switcher, so tab bars read consistently across the app. */
+.tab-bar {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgb(var(--rgb-panel-field) / 0.55);
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.tab-bar .button {
+  border-radius: 8px;
+}
+
+.tab-bar .button--ghost {
+  background: transparent;
+  border: 0;
+}
+
+/* A panel is a grid/flex item wherever it's used, so it needs the auto minimum
+   overridden for anything that scrolls inside it to actually scroll. */
+.tab-panel {
+  min-width: 0;
+}
+
+/* ── Analytics ────────────────────────────────────────────────────── */
+/* auto-fit rather than flex-wrap: the fields reflow from one row to two to a
+   single column on their own, with no breakpoint to keep in sync. */
+.analytics-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.analytics-filters__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 150px;
+  /* Overrides the auto minimum so a field can shrink below its content width
+     instead of forcing the row wider than the screen. */
+  min-width: 0;
+}
+
+.analytics-filters__field > span {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.analytics-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.analytics-tab__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+.analytics-chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+@media (max-width: 720px) {
+  /* Full-width tap targets once the controls are stacked anyway. */
+  .analytics-tab__actions > .button,
+  .analytics-filters__reset .button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .analytics-chart-controls .tab-bar,
+  .analytics-chart-controls .tab-bar .button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+.analytics-loss-text {
+  color: var(--danger);
+}
+
+/* Inline "Loss" pill next to a product that sold at or below cost. */
+.analytics-loss-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--rgb-danger) / 0.4);
+  background: rgb(var(--rgb-danger) / 0.12);
+  color: var(--danger);
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* Product performance: a second, quieter line under a cell's main figure. */
+.product-performance__sku,
+.product-performance__sub {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Marks a row costed at today's purchase price because the period had no
+   purchases of it — its margin is an estimate, not what the goods cost. */
+.product-performance__basis {
+  display: block;
+  width: fit-content;
+  margin-left: auto;
+  margin-top: 2px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--warning);
+  font-size: 0.66rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* The product name opens its page. Looks like the cell text until hovered —
+   the whole row is the target, the link is what keyboards and new tabs use. */
+.product-performance__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.product-performance__link svg {
+  color: var(--muted);
+  transition: transform 160ms ease, color 160ms ease;
+}
+
+.product-performance__table tbody tr:hover .product-performance__link,
+.product-performance__link:focus-visible {
+  color: var(--accent);
+}
+
+.product-performance__table tbody tr:hover .product-performance__link svg {
+  color: var(--accent);
+  transform: translateX(2px);
+}
+
+/* Fourteen columns scroll sideways on any phone; keep the product name pinned
+   so a figure never loses its row label. Opaque, or scrolled cells show
+   through. */
+.product-performance__table tbody td:first-child,
+.product-performance__table tfoot th:first-child,
+.product-performance__table thead th:first-child,
+.product-detail__table tbody th,
+.product-detail__table tfoot th:first-child,
+.product-detail__table thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+}
+
+/* The row hover tint (accent at 8%) pre-mixed over --bg, since the pinned
+   cell's own background would otherwise hide it. */
+.product-performance__table tbody tr:hover td:first-child {
+  background: var(--bg-pinned-hover);
+}
+
+.product-performance__table thead th:first-child,
+.product-detail__table thead th:first-child {
+  z-index: 2;
+}
+
+/* Totals rows. invoice-feed-table never styled a tfoot, so these cells were
+   falling back to the user agent's 1px, centred <th>. */
+.product-performance__table tfoot th,
+.product-detail__table tfoot th {
+  padding: 12px;
+  border-top: 1px solid var(--line-strong);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.product-performance__table tfoot th:first-child,
+.product-detail__table tfoot th:first-child {
+  text-align: left;
+}
+
+/* ── Product performance: one product (/analytics/products/:id) ───── */
+.product-detail__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+/* Two charts a row where there is room for twelve months each, one below. */
+.product-detail__charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 1100px) {
+  .product-detail__charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.product-detail__chart {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 12px 8px;
+}
+
+.product-detail__chart-title {
+  margin: 0 4px;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.product-detail__chart-caption {
+  margin: 0 4px 8px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* Month rows are a readout, not a link like the report rows they sit among. */
+.product-detail__table tbody tr {
+  cursor: default;
+}
+
+.product-detail__table tbody th {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.product-detail__quiet td {
+  color: var(--muted);
+}
+
+.chart-frame {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px 8px 8px;
+  /* Recharts' ResponsiveContainer measures its parent; without this it can
+     only ever grow, never shrink back down. */
+  min-width: 0;
+}
+
+/* Wide report tables scroll inside their own container so the page body never
+   scrolls horizontally. The min-width is what makes that true: without it the
+   table's own min-width propagates up and widens the page instead. */
+.analytics-table-scroll {
+  overflow-x: auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.analytics-filters__reset {
+  display: flex;
+  align-items: flex-end;
+  /* Sits with the fields rather than stretching like one. */
+  flex: 0 0 auto;
+}
+
+.analytics-filters__reset .button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Combobox clear button ────────────────────────────────────────── */
+/* Only rendered when the caller opts in via onClear. */
+.input--clearable {
+  /* Keep the value from running under the button. */
+  padding-right: 34px;
+}
+
+.combobox__clear {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: 150ms ease;
+}
+
+.combobox__clear:hover {
+  background: var(--bg-card-strong);
+  color: var(--text);
+}
+
+.combobox__clear:focus-visible {
+  outline: 2px solid var(--sidebar-active-border);
+  outline-offset: 1px;
+}
+
+/* ── Marketplace ──────────────────────────────────────────────────── */
+.marketplace-page {
+  display: grid;
+  gap: 16px;
+}
+
+/* Segmented Card/Table switcher, matching the invoice feed's. */
+.marketplace-view-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgb(var(--rgb-panel-field) / 0.55);
+  flex-shrink: 0;
+}
+
+.marketplace-view-tabs .button {
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.marketplace-view-tabs .button--ghost {
+  background: transparent;
+  border: 0;
+}
+
+.marketplace-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.marketplace-toolbar__search {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.marketplace-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.marketplace-toolbar__actions .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.marketplace-filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgb(var(--rgb-shadow) / 0.28);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.marketplace-chevron {
+  transition: transform 160ms ease;
+  opacity: 0.8;
+}
+
+.marketplace-drawer {
+  margin-top: 14px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  animation: marketplace-reveal 160ms ease;
+}
+
+@keyframes marketplace-reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* auto-fit rather than flex-wrap: the filters reflow on their own, with no
+   breakpoint to keep in sync. */
+.marketplace-drawer__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
+.marketplace-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.marketplace-field__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.marketplace-checkbox {
+  display: inline-flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 12px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.marketplace-checkbox input {
+  accent-color: var(--accent);
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.marketplace-results {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.marketplace-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.marketplace-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--bg-card);
+}
+
+.marketplace-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.marketplace-card__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  /* Seller-authored and unbounded, like the description below. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.marketplace-card__price {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.marketplace-card__price small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.marketplace-card__description {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+  /* Descriptions are seller-authored and unbounded; cap them so one long entry
+     can't stretch its card past the rest of the grid row. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.marketplace-card__seller {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.marketplace-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 0;
+}
+
+.marketplace-card__meta dt {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.marketplace-card__meta dd {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+/* GSTIN ownership is unverified in v1 — this badge is required wherever a
+   counterparty is named, so it is deliberately loud rather than subtle. */
+.marketplace-unverified {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--rgb-warning) / 0.4);
+  background: rgb(var(--rgb-warning) / 0.12);
+  color: var(--warning);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* Dashboard announcement for marketplace publishing. Borrows the marketplace
+   accent so the card reads as belonging to that feature, not as chrome. */
+.promo-card {
+  border-color: var(--line-strong);
+  background:
+    linear-gradient(135deg, rgb(var(--rgb-accent) / 0.09) 0%, rgb(var(--rgb-accent) / 0) 55%),
+    var(--bg-card-strong);
+}
+
+.promo-card__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Tax-exclusive vs tax-inclusive price entry on the publish form. */
+.marketplace-price-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.marketplace-price-mode legend {
+  padding: 0 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgb(var(--rgb-muted) / 0.8);
+}
+
+.marketplace-price-mode label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.marketplace-price-mode input {
+  cursor: pointer;
+}
+
+.marketplace-note {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.marketplace-note--emphasis {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line-strong);
+  background: rgb(var(--rgb-accent) / 0.08);
+  color: var(--text);
+}
+
+.marketplace-note--warning {
+  color: var(--warning);
+}
+
+.marketplace-note--error {
+  color: var(--danger);
+}
+
+.marketplace-alert > svg {
+  flex-shrink: 0;
+}
+
+.marketplace-alert {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgb(var(--rgb-warning) / 0.35);
+  background: rgb(var(--rgb-warning) / 0.1);
+  color: var(--warning);
+}
+
+.marketplace-alert p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.marketplace-alert code {
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.marketplace-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px 18px;
+  margin: 16px 0 0;
+}
+
+.marketplace-summary dt {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.marketplace-summary dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Opaque ids and GSTINs do not fit a 150px track and cannot break on their
+     own — without this they spill over the cell beside them. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.marketplace-summary__hint {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.marketplace-summary__total dd {
+  color: var(--accent);
+  font-size: 1.1rem;
+}
+
+.marketplace-buy__seller {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 0.9rem;
+}
+
+.marketplace-meta {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgb(var(--rgb-accent) / 0.06);
+}
+
+.marketplace-meta h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.marketplace-meta ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.7;
+}
+
+.marketplace-meta a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* Wide tables scroll inside their own container so the page body never scrolls
+   horizontally. The min-width is what makes that true. */
+.marketplace-table-scroll {
+  overflow-x: auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.marketplace-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.marketplace-table th {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.marketplace-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.marketplace-table td .table-subtext,
+.marketplace-table td .marketplace-note {
+  display: block;
+  margin-top: 4px;
+}
+
+/* A second chip in the same cell (a failed posting beside the order state)
+   belongs on its own line, not glued to the first. */
+.marketplace-table td .status-chip + .status-chip {
+  display: flex;
+  width: fit-content;
+  margin-top: 4px;
+}
+
+/* The axis is re-declared because the <=720px `.button-row { flex-direction:
+   column }` override would otherwise stack these inside a shrink-wrapped cell. */
+.marketplace-table .button-row {
+  gap: 6px;
+  flex-direction: row;
+  width: auto;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+/* The actions cell is sized by its buttons and keeps them on one row — the
+   content columns give up the width, and the wrapper scrolls if none is left. */
+.marketplace-table td:has(> .button-row) {
+  width: 1%;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* A failed auto-post is the one thing on this page a user must not scroll past. */
+.marketplace-row--failed td {
+  background: rgb(var(--rgb-danger) / 0.08);
+}
+
+.marketplace-linklike {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.marketplace-linklike:hover {
+  text-decoration: underline;
+}
+
+.marketplace-pagination {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+}
+
+.marketplace-pagination__label {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.modal-panel--marketplace-order {
+  width: min(760px, 100%);
+}
+
+/* Status chips: the base .status-chip is the neutral/positive case, so only the
+   states that need to read differently are overridden. */
+.status-chip--pending,
+.status-chip--paused,
+.status-chip--draft {
+  background: rgb(var(--rgb-warning) / 0.12);
+  color: var(--warning);
+}
+
+.status-chip--warning,
+.status-chip--failed,
+.status-chip--rejected,
+.status-chip--cancelled,
+.status-chip--expired {
+  background: rgb(var(--rgb-danger) / 0.12);
+  color: var(--danger);
+}
+
+.status-chip--withdrawn {
+  background: rgb(var(--rgb-overlay) / 0.06);
+  color: var(--muted);
+}
+
+/* The connection status panel takes a left edge in its status colour so the
+   state is readable before any of the copy is. */
+.marketplace-status {
+  border-left: 3px solid var(--accent);
+}
+
+.marketplace-status--pending_approval {
+  border-left-color: var(--warning);
+}
+
+.marketplace-status--unauthorized,
+.marketplace-status--suspended {
+  border-left-color: var(--danger);
+}
+
+.marketplace-status--unregistered,
+.marketplace-status--disconnected {
+  border-left-color: var(--line-strong);
+}
+
+@media (max-width: 720px) {
+  .marketplace-toolbar__actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .marketplace-toolbar__actions > .button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .marketplace-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Ledger master (/ledgers) ─────────────────────────────────────── */
+
+/* The hero's trailing cluster — the count chip and the create button. It was
+   an inline `display:flex` on the element; named here so every hero row in the
+   ledger routes wraps the same way on a narrow page. */
+.page-hero__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ledger-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Search sits inside its own field with the magnifier and the clear affordance
+   overlaid, so the row reads as one control rather than a stack of label,
+   input and button. */
+.ledger-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 300px;
+  min-width: 0;
+}
+
+.ledger-search__icon {
+  position: absolute;
+  left: 13px;
+  color: rgb(var(--rgb-muted) / 0.75);
+  pointer-events: none;
+}
+
+.ledger-search__input {
+  padding-left: 38px;
+  padding-right: 36px;
+}
+
+/* WebKit draws its own cancel glyph on type=search; ours is themed and sits in
+   the same place, so the two would overlap. */
+.ledger-search__input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.ledger-search__clear {
+  position: absolute;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(var(--rgb-info) / 0.12);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.ledger-search__clear:hover {
+  background: rgb(var(--rgb-info) / 0.22);
+  color: var(--text);
+}
+
+.ledger-toolbar__count {
+  margin: 0 0 0 auto;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ledger-toolbar__count strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* ── The row card ─────────────────────────────────────────────────── */
+
+/* Compound selector, not a bare `.ledger-card`: these cards are rendered as
+   `class="table-row ledger-card"`, and .table-row now carries generic tracks of
+   its own. A bare class would tie with those on specificity, so which one won
+   would come down to file order — a trap, given this block sits 2800 lines
+   below them. A component that pairs itself with .table-row and brings its own
+   tracks has to say so in the selector. */
+.table-row.ledger-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 22px;
+  border: 1px solid rgb(var(--rgb-info) / 0.12);
+  background: linear-gradient(135deg, rgb(var(--rgb-panel-row) / 0.6) 0%, rgb(var(--rgb-card-strong) / 0.4) 100%);
+  overflow: hidden;
+  transition: transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease, background 200ms ease;
+}
+
+/* A rail on the leading edge that lights up with the row. It is the only thing
+   that moves on hover besides the lift, which keeps a long list calm. */
+.ledger-card::before {
+  content: '';
+  position: absolute;
+  inset: 14px auto 14px 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, var(--accent) 0%, rgb(var(--rgb-accent-violet) / 0.9) 100%);
+  opacity: 0;
+  transform: scaleY(0.35);
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.ledger-card:hover {
+  transform: translateY(-2px);
+  border-color: rgb(var(--rgb-info) / 0.26);
+  box-shadow: 0 14px 34px rgb(var(--rgb-shadow) / 0.28);
+  background: linear-gradient(135deg, rgb(var(--rgb-accent) / 0.07) 0%, rgb(var(--rgb-accent-2) / 0.07) 100%);
+}
+
+.ledger-card:hover::before,
+.ledger-card:focus-within::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+/* Monogram tile. The tint is derived from the ledger's name, so a ledger keeps
+   the same colour wherever it appears and the eye can find it again without
+   reading. */
+.ledger-card__avatar {
+  --tone: var(--rgb-avatar-default);
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: rgb(var(--tone));
+  background: linear-gradient(150deg, rgb(var(--tone) / 0.26) 0%, rgb(var(--tone) / 0.07) 100%);
+  border: 1px solid rgb(var(--tone) / 0.3);
+  box-shadow: inset 0 1px 0 rgb(var(--rgb-overlay) / 0.06);
+}
+
+.ledger-card__avatar--1 { --tone: var(--rgb-avatar-1); }
+.ledger-card__avatar--2 { --tone: var(--rgb-avatar-2); }
+.ledger-card__avatar--3 { --tone: var(--rgb-avatar-3); }
+.ledger-card__avatar--4 { --tone: var(--rgb-avatar-4); }
+.ledger-card__avatar--5 { --tone: var(--rgb-avatar-5); }
+.ledger-card__avatar--6 { --tone: var(--rgb-avatar-6); }
+
+.ledger-card__body {
+  gap: 10px;
+  align-content: start;
+}
+
+.ledger-card__headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+/* The name is the row's primary action — opening the statement — so it is a
+   real button rather than a label with a view icon parked beside it. */
+.ledger-card__name {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.06rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  transition: color 160ms ease;
+}
+
+.ledger-card__name:hover {
+  color: var(--accent);
+}
+
+.ledger-card__name:focus-visible {
+  outline: 2px solid rgb(var(--rgb-accent) / 0.6);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.ledger-card__contacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.ledger-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgb(var(--rgb-info) / 0.07);
+  border: 1px solid rgb(var(--rgb-info) / 0.14);
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ledger-chip > svg {
+  flex-shrink: 0;
+  color: rgb(var(--rgb-muted) / 0.7);
+}
+
+.ledger-chip--gst {
+  background: rgb(var(--rgb-accent) / 0.1);
+  border-color: rgb(var(--rgb-accent) / 0.26);
+  color: var(--text-on-accent-tint-4);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-chip--gst > svg {
+  color: var(--accent);
+}
+
+.ledger-chip--whatsapp {
+  background: rgb(var(--rgb-accent) / 0.1);
+  border-color: rgb(var(--rgb-accent) / 0.26);
+  color: var(--text-on-accent-tint-4);
+}
+
+.ledger-chip--whatsapp > svg {
+  color: var(--accent);
+}
+
+a.ledger-chip:hover {
+  border-color: rgb(var(--rgb-info) / 0.4);
+  background: rgb(var(--rgb-info) / 0.14);
+}
+
+a.ledger-chip--whatsapp:hover {
+  border-color: rgb(var(--rgb-accent) / 0.5);
+  background: rgb(var(--rgb-accent) / 0.18);
+}
+
+a.ledger-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ledger-card__address {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.ledger-card__address > svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  opacity: 0.7;
+}
+
+/* Bank details are reference data, not identity — recessed into their own
+   strip so they sit behind the name and contacts in the reading order. */
+.ledger-card__bank {
+  /* Sized by its own facts rather than stretched across the row — a two-field
+     strip beside a wide card would otherwise read as an empty box. */
+  justify-self: start;
+  max-width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgb(var(--rgb-panel-well) / 0.56);
+  border: 1px solid rgb(var(--rgb-info) / 0.12);
+}
+
+.ledger-card__bank > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: rgb(var(--rgb-info) / 0.55);
+}
+
+.ledger-card__bank-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin: 0;
+  min-width: 0;
+}
+
+.ledger-card__bank-facts > div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ledger-card__bank-facts dt {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgb(var(--rgb-muted) / 0.6);
+}
+
+.ledger-card__bank-facts dd {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-bank-facts);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ledger-card__aside {
+  display: grid;
+  justify-items: end;
+  align-content: start;
+  gap: 10px;
+}
+
+.ledger-card__balance {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  text-align: right;
+}
+
+.ledger-card__balance-label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgb(var(--rgb-muted) / 0.85);
+}
+
+.ledger-card__balance-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ledger-card__balance-side {
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+/* Debit balances are owed to us, credit balances are owed by us — the two
+   read as opposites, so they get opposite tints. */
+.ledger-card__balance--debit .ledger-card__balance-value {
+  color: var(--text-balance-debit);
+}
+
+.ledger-card__balance--credit .ledger-card__balance-value {
+  color: var(--text-balance-credit);
+}
+
+.ledger-card__id {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgb(var(--rgb-overlay) / 0.03);
+  border: 1px solid rgb(var(--rgb-info) / 0.1);
+  color: rgb(var(--rgb-muted) / 0.85);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Where there is a pointer, the row's controls stay quiet until it arrives.
+   Touch has no hover to recover them with, so they stay at full strength. */
+@media (hover: hover) {
+  .ledger-card__actions {
+    opacity: 0.6;
+    transition: opacity 180ms ease;
+  }
+
+  .ledger-card:hover .ledger-card__actions,
+  .ledger-card:focus-within .ledger-card__actions {
+    opacity: 1;
+  }
+}
+
+/* ── Loading skeletons ────────────────────────────────────────────── */
+
+.ledger-skeletons {
+  display: grid;
+  gap: 12px;
+}
+
+.ledger-skeleton {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 22px;
+  border: 1px solid rgb(var(--rgb-info) / 0.1);
+  background: rgb(var(--rgb-panel-row) / 0.45);
+}
+
+.ledger-skeleton__lines {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+}
+
+.ledger-skeleton__avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+}
+
+.ledger-skeleton__line {
+  width: 70%;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.ledger-skeleton__line--title {
+  width: 38%;
+  height: 14px;
+}
+
+.ledger-skeleton__line--short {
+  width: 52%;
+}
+
+.ledger-skeleton__avatar,
+.ledger-skeleton__line {
+  background: linear-gradient(
+    90deg,
+    rgb(var(--rgb-info) / 0.06) 0%,
+    rgb(var(--rgb-info) / 0.16) 50%,
+    rgb(var(--rgb-info) / 0.06) 100%
+  );
+  background-size: 220% 100%;
+  animation: ledger-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes ledger-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* ── Pagination ───────────────────────────────────────────────────── */
+
+.ledger-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding-top: 16px;
+  border-top: 1px solid rgb(var(--rgb-info) / 0.1);
+}
+
+.ledger-pagination__status {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-pagination__status strong {
+  color: var(--text);
+  font-weight: 800;
+}
+
+@media (max-width: 720px) {
+  /* The shared `.table-row → 1fr` mobile rule would drop the avatar onto its
+     own line; the monogram column is narrow enough to keep. Compound for the
+     same reason as the desktop block above. */
+  .table-row.ledger-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 16px;
+  }
+
+  .ledger-card__aside {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .ledger-toolbar__count {
+    margin-left: 0;
+  }
+
+  .ledger-pagination {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ledger-skeleton__avatar,
+  .ledger-skeleton__line {
+    animation: none;
+  }
+
+  .ledger-card,
+  .ledger-card::before {
+    transition: none;
+  }
+
+  .ledger-card:hover {
+    transform: none;
+  }
+}
+
+/* ── Keyboard focus ───────────────────────────────────────────────── */
+
+/* Only two components in this file had a :focus-visible rule; everything else
+   fell back to the user agent's #99c8ff ring, and .input/.select/.textarea set
+   `outline: none` and replaced it with a 12%-alpha teal glow that is invisible
+   on the navy panels. One accent-coloured ring for every focusable thing —
+   drawn at an offset so it reads against the page rather than against a filled
+   button. Pointer clicks are unaffected: :focus-visible only matches keyboard
+   and other non-pointer focus. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The field ring sits on the border itself; a 2px offset would put it outside
+   the box-shadow glow that already marks the focused field. */
+.input:focus-visible,
+.select:focus-visible,
+.textarea:focus-visible {
+  outline-offset: 0;
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────── */
+
+/* Page transitions (framer-motion in Layout), the drawer slide, card hover
+   lifts and the loading skeletons all ran regardless of the OS setting — the
+   block further up only covered the ledger cards. Durations are collapsed
+   rather than set to `none` so transitionend/animationend still fire and the
+   handlers that wait on them do not stall. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .button:hover,
+  .button--small:hover {
+    transform: none;
+  }
+}
+
+/* ── Touch targets ────────────────────────────────────────────────── */
+
+/* On a phone the row action icons were 36x36 and the pagination buttons 34px
+   tall — under the ~40px a thumb needs. Scoped to coarse pointers so the
+   desktop density these were tuned for is untouched. */
+@media (pointer: coarse) {
+  .button {
+    min-height: 42px;
+  }
+
+  .button--icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .button--small {
+    min-height: 40px;
+    padding: 8px 14px;
+  }
+
+  .sidebar-toggle {
+    min-height: 40px;
+  }
+}
+
+
+/* ── Settings shell ───────────────────────────────────────────────── */
+/* Settings were seven rows in the main rail. They are one now, and this is the
+   frame behind it: a sub-nav that only exists inside /settings, so the extra
+   level of depth costs nothing on any other page. */
+
+.settings-shell {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: clamp(20px, 3vw, 40px);
+  align-items: start;
+}
+
+.settings-nav {
+  position: sticky;
+  /* Clears .page-frame's top padding so the rail doesn't ride up under it. */
+  top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 10px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  border-radius: 20px;
+  backdrop-filter: blur(18px);
+}
+
+.settings-nav__back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  transition: 150ms ease;
+}
+
+.settings-nav__back:hover,
+.settings-nav__back--active {
+  color: var(--text);
+  background: rgb(var(--rgb-overlay) / 0.04);
+}
+
+.settings-nav__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-nav__group + .settings-nav__group {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-nav__group-label {
+  margin: 0 0 2px;
+  padding: 0 10px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sidebar-section-label);
+}
+
+.settings-nav__link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--muted);
+  border: 1px solid transparent;
+  transition: 150ms ease;
+}
+
+.settings-nav__link:hover {
+  color: var(--text);
+  background: rgb(var(--rgb-overlay) / 0.04);
+}
+
+.settings-nav__link--active {
+  color: var(--accent);
+  background: var(--sidebar-active-bg);
+  border-color: var(--sidebar-active-border);
+  font-weight: 600;
+}
+
+.settings-nav__link svg {
+  flex-shrink: 0;
+}
+
+.settings-shell__content {
+  min-width: 0;
+}
+
+/* ── Settings overview cards ──────────────────────────────────────── */
+.settings-overview__group {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-overview__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 12px;
+}
+
+.settings-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  border-radius: 20px;
+  transition: border-color 150ms ease, transform 150ms ease, background 150ms ease;
+}
+
+.settings-card:hover {
+  border-color: var(--line-strong);
+  background: var(--bg-card-strong);
+  transform: translateY(-2px);
+}
+
+.settings-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: var(--sidebar-active-bg);
+  border: 1px solid var(--sidebar-active-border);
+  color: var(--accent);
+}
+
+.settings-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-card__title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.settings-card__copy {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.settings-card__chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--muted);
+  opacity: 0.5;
+  transition: 150ms ease;
+}
+
+.settings-card:hover .settings-card__chevron {
+  opacity: 1;
+  color: var(--accent);
+  transform: translateX(2px);
+}
+
+/* Nine links stacked above the content would push the actual settings off a
+   phone screen, so the rail becomes a horizontally scrolling strip of chips. */
+@media (max-width: 900px) {
+  .settings-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-nav {
+    position: static;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 16px;
+    overflow-x: auto;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+    /* Fades both ends so the strip reads as scrollable rather than truncated.
+       The mask follows the scroll box, so it sits over whichever chip is at
+       the edge — including the one the active-chip scroll pushed off the left. */
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 24px,
+      #000 calc(100% - 24px),
+      transparent
+    );
+  }
+
+  .settings-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-nav__back {
+    margin-bottom: 0;
+    flex-shrink: 0;
+  }
+
+  .settings-nav__group {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .settings-nav__group + .settings-nav__group {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+    padding-left: 6px;
+    border-left: 1px solid var(--line);
+  }
+
+  /* The group headings are the one thing a single row cannot carry. */
+  .settings-nav__group-label {
+    display: none;
+  }
+
+  .settings-nav__link {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+}
+
+/* ── Serial / IMEI tracking ───────────────────────────────────────── */
+
+/* The scan bar sits at the top of the line items block and is the only control
+   a shopkeeper touches while five handsets go across the counter, so it reads
+   as a piece of equipment rather than as one more field in the form. */
+.scan-bar {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgb(var(--rgb-accent) / 0.28);
+  background: linear-gradient(135deg, rgb(var(--rgb-accent) / 0.08) 0%, rgb(var(--rgb-info) / 0.05) 100%);
+}
+
+.scan-bar__row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.scan-bar__field {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.scan-bar__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.scan-bar__input-wrap {
+  position: relative;
+}
+
+/* Wide, tall and monospaced: a scanned code is read back digit by digit when
+   something looks wrong, and proportional digits make that harder than it is. */
+.scan-bar__input {
+  width: 100%;
+  font-family: 'Space Grotesk', ui-monospace, monospace;
+  font-size: 1.02rem;
+  letter-spacing: 0.04em;
+}
+
+.scan-bar__input[readonly] {
+  opacity: 0.75;
+}
+
+.scan-bar__spinner {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  color: var(--accent);
+  animation: restore-spin 900ms linear infinite;
+}
+
+.scan-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.scan-bar__pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--rgb-accent) / 0.4);
+  background: rgb(var(--rgb-accent) / 0.14);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.scan-bar__pill--queue {
+  border-color: rgb(var(--rgb-warning) / 0.4);
+  background: rgb(var(--rgb-warning) / 0.14);
+  color: var(--warning);
+}
+
+.scan-bar__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgb(var(--rgb-overlay) / 0.04);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.scan-bar__toggle[aria-pressed='true'] {
+  border-color: rgb(var(--rgb-accent) / 0.4);
+  color: var(--accent);
+}
+
+.scan-bar__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.scan-bar__paste {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.scan-bar__paste-results {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 0.78rem;
+}
+
+.scan-bar__paste-results li {
+  display: grid;
+  grid-template-columns: auto minmax(0, max-content) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+}
+
+.scan-bar__paste-results .is-ok {
+  color: var(--color-success);
+}
+
+.scan-bar__paste-results .is-bad {
+  color: var(--danger);
+}
+
+.scan-bar__paste-code {
+  font-family: 'Space Grotesk', ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+
+.scan-bar__paste-reason {
+  color: var(--muted);
+}
+
+/* The running log of the last few scans. It is the only place a fast operator
+   can check the rhythm without stopping, so it is read top-down, newest first,
+   and announced politely rather than assertively — a scan every two seconds
+   must not interrupt a screen reader mid-sentence. */
+.scan-feedback {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scan-feedback__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  background: rgb(var(--rgb-overlay) / 0.03);
+}
+
+.scan-feedback__item--ok {
+  color: var(--color-success);
+}
+
+.scan-feedback__item--info {
+  color: var(--warning);
+}
+
+.scan-feedback__item--error {
+  color: var(--danger);
+  background: var(--color-error-bg);
+}
+
+.scan-feedback__glyph {
+  font-weight: 800;
+}
+
+.scan-feedback__text {
+  overflow-wrap: anywhere;
+}
+
+.scan-feedback__link {
+  color: inherit;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* A misread is corrected by scanning again, so the box shakes rather than
+   raising anything the operator would have to dismiss. */
+.scan-bar--shake .scan-bar__input {
+  animation: scan-shake 380ms ease;
+}
+
+@keyframes scan-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+
+/* The line a scan landed on. Same attribute drives it wherever a line has to
+   answer "this one" — a fresh serial, or a repeat scan of one already added. */
+.line-item[data-flash='on'] {
+  animation: line-flash 1100ms ease;
+}
+
+@keyframes line-flash {
+  0% { background: rgb(var(--rgb-accent) / 0.28); border-color: rgb(var(--rgb-accent) / 0.55); }
+  100% { background: rgb(var(--rgb-overlay) / 0.03); border-color: rgb(var(--rgb-info) / 0.08); }
+}
+
+.field__lock {
+  margin-left: 6px;
+  vertical-align: -1px;
+  color: var(--muted);
+}
+
+/* ── Serial chips ─────────────────────────────────────────────────── */
+
+.serial-line {
+  display: grid;
+  gap: 6px;
+}
+
+.serial-line__message {
+  margin: 0;
+  color: var(--warning);
+  font-size: 0.78rem;
+}
+
+.serial-line__message--blocking {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.serial-chips {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px dashed rgb(var(--rgb-info) / 0.22);
+  background: rgb(var(--rgb-overlay) / 0.02);
+}
+
+.serial-chips__count {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.serial-chips__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One physical unit. Monospaced so two IMEIs differing in one digit look
+   different at a glance. */
+.serial-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--rgb-accent) / 0.32);
+  background: rgb(var(--rgb-accent) / 0.1);
+  font-family: 'Space Grotesk', ui-monospace, monospace;
+  font-size: 0.78rem;
+}
+
+.serial-chip__value {
+  overflow-wrap: anywhere;
+}
+
+.serial-chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(var(--rgb-overlay) / 0.08);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.serial-chip__remove:hover {
+  background: var(--color-error-bg);
+  color: var(--danger);
+}
+
+.serial-chips__entry {
+  display: grid;
+  gap: 4px;
+}
+
+.serial-chips__label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.serial-chips__entry-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.serial-chips__entry-row .input {
+  flex: 1 1 200px;
+  min-width: 0;
+  font-family: 'Space Grotesk', ui-monospace, monospace;
+}
+
+.serial-chips__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.78rem;
+}
+
+/* ── Serial picker ────────────────────────────────────────────────── */
+
+.serial-picker__quick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.serial-picker__quick-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.serial-picker__quick-input {
+  width: 78px;
+}
+
+.serial-picker__list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+/* Oldest first, so the top of this list is the FIFO answer and picking down
+   the list is picking correctly. */
+.serial-picker__row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) minmax(0, auto);
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.serial-picker__row.is-active {
+  border-color: rgb(var(--rgb-accent) / 0.45);
+  background: rgb(var(--rgb-accent) / 0.1);
+}
+
+.serial-picker__row.is-picked {
+  background: rgb(var(--rgb-accent) / 0.16);
+}
+
+.serial-picker__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  color: var(--accent);
+}
+
+.serial-picker__number {
+  font-family: 'Space Grotesk', ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+
+.serial-picker__meta {
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-align: right;
+}
+
+.serial-picker__pages {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* ── Serial backfill sheet ────────────────────────────────────────── */
+
+/* Switching tracking on for a product that already has stock owes one serial
+   per unit already on the shelf; the counter is the whole point of the sheet. */
+.serial-backfill {
+  display: grid;
+  gap: 10px;
+}
+
+.serial-backfill__intro {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.serial-backfill__counter {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.serial-backfill__counter--complete {
+  color: var(--color-success);
+}
+
+.serial-backfill__counter-total {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.serial-backfill__paste {
+  display: grid;
+  gap: 6px;
+}
+
+.serial-backfill__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+
+/* ── Serials drawer ───────────────────────────────────────────────── */
+
+/* The per-product unit history: one row per physical thing, with where it came
+   in and where it went out. */
+.serial-drawer {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgb(var(--rgb-overlay) / 0.02);
+}
+
+.serial-drawer__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.serial-drawer__list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.serial-drawer__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgb(var(--rgb-overlay) / 0.03);
+  font-size: 0.8rem;
+}
+
+.serial-drawer__number {
+  font-family: 'Space Grotesk', ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+
+.serial-drawer__status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.serial-drawer__status--in_stock {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.serial-drawer__status--sold {
+  background: var(--color-muted-bg);
+  color: var(--muted);
+}
+
+.serial-drawer__meta {
+  color: var(--muted);
+  text-align: right;
+}
+
+@media (max-width: 720px) {
+  .scan-bar__row {
+    align-items: stretch;
+  }
+
+  .serial-picker__row,
+  .serial-drawer__row {
+    grid-template-columns: minmax(0, 1fr);
+    text-align: left;
+  }
+
+  .serial-picker__meta,
+  .serial-drawer__meta {
+    text-align: left;
+  }
+}
+
+/* The flash and the shake are feedback, not decoration: with motion reduced
+   the strip, the chips and the derived quantity still say everything. */
+@media (prefers-reduced-motion: reduce) {
+  .line-item[data-flash='on'],
+  .scan-bar--shake .scan-bar__input,
+  .scan-bar__spinner {
+    animation: none;
+  }
+
+  .line-item[data-flash='on'] {
+    border-color: rgb(var(--rgb-accent) / 0.55);
+  }
+}
+
+/* ── Sign in with a provider ─────────────────────────────────────────────
+   Colours are the ones Google's branding rules set for each theme, so they are
+   literal values rather than tokens and do not follow the app's accent. The rules
+   also put the logo on white, hence the white tile on the dark button.
+   https://developers.google.com/identity/branding-guidelines */
+.oauth-button--google,
+:root[data-theme="dark"] .oauth-button--google {
+  background: #131314;
+  border: 1px solid #8e918f;
+  color: #e3e3e3;
+  font-weight: 500;
+  gap: 10px;
+}
+
+:root[data-theme="light"] .oauth-button--google {
+  background: #ffffff;
+  border-color: #747775;
+  color: #1f1f1f;
+}
+
+.oauth-button--google:hover,
+.oauth-button--google:focus-visible {
+  filter: brightness(1.15);
+}
+
+:root[data-theme="light"] .oauth-button--google:hover,
+:root[data-theme="light"] .oauth-button--google:focus-visible {
+  filter: none;
+  background: #f2f2f2;
+}
+
+.oauth-button__logo {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 3px;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.oauth-button__logo img {
+  display: block;
+}
+
+/* ── OAuth consent ──────────────────────────────────────────────────────────
+   Reuses the login page's centering shell, but a single narrow column: the
+   visitor arrives here from Claude or ChatGPT to answer one question, and the
+   login screen's marketing panel would be noise beside it. */
+.oauth-consent {
+  width: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.oauth-consent__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'Space Grotesk', 'Manrope', sans-serif;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.oauth-consent__card {
+  padding: clamp(22px, 4vw, 34px);
+  border-radius: 28px;
+  border: 1px solid var(--line);
+  background: rgb(var(--rgb-panel) / 0.94);
+  box-shadow: var(--shadow);
+}
+
+/* The redirect host is the only identity here that anybody verified, so it is
+   the one thing on the card with its own frame. */
+.oauth-consent__host {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line-strong);
+  background: rgb(var(--rgb-accent) / 0.07);
+}
+
+.oauth-consent__host > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.oauth-consent__host-value {
+  display: block;
+  font-family: 'Space Grotesk', ui-monospace, monospace;
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.oauth-consent__scopes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.oauth-consent__scope {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.45;
+}
+
+.oauth-consent__scope > svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--accent);
+}
+
+.oauth-consent__scope-icon--warn {
+  color: var(--warning) !important;
+}
+
+.oauth-consent__scope-code {
+  display: block;
+  margin-top: 2px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+/* ── Deep-linked record ─────────────────────────────────────────────────────
+   A citation from an MCP client lands on a list page; this is what says "this
+   row is the one you followed". It fades rather than persisting, so it does
+   not read as a selection state once the user starts working. */
+.deep-link-target {
+  animation: deep-link-flash 2.4s ease-out 1;
+  scroll-margin-top: 96px;
+}
+
+@keyframes deep-link-flash {
+  0%, 45% {
+    box-shadow: 0 0 0 2px rgb(var(--rgb-accent) / 0.65);
+    background-color: rgb(var(--rgb-accent) / 0.09);
+  }
+  100% {
+    box-shadow: 0 0 0 2px rgb(var(--rgb-accent) / 0);
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deep-link-target {
+    animation: none;
+    box-shadow: 0 0 0 2px rgb(var(--rgb-accent) / 0.55);
+  }
+}
+
+/* ── Catalogue: stock adjustment modal ──────────────────────────────────────
+   Stock only ever changes through StockAdjustModal, so this block is what that
+   one dialog needs beyond the shared .modal-panel / .field / .button classes:
+   the product header, the live "142 → 139" preview, and the inline errors that
+   keep a failed adjustment inside the dialog instead of dropping it into a
+   page-level toast. Tokens only — the app is dark-only and has no light mode
+   for a hard-coded colour to fall back to. */
+
+.stock-adjust__summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgb(var(--rgb-overlay) / 0.03);
+}
+
+/* Takes the slack so the quantity pill keeps its size on a narrow panel. */
+.stock-adjust__identity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.stock-adjust__name {
+  font-size: 1rem;
+  /* SKUs and long product names are unbreakable tokens; without this they push
+     the pill out of the row. */
+  overflow-wrap: anywhere;
+}
+
+.stock-adjust__sku {
+  color: var(--muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.stock-adjust__on-hand {
+  margin: 6px 0 16px;
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+/* The consequence of the typed delta, shown before it is applied. */
+.stock-adjust__preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.stock-adjust__preview-from {
+  color: var(--muted);
+}
+
+.stock-adjust__preview-to {
+  font-size: 1.1rem;
+}
+
+.stock-adjust__preview-delta {
+  color: var(--color-success);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.stock-adjust__preview-delta--down {
+  color: var(--warning);
+}
+
+/* Blocking messages stay beside the input that caused them, so the user is not
+   sent hunting for a toast to find out why the button is disabled. */
+.stock-adjust__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.stock-adjust__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 16px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* ── Catalogue CSV import ───────────────────────────────────────────────────
+   The import dialog's own furniture: the accepted-header list, the per-row
+   error log, and the result chips. Everything else in the dialog reuses
+   .modal-panel / .field / .button, so this block stays deliberately small. */
+.catalogue-import__body {
+  display: grid;
+  gap: 18px;
+  margin: 16px 0;
+}
+
+/* Matches `.field label` so the header list reads as a labelled field even
+   though its label sits above a list rather than an input. */
+.catalogue-import__label {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.catalogue-import__headers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.catalogue-import__header-chip {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px 8px;
+  background: var(--color-surface-2);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.catalogue-import__header-chip code {
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+}
+
+/* The two columns without which a row cannot be matched or created. */
+.catalogue-import__header-chip--required {
+  border-color: var(--line-strong);
+}
+
+.catalogue-import__header-chip--required code {
+  color: var(--accent);
+}
+
+.catalogue-import__header-alt {
+  color: var(--muted);
+}
+
+.catalogue-import__result {
+  display: grid;
+  gap: 12px;
+  /* Focused programmatically when a result replaces the picker, so the ring
+     must not read as a click target. */
+  outline: none;
+}
+
+.catalogue-import__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* A long error log scrolls inside the dialog rather than pushing the action
+   bar off the bottom of the panel. */
+.catalogue-import__errors {
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--color-surface-2);
+}
+
+.catalogue-import__error {
+  display: flex;
+  gap: 10px;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.catalogue-import__error-row {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+}
+
+.catalogue-import__alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--color-error-bg);
+  color: var(--danger);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.catalogue-import__alert > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* ══ Catalogue ═══════════════════════════════════════════════════════════
+   The unified Products & Stock page. Replaces the three list treatments that
+   Products, Inventory and Products & Inventory each invented for themselves:
+   two header-less flex feeds and one raw table styled entirely from inline
+   `style={{}}` props (57 of them in one file).
+
+   A real table, so every column has a name and figures line up down the page.
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* ── Toolbar ─────────────────────────────────────────────────────────── */
+/* Generalized from .ledger-toolbar. Every list page had reinvented this; the
+   catalogue uses the shared shape so search, count and pagination bracket the
+   list the same way here as on Ledgers. */
+.catalogue-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Search reads as one control: the magnifier and the clear affordance are
+   overlaid on the field rather than stacked beside it. */
+.catalogue-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 300px;
+  min-width: 0;
+}
+
+.catalogue-search__icon {
+  position: absolute;
+  left: 15px;
+  color: rgb(var(--rgb-muted) / 0.75);
+  pointer-events: none;
+}
+
+.catalogue-search__input {
+  width: 100%;
+  padding-left: 42px;
+  padding-right: 40px;
+}
+
+/* As on the Ledgers search: WebKit draws its own cancel glyph on
+   type=search, and the shared SearchInput renders its own themed one,
+   so the two would overlap. */
+.catalogue-search__input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.catalogue-search__clear {
+  position: absolute;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.catalogue-search__clear:hover {
+  color: var(--text);
+  background: var(--color-surface-raised);
+}
+
+/* The serial filter sits beside search, not among the view tabs: it composes
+   with them — "low stock AND serial-tracked" is a real question — and a second
+   segmented control next to the first would read as a second set of views. */
+.catalogue-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.catalogue-filter__label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.catalogue-filter__select {
+  width: auto;
+  padding: 11px 12px;
+  font-size: 0.9rem;
+}
+
+/* An applied filter has to read as *applied* without opening it, since it is
+   the reason rows are missing from the list below. */
+.catalogue-filter__select--on {
+  border-color: rgb(var(--rgb-accent) / 0.55);
+  color: var(--accent);
+}
+
+.catalogue-toolbar__count {
+  margin: 0 0 0 auto;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.catalogue-toolbar__count strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* The low-stock count in the hero doubles as the filter for it. */
+.catalogue-low-chip {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+/* .tab-bar is inline-flex, but a grid child stretches by default, so the pill
+   ran the full width of the panel instead of hugging its three tabs. */
+.catalogue-panel > .tab-bar {
+  justify-self: start;
+}
+
+/* ── The table ───────────────────────────────────────────────────────── */
+/* The scroller lives on the wrapper, never on the page: a table wide enough to
+   need it must not push the whole layout sideways. */
+.catalogue-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgb(var(--rgb-panel-well) / 0.5);
+}
+
+/* `separate`, not `collapse`: a collapsed table drops the borders of sticky
+   cells, and both the header row and the first column stick here. */
+.catalogue-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.9rem;
+}
+
+.catalogue-table th,
+.catalogue-table td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.catalogue-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg-soft);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* The product column stays put while the rest scrolls: without it, scrolling
+   right to reach a figure loses the name of the row you are reading. */
+.catalogue-table th:first-child,
+.catalogue-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--bg-card-strong);
+  min-width: 220px;
+}
+
+.catalogue-table thead th:first-child {
+  z-index: 4;
+  background: var(--bg-soft);
+}
+
+.catalogue-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.catalogue-table__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.catalogue-table__figure {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.catalogue-table__locked {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.catalogue-table__skeleton {
+  display: block;
+  height: 16px;
+  width: 100%;
+}
+
+/* ── Rows ────────────────────────────────────────────────────────────── */
+.catalogue-row {
+  transition: background 160ms ease;
+}
+
+.catalogue-row:hover td {
+  background: rgb(var(--rgb-info) / 0.05);
+}
+
+.catalogue-row:hover td:first-child {
+  background: var(--bg-pinned-hover-info);
+}
+
+/* An inactive product used to be indistinguishable from an active one — the
+   only signal was the state of an icon you had to hover to read. */
+.catalogue-row--inactive td {
+  opacity: 0.55;
+}
+
+.catalogue-row--editing td {
+  background: rgb(var(--rgb-accent) / 0.06);
+}
+
+.catalogue-row--editing td:first-child {
+  background: var(--bg-pinned-editing);
+}
+
+.catalogue-row__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.catalogue-row__error {
+  margin: 6px 0 0;
+  color: var(--danger);
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.catalogue-cell__product {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.catalogue-cell__name {
+  font-weight: 700;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.catalogue-cell__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.catalogue-sku {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+/* ── Sortable headers ────────────────────────────────────────────────── */
+/* The sort control belongs on the column it sorts. The old Inventory page put
+   it in a detached "Sort:" button strip above a list whose columns had no
+   headers at all. */
+.catalogue-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.catalogue-sort:hover {
+  color: var(--text);
+}
+
+.catalogue-sort svg {
+  opacity: 0.45;
+  flex-shrink: 0;
+}
+
+.catalogue-sort--active {
+  color: var(--accent);
+}
+
+.catalogue-sort--active svg {
+  opacity: 1;
+}
+
+/* ── The stock cell ──────────────────────────────────────────────────── */
+/* Stock is the one figure that opens a flow rather than an input, so it has to
+   look pressable. Editing it inline would bypass the reason note and the serial
+   scan that make a stock movement auditable. */
+.catalogue-stock {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--color-surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.catalogue-stock:hover {
+  border-color: var(--line-strong);
+  background: rgb(var(--rgb-info) / 0.12);
+}
+
+.catalogue-stock__value {
+  font-weight: 800;
+}
+
+.catalogue-stock__unit {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.catalogue-stock--low {
+  border-color: rgb(var(--rgb-warning) / 0.45);
+  background: rgb(var(--rgb-warning) / 0.12);
+}
+
+.catalogue-stock--low .catalogue-stock__value {
+  color: var(--warning);
+}
+
+/* The reorder level finally does something: it was a column of numbers nothing
+   ever compared stock against. */
+.catalogue-stock__flag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--warning);
+  color: var(--on-warning);
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ── Row editing ─────────────────────────────────────────────────────── */
+/* A compact input so a row in edit mode keeps the height of a row at rest —
+   the old per-cell editor swapped a span for a taller control and the whole
+   table shifted under the pointer. */
+.input--grid {
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  min-height: 34px;
+  width: 100%;
+}
+
+.catalogue-edit-pair {
+  display: grid;
+  gap: 6px;
+  min-width: 200px;
+}
+
+.catalogue-edit-pair__sku {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+}
+
+/* ── Forms shared by the catalogue dialogs ───────────────────────────── */
+.form-error {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid rgb(var(--rgb-danger) / 0.35);
+  border-radius: 14px;
+  background: var(--color-error-bg);
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+/* These two carry more than a confirmation's worth of content. */
+.modal-panel--product-form {
+  max-width: min(760px, 100%);
+}
+
+.modal-panel--serial-history {
+  max-width: min(640px, 100%);
+  display: grid;
+  gap: 16px;
+}
+
+/* The meta line and two buttons do not reliably fit one row at 560px, and when
+   they wrapped the submit button landed BELOW cancel — which reads as cancel
+   being the primary action. Giving the note its own row keeps the pair together
+   and in order at every width. */
+.modal-panel--stock-adjust .form-action-bar__meta {
+  flex: 1 1 100%;
+  margin-right: 0;
+}
+
+.modal-panel--stock-adjust .form-action-bar {
+  justify-content: flex-end;
+}
+
+/* ── Serial history ──────────────────────────────────────────────────── */
+.serial-history__list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.serial-history__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--color-surface-raised);
+}
+
+.serial-history__number {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+/* In and Out are separate facts about a unit, not one run-on string joined by
+   middle dots the way the old drawer printed them. */
+.serial-history__movement {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 0 auto;
+}
+
+.serial-history__movement > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.serial-history__movement dt {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.serial-history__movement dd {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.serial-history__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+/* Below the wide breakpoint the secondary figures fold away rather than forcing
+   a scroll for every glance. They stay reachable by widening or by opening the
+   row's own editor. */
+@media (max-width: 1100px) {
+  .catalogue-table__col--secondary {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .catalogue-table th,
+  .catalogue-table td {
+    padding: 10px;
+  }
+
+  .catalogue-table th:first-child,
+  .catalogue-table td:first-child {
+    min-width: 160px;
+  }
+
+  /* The global mobile rule stacks every .button-row into a full-width column.
+     Three short export actions read better as a wrapping row, the same opt-out
+     the invoice filters take. */
+  .catalogue-panel > .panel__header > .button-row {
+    width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .catalogue-toolbar__count {
+    margin-left: 0;
+  }
+
+  .serial-history__movement {
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .catalogue-row,
+  .catalogue-stock,
+  .catalogue-search__clear,
+  .catalogue-sort {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar__collapse,
+  .sidebar__collapse svg {
+    transition: none;
+  }
+
+  .sidebar__collapse:active {
+    transform: none;
+  }
+}
+
+/* ── Share link dialog ──────────────────────────────────────────────────────
+   ShareModal is otherwise built from the shared .modal-panel / .field / .button
+   classes; this block is only the three things it needs beyond them: the
+   read-only URL sitting flush against its Copy button, the revoked-link notice,
+   and a danger colour for the inline errors that keep a failed create or revoke
+   inside the dialog instead of dropping it into a page-level toast. */
+
+.share-link__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Takes the slack so the Copy button keeps its label on a narrow panel. */
+.share-link__url {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* A token is one unbreakable string; without this it widens the flex row
+     instead of scrolling inside the field. */
+  text-overflow: ellipsis;
+}
+
+.share-link__revoked {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgb(var(--rgb-danger) / 0.32);
+  border-radius: 18px;
+  background: var(--color-error-bg);
+}
+
+.share-link__revoked-title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.share-link__error {
+  margin: 0;
+  color: var(--danger);
+}
+
+@media (max-width: 720px) {
+  /* The Copy button drops below a full-width URL rather than squeezing it to a
+     few characters — the link is the thing being read here. */
+  .share-link__row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* ── Document preview header ──────────────────────────────────────────────
+   Invoice, receipt and statement previews share one header (PreviewToolbar).
+   Each used to carry five or six equally loud buttons plus a raw number input;
+   the hierarchy here is the fix — one filled action, quiet siblings, the rare
+   ones folded into "…", and close pulled out to the corner. */
+.preview-header {
+  align-items: flex-start;
+}
+
+.preview-header__title {
+  min-width: 0;
+}
+
+.preview-header__heading-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.invoice-number-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.invoice-number-copy__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.invoice-number-copy__button:hover {
+  background: rgb(var(--rgb-overlay) / 0.08);
+}
+
+.invoice-number-copy__button:focus-visible {
+  outline: 2px solid var(--outline-info);
+  outline-offset: 2px;
+}
+
+.invoice-number-copy__feedback {
+  display: inline-block;
+  min-width: 92px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.preview-header__meta {
+  margin: 6px 0 0;
+}
+
+/* Close sits apart from the actions: it dismisses the dialog, it does not act
+   on the document, and grouping it with the actions is what made "Close" read
+   as a sixth peer of Print and Download. */
+.preview-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.preview-toolbar {
+  gap: 8px;
+}
+
+/* The overflow trigger should read as the quietest thing in the row. */
+.preview-toolbar .action-dropdown .button--icon {
+  border-radius: 999px;
+}
+
+/* ── Copies stepper (invoice preview menu) ─────────────────────────────── */
+.copies-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 14px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* The divider only earns its keep when there are menu actions under it. With
+   Email promoted into the button row the stepper is usually the whole menu. */
+.copies-stepper:last-child {
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+
+.copies-stepper__label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.copies-stepper__control {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.copies-stepper__step {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.copies-stepper__step:hover:not(:disabled) {
+  background: rgb(var(--rgb-overlay) / 0.09);
+}
+
+.copies-stepper__step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.copies-stepper__value {
+  min-width: 22px;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* Menu items are buttons too, so they need the same disabled treatment the
+   row buttons get — without it a disabled Print in the menu still looks live. */
+.action-dropdown__item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.action-dropdown__item:disabled:hover {
+  background: transparent;
+}
+
+@media (max-width: 640px) {
+  /* The row wraps rather than dropping labels: every action here is one a user
+     came to the preview to perform, and an unlabelled icon is exactly how Email
+     got lost in the first place. */
+  .preview-header__actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  /* `.button-row` stacks into a full-width column on mobile, which is right for
+     a form's buttons and wrong here — it turns a four-action toolbar into a
+     four-row header. These labels are one word, so they pair up two to a line. */
+  .preview-toolbar {
+    /* Leaves room for the close button beside the actions rather than under
+       them: the whole header is competing with the document preview for a
+       phone screen. */
+    flex: 1 1 calc(100% - 50px);
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    width: auto;
+  }
+
+  .preview-toolbar .button:not(.button--icon) {
+    flex: 1 1 calc(50% - 8px);
+  }
+}
+
+/* --- Appearance settings page --- */
+.appearance-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.appearance-fieldset legend {
+  padding: 0;
+  margin-bottom: 14px;
+}
+
+.appearance-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+}
+
+.appearance-option {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgb(var(--rgb-overlay) / 0.02);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.appearance-option:hover {
+  border-color: var(--line-strong);
+}
+
+.appearance-option--selected {
+  border-color: var(--accent);
+  background: rgb(var(--rgb-accent) / 0.08);
+}
+
+.appearance-option:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.appearance-option__row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.appearance-option__row input {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+
+.appearance-option__label {
+  display: block;
+  color: var(--text);
+}
+
+.appearance-option__hint {
+  display: block;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+/* Fixed colours on purpose: each swatch shows what its theme looks like,
+   whichever theme is active. */
+.appearance-swatch {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  height: 72px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #f4f7fb;
+}
+
+.appearance-swatch--dark {
+  background: #08111f;
+}
+
+.appearance-swatch--system {
+  background: linear-gradient(135deg, #f4f7fb 0 50%, #08111f 50% 100%);
+}
+
+.appearance-swatch__bar {
+  height: 10px;
+  width: 45%;
+  border-radius: 999px;
+  background: #0b645d;
+}
+
+.appearance-swatch--dark .appearance-swatch__bar {
+  background: #57d1c9;
+}
+
+.appearance-swatch__line {
+  height: 6px;
+  width: 80%;
+  border-radius: 999px;
+  background: rgba(15, 29, 48, 0.18);
+}
+
+.appearance-swatch--dark .appearance-swatch__line {
+  background: rgba(230, 238, 251, 0.22);
+}
+
+.appearance-swatch--system .appearance-swatch__line {
+  background: rgba(120, 140, 170, 0.35);
+}
+
+.appearance-swatch__line--short {
+  width: 55%;
+}
+.dues-ageing-note {
+  font-size: 0.78rem;
+  margin-top: 10px;
 }

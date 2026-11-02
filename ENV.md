@@ -181,6 +181,24 @@ FRONTEND_DEV_HOST_PORT=5173
 | `VITE_API_BASE_URL` | `http://localhost:8000/api` | `/api` | Backend API endpoint |
 | `VITE_APP_NAME` | `Simple Invoicing` | `Simple Invoicing` | App display name |
 | `VITE_LOG_LEVEL` | `debug` | `error` | Console logging verbosity |
+| `VITE_POSTHOG_PROJECT_TOKEN` | `phc_...` | `phc_...` | PostHog project token (session replay) |
+| `VITE_POSTHOG_HOST` | `https://eu.i.posthog.com` | `https://eu.i.posthog.com` | PostHog ingestion host (`us.i.posthog.com` for US Cloud) |
+
+**PostHog Note**: The browser records **session replays** and autocaptures
+pageviews and clicks; the app's named product events (`invoice_created`,
+`payment_recorded`, …) are captured by the **backend** — see
+`POSTHOG_PROJECT_API_KEY` below. Point both halves at the same project: the
+browser identifies the operator by email and the backend keys its events by the
+same email, so a replay and the events it produced land on one person.
+
+Both variables are optional — leave them blank and the app runs with analytics
+disabled, silently and in every environment. Nothing warns you about a missing
+token, so if you expect replays and see none, check these two first. The project
+token is write-only and ships in the JavaScript bundle, so it is not a secret.
+For container builds, pass them as
+`--build-arg VITE_POSTHOG_PROJECT_TOKEN=... --build-arg VITE_POSTHOG_HOST=...`;
+Vite inlines them at build time, so an already-built image cannot be
+reconfigured at runtime.
 
 **Vite Note**: All frontend variables must be prefixed with `VITE_` to be accessible in the code via `import.meta.env`.
 
@@ -193,6 +211,315 @@ FRONTEND_DEV_HOST_PORT=5173
 | `ALGORITHM` | `HS256` | `HS256` | JWT algorithm | ✓ |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | `30` | Token expiration time | ✓ |
 | `DEBUG` | `true` | `false` | Debug mode (detailed error messages) | ✓ |
+| `POSTHOG_PROJECT_API_KEY` | `phc_...` | `phc_...` | PostHog project key — product events are captured server-side | |
+| `POSTHOG_HOST` | `https://eu.i.posthog.com` | `https://eu.i.posthog.com` | PostHog ingestion host (`us.i.posthog.com` for US Cloud) | |
+
+**PostHog Note**: Product events live on the backend so that an event fires when
+the write actually committed, not when a request appeared to succeed — and so
+that the same action taken through the MCP connector or an API key is counted
+identically. Every event carries a `client` property of `web`, `mcp` or `api`
+saying which. Leave `POSTHOG_PROJECT_API_KEY` blank and the app runs with
+analytics off, silently, in every environment. Unlike the `VITE_` pair, these are
+read at runtime, so an existing image picks them up from its secret with a
+restart — no rebuild.
+
+Events carry the caller's IP as `$ip` so PostHog can resolve a location from
+it. Without that they would be geolocated to whichever datacentre the pod runs
+in, so GeoIP is disabled client-wide and re-enabled per event, only for events
+that actually carry a caller address. The IP is read from `X-Forwarded-For`, so
+an ingress that does not set that header leaves every event located at the
+cluster's internal address. If you would rather PostHog not retain the address
+itself, turn on "Discard client IP data" in the project's settings — the
+geolocation is resolved before that discard, so country and city still work.
+
+Public share pages (`/s/<token>`) are counted too — views, PDF downloads and
+presses of the ad's WhatsApp button, the last via a redirect through
+`/s/<token>/whatsapp` because that page runs no JavaScript. Those readers are the
+tenant's customers, so their events are anonymous: no person profile is created
+for them.
+
+**Those events carry the full share URL, token included**, so a link can be
+opened straight from PostHog. The token is the entire credential for the document
+behind it, which makes read access to this PostHog project equivalent to read
+access to every document ever shared from the app — grant it on those terms. When
+grouping share traffic, break down by the `share_route` property (`/s/:token`,
+`/s/:token/pdf`) rather than by URL: the raw URL is one row per link.
+
+The browser sends its replay session id on every API call as
+`X-PostHog-Session-Id`, and the backend attaches it to the events that request
+produces. That header is the whole link between a recording and its events: drop
+it at a proxy and both halves still work, but they no longer line up on one
+timeline.
+
+### Automatic Backup Variables
+
+A nightly `pg_dump` written to `BACKUP_DIR`, alongside the archives created by hand from
+**Settings → Backups**. It defaults to midnight IST, and **every variable here has a
+default** — an existing deployment takes an image with this feature and starts backing up
+nightly without touching its secret.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `AUTO_BACKUP_ENABLED` | `true` | Master switch. With this off, nothing is scheduled and the Backups page says so; creating a backup by hand still works. |
+| `AUTO_BACKUP_TIME` | `00:00` | 24-hour `HH:MM` in `AUTO_BACKUP_TIMEZONE`. An unparseable value turns the scheduler off with an error in the log rather than crash-looping the app. |
+| `AUTO_BACKUP_TIMEZONE` | `Asia/Kolkata` | IANA zone the time is read in. An unknown zone falls back to a fixed UTC+05:30 offset, which is exactly right for IST and wrong for anything else. |
+| `AUTO_BACKUP_KEEP` | `7` | How many scheduled archives to keep. Pruning matches on the `autobackup_` filename prefix, so a backup **you** created is never deleted by retention. `0` disables pruning entirely. |
+| `BACKUP_DIR` | `./backups` | Where archives are written. Read from the process environment, not the settings file. |
+| `AUTO_BACKUP_EMAIL_ENABLED` | `true` | Mail each finished archive to the admins. Does nothing unless SMTP is set up, so this is safe to leave on. |
+| `AUTO_BACKUP_EMAIL_TO` | *(blank)* | Comma-separated recipients. Blank means **every admin user's email address** — the first is the `To`, the rest are `Cc`. |
+| `AUTO_BACKUP_EMAIL_MAX_MB` | `15` | Cap on the **raw** archive size. Base64 inflates an attachment by about a third, so 15 MB lands near 20 MB on the wire, under the usual 25 MB cap. Past this the email still goes out — saying the backup exists and why it is not attached — just without the archive. |
+
+**Emailing the backup.** After each scheduled run the archive is mailed to the admins,
+using the same SMTP configuration as invoice email (**Settings → SMTP**). With no active
+SMTP config nothing is sent and the Backups page says so — that is a normal state, not an
+error. Rows land in `email_logs` with `email_type = automatic_backup`, alongside invoice and
+reminder mail.
+
+The attachment is the encrypted archive exactly as the Backups page serves it, so a mailbox
+holding it does not expose the database: restoring needs a server holding the same
+`BACKUP_ENCRYPTION_KEY`. That is what makes this safe to do unattended — and it is also the
+catch, because an archive mailed out of a deployment whose key is later lost is
+unrecoverable. Keep `BACKUP_ENCRYPTION_KEY` somewhere you will still have it.
+
+Delivery is reported separately from the backup itself, on the page and in
+`GET /api/backups/schedule`. A mail server that is down does not make the archive on disk any
+less real, and the two failures need different fixes.
+
+**These archives are not durable storage.** `BACKUP_DIR` is a path inside the container and
+nothing mounts a volume there, so every archive — scheduled or manual — is gone when the pod
+restarts. Treat the nightly run as a convenience copy to download, not as a disaster-recovery
+plan; for that, mount a `PersistentVolumeClaim` at `BACKUP_DIR` or ship the archives offsite.
+
+The scheduler runs in-process, which assumes **one replica** — the deployments here all set
+`replicas: 1`. Scale one out and every replica dumps at midnight to its own container-local
+disk. That is wasteful rather than destructive, but a scaled-out deployment wants a
+`CronJob` or a Postgres advisory lock around the run instead.
+
+There is deliberately **no catch-up run on startup**. Since a restart clears `BACKUP_DIR`
+anyway, a catch-up rule would fire on every deploy and a crash-looping pod would dump in a
+tight loop. Missing one night after a restart is the cheaper failure.
+
+Progress is visible at **Settings → Backups**: the next scheduled run, whether the last one
+succeeded, and an `Automatic`/`Manual` label on each archive in the list. The same data is
+served by `GET /api/backups/schedule` (admin only).
+
+### MCP Connector / OAuth Variables
+
+These configure the built-in MCP server and its OAuth 2.1 authorization server, which let
+Claude, ChatGPT and other MCP clients connect to this instance.
+
+| Variable | Development | Production | Purpose | Required |
+|----------|-------------|-----------|---------|----------|
+| `PUBLIC_API_BASE_URL` | `http://localhost:8000` | `https://<your-host>` | Public origin of this API. Doubles as the **OAuth issuer** and the base of the canonical MCP resource URI (`<base>/mcp`). | ✓ when MCP enabled |
+| `PUBLIC_APP_BASE_URL` | `http://localhost:5173` | `https://<your-host>` | Public origin of the web app. Used for the OAuth consent redirect and for `search`/`fetch` citation links — and for the links in verification and reset mail and the Google sign-in redirect URI (see *Deployment Mode / Public Signup Variables*). | ✓ when MCP, signup or Google sign-in is enabled |
+| `MCP_ENABLED` | `true` | `true` | Mounts the `/mcp` endpoint and the OAuth discovery documents. | |
+| `MCP_WRITE_ENABLED` | `false` | `false` | **Kill switch.** With this off, write tools are neither listed nor callable — even for a token that was granted `invoicing:write`. Turn it on deliberately. | |
+| `MCP_DEFAULT_PROFILE` | `core` | `core` | `core` exposes a curated tool set; `all` exposes every generated tool. Clients can also request a profile in the connector URL. | |
+| `OAUTH_DCR_ENABLED` | `true` | `true` | Allows RFC 7591 dynamic client registration at `POST /api/oauth/register`. Claude and ChatGPT both rely on it. | |
+| `OAUTH_ACCESS_TOKEN_TTL_MINUTES` | `60` | `60` | Lifetime of an issued OAuth access token. | |
+| `OAUTH_REFRESH_TOKEN_TTL_DAYS` | `30` | `30` | Lifetime of a refresh token. Refresh tokens rotate on every use. | |
+
+**If the two public URLs are not set to `https://` origins in production, MCP and its
+OAuth endpoints are automatically disabled** and the app logs a warning on startup and
+serves normally. Upgrading an existing deployment to an MCP-capable image therefore never
+takes it offline — you opt in by setting these two variables.
+
+**`PUBLIC_API_BASE_URL` must be exact.** It is published in the OAuth discovery documents
+and is what access tokens are audience-bound to, so it has to match the URL a user types
+into their MCP client, character for character — including the scheme and any port. A
+mismatch makes every token fail audience validation with a `401` that looks like a login
+loop. Both public URLs must be `https://` in production; the backend refuses to start
+otherwise while `MCP_ENABLED` is on.
+
+Deployments serve these extra path prefixes from the backend, alongside `/api`:
+`/mcp`, `/.well-known/` and `/s/` (see *Public Share Link Variables* below). The Kubernetes
+ingresses and the Vite dev proxy already route them; any other reverse proxy in front of
+this app needs the same rules, because OAuth discovery cannot be relocated under `/api`.
+
+### Public Share Link Variables
+
+These control the public, unauthenticated share pages at `https://<tenant-host>/s/<token>` —
+the URL an owner pastes into WhatsApp so a customer can view an invoice, statement or
+receipt and download its PDF without an account.
+
+**Every variable here has a default.** An existing deployment can take an image containing
+this feature without touching its secret and the feature simply works.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SHARE_LINKS_ENABLED` | `true` | Master switch. With this off, `POST /api/share/` returns `403` and every `/s/<token>` URL returns the same uniform `404` an unknown token gets. Existing rows are left alone, so turning it back on restores every live link. |
+| `UPI_QR_ENABLED` | `true` | Master switch for the pay-by-UPI block on share pages. Kept separate from `SHARE_LINKS_ENABLED` because a deployment outside India wants the share pages and has no use for the payment offer. With this off, no `upi://` link or QR is produced and `/s/<token>/upi` returns the uniform `404`. |
+| `SHARE_AD_ENABLED` | `true` | Renders the Simple Invoicings panel at the bottom of the public page — brand, pitch, price, call-to-action, a restatement of the document above, and the "Powered by" line. Set to `false` for a white-label deployment: with it off the brand name appears nowhere in the response. The panel is **never** stamped into the PDF under any setting. |
+| `SHARE_AD_BRAND_NAME` | `Simple Invoicings` | Wordmark shown beside the brand mark. |
+| `SHARE_AD_HEADLINE` | `Invoices this clean, in two minutes.` | Headline, rendered in the lime→pink brand gradient. Deliberately contextual: the reader has just looked at a clean invoice. |
+| `SHARE_AD_TAGLINE` | `GST-ready invoicing, inventory and ledgers — built for small businesses and freelancers.` | Supporting line under the headline. |
+| `SHARE_AD_CHIPS` | `1 month free,No credit card,GST-ready` | Comma-separated trust chips. Blank hides the row. |
+| `SHARE_AD_CTA_LABEL` | `Chat on WhatsApp` | Label on the primary gradient button. |
+| `SHARE_AD_FOOTNOTE` | `Try free for 1 month` | The eyebrow above the headline — set uppercase and letterspaced in lime, the marketing site's own label treatment. Blank hides it. |
+| `SHARE_AD_PRICE` | `Rs. 299` | The amount, set large in the lime→magenta gradient. Blank removes the whole price line, prefix and period with it. |
+| `SHARE_AD_PRICE_PERIOD` | `/month` | Set small and muted, tight against the amount. |
+| `SHARE_AD_PRICE_PREFIX` | `only` | Uppercase lead-in on the price baseline. |
+| `SHARE_AD_WEBSITE` | `https://simpleinvoicings.com` | Link target for the ad. Rendered with `rel="noopener noreferrer nofollow"`, and every public response sends `Referrer-Policy: no-referrer`, so the share token is never handed to this site in a `Referer` header. Because of that the destination sees no referrer, so the link is tagged `utm_source=share_page&utm_medium=referral&utm_campaign=document_share&utm_content=<invoice\|ledger_statement\|payment\|unavailable>` — set this to a URL that already carries `utm_` params to keep your own tags instead. |
+| `SHARE_AD_PHONE` | `+91 98710 52105` | Sales number, rendered as a `tel:` button. Published on simpleinvoicings.com. Blank removes the button rather than leaving an empty `tel:`. |
+| `SHARE_AD_WHATSAPP` | `919871052105` | Digits for the `https://wa.me/<n>` primary CTA. Blank falls back to making the website the primary CTA. |
+
+**`/s/` must be routed to the backend.** The share URL is deliberately short so it survives
+being typed and forwarded, which means the ingress has to send `/s/` to this service rather
+than to the SPA. If it does not, `/s/<token>` falls through to the frontend's catch-all and
+the recipient — who has no account — lands on a login screen. As a hedge, the same routes
+are also mounted under `/api/s/<token>`, which every tenant already routes; the page builds
+its own links from the request path, so both forms work end to end.
+
+**The share URL origin does not come from `PUBLIC_APP_BASE_URL` unless that is an `https://`
+origin.** It defaults to `http://localhost:5173` and several tenants never set it, so
+trusting it blindly would paste a localhost URL into a customer's chat. When it is not an
+https origin the backend derives the origin from the request the owner's own browser made
+(`X-Forwarded-Proto` and `Host`).
+
+### Deployment Mode / Public Signup Variables
+
+These turn a deployment into the shared, public instance where people register
+themselves. **Every variable here has a default**, and the defaults are exactly the
+per-customer behaviour from before this feature existed: an existing deployment takes an
+image with it and changes nothing.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DEPLOYMENT_MODE` | `single_tenant` | `single_tenant`: every user reaches every company with their global role, as always. `shared_hosting`: a user reaches only the companies they are a member of, the membership role is what counts, and public signup becomes possible. Any other value refuses to boot. |
+| `MIGRATION_DATABASE_URL` | *(blank)* | The **owner** DSN. Used, in either mode, for everything that must not be filtered by row-level security: `create_all` and the migrations on boot (and `migrate.py`, `reset_db.py`, `seed_admin.py`), `pg_dump` and restore on the Backups page and the nightly backup, and the backup email in shared hosting. Shared hosting's `DATABASE_URL` is a non-owner role so that row-level security applies to it, and that role cannot create tables. Blank means `DATABASE_URL` does all of it, as every single-tenant deployment always has. See *Row-level security* below. |
+| `RLS_BOOT_CHECK` | `true` | Shared hosting only. Refuse to boot when the `DATABASE_URL` role would not be constrained by row-level security (see below). Set `false` **only** to run shared hosting locally against a superuser; never in a deployment. |
+| `PLATFORM_SMTP_HOST` | *(blank)* | Mail relay for address verification and password reset and, on shared hosting, all tenant mail too (invoices, statements, reminders). Any SMTP relay works, e.g. Brevo's `smtp-relay.brevo.com`. Separate from the per-company SMTP settings in **Settings → SMTP**. **Blank disables email/password signup** (see below). |
+| `PLATFORM_SMTP_PORT` | `587` | Port on `PLATFORM_SMTP_HOST`. |
+| `PLATFORM_SMTP_USERNAME` | *(blank)* | SMTP login. |
+| `PLATFORM_SMTP_PASSWORD` | *(blank)* | SMTP password. Keep it in the secret, not the env file in git. |
+| `PLATFORM_SMTP_FROM_EMAIL` | *(blank)* | `From` address on verification and reset mail. |
+| `PLATFORM_SMTP_FROM_NAME` | `Simple Invoicing` | Display name beside it. |
+| `PLATFORM_SMTP_USE_STARTTLS` | `true` | Upgrade the connection with STARTTLS. |
+| `TENANT_EMAIL_DAILY_LIMIT` | `50` | Emails one company may send in 24 hours on shared hosting. Every tenant spends the same relay allowance and sender reputation, so size it to your plan. |
+| `OAUTH_GOOGLE_CLIENT_ID` | *(blank)* | "Continue with Google". The provider is offered only when both the id and the secret are set. See *Setting up the Google OAuth client* below. |
+| `OAUTH_GOOGLE_CLIENT_SECRET` | *(blank)* | Secret for the client above. |
+| `MAX_COMPANIES_PER_USER` | `3` | Shared hosting only: how many companies one user may create. Single-tenant deployments keep the global company limit. |
+
+**What is on in which mode:**
+
+- **Email/password signup** needs `DEPLOYMENT_MODE=shared_hosting` **and**
+  `PLATFORM_SMTP_HOST`. Registering people who can never receive their verification mail is
+  worse than not registering them, so with shared hosting and no host the API still boots,
+  keeps signup off, and logs a `Signup disabled` warning on startup. Existing users can
+  still sign in.
+- **Google sign-in** for users who already exist works in either mode once both
+  `OAUTH_GOOGLE_*` values are set.
+- **Google signup** of new users needs shared hosting plus both `OAUTH_GOOGLE_*` values.
+  Google proves the address itself, so it does not need platform SMTP.
+
+**Password reset** (`Forgot password?`) needs only `PLATFORM_SMTP_HOST`, in either mode.
+
+**Email on shared hosting.** Tenants never enter SMTP details. Their mail goes through
+`PLATFORM_SMTP_*`, sent from `PLATFORM_SMTP_FROM_EMAIL` as `<Company> via
+<PLATFORM_SMTP_FROM_NAME>`, with replies going to the email on the company page. The SMTP
+settings page, which only platform admins can reach, then governs just one thing: the
+automatic backup email. That stays off the relay on purpose, because it carries the whole
+database, and it is skipped if no SMTP config is active. Self-hosted deployments are
+unaffected: tenant mail keeps using their own SMTP settings.
+
+With Brevo: host `smtp-relay.brevo.com`, port `587`, username your Brevo SMTP login, and
+password an **SMTP key** from **SMTP & API → SMTP** (an API key will not work). Authenticate
+your domain in Brevo (SPF and DKIM), and set `PLATFORM_SMTP_FROM_EMAIL` to a sender on it:
+the relay rejects any other `From`, and the SMTP login is not a sending address.
+`GET /api/auth/config` reports what is on (`password_signup_enabled`,
+`password_reset_enabled`, and the enabled `providers`), and the login page shows its links and
+buttons from that.
+
+#### Row-level security (shared hosting)
+
+In shared hosting every tenant's rows are in one database, so on top of the application's
+own company checks, Postgres row-level security (RLS) keeps each request inside one company:
+
+- On boot, as the `MIGRATION_DATABASE_URL` owner, the API enables RLS with a
+  `si_tenant_isolation` policy on every business table with a `company_id` (invoices, ledgers,
+  products, inventory, payments, credit notes, financial years, series, share links, API keys,
+  marketplace tables, …) and on their child tables (`invoice_items`, `credit_note_items`,
+  `credit_note_invoice_refs`, `payment_invoice_allocations`, `marketplace_order_items`). The
+  exact list, and why `users`, `company_memberships`, `company_profiles`, the OAuth tables,
+  `global_settings`, `smtp_configs`, `user_shortcuts` and `_migrations` are deliberately left
+  out, is in `backend/src/db/rls.py`. It is idempotent and a no-op on an up-to-date database.
+  Single-tenant databases never get RLS enabled, and RLS is never `FORCE`d, so the owner
+  always sees every row.
+- Each request sets the company it acts for as the transaction-local setting
+  `app.company_id` (and `app.user_id`), re-applied at the start of every transaction, so a
+  commit mid-request keeps it and a pooled connection never carries it into another request.
+  With no company set, a protected table returns no rows and refuses every write.
+- **Boot check.** The API then connects as `DATABASE_URL` and **refuses to start** with
+  `Refusing to start in shared_hosting: …` if that role is a superuser, has `BYPASSRLS`, owns
+  (or is a member of the owner of) any protected table, lacks
+  `SELECT/INSERT/UPDATE/DELETE` on a table or `USAGE` on a sequence, or if RLS is off on a
+  protected table. Each of those either silently disables every policy or breaks the app. On
+  success it logs `✓ Row-level security enforced for database role '<role>'`.
+- **Grants.** Nothing in the code grants privileges. Tables and sequences that migrations
+  create later reach the app role only through `ALTER DEFAULT PRIVILEGES FOR ROLE <owner>`,
+  set up once as the si-common deployment README describes. A restore (Backups page) runs as
+  the owner and recreates the tables, so it relies on the same default privileges. It also
+  first ends every other database session, which belong to the app role: unless the owner is
+  a superuser it needs `GRANT pg_signal_backend TO <owner>` (or membership of the app role).
+- **Cross-company jobs.** `pg_dump`, restore and the backup email use the owner. Marketplace
+  `sync-all` stays on the app role and acts as each company in turn.
+
+#### `PUBLIC_APP_BASE_URL` and sign-in
+
+Every link in verification and reset mail (`<PUBLIC_APP_BASE_URL>/verify-email?token=…`,
+`/reset-password?token=…`) and both ends of Google sign-in are built from
+`PUBLIC_APP_BASE_URL`, so on a deployment that uses either it must be the exact public origin
+of the web app — scheme, host and any port, no trailing path. Its default,
+`http://localhost:5173`, is wrong for anyone not on that port: set it to
+`http://localhost:5174` in your local `backend/.env.development` if that is where Vite runs.
+
+The OAuth redirect URI is on the **web app's** origin, not the API's:
+`<PUBLIC_APP_BASE_URL>/api/auth/oauth/google/callback`. `/api` is same-origin with the app
+everywhere — the Vite dev proxy forwards `^/api/` to the backend, and the ingress routes `/api`
+to it in production — and that matters: the OAuth state lives in a `SameSite=Lax` cookie
+(`si_oauth_state`, signed with a key derived from `SECRET_KEY`, 10 minutes, `Secure` when
+`ENVIRONMENT=production`) set on the way out, and it only comes back if the callback is on the
+same site. A redirect URI on another origin fails every sign-in with `?error=oauth_failed`.
+The same cookie also binds the one-time code the callback hands the SPA to the browser that
+signed in, so the SPA must call the API on its own origin (`VITE_API_BASE_URL=/api`, the
+default) for `POST /api/auth/oauth/exchange` to carry it.
+
+#### Setting up the Google OAuth client
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), pick or create a project.
+2. **APIs & Services → OAuth consent screen**: user type *External*, fill in the app name,
+   support email and the app's domain, and add the scopes `openid`, `.../auth/userinfo.email`
+   and `.../auth/userinfo.profile` (no sensitive scopes are used, so no verification review).
+   Publish the app when you are ready for anyone to sign in; while it is in *Testing* only the
+   listed test users can.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**, application type
+   *Web application*.
+4. **Authorised redirect URIs** — one per origin the app is served from, exactly:
+   - local development: `http://localhost:5174/api/auth/oauth/google/callback`
+   - production: `https://<your-host>/api/auth/oauth/google/callback`
+     (generally `<PUBLIC_APP_BASE_URL>/api/auth/oauth/google/callback`)
+
+   *Authorised JavaScript origins* can stay empty: the browser never calls Google from
+   script, it is a full-page redirect.
+5. Copy the client ID and secret into `OAUTH_GOOGLE_CLIENT_ID` and `OAUTH_GOOGLE_CLIENT_SECRET`
+   (the secret goes in the k8s secret, never in git), and restart the backend.
+
+Google proves the address itself: a Google sign-in whose ID token does not say
+`email_verified: true` is refused, an existing account with the same address is linked to the
+Google identity on first sign-in, and a new person gets an account only where Google signup is
+on (shared hosting).
+
+#### Rate limits
+
+Login, register, resend-verification, forgot-password and the OAuth code exchange are
+rate-limited by client IP and by email, and answer `429` with `Retry-After` past the limit.
+The buckets are held in each process's memory, so the limits are **per replica** — two pods
+allow twice as much. The client IP is the left-most `X-Forwarded-For` entry, as for share-link
+analytics: right behind Traefik with its default `forwardedHeaders` settings, which replace a
+client-sent header with the address Traefik saw. If the load balancer in front of Traefik
+rewrites the source address (for example a `Service` with `externalTrafficPolicy: Cluster`),
+every caller looks like the same IP and shares one login allowance; use
+`externalTrafficPolicy: Local` or the PROXY protocol on the shared instance.
 
 ### Database Variables (Docker Compose)
 

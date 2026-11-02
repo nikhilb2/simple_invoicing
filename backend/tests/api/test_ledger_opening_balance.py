@@ -2,7 +2,7 @@ def _ledger_payload(name: str, opening_balance=None):
     return {
         "name": name,
         "address": "123 Opening Street",
-        "gst": "27ABCDE1234F1Z5",
+        "gst": "27ABCDE1234F1Z0",
         "opening_balance": opening_balance,
         "phone_number": "+91 9999999999",
         "email": "ledger@example.com",

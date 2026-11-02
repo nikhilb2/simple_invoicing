@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/shallow';
 import api from '../api/client';
 import { useAuth } from './AuthContext';
 import { ACTION_KEYS, DEFAULT_SHORTCUTS, type ActionKey } from '../utils/shortcutDefaults';
+import { isTypingTarget, normalizeCombo } from '../utils/keyboard';
 
 type ShortcutEntry = {
   action_key: string;
@@ -51,17 +52,6 @@ const useShortcutsStore = create<ShortcutsStore>((set, get) => ({
   },
 }));
 
-function normalizeCombo(e: KeyboardEvent): string {
-  const parts: string[] = [];
-  if (e.ctrlKey) parts.push('Ctrl');
-  if (e.shiftKey) parts.push('Shift');
-  if (e.altKey) parts.push('Alt');
-  if (e.metaKey) parts.push('Meta');
-  const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
-  parts.push(key);
-  return parts.join('+');
-}
-
 export function ShortcutsProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
   const refetchShortcuts = useShortcutsStore((s) => s.refetchShortcuts);
@@ -74,6 +64,7 @@ export function ShortcutsProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isTypingTarget(e)) return;
       const { shortcutsMap, handlers } = useShortcutsStore.getState();
       const combo = normalizeCombo(e);
       const action = (Object.keys(shortcutsMap) as ActionKey[]).find(

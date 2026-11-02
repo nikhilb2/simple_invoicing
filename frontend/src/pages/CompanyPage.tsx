@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import api, { getApiErrorMessage } from '../api/client';
+import { useQueryClient } from '@tanstack/react-query';
+import axios from 'axios';
+import api, { getApiErrorCode, getApiErrorMessage } from '../api/client';
 import { createTerm, deleteTerm, removeLogo, updateTerm, uploadLogo } from '../api/company';
 import StatusToasts from '../components/StatusToasts';
 import { useAuth } from '../context/AuthContext';
+import { useAuthStore } from '../store/useAuthStore';
 import { useFY } from '../context/FYContext';
 import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, CompanyTermOut } from '../types/api';
 import { isCompanyConfigured } from '../utils/companySetup';
@@ -16,6 +19,10 @@ const VOUCHER_LABELS: Record<string, string> = {
   sales: 'Sales',
   purchase: 'Purchase',
   payment: 'Payment',
+  credit_note: 'Credit Note',
+  // Our own number for a credit note a supplier sent us. Kept out of the
+  // credit note series so GSTR-1 Table 13 declares an unbroken range.
+  debit_note: 'Debit Note (purchase returns)',
 };
 
 function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number, fyLabel?: string | null): string {
@@ -108,15 +115,15 @@ function LogoUploadCard({
         Upload your company logo (PNG, JPG, JPEG, max 100 KB). It will appear on all generated PDFs.
       </p>
 
-      {error && <p style={{ color: 'var(--color-danger, red)', fontSize: '0.875rem', marginBottom: '8px' }}>{error}</p>}
+      {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.875rem', marginBottom: '8px' }}>{error}</p>}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
         {logoUrl ? (
-          <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '8px', background: '#f9fafb' }}>
+          <div style={{ border: '1px solid var(--line-neutral)', borderRadius: '8px', padding: '8px', background: 'var(--logo-frame-bg)' }}>
             <img src={logoUrl} alt="Company logo" style={{ maxWidth: '180px', maxHeight: '80px', objectFit: 'contain' }} />
           </div>
         ) : (
-          <div style={{ border: '2px dashed #d1d5db', borderRadius: '8px', padding: '24px 32px', textAlign: 'center', color: '#9ca3af', fontSize: '0.875rem' }}>
+          <div style={{ border: '2px dashed var(--line-neutral-strong)', borderRadius: '8px', padding: '24px 32px', textAlign: 'center', color: 'var(--text-placeholder)', fontSize: '0.875rem' }}>
             No logo uploaded
           </div>
         )}
@@ -196,17 +203,18 @@ function AdditionalInfoSection({
         Text displayed below the logo on all generated PDFs. Use this for taglines, registration details, compliance statements, etc.
       </p>
 
-      {localError && <p style={{ color: 'var(--color-danger, red)', fontSize: '0.875rem', marginBottom: '8px' }}>{localError}</p>}
-      {localSuccess && <p style={{ color: 'var(--color-success, green)', fontSize: '0.875rem', marginBottom: '8px' }}>{localSuccess}</p>}
+      {localError && <p style={{ color: 'var(--color-danger)', fontSize: '0.875rem', marginBottom: '8px' }}>{localError}</p>}
+      {localSuccess && <p style={{ color: 'var(--color-success)', fontSize: '0.875rem', marginBottom: '8px' }}>{localSuccess}</p>}
 
       <textarea
         className="textarea"
+        aria-label="Additional company information"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         placeholder={`Example:
 ABC Enterprises Pvt. Ltd.
 Authorized Distributor of Industrial Products
-GSTIN: 07ABCDE1234F1Z5
+GSTIN: 07ABCDE1234F1Z2
 Customer Care: +91 XXXXX XXXXX`}
         rows={5}
         style={{ width: '100%', minHeight: '120px', resize: 'vertical' }}
@@ -328,13 +336,14 @@ function TermsAndConditionsCard({ companyId }: { companyId: number }) {
         Manage terms that will appear on Sales and Tax Invoices. Terms are automatically serial numbered and appear in order.
       </p>
 
-      {error && <p style={{ color: 'var(--color-danger, red)', fontSize: '0.875rem', marginBottom: '8px' }}>{error}</p>}
-      {success && <p style={{ color: 'var(--color-success, green)', fontSize: '0.875rem', marginBottom: '8px' }}>{success}</p>}
+      {error && <p style={{ color: 'var(--color-danger)', fontSize: '0.875rem', marginBottom: '8px' }}>{error}</p>}
+      {success && <p style={{ color: 'var(--color-success)', fontSize: '0.875rem', marginBottom: '8px' }}>{success}</p>}
 
       {/* Add new term */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
         <input
           className="input"
+          aria-label="New invoice term"
           value={newTermContent}
           onChange={(e) => setNewTermContent(e.target.value)}
           placeholder="Add a new term..."
@@ -352,15 +361,16 @@ function TermsAndConditionsCard({ companyId }: { companyId: number }) {
 
       {/* Existing terms list */}
       {terms.length === 0 ? (
-        <p style={{ fontSize: '0.875rem', color: '#9ca3af' }}>No terms added yet.</p>
+        <p style={{ fontSize: '0.875rem', color: 'var(--text-placeholder)' }}>No terms added yet.</p>
       ) : (
         <div className="stack" style={{ gap: '8px' }}>
           {terms.map((term) => (
-            <div key={term.id} style={{ border: '1px solid #e5e7eb', borderRadius: '6px', padding: '10px 12px' }}>
+            <div key={term.id} style={{ border: '1px solid var(--line-neutral)', borderRadius: '6px', padding: '10px 12px' }}>
               {editingId === term.id ? (
                 <div>
                   <textarea
                     className="textarea"
+                    aria-label={`Edit term ${term.serial_number}`}
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
                     rows={2}
@@ -600,8 +610,8 @@ function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLEl
                 >
                   {saving[s.id] ? 'Saving…' : 'Save'}
                 </button>
-                {rowSuccess[s.id] && <span style={{ color: 'var(--color-success, green)', fontSize: '0.875rem' }}>{rowSuccess[s.id]}</span>}
-                {rowError[s.id] && <span style={{ color: 'var(--color-danger, red)', fontSize: '0.875rem' }}>{rowError[s.id]}</span>}
+                {rowSuccess[s.id] && <span style={{ color: 'var(--color-success)', fontSize: '0.875rem' }}>{rowSuccess[s.id]}</span>}
+                {rowError[s.id] && <span style={{ color: 'var(--color-danger)', fontSize: '0.875rem' }}>{rowError[s.id]}</span>}
               </div>
             </div>
           );
@@ -709,6 +719,7 @@ function EWayBillSettingsCard({
 
 export default function CompanyPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const { isAdmin } = useAuth();
   const seriesSectionRef = useRef<HTMLElement>(null);
@@ -726,8 +737,13 @@ export default function CompanyPage() {
     eway_local_threshold: 100000,
     eway_interstate_threshold: 50000,
     eway_always_show_button: true,
+    show_pay_qr_on_invoice: false,
+    show_upi_pay_button: false,
   });
   const [companyId, setCompanyId] = useState<number>(0);
+  // True when the server says this user has no company at all (409
+  // company_required), so saving has to create one rather than update one.
+  const [noCompany, setNoCompany] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [additionalInfo, setAdditionalInfo] = useState('');
   const [loading, setLoading] = useState(true);
@@ -753,6 +769,7 @@ export default function CompanyPage() {
       setError('');
       const response = await api.get<CompanyProfile>('/company/');
       const data = response.data;
+      setNoCompany(false);
       if (initialSetupRequired === null) {
         setInitialSetupRequired(!isCompanyConfigured(data));
       }
@@ -770,6 +787,8 @@ export default function CompanyPage() {
         eway_local_threshold: data.eway_local_threshold || 100000,
         eway_interstate_threshold: data.eway_interstate_threshold || 50000,
         eway_always_show_button: data.eway_always_show_button !== undefined ? data.eway_always_show_button : true,
+        show_pay_qr_on_invoice: data.show_pay_qr_on_invoice || false,
+        show_upi_pay_button: data.show_upi_pay_button || false,
       });
       setAdditionalInfo(data.additional_company_info || '');
       if (data.logo_data && data.logo_mime_type) {
@@ -778,7 +797,15 @@ export default function CompanyPage() {
         setLogoUrl(null);
       }
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to load company profile'));
+      if (axios.isAxiosError(err) && err.response?.status === 409 && getApiErrorCode(err) === 'company_required') {
+        setNoCompany(true);
+        setCompanyId(0);
+        if (initialSetupRequired === null) {
+          setInitialSetupRequired(true);
+        }
+      } else {
+        setError(getApiErrorMessage(err, 'Unable to load company profile'));
+      }
     } finally {
       setLoading(false);
     }
@@ -809,10 +836,25 @@ export default function CompanyPage() {
         eway_local_threshold: form.eway_local_threshold,
         eway_interstate_threshold: form.eway_interstate_threshold,
         eway_always_show_button: form.eway_always_show_button,
+        show_pay_qr_on_invoice: form.show_pay_qr_on_invoice,
+        show_upi_pay_button: form.show_upi_pay_button,
       };
 
-      await api.put<CompanyProfileUpdate>('/company/', payload);
-      setSuccess('Company profile saved. New invoices will now show this as billing company.');
+      if (noCompany) {
+        // First company for this user: the creator becomes its admin and the
+        // new company becomes their active one.
+        const created = await api.post<CompanyProfile>('/company/companies', payload);
+        localStorage.setItem('active_company_id', String(created.data.id));
+        // The creator's role only exists now; without this they would look like a
+        // non-admin until the next page load.
+        await useAuthStore.getState().hydrateUserRole();
+        await queryClient.invalidateQueries({ queryKey: ['company-setup-required'] });
+        await queryClient.invalidateQueries({ queryKey: ['sidebar-companies'] });
+        setSuccess('Company created. New invoices will now show this as billing company.');
+      } else {
+        await api.put<CompanyProfileUpdate>('/company/', payload);
+        setSuccess('Company profile saved. New invoices will now show this as billing company.');
+      }
       if (initialSetupRequired && payload.name) {
         setShowFirstSetupPrompt(true);
       }
@@ -863,7 +905,7 @@ export default function CompanyPage() {
     }
 
     if (setupRequiredByRoute) {
-      navigate('/company', { replace: true });
+      navigate('/settings/company', { replace: true });
     }
   }
 
@@ -947,8 +989,8 @@ export default function CompanyPage() {
       ) : null}
 
       {/* -------- Branding Section (Logo + Additional Info) -------- */}
-      {!loading && (
-        <section className="content-grid">
+      {!loading && !noCompany && (
+        <section className="content-grid content-grid--single">
           <article className="panel stack" style={{ gap: '24px' }}>
             <LogoUploadCard logoUrl={logoUrl} onLogoChanged={loadCompanyProfile} />
             <AdditionalInfoSection
@@ -965,7 +1007,7 @@ export default function CompanyPage() {
           className="panel stack"
           ref={companySetupSectionRef}
           tabIndex={-1}
-          style={highlightCompanySetup ? { borderColor: 'var(--color-primary)', boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.25)' } : undefined}
+          style={highlightCompanySetup ? { borderColor: 'var(--color-primary)', boxShadow: '0 0 0 3px rgb(var(--rgb-highlight) / 0.25)' } : undefined}
         >
           <div className="panel__header">
             <div>
@@ -997,9 +1039,9 @@ export default function CompanyPage() {
                     className="input"
                     value={form.gst}
                     onChange={(event) => setForm((current) => ({ ...current, gst: event.target.value }))}
-                    placeholder="27ABCDE1234F1Z5"
+                    placeholder="27ABCDE1234F1Z0"
                   />
-                  <small className="field-hint">Format: 27ABCDE1234F1Z5</small>
+                  <small className="field-hint">Format: 27ABCDE1234F1Z0</small>
                 </div>
 
                 <div className="field">
@@ -1082,6 +1124,54 @@ export default function CompanyPage() {
                 </div>
 
                 <div className="field field--full">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                    <input
+                      id="company-show-pay-qr"
+                      type="checkbox"
+                      checked={form.show_pay_qr_on_invoice}
+                      onChange={(e) => setForm((current) => ({ ...current, show_pay_qr_on_invoice: e.target.checked }))}
+                    />
+                    <label htmlFor="company-show-pay-qr" style={{ marginBottom: 0, cursor: 'pointer', fontWeight: 500 }}>
+                      Show pay-online QR on invoice PDFs
+                    </label>
+                  </div>
+                  {/* Both consequences are stated because neither is guessable: the QR
+                      only works if the invoice has a public link, so printing starts
+                      creating one -- and revoking that link later kills the QR on
+                      paper already in a customer's hands. */}
+                  <small className="field-hint" style={{ marginLeft: '24px' }}>
+                    Adds a QR that opens a page where the customer can pay you by UPI. Printing an
+                    invoice creates a shareable link for it; revoking that link later stops the QR on
+                    copies already printed from working. Add a UPI ID under Cash &amp; Bank Accounts
+                    for the payment option to appear.
+                  </small>
+                </div>
+
+                <div className="field field--full">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                    <input
+                      id="company-show-upi-pay-button"
+                      type="checkbox"
+                      checked={form.show_upi_pay_button}
+                      onChange={(e) => setForm((current) => ({ ...current, show_upi_pay_button: e.target.checked }))}
+                    />
+                    <label htmlFor="company-show-upi-pay-button" style={{ marginBottom: 0, cursor: 'pointer', fontWeight: 500 }}>
+                      Show &ldquo;Pay by UPI&rdquo; button on shared invoices
+                    </label>
+                  </div>
+                  {/* The merchant caveat is the whole reason this is a setting: for a
+                      personal UPI ID the tap-to-pay hand-off draws a risk warning in
+                      apps like Paytm, and nothing here can tell which kind was entered. */}
+                  <small className="field-hint" style={{ marginLeft: '24px' }}>
+                    Adds a tap-to-pay button, with Google Pay, PhonePe and Paytm shortcuts, above the
+                    UPI QR on a shared invoice or statement. Turn this on only if your UPI ID is
+                    registered as a merchant with your UPI provider &mdash; with a personal UPI ID, apps
+                    such as Paytm warn your customer that the payment may fail. The QR keeps working
+                    either way.
+                  </small>
+                </div>
+
+                <div className="field field--full">
                   <small className="field-hint">
                     Bank and cash account details are managed from Cash &amp; Bank Accounts.
                   </small>
@@ -1114,14 +1204,14 @@ export default function CompanyPage() {
         )}
 
         {/* E-Way Bill Settings */}
-        {!loading && (
+        {!loading && !noCompany && (
           <EWayBillSettingsCard
             form={form}
             onChange={(patch) => setForm((current) => ({ ...current, ...patch }))}
           />
         )}
 
-        <InvoiceSeriesCard sectionRef={seriesSectionRef} />
+        {!noCompany && <InvoiceSeriesCard sectionRef={seriesSectionRef} />}
       </section>
     </div>
   );
