@@ -48,6 +48,67 @@ def test_invalid_gst(client):
     assert response.status_code == 400
 
 
+def test_create_product_rejects_nan_gst_rate(client):
+    response = client.post(
+        "/api/products/",
+        content='{"sku": "PRO102", "name": "TestProduct", "price": 100, "gst_rate": NaN}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "GST rate must be between 0 and 100"
+
+    listing = client.get("/api/products/")
+    assert listing.status_code == 200
+    assert all(item["sku"] != "PRO102" for item in listing.json()["items"])
+
+
+def test_update_product_rejects_nan_gst_rate(client):
+    created = client.post("/api/products/", json={
+        "sku": "PRO103",
+        "name": "TestProduct",
+        "price": 100,
+        "gst_rate": 18,
+    })
+    assert created.status_code == 200
+    product_id = created.json()["id"]
+
+    response = client.put(
+        f"/api/products/{product_id}",
+        content='{"sku": "PRO103", "name": "TestProduct", "price": 100, "gst_rate": NaN}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "GST rate must be between 0 and 100"
+
+    current = client.get(f"/api/products/{product_id}")
+    assert current.status_code == 200
+    assert current.json()["gst_rate"] == 18
+
+
+def test_update_product_with_inventory_rejects_nan_gst_rate(client):
+    created = client.post("/api/products/", json={
+        "sku": "PRO104",
+        "name": "TestProduct",
+        "price": 100,
+        "gst_rate": 5,
+        "initial_quantity": 2,
+    })
+    assert created.status_code == 200
+    product_id = created.json()["id"]
+
+    response = client.put(
+        f"/api/products/{product_id}/with-inventory",
+        content='{"gst_rate": NaN}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "GST rate must be between 0 and 100"
+
+    current = client.get(f"/api/products/{product_id}")
+    assert current.status_code == 200
+    assert current.json()["gst_rate"] == 5
+
+
 @pytest.mark.parametrize("overrides", [
     {"price": -1},
     {"purchase_price": -1},

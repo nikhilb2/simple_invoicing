@@ -48,7 +48,7 @@ def create_product(
     current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
-    if payload.gst_rate < 0 or payload.gst_rate > 100:
+    if not 0 <= payload.gst_rate <= 100:
         raise HTTPException(status_code=400, detail="GST rate must be between 0 and 100")
 
     sku = payload.sku.strip().upper()
@@ -191,7 +191,7 @@ def update_product(
     _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
-    if payload.gst_rate < 0 or payload.gst_rate > 100:
+    if not 0 <= payload.gst_rate <= 100:
         raise HTTPException(status_code=400, detail="GST rate must be between 0 and 100")
 
     product = db.query(Product).filter(Product.id == product_id, Product.company_id == active_company.id).first()
@@ -597,7 +597,7 @@ def update_product_with_inventory(
     if payload.reorder_level is not None:
         product.reorder_level = payload.reorder_level
     if payload.gst_rate is not None:
-        if payload.gst_rate < 0 or payload.gst_rate > 100:
+        if not 0 <= payload.gst_rate <= 100:
             raise HTTPException(status_code=400, detail="GST rate must be between 0 and 100")
         product.gst_rate = payload.gst_rate
     if payload.unit is not None:
