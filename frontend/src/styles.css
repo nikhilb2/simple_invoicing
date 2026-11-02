@@ -7232,6 +7232,49 @@ a.ledger-chip:focus-visible {
   }
 }
 
+/* ── Sign in with a provider ─────────────────────────────────────────────
+   Colours are the ones Google's branding rules set for each theme, so they are
+   literal values rather than tokens and do not follow the app's accent. The rules
+   also put the logo on white, hence the white tile on the dark button.
+   https://developers.google.com/identity/branding-guidelines */
+.oauth-button--google,
+:root[data-theme="dark"] .oauth-button--google {
+  background: #131314;
+  border: 1px solid #8e918f;
+  color: #e3e3e3;
+  font-weight: 500;
+  gap: 10px;
+}
+
+:root[data-theme="light"] .oauth-button--google {
+  background: #ffffff;
+  border-color: #747775;
+  color: #1f1f1f;
+}
+
+.oauth-button--google:hover,
+.oauth-button--google:focus-visible {
+  filter: brightness(1.15);
+}
+
+:root[data-theme="light"] .oauth-button--google:hover,
+:root[data-theme="light"] .oauth-button--google:focus-visible {
+  filter: none;
+  background: #f2f2f2;
+}
+
+.oauth-button__logo {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 3px;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.oauth-button__logo img {
+  display: block;
+}
+
 /* ── OAuth consent ──────────────────────────────────────────────────────────
    Reuses the login page's centering shell, but a single narrow column: the
    visitor arrives here from Claude or ChatGPT to answer one question, and the
