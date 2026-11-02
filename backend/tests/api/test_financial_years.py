@@ -315,3 +315,92 @@ def test_label_with_surrounding_spaces_is_saved_stripped(client, db_session):
     response = client.post("/api/financial-years/", json=payload)
     assert response.status_code == 201, response.text
     assert response.json()["label"] == "2027-28"
+
+
+def test_overlapping_year_in_the_same_company_returns_409(client, db_session):
+    _seed_company(db_session, 1, "Company A")
+
+    first = client.post("/api/financial-years/", json=_create_payload())
+    assert first.status_code == 201, first.text
+
+    overlap = client.post(
+        "/api/financial-years/",
+        json={
+            "label": "FY 2026-27b",
+            "start_date": "2026-10-01",
+            "end_date": "2027-09-30",
+        },
+    )
+    assert overlap.status_code == 409, overlap.text
+    assert "overlaps" in overlap.json()["detail"]
+    assert "FY 2026-27" in overlap.json()["detail"]
+
+
+def test_identical_range_under_a_different_label_returns_409(client, db_session):
+    _seed_company(db_session, 1, "Company A")
+
+    first = client.post("/api/financial-years/", json=_create_payload())
+    assert first.status_code == 201, first.text
+
+    twin = client.post(
+        "/api/financial-years/",
+        json={
+            "label": "FY 2026-27 twin",
+            "start_date": "2026-04-01",
+            "end_date": "2027-03-31",
+        },
+    )
+    assert twin.status_code == 409, twin.text
+
+
+def test_adjacent_years_do_not_count_as_overlapping(client, db_session):
+    _seed_company(db_session, 1, "Company A")
+
+    first = client.post("/api/financial-years/", json=_create_payload())
+    assert first.status_code == 201, first.text
+
+    next_year = client.post(
+        "/api/financial-years/",
+        json={
+            "label": "FY 2027-28",
+            "start_date": "2027-04-01",
+            "end_date": "2028-03-31",
+        },
+    )
+    assert next_year.status_code == 201, next_year.text
+
+
+def test_year_starting_on_the_day_another_ends_returns_409(client, db_session):
+    _seed_company(db_session, 1, "Company A")
+
+    first = client.post("/api/financial-years/", json=_create_payload())
+    assert first.status_code == 201, first.text
+
+    shared_day = client.post(
+        "/api/financial-years/",
+        json={
+            "label": "FY 2027-28",
+            "start_date": "2027-03-31",
+            "end_date": "2028-03-30",
+        },
+    )
+    assert shared_day.status_code == 409, shared_day.text
+
+
+def test_overlapping_year_in_another_company_is_allowed(client, db_session):
+    _seed_company(db_session, 1, "Company A")
+    _seed_company(db_session, 2, "Company B")
+
+    first = client.post("/api/financial-years/", json=_create_payload())
+    assert first.status_code == 201, first.text
+
+    second = client.post(
+        "/api/financial-years/",
+        json={
+            "label": "FY 2026-27b",
+            "start_date": "2026-10-01",
+            "end_date": "2027-09-30",
+        },
+        headers={"X-Company-Id": "2"},
+    )
+    assert second.status_code == 201, second.text
