@@ -11,16 +11,19 @@ import LoadingState from '../components/LoadingState';
 import PageSizeSelect, { readStoredPageSize, storePageSize } from '../components/PageSizeSelect';
 import { formatDateTime } from '../utils/formatting';
 import { downloadCsv } from '../utils/csv';
+import { toIsoDate } from '../utils/dateRanges';
 
 const EMAIL_TYPE_LABELS: Record<string, string> = {
   invoice: 'Invoice',
   ledger_statement: 'Ledger Statement',
   payment_reminder: 'Payment Reminder',
+  due_reminders_batch: 'Due reminders (bulk)',
+  automatic_backup: 'Automatic backup',
   other: 'Other',
 };
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return toIsoDate(new Date());
 }
 
 function monthStart() {
@@ -66,7 +69,7 @@ export default function EmailHistoryPage() {
   function handleExportEmailCsv() {
     if (!data) return;
     downloadCsv(
-      `email_history_${new Date().toISOString().slice(0, 10)}.csv`,
+      `email_history_${toIsoDate(new Date())}.csv`,
       ['Date', 'Recipient', 'Subject', 'Status'],
       data.items.map((log) => [
         formatDateTime(log.sent_at),
@@ -144,10 +147,9 @@ export default function EmailHistoryPage() {
             onChange={e => { setEmailType(e.target.value); handleFilterChange(); }}
           >
             <option value="">All types</option>
-            <option value="invoice">Invoice</option>
-            <option value="ledger_statement">Ledger Statement</option>
-            <option value="payment_reminder">Payment Reminder</option>
-            <option value="other">Other</option>
+            {Object.entries(EMAIL_TYPE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
           </select>
         </div>
         <div className="field">
