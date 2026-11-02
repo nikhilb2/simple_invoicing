@@ -3,6 +3,7 @@ import {
   addDaysToIsoDate,
   composerDocumentName,
   conversionDraftToFormItems,
+  conversionLineShortfalls,
   defaultValidUntil,
   formItemToQuotationLine,
   isQuotationVoucher,
@@ -64,6 +65,45 @@ describe('validity dates', () => {
 
   it('gives nothing for a blank date rather than an invalid one', () => {
     expect(defaultValidUntil('')).toBe('');
+  });
+});
+
+describe('conversionLineShortfalls', () => {
+  const quoted = [{ product_id: 5, quantity: 5 }, { product_id: 6, quantity: 1 }];
+
+  it('is empty when every quoted unit is on the invoice', () => {
+    expect(conversionLineShortfalls(quoted, [
+      { productId: 5, quantity: 5 },
+      { productId: 6, quantity: 1 },
+    ])).toEqual([]);
+  });
+
+  it('names a partly scanned or reduced line', () => {
+    expect(conversionLineShortfalls(quoted, [
+      { productId: 5, quantity: 3 },
+      { productId: 6, quantity: 1 },
+    ])).toEqual([{ productId: 5, quoted: 5, onInvoice: 3 }]);
+  });
+
+  it('counts a removed line as nothing on the invoice', () => {
+    expect(conversionLineShortfalls(quoted, [{ productId: 5, quantity: 5 }])).toEqual([
+      { productId: 6, quoted: 1, onInvoice: 0 },
+    ]);
+  });
+
+  it('adds up a product split across lines, and ignores extras', () => {
+    expect(conversionLineShortfalls(quoted, [
+      { productId: 5, quantity: 2 },
+      { productId: 5, quantity: 4 },
+      { productId: 6, quantity: 1 },
+      { productId: 7, quantity: 9 },
+    ])).toEqual([]);
+  });
+
+  it('treats a blank quantity box as nothing rather than failing', () => {
+    expect(conversionLineShortfalls([{ product_id: 5, quantity: 1 }], [{ productId: 5, quantity: Number.NaN }])).toEqual([
+      { productId: 5, quoted: 1, onInvoice: 0 },
+    ]);
   });
 });
 

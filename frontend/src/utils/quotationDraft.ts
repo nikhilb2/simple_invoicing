@@ -85,6 +85,34 @@ export function conversionDraftToFormItems(invoice: Pick<InvoiceCreate, 'items'>
   return invoice.items.map(toFormItem);
 }
 
+/**
+ * Products this invoice carries fewer of than the quotation did.
+ *
+ * Reducing a line is allowed, but conversion is full only: the document closes and the
+ * difference is not left open, so the composer says so while it can still be changed.
+ * Worth saying most for a serial-tracked line, whose quantity is whatever has been
+ * scanned so far rather than a number anyone chose.
+ */
+export function conversionLineShortfalls(
+  quoted: Pick<InvoiceItemInput, 'product_id' | 'quantity'>[],
+  onInvoice: { productId: number; quantity: number }[],
+): { productId: number; quoted: number; onInvoice: number }[] {
+  const totals = new Map<number, number>();
+  for (const line of quoted) {
+    totals.set(line.product_id, (totals.get(line.product_id) ?? 0) + line.quantity);
+  }
+  const shortfalls: { productId: number; quoted: number; onInvoice: number }[] = [];
+  for (const [productId, wanted] of totals) {
+    const actual = onInvoice
+      .filter((line) => line.productId === productId)
+      .reduce((sum, line) => sum + (Number.isNaN(line.quantity) ? 0 : line.quantity), 0);
+    if (actual < wanted) {
+      shortfalls.push({ productId, quoted: wanted, onInvoice: actual });
+    }
+  }
+  return shortfalls;
+}
+
 /** A form line as a quotation line, with no serials and no tax override. */
 export function formItemToQuotationLine(item: InvoiceFormItem): QuotationFields['items'][number] {
   return {

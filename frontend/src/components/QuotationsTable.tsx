@@ -64,8 +64,14 @@ export default function QuotationsTable({ quotations, onOpen, onConvert }: Quota
                 </td>
                 <td>
                   {canConvert ? (
-                    <button type="button" className="button button--ghost" onClick={() => onConvert(quotation)}>
-                      Convert to invoice
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      aria-label="Convert to invoice"
+                      title="Convert to invoice"
+                      onClick={() => onConvert(quotation)}
+                    >
+                      Convert
                     </button>
                   ) : null}
                 </td>

@@ -23,6 +23,7 @@ import { quotationQueryKeys } from '../../features/quotations/queryKeys';
 import {
   composerDocumentName,
   conversionDraftToFormItems,
+  conversionLineShortfalls,
   defaultValidUntil,
   formItemToQuotationLine,
   isQuotationVoucher,
@@ -1057,6 +1058,9 @@ export default function InvoicesPage() {
   const hasTrackedProducts = !isQuote && products.some((product) => product.track_serials);
   const documentName = composerDocumentName(voucherType);
   const conversionLedgerChanged = conversion !== null && Number(selectedLedgerId) !== conversion.invoice.ledger_id;
+  const conversionShortfalls = conversion
+    ? conversionLineShortfalls(conversion.invoice.items, items.map((item) => ({ productId: Number(item.productId), quantity: lineQuantity(item) })))
+    : [];
   const pickerItem = pickerItemId !== null ? items.find((item) => item.id === pickerItemId) ?? null : null;
   const pickerProduct = pickerItem ? findProduct(Number(pickerItem.productId)) : undefined;
 
@@ -1169,11 +1173,16 @@ export default function InvoicesPage() {
             <div className="summary-box" data-testid="quotation-conversion-banner">
               <p className="eyebrow">Creating a tax invoice from {conversion.quotation_number}</p>
               <p className="muted-text">
-                Review it, scan any serials and save. This takes stock out and uses the next invoice number.
+                Review it, scan any serials and save. This takes stock out, uses the next invoice number and closes the {conversion.document_type === 'proforma' ? 'proforma' : 'quotation'}.
               </p>
               {conversion.warnings.map((warning) => (
                 <p key={`${warning.code}-${warning.message}`} className="field-warning" data-warning={warning.code}>
                   ⚠️ {warning.message}
+                </p>
+              ))}
+              {conversionShortfalls.map((line) => (
+                <p key={line.productId} className="field-warning" data-warning="quantity_reduced">
+                  ⚠️ {findProduct(line.productId)?.name ?? `Product ${line.productId}`}: {line.onInvoice} of {line.quoted} on this invoice. The rest will not stay open on the {conversion.document_type === 'proforma' ? 'proforma' : 'quotation'}.
                 </p>
               ))}
               {conversionLedgerChanged ? (
@@ -1182,6 +1191,12 @@ export default function InvoicesPage() {
                 </p>
               ) : null}
             </div>
+          ) : null}
+
+          {editingQuotation?.status === 'accepted' ? (
+            <p className="field-warning" data-testid="quotation-accepted-edit-warning">
+              ⚠️ The customer accepted this version. Editing keeps it marked accepted, so reopen it first if they need to agree to the changes.
+            </p>
           ) : null}
 
           <form className="stack" onSubmit={handleSubmitInvoice}>

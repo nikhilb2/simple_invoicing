@@ -74,6 +74,8 @@ export default function QuotationsPage() {
   const listQuery = useQuery({
     queryKey: quotationQueryKeys.list(filters),
     queryFn: () => fetchQuotations(filters),
+    // Cancelling or restoring an invoice, on another page, changes these statuses.
+    refetchOnMount: 'always',
   });
   const counts = listQuery.data?.status_counts ?? {};
 
@@ -85,6 +87,11 @@ export default function QuotationsPage() {
       if (key !== 'page') next.delete('page');
       return next;
     }, { replace: true });
+  }
+
+  function closeStatusDialog() {
+    setStatusAction(null);
+    setStatusNote('');
   }
 
   /** After any change: refresh the list, and keep an open preview showing the truth. */
@@ -99,12 +106,11 @@ export default function QuotationsPage() {
     mutationFn: ({ quotation, status: target, note }: StatusAction & { note: string }) =>
       setQuotationStatus(quotation.id, target, note),
     onSuccess: async (updated, { status: target }) => {
-      setStatusAction(null);
-      setStatusNote('');
+      closeStatusDialog();
       await applied(updated, `${updated.quotation_number} is now ${QUOTATION_STATUS_LABELS[target].toLowerCase()}.`);
     },
     onError: (err) => {
-      setStatusAction(null);
+      closeStatusDialog();
       setError(getApiErrorMessage(err, 'Unable to change the status'));
     },
   });
@@ -314,7 +320,7 @@ export default function QuotationsPage() {
               <h2 id="quotation-status-title" className="nav-panel__title">
                 {STATUS_ACTION_TITLES[statusAction.status]}: {statusAction.quotation.quotation_number}
               </h2>
-              <ModalCloseButton onClick={() => setStatusAction(null)} label="Close" />
+              <ModalCloseButton onClick={closeStatusDialog} label="Close" />
             </div>
             <div className="field">
               <label htmlFor="quotation-status-note">Note (optional)</label>
@@ -328,7 +334,7 @@ export default function QuotationsPage() {
               />
             </div>
             <div className="button-row" style={{ justifyContent: 'flex-end' }}>
-              <button type="button" className="button button--ghost" onClick={() => setStatusAction(null)}>
+              <button type="button" className="button button--ghost" onClick={closeStatusDialog}>
                 Back
               </button>
               <button
