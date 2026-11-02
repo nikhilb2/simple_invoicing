@@ -18,6 +18,25 @@ Create GST invoices, export GSTR-1, and manage inventory, ledgers and payments o
 
 ---
 
+## Screenshots
+
+These show a made-up demo business.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/dashboard.png" alt="Dashboard with sales, outstanding and overdue totals, a 12-month trend chart and payment status"><br><sub><b>Dashboard</b>: sales, receivables, stock and trends at a glance.</sub></td>
+    <td width="50%"><img src="docs/screenshots/invoice-composer.png" alt="Invoice form with company details, ledger, line items and automatic CGST and SGST"><br><sub><b>Create invoices</b>: GST is worked out as you add each line.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/invoice-pdf.png" alt="Tax invoice PDF with HSN codes, CGST and SGST split, bank details, a pay-by-UPI QR code and total due"><br><sub><b>PDF tax invoice</b>: HSN codes, tax breakup and a QR code to pay by UPI.</sub></td>
+    <td width="50%"><img src="docs/screenshots/gstr1-summary.png" alt="GSTR-1 filing summary with B2B, B2CL and B2CS categories and JSON, CSV and PDF export buttons"><br><sub><b>GSTR-1</b>: review each return category, then export JSON, CSV or PDF.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/products.png" alt="Products and stock table with prices, reorder levels, GST rates and low-stock badges"><br><sub><b>Products and stock</b>: prices, GST rates and low-stock alerts.</sub></td>
+    <td width="50%"><img src="docs/screenshots/analytics.png" alt="Analytics page with a month-wise sales chart and a table of sales, taxable value and GST collected"><br><sub><b>Analytics</b>: sales and GST by month, product and period.</sub></td>
+  </tr>
+</table>
+
 ## Features
 
 ### GST and billing
