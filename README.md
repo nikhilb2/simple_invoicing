@@ -2,9 +2,11 @@
 
 # Simple Invoicing
 
-**Modern, open-source invoicing & accounting system for small businesses**
+**Free GST software for Indian small businesses**
 
-A Tally-inspired full-stack application with dual-voucher accounting, inventory management, ledger statements, and day-book registers.
+Create GST invoices, export GSTR-1, and manage inventory, ledgers and payments online. Open source, with staff logins for your team.
+
+**[Sign up at app.simpleinvoicings.com](https://app.simpleinvoicings.com/register)** — nothing to install
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -35,6 +37,7 @@ A Tally-inspired full-stack application with dual-voucher accounting, inventory 
 - **GST Compliance** — Built-in tax fields and GST rate support
 - **GSTR-1 Export** — Generate and validate GSTR-1 returns with government-ready JSON (plus CSV/PDF) export
 - **Role-Based Access** — Admin, Manager, and Staff roles with JWT auth
+- **Self-Registration** — Optional public sign-up, with each new account's companies kept separate and optional Google sign-in
 - **Backups** — On-demand database backups from the admin UI
 - **Keyboard Shortcuts** — Configurable shortcuts for power users
 - **Docker Ready** — One-command dev and production setup
@@ -68,6 +71,8 @@ tests cover the validation rules, request schemas, and legacy response handling.
 | **Deploy** | Docker, Docker Compose, Kubernetes (Kaniko) configs included |
 
 ## Quick Start
+
+To use the app without installing anything, [create an account](https://app.simpleinvoicings.com/register) on the hosted version. The steps below are for running your own copy.
 
 ### Prerequisites
 
