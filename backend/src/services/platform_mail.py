@@ -1,5 +1,7 @@
 """Account-lifecycle mail: address verification and password reset.
 
+(services/mail.py also hands tenant mail to _deliver on a shared host.)
+
 Sent through the platform mailer (PLATFORM_SMTP_*), never through a tenant's
 SMTPConfig: a person who is registering has no company yet to send from, and a
 password reset must not depend on the company that person works in having set up
@@ -16,7 +18,7 @@ reason nothing here raises -- a failed send is logged and dropped.
 import logging
 import smtplib
 import ssl
-from email.message import EmailMessage
+from email.message import EmailMessage, Message
 from email.utils import formataddr, make_msgid
 from pathlib import Path
 from urllib.parse import urlencode
@@ -67,7 +69,7 @@ def _build_message(to: str, subject: str, text_body: str, html_body: str) -> Ema
     return msg
 
 
-def _deliver(msg: EmailMessage) -> None:
+def _deliver(msg: Message) -> None:
     """Hand one message to PLATFORM_SMTP_HOST. Raises on failure; callers log."""
     host = settings.PLATFORM_SMTP_HOST
     port = settings.PLATFORM_SMTP_PORT

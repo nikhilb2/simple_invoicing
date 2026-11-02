@@ -171,6 +171,7 @@ async def email_backup_archive(
                 attachments=attachments,
                 cc=recipients[1:] or None,
                 email_type=EMAIL_TYPE,
+                use_smtp_config=True,
             )
         except Exception as exc:  # noqa: BLE001 -- a failed email must not fail the backup
             logger.exception("Could not email the automatic backup")

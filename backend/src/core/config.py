@@ -139,9 +139,10 @@ class Settings(BaseSettings):
     # hosting locally against a superuser; never in a real deployment.
     RLS_BOOT_CHECK: bool = True
 
-    # Platform mailer for account-lifecycle mail only (address verification,
-    # password reset). Separate from the per-company SMTP config stored in the
-    # database: a person who is registering has no company yet to send from.
+    # Platform mailer. Carries account-lifecycle mail (address verification, password
+    # reset) in either mode, because a person who is registering has no company yet to
+    # send from. On a shared host it also carries all tenant mail, because nobody there
+    # hands over SMTP credentials. Any SMTP relay works, e.g. smtp-relay.brevo.com.
     PLATFORM_SMTP_HOST: str | None = None
     PLATFORM_SMTP_PORT: int = 587
     PLATFORM_SMTP_USERNAME: str | None = None
@@ -149,6 +150,9 @@ class Settings(BaseSettings):
     PLATFORM_SMTP_FROM_EMAIL: str | None = None
     PLATFORM_SMTP_FROM_NAME: str = "Simple Invoicing"
     PLATFORM_SMTP_USE_STARTTLS: bool = True
+    # Shared hosting only: emails one company may send in 24 hours. Every tenant
+    # spends the same relay allowance and sender reputation.
+    TENANT_EMAIL_DAILY_LIMIT: int = 50
 
     # Sign in with Google. Both must be set for the provider to be offered.
     OAUTH_GOOGLE_CLIENT_ID: str | None = None
@@ -237,9 +241,9 @@ class Settings(BaseSettings):
         if self.is_shared_hosting and not self.PLATFORM_SMTP_HOST:
             logger.warning(
                 "⚠️  Signup disabled: DEPLOYMENT_MODE=shared_hosting but "
-                "PLATFORM_SMTP_HOST is not set, so verification mail cannot be "
-                "sent. Email/password registration is off; the app is otherwise "
-                "running normally."
+                "PLATFORM_SMTP_HOST is not set, so no mail can be sent. Email/password "
+                "registration and tenant email are off; the app is otherwise running "
+                "normally."
             )
         return self
 

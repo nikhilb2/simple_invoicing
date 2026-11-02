@@ -388,13 +388,14 @@ image with it and changes nothing.
 | `DEPLOYMENT_MODE` | `single_tenant` | `single_tenant`: every user reaches every company with their global role, as always. `shared_hosting`: a user reaches only the companies they are a member of, the membership role is what counts, and public signup becomes possible. Any other value refuses to boot. |
 | `MIGRATION_DATABASE_URL` | *(blank)* | The **owner** DSN. Used, in either mode, for everything that must not be filtered by row-level security: `create_all` and the migrations on boot (and `migrate.py`, `reset_db.py`, `seed_admin.py`), `pg_dump` and restore on the Backups page and the nightly backup, and the backup email in shared hosting. Shared hosting's `DATABASE_URL` is a non-owner role so that row-level security applies to it, and that role cannot create tables. Blank means `DATABASE_URL` does all of it, as every single-tenant deployment always has. See *Row-level security* below. |
 | `RLS_BOOT_CHECK` | `true` | Shared hosting only. Refuse to boot when the `DATABASE_URL` role would not be constrained by row-level security (see below). Set `false` **only** to run shared hosting locally against a superuser; never in a deployment. |
-| `PLATFORM_SMTP_HOST` | *(blank)* | Mail server for account-lifecycle mail only — address verification and password reset. Separate from the per-company SMTP settings in **Settings → SMTP**. **Blank disables email/password signup** (see below). |
+| `PLATFORM_SMTP_HOST` | *(blank)* | Mail relay for address verification and password reset and, on shared hosting, all tenant mail too (invoices, statements, reminders). Any SMTP relay works, e.g. Brevo's `smtp-relay.brevo.com`. Separate from the per-company SMTP settings in **Settings → SMTP**. **Blank disables email/password signup** (see below). |
 | `PLATFORM_SMTP_PORT` | `587` | Port on `PLATFORM_SMTP_HOST`. |
 | `PLATFORM_SMTP_USERNAME` | *(blank)* | SMTP login. |
 | `PLATFORM_SMTP_PASSWORD` | *(blank)* | SMTP password. Keep it in the secret, not the env file in git. |
 | `PLATFORM_SMTP_FROM_EMAIL` | *(blank)* | `From` address on verification and reset mail. |
 | `PLATFORM_SMTP_FROM_NAME` | `Simple Invoicing` | Display name beside it. |
 | `PLATFORM_SMTP_USE_STARTTLS` | `true` | Upgrade the connection with STARTTLS. |
+| `TENANT_EMAIL_DAILY_LIMIT` | `50` | Emails one company may send in 24 hours on shared hosting. Every tenant spends the same relay allowance and sender reputation, so size it to your plan. |
 | `OAUTH_GOOGLE_CLIENT_ID` | *(blank)* | "Continue with Google". The provider is offered only when both the id and the secret are set. See *Setting up the Google OAuth client* below. |
 | `OAUTH_GOOGLE_CLIENT_SECRET` | *(blank)* | Secret for the client above. |
 | `MAX_COMPANIES_PER_USER` | `3` | Shared hosting only: how many companies one user may create. Single-tenant deployments keep the global company limit. |
@@ -412,6 +413,19 @@ image with it and changes nothing.
   Google proves the address itself, so it does not need platform SMTP.
 
 **Password reset** (`Forgot password?`) needs only `PLATFORM_SMTP_HOST`, in either mode.
+
+**Email on shared hosting.** Tenants never enter SMTP details. Their mail goes through
+`PLATFORM_SMTP_*`, sent from `PLATFORM_SMTP_FROM_EMAIL` as `<Company> via
+<PLATFORM_SMTP_FROM_NAME>`, with replies going to the email on the company page. The SMTP
+settings page, which only platform admins can reach, then governs just one thing: the
+automatic backup email. That stays off the relay on purpose, because it carries the whole
+database, and it is skipped if no SMTP config is active. Self-hosted deployments are
+unaffected: tenant mail keeps using their own SMTP settings.
+
+With Brevo: host `smtp-relay.brevo.com`, port `587`, username your Brevo SMTP login, and
+password an **SMTP key** from **SMTP & API → SMTP** (an API key will not work). Authenticate
+your domain in Brevo (SPF and DKIM), and set `PLATFORM_SMTP_FROM_EMAIL` to a sender on it:
+the relay rejects any other `From`, and the SMTP login is not a sending address.
 `GET /api/auth/config` reports what is on (`password_signup_enabled`,
 `password_reset_enabled`, and the enabled `providers`), and the login page shows its links and
 buttons from that.
