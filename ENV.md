@@ -496,7 +496,7 @@ default) for `POST /api/auth/oauth/exchange` to carry it.
    *Web application*.
 4. **Authorised redirect URIs** — one per origin the app is served from, exactly:
    - local development: `http://localhost:5174/api/auth/oauth/google/callback`
-   - production: `https://app.respawn.in/api/auth/oauth/google/callback`
+   - production: `https://<your-host>/api/auth/oauth/google/callback`
      (generally `<PUBLIC_APP_BASE_URL>/api/auth/oauth/google/callback`)
 
    *Authorised JavaScript origins* can stay empty: the browser never calls Google from
