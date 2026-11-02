@@ -18,6 +18,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
+import weasyprint
 from quotation_helpers import (
     convert,
     create_ledger,
@@ -87,11 +88,32 @@ def _report_urls(world: dict) -> dict[str, tuple[str, dict]]:
     }
 
 
+class _SourcePdf:
+    """Stands in for weasyprint.HTML: the "PDF" is the document's own HTML.
+
+    Compared before and after, that is exactly what would be printed, and it can be
+    read. Real PDF bytes cannot: their text is compressed, so the "Generated on" minute
+    these reports print makes two renders differ whenever a test crosses a minute.
+    Real rendering is covered in tests/services/test_quotation_pdf_template.py.
+    """
+
+    def __init__(self, string: str = "", **_):
+        self.source = string
+
+    def write_pdf(self, *_, **__) -> bytes:
+        return b"%PDF-source\n" + self.source.encode()
+
+
+@pytest.fixture(autouse=True)
+def _pdfs_are_their_source(monkeypatch):
+    monkeypatch.setattr(weasyprint, "HTML", _SourcePdf)
+
+
 def _normalise(response) -> object:
-    """Comparable form of a response. A PDF's bytes vary by its embedded timestamps."""
+    """Comparable form of a response, without the time it happened to be rendered."""
     content_type = response.headers.get("content-type", "")
     if "pdf" in content_type:
-        return re.sub(rb"/(CreationDate|ModDate) \(.*?\)|/ID \[.*?\]", b"", response.content, flags=re.S)
+        return re.sub(rb"Generated on [^<]*", b"", response.content)
     if "json" in content_type:
         return response.json()
     return response.text
@@ -223,6 +245,9 @@ def test_quotations_change_nothing(client, world, db_session):
     assert reports_before["day_book"]["entries"]
     assert reports_before["tax_ledger"]["entries"]
     assert reports_before["gstr1_summary"]["b2b"]["invoice_count"] == 1
+    sale_number = world["sale"]["invoice_number"].encode()
+    for pdf in ("day_book_pdf", "statement_pdf", "tax_ledger_pdf"):
+        assert sale_number in reports_before[pdf], pdf
 
 
 def test_a_quotation_series_never_moves_an_invoice_counter_and_vice_versa(client, world):
@@ -350,6 +375,12 @@ def test_converting_changes_everything_by_exactly_one_invoice(client, world, db_
     product_row = lambda report: next(row for row in report["rows"] if row["product_id"] == product)  # noqa: E731
     assert product_row(after["sales_by_product"])["quantity_sold"] == product_row(before["sales_by_product"])["quantity_sold"] + 3
     assert after["profit_loss"]["totals"]["revenue"] == pytest.approx(before["profit_loss"]["totals"]["revenue"] + taxable)
+
+    # The printed reports move too, which is what makes "unchanged" above mean something.
+    for pdf in ("day_book_pdf", "statement_pdf", "tax_ledger_pdf", "gstr1_pdf"):
+        assert after[pdf] != before[pdf], pdf
+    for pdf in ("day_book_pdf", "statement_pdf", "tax_ledger_pdf"):
+        assert invoice["invoice_number"].encode() in after[pdf], pdf
 
     # Numbers: one from the sales series, none from anything else.
     series_after = series_counters(client)
