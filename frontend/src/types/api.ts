@@ -358,6 +358,9 @@ export type Invoice = {
   warnings?: string[];
   shipping_address: string | null;
   shipping_address_label: string | null;
+  /** The quotation or proforma this was converted from. */
+  source_quotation_id?: number | null;
+  source_quotation_number?: string | null;
 };
 
 export type OutstandingInvoice = {
@@ -392,6 +395,117 @@ export type InvoiceItem = {
   discount_type?: string | null;
   discount_value?: number | null;
   serial_numbers?: string[];
+};
+
+export type QuotationDocumentType = 'quotation' | 'proforma';
+export type QuotationStatus = 'open' | 'accepted' | 'declined' | 'converted' | 'cancelled';
+/** The stored status, or `expired`, which is derived from the date and never stored. */
+export type QuotationDisplayStatus = QuotationStatus | 'expired';
+export type QuotationSettableStatus = 'open' | 'accepted' | 'declined';
+
+export type QuotationItem = {
+  id: number;
+  product_id: number;
+  product_name: string | null;
+  hsn_sac: string | null;
+  quantity: number;
+  unit_price: number;
+  gst_rate: number;
+  taxable_amount: number;
+  tax_amount: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  line_total: number;
+  description: string | null;
+  discount_type: string | null;
+  discount_value: number | null;
+};
+
+export type Quotation = {
+  id: number;
+  document_type: QuotationDocumentType;
+  quotation_number: string;
+  status: QuotationStatus;
+  is_expired: boolean;
+  display_status: QuotationDisplayStatus;
+  quotation_date: string;
+  valid_until: string | null;
+  financial_year_id: number | null;
+  ledger_id: number;
+  ledger_name: string | null;
+  ledger_address: string | null;
+  ledger_gst: string | null;
+  ledger_phone: string | null;
+  company_name: string | null;
+  company_gst: string | null;
+  company_currency_code: string | null;
+  shipping_address: string | null;
+  shipping_address_label: string | null;
+  shipping_address_id: number | null;
+  reference_notes: string | null;
+  tax_inclusive: boolean;
+  apply_round_off: boolean;
+  round_off_amount: number;
+  discount_type: string | null;
+  discount_value: number | null;
+  taxable_amount: number;
+  total_tax_amount: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  total_amount: number;
+  status_note: string | null;
+  accepted_at: string | null;
+  declined_at: string | null;
+  converted_at: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+  items: QuotationItem[];
+  /** The one live invoice, if any. */
+  converted_invoice_id: number | null;
+  converted_invoice_number: string | null;
+  /** Every invoice ever created from this, cancelled ones included. */
+  invoices: { id: number; invoice_number: string | null; status: string }[];
+};
+
+export type QuotationFields = {
+  ledger_id: number;
+  quotation_date?: string;
+  /** Null means it never expires. Left out, the server defaults to 30 days. */
+  valid_until?: string | null;
+  reference_notes?: string | null;
+  tax_inclusive?: boolean;
+  apply_round_off?: boolean;
+  discount_type?: 'percentage' | 'net' | null;
+  discount_value?: number | null;
+  shipping_address_same_as_billing?: boolean;
+  shipping_address_id?: number | null;
+  new_shipping_address?: { label: string; address: string } | null;
+  items: Omit<InvoiceItemInput, 'serial_numbers'>[];
+};
+
+export type QuotationCreate = QuotationFields & { document_type: QuotationDocumentType };
+export type QuotationUpdate = QuotationFields;
+
+export type PaginatedQuotations = {
+  items: Quotation[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  status_counts: Partial<Record<QuotationDisplayStatus, number>>;
+};
+
+export type QuotationConversionWarning = { code: string; message: string };
+
+export type QuotationConversionDraft = {
+  quotation_id: number;
+  quotation_number: string;
+  document_type: QuotationDocumentType;
+  invoice: InvoiceCreate;
+  warnings: QuotationConversionWarning[];
 };
 
 export type InvoiceItemInput = {
@@ -1030,7 +1144,7 @@ export type DashboardMetrics = {
 };
 
 /** What a public share link can point at. */
-export type ShareResourceType = 'invoice' | 'ledger_statement' | 'payment' | 'credit_note';
+export type ShareResourceType = 'invoice' | 'ledger_statement' | 'payment' | 'credit_note' | 'quotation';
 
 /**
  * A public, tokenised URL for one document, handed to a customer over WhatsApp.

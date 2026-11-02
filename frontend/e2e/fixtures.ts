@@ -187,6 +187,7 @@ export function uniqueGstin(stateCode = '27') {
  */
 const NAV_SECTION_BY_HREF: Record<string, string> = {
   '/invoices': 'sales',
+  '/quotations': 'sales',
   '/invoices-view': 'sales',
   '/invoice-dues': 'sales',
   '/credit-notes': 'sales',
