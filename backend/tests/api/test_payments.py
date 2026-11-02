@@ -1,11 +1,20 @@
+from contextlib import contextmanager
 from datetime import date, datetime
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi import HTTPException
 
+from app_main import app
+from src.api.deps import get_current_user
 from src.api.routes.payments import _build_receipt_html, create_payment, update_payment
 from src.models.buyer import Buyer as Ledger
+from src.models.company import CompanyProfile
+from src.models.invoice import Invoice
+from src.models.payment import Payment, PaymentInvoiceAllocation
+from src.models.user import User, UserRole
 from src.schemas.payment import PaymentCreate, PaymentUpdate
 
 
@@ -383,3 +392,176 @@ def test_update_payment_without_allocations_rejects_voucher_type_change():
 
     sync_mock.assert_not_called()
     assert existing_payment.voucher_type == "receipt"
+
+
+@contextmanager
+def as_role(role):
+    """Swap the conftest admin override for another role."""
+    previous = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=1, email="test@example.com", role=role
+    )
+    try:
+        yield
+    finally:
+        app.dependency_overrides[get_current_user] = previous
+
+
+@pytest.fixture
+def payment_with_allocation(db_session):
+    company = CompanyProfile(id=1, name="Test Company", address="", currency_code="USD")
+    db_session.add(company)
+    db_session.flush()
+    user = User(
+        id=1,
+        email="test@example.com",
+        full_name="Test User",
+        hashed_password="unused",
+        role=UserRole.admin,
+    )
+    ledger = Ledger(
+        id=1, company_id=company.id, name="Test Ledger", address="", phone_number=""
+    )
+    db_session.add_all([user, ledger])
+    db_session.flush()
+    invoice = Invoice(
+        id=1,
+        company_id=company.id,
+        ledger_id=ledger.id,
+        invoice_number="INV-001",
+        voucher_type="sales",
+        total_amount=500,
+        created_by=user.id,
+    )
+    payment = Payment(
+        id=1,
+        company_id=company.id,
+        ledger_id=ledger.id,
+        voucher_type="receipt",
+        amount=200,
+        date=datetime(2032, 4, 2, 10, 0),
+        mode="upi",
+        reference="REF-42",
+        notes="Original notes",
+        created_by=user.id,
+        status="active",
+        invoice_allocations=[
+            PaymentInvoiceAllocation(invoice=invoice, allocated_amount=60)
+        ],
+    )
+    db_session.add(payment)
+    db_session.commit()
+    return payment
+
+
+@pytest.mark.parametrize("method", ["put", "delete"])
+def test_staff_cannot_change_payment(client, db_session, payment_with_allocation, method):
+    payment_id = payment_with_allocation.id
+    before_payment = db_session.query(Payment.__table__).filter(Payment.id == payment_id).one()
+    before_allocations = (
+        db_session.query(PaymentInvoiceAllocation.__table__)
+        .filter(PaymentInvoiceAllocation.payment_id == payment_id)
+        .order_by(PaymentInvoiceAllocation.id)
+        .all()
+    )
+    payload = {
+        "voucher_type": "receipt",
+        "amount": 300,
+        "date": "2032-04-03T11:00:00",
+        "mode": "bank",
+        "reference": "CHANGED",
+        "notes": "Changed notes",
+        "invoice_allocations": [],
+    }
+
+    with as_role(UserRole.staff):
+        if method == "put":
+            response = client.put(f"/api/payments/{payment_id}", json=payload)
+        else:
+            response = client.delete(f"/api/payments/{payment_id}")
+
+    assert response.status_code == 403, response.text
+    assert response.json() == {"detail": "Insufficient permissions"}
+    db_session.expire_all()
+    assert db_session.query(Payment.__table__).filter(Payment.id == payment_id).one() == before_payment
+    allocations = (
+        db_session.query(PaymentInvoiceAllocation.__table__)
+        .filter(PaymentInvoiceAllocation.payment_id == payment_id)
+        .order_by(PaymentInvoiceAllocation.id)
+        .all()
+    )
+    assert allocations == before_allocations
+
+
+@pytest.mark.parametrize("role", [UserRole.admin, UserRole.manager])
+@pytest.mark.parametrize("clear_allocations", [False, True])
+def test_admin_and_manager_can_update_payment(
+    client, db_session, payment_with_allocation, role, clear_allocations
+):
+    payment_id = payment_with_allocation.id
+    allocation_id = payment_with_allocation.invoice_allocations[0].id
+    payload = {"voucher_type": "receipt", "amount": 300, "notes": "Updated notes"}
+    if clear_allocations:
+        payload["invoice_allocations"] = []
+
+    with as_role(role):
+        response = client.put(f"/api/payments/{payment_id}", json=payload)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["amount"] == 300
+    db_session.expire_all()
+    payment = db_session.get(Payment, payment_id)
+    assert payment.amount == 300
+    assert payment.notes == "Updated notes"
+    assert payment.status == "active"
+    allocations = (
+        db_session.query(PaymentInvoiceAllocation)
+        .filter(PaymentInvoiceAllocation.payment_id == payment_id)
+        .all()
+    )
+    if clear_allocations:
+        assert allocations == []
+        assert response.json()["invoice_allocations"] == []
+    else:
+        assert [(row.id, row.invoice_id, row.allocated_amount) for row in allocations] == [
+            (allocation_id, 1, 60)
+        ]
+        assert response.json()["invoice_allocations"][0]["allocated_amount"] == 60
+
+
+@pytest.mark.parametrize("role", [UserRole.admin, UserRole.manager])
+def test_admin_and_manager_can_cancel_payment(client, db_session, payment_with_allocation, role):
+    payment_id = payment_with_allocation.id
+    allocation_id = payment_with_allocation.invoice_allocations[0].id
+
+    with as_role(role):
+        response = client.delete(f"/api/payments/{payment_id}")
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"message": "Payment cancelled"}
+    db_session.expire_all()
+    payment = db_session.get(Payment, payment_id)
+    assert payment is not None
+    assert payment.status == "cancelled"
+    assert payment.amount == 200
+    assert [row.id for row in payment.invoice_allocations] == [allocation_id]
+
+
+@pytest.mark.parametrize("role", [UserRole.staff, UserRole.manager, UserRole.admin])
+@pytest.mark.parametrize("suffix", ["", "/", "/{payment_id}", "/{payment_id}/pdf"])
+def test_all_roles_can_read_payments(client, payment_with_allocation, role, suffix):
+    payment_id = payment_with_allocation.id
+    path = "/api/payments" + suffix.format(payment_id=payment_id)
+    with as_role(role), patch(
+        "src.api.routes.payments.render_receipt_pdf", return_value=BytesIO(b"%PDF-test")
+    ):
+        response = client.get(path)
+
+    assert response.status_code == 200, response.text
+    if suffix.endswith("/pdf"):
+        assert response.headers["content-type"] == "application/pdf"
+        assert response.content == b"%PDF-test"
+    elif suffix in ("", "/"):
+        assert [row["id"] for row in response.json()] == [payment_id]
+    else:
+        assert response.json()["id"] == payment_id
