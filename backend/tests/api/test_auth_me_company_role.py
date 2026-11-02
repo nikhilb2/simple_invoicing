@@ -81,6 +81,19 @@ def test_shared_without_company_or_access_has_no_company_role(client, db_session
     assert _me(client, user)["company_role"] is None
 
 
+def test_shared_reports_the_company_the_next_request_would_use(client, db_session, shared):
+    user = _user(db_session, "nocursor@example.com")
+    company = _company(db_session, "Only Company")
+    add_membership(db_session, user, company, UserRole.admin)
+    db_session.commit()
+    assert user.active_company_id is None
+
+    me = _me(client, user)
+
+    assert me["company_role"] == "admin"
+    assert me["active_company_id"] == company.id
+
+
 def test_shared_platform_admin_email_can_manage_platform(client, db_session, shared):
     user = _user(db_session, "Ops@Example.com")
 

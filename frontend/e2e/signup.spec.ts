@@ -21,7 +21,6 @@ test.describe('Public signup', () => {
 
     await page.fill('#full-name', 'Signup Tester');
     await page.fill('#email', email);
-    await page.fill('#password', password);
     await page.click('button:has-text("Create account")');
     await expect(page.getByText('Check your email')).toBeVisible();
 
@@ -41,6 +40,8 @@ test.describe('Public signup', () => {
     // Follow the link on this app's origin regardless of the host in the mail.
     const { search } = new URL(link);
     await page.goto(`/verify-email${search}`);
+    await page.fill('#password', password);
+    await page.click('button:has-text("Confirm email and set password")');
     await expect(page.getByText('Email verified')).toBeVisible();
 
     await page.getByRole('link', { name: 'Continue to sign in' }).click();
@@ -50,5 +51,16 @@ test.describe('Public signup', () => {
 
     // A brand-new account has no company, so it lands on setup.
     await expect(page).toHaveURL(/\/settings\/company\?setup=required/);
+
+    // The creator is an admin of the new company straight away, with no reload.
+    await page.click('button:has-text("Start setup")');
+    await page.fill('#company-name', 'Signup Tester Co');
+    await page.fill('#company-address', '1 Test Road');
+    await page.click('button:has-text("Save company details")');
+    await expect(page.locator('.sidebar__user-role')).toHaveText('Admin');
+
+    // A one-time link still works in a browser that holds a session.
+    await page.goto('/reset-password?token=not-a-real-token');
+    await expect(page).toHaveURL(/\/reset-password/);
   });
 });

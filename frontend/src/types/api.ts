@@ -761,7 +761,6 @@ export type AuthConfig = {
 
 export type RegisterRequest = {
   email: string;
-  password: string;
   full_name: string;
 };
 

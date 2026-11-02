@@ -5,15 +5,11 @@ import { useAuthConfig } from '../hooks/useAuthConfig';
 import { authErrorMessage } from '../utils/authFlow';
 import AuthLayout from '../components/AuthLayout';
 import OAuthButtons from '../components/OAuthButtons';
-import PasswordInput from '../components/PasswordInput';
 import StatusToasts from '../components/StatusToasts';
-
-const MIN_PASSWORD_LENGTH = 8;
 
 export default function RegisterPage() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -22,14 +18,10 @@ export default function RegisterPage() {
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long`);
-      return;
-    }
     try {
       setSubmitting(true);
       setError('');
-      await registerAccount({ email: email.trim(), password, full_name: fullName.trim() });
+      await registerAccount({ email: email.trim(), full_name: fullName.trim() });
       // The API answers the same whether or not the address was already
       // registered, so this screen must not claim an account was created.
       setSubmittedEmail(email.trim());
@@ -62,8 +54,8 @@ export default function RegisterPage() {
           <p className="eyebrow">Almost there</p>
           <h2 className="page-title">Check your email</h2>
           <p className="section-copy">
-            If {submittedEmail} can be registered, we have sent a verification link to it. Open the link to
-            activate the account, then sign in.
+            If {submittedEmail} can be registered, we have sent a link to it. Open the link to confirm
+            your address and choose your password.
           </p>
         </div>
         {toasts}
@@ -99,7 +91,7 @@ export default function RegisterPage() {
       <div>
         <p className="eyebrow">Create account</p>
         <h2 className="page-title">Start invoicing</h2>
-        <p className="section-copy">Create an account, then set up your company.</p>
+        <p className="section-copy">We will email you a link to choose your password, then you can set up your company.</p>
       </div>
 
       <OAuthButtons providers={config.providers} next="/" label="Sign up with" />
@@ -130,18 +122,6 @@ export default function RegisterPage() {
               required
             />
           </div>
-          <div className="field--full">
-            <label htmlFor="password">Password</label>
-            <PasswordInput
-              id="password"
-              className="input"
-              placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="new-password"
-            />
-          </div>
-
           {toasts}
 
           <button className="button button--primary" disabled={submitting}>

@@ -33,10 +33,9 @@ class DetailResponse(BaseModel):
 
 
 class RegisterRequest(BaseModel):
+    # No password here: anyone can type anyone's address, so a password set now could
+    # be a stranger's. It is chosen on the page the verification link opens.
     email: EmailStr
-    # The upper bound is for bcrypt, which silently ignores everything past 72
-    # bytes, and for the cost of hashing whatever an anonymous caller sends.
-    password: str = Field(min_length=8, max_length=128)
     full_name: str = Field(min_length=1, max_length=120)
 
 
@@ -46,6 +45,8 @@ class EmailRequest(BaseModel):
 
 class VerifyEmailRequest(BaseModel):
     token: str = Field(min_length=1, max_length=4096)
+    # The upper bound is for bcrypt, which silently ignores everything past 72 bytes.
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class ResetPasswordRequest(BaseModel):

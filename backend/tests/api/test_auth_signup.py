@@ -129,8 +129,12 @@ def _find(events, name):
     return [e for e in events.captured if e[0] == name]
 
 
-def _register(client, email="new@example.com", password="Signup@123", name="New Person", **kw):
-    return client.post("/api/auth/register", json={"email": email, "password": password, "full_name": name}, **kw)
+def _register(client, email="new@example.com", name="New Person", **kw):
+    return client.post("/api/auth/register", json={"email": email, "full_name": name}, **kw)
+
+
+def _verify(client, token, password="Chosen@1234"):
+    return client.post("/api/auth/verify-email", json={"token": token, "new_password": password})
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +236,7 @@ def test_register_creates_unverified_staff_user_and_mails_link(client, db_sessio
     assert user.role == UserRole.staff
     assert user.email_verified_at is None
     assert user.is_active is True
-    assert verify_password("Signup@123", user.hashed_password)
+    assert user.hashed_password is None
 
     (msg,) = outbox
     assert msg["To"] == "new.person@example.com"
@@ -251,7 +255,7 @@ def test_register_existing_verified_address_answers_the_same_and_changes_nothing
     fresh = _register(client, email="fresh@example.com")
     outbox.clear()
 
-    existing = _register(client, email="Owner@Example.com", password="Attacker@999")
+    existing = _register(client, email="Owner@Example.com")
 
     assert existing.status_code == fresh.status_code == 202
     assert existing.json() == fresh.json()
@@ -262,32 +266,69 @@ def test_register_existing_verified_address_answers_the_same_and_changes_nothing
     assert db_session.query(User).count() == 2
 
 
-def test_register_existing_unverified_replaces_the_unproven_claim(client, db_session, shared, outbox):
-    _user(db_session, email="pending@example.com", password="First@1234", verified=False)
+def test_register_existing_unverified_sends_a_fresh_link_and_sets_no_password(client, db_session, shared, outbox):
+    _register(client, email="pending@example.com", name="First")
 
-    response = _register(client, email="PENDING@example.com", password="Second@1234")
+    response = _register(client, email="PENDING@example.com", name="Second")
 
     assert response.status_code == 202
-    (msg,) = outbox
-    assert msg["To"] == "pending@example.com"
+    assert [msg["To"] for msg in outbox] == ["pending@example.com", "pending@example.com"]
     user = db_session.query(User).one()
     db_session.refresh(user)
-    assert verify_password("Second@1234", user.hashed_password)
+    assert user.hashed_password is None
+    assert user.full_name == "Second"
 
 
-def test_pre_registered_address_cannot_be_hijacked_through_the_owners_own_link(client, db_session, shared, outbox):
-    # A stranger registers the owner's address first, and the owner gets that link.
-    _register(client, email="owner@example.com", password="Attacker@123")
-    strangers_link = _link_token(outbox[-1], "/verify-email")
-    # The owner then signs up themselves and gets a link of their own.
-    _register(client, email="owner@example.com", password="Owner@12345")
+def test_a_stranger_registering_an_address_gains_nothing(client, db_session, shared, outbox):
+    """The attack: register the victim's address with your own password, and wait for
+    the victim to click the confirmation mail. There must be no such password."""
+    attacker_password = "Attacker@123"
+    response = client.post("/api/auth/register", json={
+        "email": "owner@example.com", "full_name": "Attacker", "password": attacker_password,
+    })
+    assert response.status_code == 202
+    assert db_session.query(User).one().hashed_password is None
+    assert client.post("/api/auth/login", json={"email": "owner@example.com", "password": attacker_password}).status_code == 401
+
+    # The owner clicks the mail the stranger triggered, and chooses a password there.
+    assert _verify(client, _link_token(outbox[-1], "/verify-email"), "Owner@12345").status_code == 200
+
+    assert client.post("/api/auth/login", json={"email": "owner@example.com", "password": attacker_password}).status_code == 401
+    assert client.post("/api/auth/login", json={"email": "owner@example.com", "password": "Owner@12345"}).status_code == 200
+
+
+def test_a_stranger_cannot_kill_the_owners_link(client, db_session, shared, outbox):
+    _register(client, email="owner@example.com")
     owners_link = _link_token(outbox[-1], "/verify-email")
 
-    # The stranger's link died when the owner's registration replaced the password.
-    assert client.post("/api/auth/verify-email", json={"token": strangers_link}).status_code == 400
-    assert client.post("/api/auth/verify-email", json={"token": owners_link}).status_code == 200
-    assert client.post("/api/auth/login", json={"email": "owner@example.com", "password": "Attacker@123"}).status_code == 401
+    _register(client, email="owner@example.com", name="Stranger")
+
+    assert _verify(client, owners_link, "Owner@12345").status_code == 200
     assert client.post("/api/auth/login", json={"email": "owner@example.com", "password": "Owner@12345"}).status_code == 200
+
+
+def test_a_used_link_cannot_change_the_password(client, db_session, shared, outbox):
+    _register(client, email="owner@example.com")
+    _register(client, email="owner@example.com")
+    first, second = (_link_token(msg, "/verify-email") for msg in outbox)
+    assert _verify(client, first, "Owner@12345").status_code == 200
+
+    for token in (first, second):
+        response = _verify(client, token, "Replayed@123")
+        assert response.status_code == 400
+        assert response.json()["detail"]["code"] == "invalid_token"
+
+    assert client.post("/api/auth/login", json={"email": "owner@example.com", "password": "Owner@12345"}).status_code == 200
+    assert client.post("/api/auth/login", json={"email": "owner@example.com", "password": "Replayed@123"}).status_code == 401
+
+
+def test_an_inactive_account_cannot_use_its_link(client, db_session, shared, outbox):
+    _register(client, email="owner@example.com")
+    user = db_session.query(User).one()
+    user.is_active = False
+    db_session.commit()
+
+    assert _verify(client, _link_token(outbox[-1], "/verify-email")).status_code == 400
 
 
 def test_verify_link_dies_when_the_password_changes(client, db_session, shared, outbox):
@@ -297,7 +338,7 @@ def test_verify_link_dies_when_the_password_changes(client, db_session, shared, 
     user.hashed_password = get_password_hash("Changed@1234")
     db_session.commit()
 
-    assert client.post("/api/auth/verify-email", json={"token": link}).status_code == 400
+    assert _verify(client, link).status_code == 400
 
 
 def test_register_matches_legacy_mixed_case_address(client, db_session, shared, outbox):
@@ -307,8 +348,13 @@ def test_register_matches_legacy_mixed_case_address(client, db_session, shared, 
     assert db_session.query(User).count() == 1
 
 
-def test_register_validates_password_length(client, shared, outbox):
-    assert _register(client, password="short").status_code == 422
+def test_verify_validates_password_length(client, db_session, shared, outbox):
+    _register(client)
+    token = _link_token(outbox[0], "/verify-email")
+
+    assert _verify(client, token, "short").status_code == 422
+    assert client.post("/api/auth/verify-email", json={"token": token}).status_code == 422
+    assert db_session.query(User).one().email_verified_at is None
 
 
 # ---------------------------------------------------------------------------
@@ -319,18 +365,17 @@ def test_verify_email_link_verifies(client, db_session, shared, outbox, events):
     _register(client)
     token = _link_token(outbox[0], "/verify-email")
 
-    response = client.post("/api/auth/verify-email", json={"token": token})
+    response = _verify(client, token, "Chosen@1234")
 
     assert response.status_code == 200
     user = db_session.query(User).one()
     assert user.email_verified_at is not None
+    assert verify_password("Chosen@1234", user.hashed_password)
     assert len(_find(events, "email_verified")) == 1
-    # Clicking it again is harmless.
-    assert client.post("/api/auth/verify-email", json={"token": token}).status_code == 200
 
 
 def test_verify_email_rejects_garbage(client, shared):
-    response = client.post("/api/auth/verify-email", json={"token": "not-a-jwt"})
+    response = _verify(client, "not-a-jwt")
 
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "invalid_token"
@@ -344,7 +389,7 @@ def test_verify_email_rejects_expired_token(client, db_session, shared):
         str(user.id), "verify", timedelta(seconds=-5), {"email": user.email, "pwd": password_fingerprint(user.hashed_password)}
     )
 
-    response = client.post("/api/auth/verify-email", json={"token": token})
+    response = _verify(client, token)
 
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "invalid_token"
@@ -377,7 +422,7 @@ def test_session_tokens_are_not_verify_or_reset_tokens(client, db_session, share
     user = _user(db_session, verified=False)
 
     for token in (create_access_token(user.email), create_refresh_token(user.email)):
-        assert client.post("/api/auth/verify-email", json={"token": token}).status_code == 400
+        assert _verify(client, token).status_code == 400
         assert (
             client.post("/api/auth/reset-password", json={"token": token, "new_password": "Changed@123"}).status_code
             == 400
@@ -388,7 +433,7 @@ def test_session_tokens_are_not_verify_or_reset_tokens(client, db_session, share
         settings.SECRET_KEY,
         algorithm=settings.ALGORITHM,
     )
-    assert client.post("/api/auth/verify-email", json={"token": forged}).status_code == 400
+    assert _verify(client, forged).status_code == 400
 
 
 def test_verify_and_reset_tokens_are_not_interchangeable(client, db_session, shared):
@@ -396,7 +441,7 @@ def test_verify_and_reset_tokens_are_not_interchangeable(client, db_session, sha
     verify = create_purpose_token(str(user.id), "verify", timedelta(hours=1), {"email": user.email})
     reset = create_purpose_token(str(user.id), "reset", timedelta(hours=1), {"email": user.email, "pwd": "none"})
 
-    assert client.post("/api/auth/verify-email", json={"token": reset}).status_code == 400
+    assert _verify(client, reset).status_code == 400
     assert client.post("/api/auth/reset-password", json={"token": verify, "new_password": "Changed@123"}).status_code == 400
 
 
@@ -746,16 +791,36 @@ def test_successful_logins_do_not_spend_the_email_allowance(client, db_session):
         assert response.status_code == 200
 
 
-def test_register_is_rate_limited_per_email(client, shared, outbox, frozen_clock):
-    statuses = [
-        _register(client, email="target@example.com", headers={"X-Forwarded-For": f"198.51.100.{i}"}).status_code
-        for i in range(4)
-    ]
+def test_one_source_is_limited_per_address(client, shared, outbox, frozen_clock):
+    statuses = [_register(client, email="target@example.com").status_code for _ in range(4)]
 
     assert statuses == [202, 202, 202, 429]
-    # Re-registering an unverified address re-sends -- but never more than the
-    # per-address allowance, whatever IP it comes from.
     assert len(outbox) == 3
+
+
+def test_one_stranger_cannot_keep_the_owner_from_getting_mail(client, db_session, shared, outbox, frozen_clock):
+    _user(db_session, email="owner@example.com")
+    stranger = {"X-Forwarded-For": "198.51.100.1"}
+    owner = {"X-Forwarded-For": "203.0.113.9"}
+    for _ in range(4):
+        client.post("/api/auth/forgot-password", json={"email": "owner@example.com"}, headers=stranger)
+    assert client.post("/api/auth/forgot-password", json={"email": "owner@example.com"}, headers=stranger).status_code == 429
+    sent_before = len(outbox)
+
+    response = client.post("/api/auth/forgot-password", json={"email": "owner@example.com"}, headers=owner)
+
+    assert response.status_code == 202
+    assert len(outbox) == sent_before + 1
+
+
+def test_mail_to_one_address_is_capped_across_ips(client, shared, outbox, frozen_clock):
+    statuses = [
+        _register(client, email="target@example.com", headers={"X-Forwarded-For": f"198.51.100.{i}"}).status_code
+        for i in range(21)
+    ]
+
+    assert statuses == [202] * 20 + [429]
+    assert len(outbox) == 20
 
 
 def test_mail_endpoints_are_rate_limited_per_ip(client, shared, outbox, frozen_clock):

@@ -278,3 +278,76 @@ class TestSettings:
         assert "MARKETPLACE_ALLOW_INSECURE_URL" in type(settings).model_fields
         assert "MARKETPLACE_HTTP_TIMEOUT_SECONDS" in type(settings).model_fields
         assert isinstance(settings.MARKETPLACE_HTTP_TIMEOUT_SECONDS, int)
+
+
+class TestRebindingGuard:
+    """The address checked must be the address dialled, not just a name checked once."""
+
+    @pytest.fixture
+    def local_server(self):
+        import http.server
+        import threading
+
+        hits = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                hits.append(self.path)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"{}")
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        yield server.server_address[1], hits
+        server.shutdown()
+        server.server_close()
+
+    @staticmethod
+    def _rebinding_dns(monkeypatch, port):
+        """Public for the first lookup, the local server for every one after."""
+        answers = [("93.184.216.34", port)]
+
+        def lookup(*args, **kwargs):
+            address = answers.pop() if answers else ("127.0.0.1", port)
+            return [(2, 1, 6, "", address)]
+
+        monkeypatch.setattr("src.services.marketplace.client.socket.getaddrinfo", lookup)
+
+    def test_a_name_that_changes_after_the_check_is_not_dialled(self, monkeypatch, local_server):
+        port, hits = local_server
+        self._rebinding_dns(monkeypatch, port)
+        client = MarketplaceClient(f"http://rebind.example:{port}", sleep=lambda _: None)
+
+        with pytest.raises(Exception):
+            client._request("GET", "/meta")
+
+        client.close()
+        assert hits == []
+
+    def test_the_guard_really_is_what_connects(self, monkeypatch, local_server):
+        """Without this, an httpcore change could silently unplug the guard above and
+        the test would still pass for the wrong reason."""
+        port, hits = local_server
+        self._rebinding_dns(monkeypatch, port)
+        client = MarketplaceClient(f"http://rebind.example:{port}", sleep=lambda _: None)
+        monkeypatch.setattr("src.services.marketplace.client._is_blocked_ip", lambda ip: False)
+
+        client._request("GET", "/meta")
+
+        client.close()
+        assert hits == ["/v1/meta"]
+
+    @pytest.mark.parametrize("address", ["::ffff:127.0.0.1", "100.64.0.1", "::1", "fd00::1"])
+    def test_addresses_that_do_not_look_internal_are_still_blocked(self, address):
+        import ipaddress
+
+        from src.services.marketplace.client import _is_blocked_ip
+
+        assert _is_blocked_ip(ipaddress.ip_address(address))

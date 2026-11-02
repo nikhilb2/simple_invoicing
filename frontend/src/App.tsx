@@ -220,10 +220,13 @@ function AppRoutes() {
         }
       />
       <Route path="/register" element={<PublicOnly><RegisterPage /></PublicOnly>} />
-      <Route path="/verify-email" element={<PublicOnly><VerifyEmailPage /></PublicOnly>} />
+      {/* Outside PublicOnly: these carry a one-time link or code, and a browser that
+          still holds some session, even an expired one, must not be redirected away
+          from it. */}
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/forgot-password" element={<PublicOnly><ForgotPasswordPage /></PublicOnly>} />
-      <Route path="/reset-password" element={<PublicOnly><ResetPasswordPage /></PublicOnly>} />
-      <Route path="/auth/callback" element={<PublicOnly><OAuthCallbackPage /></PublicOnly>} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/auth/callback" element={<OAuthCallbackPage />} />
       {/* Mid-flow from an external MCP client. Deliberately outside Layout and
           CompanyRequired: the visitor is answering one question, and a company
           setup redirect here would strand the pending authorization request. */}

@@ -1,42 +1,50 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { readUrlSecret } from '../lib/urlSecrets';
 import { resendVerification, verifyEmail } from '../api/auth';
 import { authErrorMessage } from '../utils/authFlow';
 import AuthLayout from '../components/AuthLayout';
+import PasswordInput from '../components/PasswordInput';
 import StatusToasts from '../components/StatusToasts';
 
-type Status = 'verifying' | 'verified' | 'failed';
+type Status = 'ready' | 'verified' | 'failed';
+
+const MIN_PASSWORD_LENGTH = 8;
 
 export default function VerifyEmailPage() {
   const [token] = useState(() => readUrlSecret('token'));
-  const [status, setStatus] = useState<Status>(token ? 'verifying' : 'failed');
+  const [status, setStatus] = useState<Status>(token ? 'ready' : 'failed');
   const [message, setMessage] = useState(token ? '' : 'This verification link is missing its token.');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
   const [email, setEmail] = useState('');
   const [resendNote, setResendNote] = useState('');
   const [resendError, setResendError] = useState('');
   const [resending, setResending] = useState(false);
 
-  useEffect(() => {
-    if (!token) return undefined;
-    // Guards against a stale response after the token changes or the page
-    // unmounts; the token is single-use, so a second POST would report failure.
-    let cancelled = false;
-    verifyEmail(token)
-      .then((res) => {
-        if (cancelled) return;
-        setStatus('verified');
-        setMessage(res.detail || 'Your email address is verified.');
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setStatus('failed');
-        setMessage(authErrorMessage(err, 'This verification link is invalid or has expired.'));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+  // A form, not a request on page load: mail scanners open links, and a link alone
+  // must never be enough to confirm an account.
+  async function onConfirm(event: FormEvent) {
+    event.preventDefault();
+    if (!token) return;
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setFormError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long`);
+      return;
+    }
+    try {
+      setSubmitting(true);
+      setFormError('');
+      const res = await verifyEmail(token, password);
+      setStatus('verified');
+      setMessage(res.detail || 'Your email address is verified.');
+    } catch (err) {
+      setStatus('failed');
+      setMessage(authErrorMessage(err, 'This verification link is invalid or has expired.'));
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function onResend(event: FormEvent) {
     event.preventDefault();
@@ -57,10 +65,30 @@ export default function VerifyEmailPage() {
       <div>
         <p className="eyebrow">Verify email</p>
         <h2 className="page-title">
-          {status === 'verifying' ? 'Verifying...' : status === 'verified' ? 'Email verified' : 'Could not verify'}
+          {status === 'ready' ? 'Choose your password' : status === 'verified' ? 'Email verified' : 'Could not verify email'}
         </h2>
         {message ? <p className="section-copy" role={status === 'failed' ? 'alert' : 'status'}>{message}</p> : null}
       </div>
+
+      {status === 'ready' ? (
+        <form className="stack" onSubmit={onConfirm}>
+          <div className="field--full">
+            <label htmlFor="password">Password</label>
+            <PasswordInput
+              id="password"
+              className="input"
+              placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="new-password"
+            />
+          </div>
+          <StatusToasts error={formError} success="" onClearError={() => setFormError('')} onClearSuccess={() => undefined} />
+          <button className="button button--primary" disabled={submitting}>
+            {submitting ? 'Saving...' : 'Confirm email and set password'}
+          </button>
+        </form>
+      ) : null}
 
       {status === 'verified' ? (
         <Link className="button button--primary" to="/login" style={{ textAlign: 'center', textDecoration: 'none' }}>

@@ -1,7 +1,7 @@
 {#- verify_email.txt — Plain-text twin of verify_email.html. Same variables. -#}
 Hello,
 
-Thanks for signing up. Confirm this is your email address and your account is ready to use:
+Thanks for signing up. Open this link to confirm your email address and choose your password:
 
 {{ action_url }}
 

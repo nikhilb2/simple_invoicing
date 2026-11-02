@@ -34,7 +34,7 @@ from src.schemas.auth import (
 )
 from src.schemas.user import UserOut
 from src.core.config import settings
-from src.services.company_access import company_role, is_platform_admin
+from src.services.company_access import company_role, first_accessible_company, is_platform_admin
 from src.core.rate_limit import TokenBucket, client_ip
 from src.core.security import (
     RESET_PASSWORD_TOKEN_TTL,
@@ -138,10 +138,13 @@ _LOGIN_BY_IP = TokenBucket(capacity=30, refill_per_second=0.5)
 _LOGIN_FAILURES_BY_EMAIL_IP = TokenBucket(capacity=10, refill_per_second=1 / 60)
 _LOGIN_FAILURES_BY_EMAIL = TokenBucket(capacity=100, refill_per_second=1 / 30)
 # register, resend-verification and forgot-password all send mail, so they share
-# one allowance per address: this is what stops the API being used to bury a
-# stranger's inbox.
+# one allowance per address, which is what stops the API being used to bury a
+# stranger's inbox. Same two-bucket shape as login: a tight one per (address, IP)
+# stops one source, and a loose one per address caps a distributed attempt without
+# letting one stranger keep the owner from ever getting a reset link.
 _MAIL_BY_IP = TokenBucket(capacity=10, refill_per_second=1 / 60)
-_MAIL_BY_EMAIL = TokenBucket(capacity=3, refill_per_second=1 / 300)
+_MAIL_BY_EMAIL_IP = TokenBucket(capacity=3, refill_per_second=1 / 300)
+_MAIL_BY_EMAIL = TokenBucket(capacity=20, refill_per_second=1 / 600)
 _EXCHANGE_BY_IP = TokenBucket(capacity=20, refill_per_second=1 / 3)
 
 
@@ -150,7 +153,8 @@ def _too_many() -> HTTPException:
 
 
 def _limit_mail_request(request: Request, email: str) -> None:
-    if _MAIL_BY_IP.hit(client_ip(request)) or _MAIL_BY_EMAIL.hit(email):
+    ip = client_ip(request)
+    if _MAIL_BY_IP.hit(ip) or _MAIL_BY_EMAIL_IP.hit(f"{email}|{ip}") or _MAIL_BY_EMAIL.hit(email):
         raise _too_many()
 
 
@@ -160,10 +164,8 @@ def _limit_mail_request(request: Request, email: str) -> None:
 
 def _verify_token_for(user: User) -> str:
     # The address rides along so a token minted before an address change cannot
-    # verify the new one. So does the password fingerprint: a link only ever
-    # confirms the password that was set when it was sent, so re-registering
-    # (which replaces that password) kills every earlier link -- including one a
-    # stranger triggered by registering this address first.
+    # verify the new one. So does the password fingerprint, so a link stops working
+    # if the account's password is set some other way first.
     return create_purpose_token(
         str(user.id),
         VERIFY_EMAIL_TOKEN_TYPE,
@@ -276,34 +278,29 @@ def register(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Create an unverified account and mail the verification link.
+    """Create an unverified, password-less account and mail the verification link.
 
-    The answer is the same 202 whether or not the address already has an
-    account, and costs about the same: the password is hashed either way and
-    the mail goes out after the response. Anything else would make this an
-    oracle for which addresses are registered.
+    The owner chooses the password on the page that link opens, so nobody who merely
+    typed this address can ever hold a working password for it. Whoever registers an
+    address first, or last, gains nothing.
+
+    The answer is the same 202 whether or not the address already has an account, and
+    the mail goes out after the response, so this is no oracle for who is registered.
     """
     if not settings.password_signup_enabled:
         raise HTTPException(status_code=404, detail="Not Found")
 
     email = normalize_email(payload.email)
     _limit_mail_request(request, email)
-    hashed_password = get_password_hash(payload.password)
     accepted = {"detail": "Check your inbox for a link to confirm your email address."}
 
     existing = find_user_by_email(db, email)
     if existing is not None:
-        # A verified account is left exactly as it is.
-        #
-        # An unverified one is still only a claim nobody has proven, so the
-        # newest registration replaces it: its password and name, and -- because
-        # links are bound to the password -- every link sent before. Keeping the
-        # first password instead would hand the account to whoever registered an
-        # address first: the real owner signs up, gets a link, clicks it, and has
-        # confirmed the stranger's password rather than their own. The fresh link
-        # goes to the address on the account, never to the one just typed.
+        # A verified account is left exactly as it is. An unverified one is still only
+        # a claim, so it just gets a fresh link, sent to the address on the account and
+        # never to the one just typed. Earlier links keep working: a stranger
+        # registering this address must not be able to kill the owner's.
         if existing.is_active and not existing.email_verified:
-            existing.hashed_password = hashed_password
             existing.full_name = payload.full_name.strip() or existing.email
             db.commit()
             background_tasks.add_task(platform_mail.send_verification_email, existing.email, _verify_token_for(existing))
@@ -312,7 +309,7 @@ def register(
     user = User(
         email=email,
         full_name=payload.full_name.strip() or email,
-        hashed_password=hashed_password,
+        hashed_password=None,
         # Global role is staff; in shared hosting what a user may do in a company
         # comes from their membership there.
         role=UserRole.staff,
@@ -340,13 +337,21 @@ def register(
 @router.post("/verify-email", response_model=DetailResponse, include_in_schema=False)
 def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)):
     user, claims = _user_from_purpose_token(db, payload.token, VERIFY_EMAIL_TOKEN_TYPE)
-    if not user.email_verified:
-        if not fingerprint_matches(claims.get("pwd"), user.hashed_password):
-            raise _error(400, "invalid_token", "This link is invalid or has expired.")
-        user.email_verified_at = _now()
-        db.commit()
-        track("email_verified", distinct_id_for(user), {"method": "link"})
-    return {"detail": "Your email address is confirmed. You can sign in now."}
+    # Refused once verified, not just skipped: this request sets a password, so an old
+    # link replayed from a mailbox must not be able to change it.
+    if (
+        user.email_verified
+        or not user.is_active
+        or not fingerprint_matches(claims.get("pwd"), user.hashed_password)
+    ):
+        raise _error(400, "invalid_token", "This link is invalid or has expired.")
+
+    user.hashed_password = get_password_hash(payload.new_password)
+    user.email_verified_at = _now()
+    user.sessions_valid_after = _now()
+    db.commit()
+    track("email_verified", distinct_id_for(user), {"method": "link"})
+    return {"detail": "Your email address is confirmed and your password is set. You can sign in now."}
 
 
 @router.post("/resend-verification", status_code=202, response_model=DetailResponse, include_in_schema=False)
@@ -448,11 +453,17 @@ def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
 def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     out = UserOut.model_validate(current_user)
     if settings.is_shared_hosting:
-        out.company_role = (
-            company_role(db, current_user, current_user.active_company_id)
-            if current_user.active_company_id is not None
-            else None
-        )
+        role = None
+        if current_user.active_company_id is not None:
+            role = company_role(db, current_user, current_user.active_company_id)
+        if role is None:
+            # The same fallback get_active_company takes, so this reports the role
+            # in the company the next request will actually act on.
+            first = first_accessible_company(db, current_user)
+            if first is not None:
+                out.active_company_id = first.id
+                role = company_role(db, current_user, first.id)
+        out.company_role = role
         out.can_manage_platform = is_platform_admin(current_user)
     else:
         out.company_role = current_user.role

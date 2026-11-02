@@ -6,6 +6,7 @@ import api, { getApiErrorCode, getApiErrorMessage } from '../api/client';
 import { createTerm, deleteTerm, removeLogo, updateTerm, uploadLogo } from '../api/company';
 import StatusToasts from '../components/StatusToasts';
 import { useAuth } from '../context/AuthContext';
+import { useAuthStore } from '../store/useAuthStore';
 import { useFY } from '../context/FYContext';
 import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, CompanyTermOut } from '../types/api';
 import { isCompanyConfigured } from '../utils/companySetup';
@@ -740,6 +741,9 @@ export default function CompanyPage() {
         // new company becomes their active one.
         const created = await api.post<CompanyProfile>('/company/companies', payload);
         localStorage.setItem('active_company_id', String(created.data.id));
+        // The creator's role only exists now; without this they would look like a
+        // non-admin until the next page load.
+        await useAuthStore.getState().hydrateUserRole();
         await queryClient.invalidateQueries({ queryKey: ['company-setup-required'] });
         await queryClient.invalidateQueries({ queryKey: ['sidebar-companies'] });
         setSuccess('Company created. New invoices will now show this as billing company.');
