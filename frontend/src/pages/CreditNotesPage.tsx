@@ -23,6 +23,7 @@ import type {
   Product,
 } from '../types/api';
 import formatCurrency, { formatDate } from '../utils/formatting';
+import { toIsoDate } from '../utils/dateRanges';
 import { downloadCsv } from '../utils/csv';
 import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
 
@@ -71,6 +72,7 @@ export default function CreditNotesPage() {
   const [direction, setDirection] = useState<CreditNoteDirection>('outward');
   const [supplierNoteNumber, setSupplierNoteNumber] = useState('');
   const [supplierNoteDate, setSupplierNoteDate] = useState('');
+  const [creditNoteDate, setCreditNoteDate] = useState(() => toIsoDate(new Date()));
   const [reason, setReason] = useState('');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [discountAmounts, setDiscountAmounts] = useState<Record<string, string>>({});
@@ -440,6 +442,7 @@ export default function CreditNotesPage() {
       direction,
       supplier_credit_note_number: direction === 'inward' ? supplierNoteNumber.trim() : null,
       supplier_credit_note_date: direction === 'inward' ? supplierNoteDate : null,
+      credit_note_date: creditNoteDate,
       reason: reason.trim() || null,
       items: payloadItems,
     };
@@ -458,6 +461,7 @@ export default function CreditNotesPage() {
       setDiscountAmounts({});
       setSupplierNoteNumber('');
       setSupplierNoteDate('');
+      setCreditNoteDate(toIsoDate(new Date()));
       setRefreshKey((value) => value + 1);
 
       const [creditNotesRes, invoicesRes] = await Promise.all([
@@ -523,7 +527,7 @@ export default function CreditNotesPage() {
         const ledger = ledgers.find((entry) => entry.id === creditNote.ledger_id);
         return [
           creditNote.credit_note_number,
-          formatDate(creditNote.created_at),
+          formatDate(creditNote.credit_note_date ?? creditNote.created_at),
           ledger?.name || `Ledger #${creditNote.ledger_id}`,
           creditNote.invoice_ids.join(', '),
           creditNote.total_amount,
@@ -604,6 +608,18 @@ export default function CreditNotesPage() {
                       <option key={value} value={value}>{label}</option>
                     ))}
                   </select>
+                </label>
+                <label>
+                  <span>Credit note date</span>
+                  <input
+                    id="credit-note-date"
+                    className="input"
+                    type="date"
+                    required
+                    max={toIsoDate(new Date())}
+                    value={creditNoteDate}
+                    onChange={(event) => setCreditNoteDate(event.target.value)}
+                  />
                 </label>
               </div>
 
@@ -825,6 +841,7 @@ export default function CreditNotesPage() {
                     setDirection('outward');
                     setSupplierNoteNumber('');
                     setSupplierNoteDate('');
+                    setCreditNoteDate(toIsoDate(new Date()));
                   }}
                 >
                   Reset form
@@ -957,7 +974,7 @@ export default function CreditNotesPage() {
                   </div>
 
                   <p style={{ margin: '0 0 10px', color: 'var(--text-muted)' }}>
-                    {ledger?.name || `Ledger #${creditNote.ledger_id}`} • Created {formatDate(creditNote.created_at)} • Invoices {creditNote.invoice_ids.join(', ')}
+                    {ledger?.name || `Ledger #${creditNote.ledger_id}`} • Dated {formatDate(creditNote.credit_note_date ?? creditNote.created_at)} • Invoices {creditNote.invoice_ids.join(', ')}
                   </p>
 
                   {creditNote.direction === 'inward' && creditNote.supplier_credit_note_number ? (

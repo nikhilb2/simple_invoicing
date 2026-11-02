@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, time
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -14,7 +14,14 @@ from src.schemas.credit_note import CreditNoteCreate, CreditNoteOut
 from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.serial_service import SerialManager
 from src.services.series import generate_next_number
-from src.services.gst_tax_service import money as _money, is_interstate_supply as _is_interstate
+from src.services.gst_tax_service import (
+    company_state_code,
+    default_place_of_supply,
+    gstr1_section,
+    india_today,
+    invoice_is_interstate,
+    money as _money,
+)
 from src.services.inventory_service import InventoryManager
 from src.services.company_access import company_scope
 
@@ -186,6 +193,46 @@ def create_credit_note(
                 ),
             )
 
+    # One note carries one tax treatment, and GSTR-1 files it under one place of
+    # supply, so it cannot span sales made to different states.
+    places_of_supply = {
+        inv.place_of_supply or default_place_of_supply(inv.company_gst, inv.ledger_gst)
+        for inv in invoices
+    }
+    if len(places_of_supply) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="A credit note cannot cover invoices with different places of supply",
+        )
+
+    # GSTR-1 files a note whole, under the table its invoices were filed in.
+    if direction == "outward":
+        sections = {gstr1_section(inv, company_state_code(inv.company_gst)) for inv in invoices}
+        if len(sections) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "A credit note cannot cover invoices filed in different GSTR-1 tables "
+                    f"({', '.join(sorted(sections))}). Raise one note for each."
+                ),
+            )
+
+    # A date somebody chose has to make sense; the default needs no such check,
+    # and a future-dated invoice can still take a note issued today.
+    if payload.credit_note_date is not None:
+        if payload.credit_note_date > india_today():
+            raise HTTPException(status_code=400, detail="The credit note date cannot be in the future")
+        too_late = [
+            inv.invoice_number or f"#{inv.id}"
+            for inv in invoices
+            if inv.invoice_date and payload.credit_note_date < inv.invoice_date.date()
+        ]
+        if too_late:
+            raise HTTPException(
+                status_code=400,
+                detail=f"The credit note date cannot be before the date of invoice {too_late[0]}",
+            )
+
     invoice_map = {inv.id: inv for inv in invoices}
 
     # ── 3. Load invoice items and validate quantity limits ───────────────────
@@ -247,7 +294,7 @@ def create_credit_note(
     # ── 4. Resolve financial year ────────────────────────────────────────────
     active_fy = get_active_fy(db, company_id=company_id)
     fy = active_fy
-    cn_date = datetime.utcnow().date()
+    cn_date = payload.credit_note_date or india_today()
     dated_fy = get_fy_for_date(db, cn_date, company_id=company_id)
     if dated_fy:
         fy = dated_fy
@@ -267,9 +314,9 @@ def create_credit_note(
     )
 
     # ── 6. Calculate totals ──────────────────────────────────────────────────
-    # Determine interstate supply from first invoice's company/ledger GST
+    # A note reverses the tax its invoice charged, so it follows that invoice.
     first_invoice = invoice_map[payload.invoice_ids[0]]
-    interstate = _is_interstate(first_invoice.company_gst, ledger.gst)
+    interstate = invoice_is_interstate(first_invoice)
 
     taxable_total = Decimal("0")
     cgst_total = Decimal("0")
@@ -339,6 +386,7 @@ def create_credit_note(
         direction=direction,
         supplier_credit_note_number=payload.supplier_credit_note_number,
         supplier_credit_note_date=payload.supplier_credit_note_date,
+        credit_note_date=datetime.combine(cn_date, time.min),
         reason=payload.reason,
         status="active",
         taxable_amount=taxable_total,

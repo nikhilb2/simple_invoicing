@@ -7,6 +7,7 @@ using the shared TestClient + db_session fixtures from tests/conftest.py.
 
 from contextlib import contextmanager
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app_main import app
@@ -172,3 +173,73 @@ def test_unauthenticated_request_gets_401(db_session):
     finally:
         if saved_override is not None:
             app.dependency_overrides[get_current_user] = saved_override
+
+
+@pytest.mark.parametrize(
+    ("voucher_type", "overrides"),
+    [
+        ("sales", {"prefix": "VERY-LONG-PREFIX", "include_year": True}),
+        ("sales", {"separator": "_"}),
+        ("credit_note", {"prefix": "CREDIT.NOTE"}),
+    ],
+)
+def test_update_refuses_a_format_gstr1_rejects(client, db_session, voucher_type, overrides):
+    _seed_company(db_session, 1, "Company A").gst = "29AAAAA0000A1Z5"
+    prefix_before = _seed_series(db_session, 1, 1, voucher_type=voucher_type).prefix
+
+    response = client.put("/api/invoice-series/1", json={**_update_payload(), **overrides})
+
+    assert response.status_code == 400
+    assert "GSTR-1" in response.json()["detail"]
+    db_session.expire_all()
+    assert db_session.get(InvoiceSeries, 1).prefix == prefix_before
+
+
+def test_update_leaves_series_outside_gstr1_alone(client, db_session):
+    _seed_company(db_session, 1, "Company A").gst = "29AAAAA0000A1Z5"
+    _seed_series(db_session, 1, 1, voucher_type="payment")
+
+    response = client.put("/api/invoice-series/1", json={**_update_payload(), "prefix": "VERY-LONG-PAYMENT-PREFIX"})
+
+    assert response.status_code == 200
+
+
+def test_update_guard_needs_a_company_with_a_gstin(client, db_session):
+    _seed_company(db_session, 1, "Company A")
+    _seed_series(db_session, 1, 1)
+
+    response = client.put("/api/invoice-series/1", json={**_update_payload(), "prefix": "ACME-WHOLESALE-TRADING"})
+
+    assert response.status_code == 200
+
+
+def test_update_can_move_the_counter_of_a_series_already_off_the_rule(client, db_session):
+    _seed_company(db_session, 1, "Company A").gst = "29AAAAA0000A1Z5"
+    series = _seed_series(db_session, 1, 1)
+    series.prefix, series.suffix, series.include_year, series.year_format, series.separator, series.pad_digits = (
+        "VERY-LONG-PREFIX", "", False, "FY", "/", 4,
+    )
+    db_session.commit()
+
+    response = client.put(
+        "/api/invoice-series/1",
+        json={**_update_payload(), "prefix": "VERY-LONG-PREFIX", "suffix": "", "next_sequence": 60},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["next_sequence"] == 60
+
+
+def test_update_leaves_room_for_the_counter_to_grow(client, db_session):
+    _seed_company(db_session, 1, "Company A").gst = "29AAAAA0000A1Z5"
+    _seed_series(db_session, 1, 1)
+
+    response = client.put(
+        "/api/invoice-series/1",
+        json={
+            "prefix": "ABCDEFG", "suffix": "", "include_year": True, "year_format": "YYYY",
+            "separator": "-", "pad_digits": 3, "next_sequence": 999,
+        },
+    )
+
+    assert response.status_code == 400

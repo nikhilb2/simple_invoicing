@@ -49,13 +49,13 @@ def get_credit_note_ledger_summary(
     if company_id is not None:
         query = query.filter(company_scope(CreditNote.company_id, company_id))
     if created_before is not None:
-        query = query.filter(CreditNote.created_at < created_before)
+        query = query.filter(CreditNote.credit_note_date < created_before)
     if created_from is not None:
-        query = query.filter(CreditNote.created_at >= created_from)
+        query = query.filter(CreditNote.credit_note_date >= created_from)
     if created_to is not None:
-        query = query.filter(CreditNote.created_at <= created_to)
+        query = query.filter(CreditNote.credit_note_date <= created_to)
 
-    rows = query.order_by(CreditNote.created_at.asc(), CreditNote.id.asc(), CreditNoteItem.id.asc()).all()
+    rows = query.order_by(CreditNote.credit_note_date.asc(), CreditNote.id.asc(), CreditNoteItem.id.asc()).all()
 
     entry_buckets: dict[int, dict] = {}
     entry_order: list[int] = []
@@ -74,7 +74,7 @@ def get_credit_note_ledger_summary(
                 "supplier_credit_note_number": getattr(
                     credit_note, "supplier_credit_note_number", None
                 ),
-                "date": credit_note.created_at,
+                "date": getattr(credit_note, "credit_note_date", None) or credit_note.created_at,
                 "ledger_name": invoice.ledger_name or "Unknown ledger",
                 "invoice_numbers": [],
                 "seen_invoice_numbers": set(),

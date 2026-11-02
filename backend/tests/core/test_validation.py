@@ -3,6 +3,8 @@ from pydantic import ValidationError
 
 from src.core.validation import (
     is_gst_rate_slab,
+    is_gstr1_document_number,
+    normalize_place_of_supply,
     is_valid_gstin_checksum,
     normalize_gstin,
     normalize_hsn_sac,
@@ -145,7 +147,7 @@ def test_normalize_hsn_sac_letters():
 
 
 def test_is_gst_rate_slab_accepted():
-    for slab in (0.0, 0.1, 0.25, 1.0, 1.5, 3.0, 5.0, 6.0, 7.5, 12.0, 18.0, 28.0):
+    for slab in (0.0, 0.1, 0.25, 1.0, 1.5, 3.0, 5.0, 6.0, 7.5, 12.0, 18.0, 28.0, 40.0):
         assert is_gst_rate_slab(slab) is True
         assert is_gst_rate_slab(float(slab)) is True
 
@@ -155,3 +157,20 @@ def test_is_gst_rate_slab_rejected():
     assert is_gst_rate_slab(None) is False
     assert is_gst_rate_slab(2.0) is False
     assert is_gst_rate_slab(100.0) is False
+
+
+def test_is_gstr1_document_number():
+    for good in ("INV-2026-001", "INV/26/1", "A", "1234567890123456"):
+        assert is_gstr1_document_number(good) is True
+    for bad in ("", None, "12345678901234567", "INV_1", "INV.1", "INV 1"):
+        assert is_gstr1_document_number(bad) is False
+
+
+def test_normalize_place_of_supply():
+    assert normalize_place_of_supply(" 10 ") == "10"
+    assert normalize_place_of_supply("97") == "97"
+    assert normalize_place_of_supply("") is None
+    assert normalize_place_of_supply(None) is None
+    for bad in ("00", "39", "96", "99", "AB", "1"):
+        with pytest.raises(ValueError):
+            normalize_place_of_supply(bad)

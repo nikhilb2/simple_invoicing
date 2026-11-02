@@ -4,6 +4,11 @@ from datetime import datetime
 from src.db.base import Base
 
 
+def _default_credit_note_date(context):
+    # The service always sets this; it only fires for a row built without it.
+    return context.get_current_parameters().get("created_at") or datetime.utcnow()
+
+
 class CreditNote(Base):
     __tablename__ = "credit_notes"
     # Unique per company, like invoice numbers (see Invoice.__table_args__).
@@ -33,6 +38,10 @@ class CreditNote(Base):
     sgst_amount = Column(Numeric(10, 2), nullable=False, default=0)
     igst_amount = Column(Numeric(10, 2), nullable=False, default=0)
     total_amount = Column(Numeric(10, 2), nullable=False, default=0)
+    # The date on the document, at midnight like Invoice.invoice_date. Every
+    # report and return dates the note by this; created_at is only when the row
+    # was written, in UTC.
+    credit_note_date = Column(DateTime, nullable=False, default=_default_credit_note_date, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     cancelled_at = Column(DateTime, nullable=True)
 

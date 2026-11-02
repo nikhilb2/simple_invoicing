@@ -101,3 +101,12 @@ def test_cancelled_note_says_so():
     html = render(status="cancelled")
     assert "Cancelled on 06 Jun 2026" in html
     assert "Cancelled on" not in render()
+
+
+def test_note_columns_follow_its_stored_tax_not_the_buyers_gstin():
+    # A registered buyer from another state can take delivery in the seller's
+    # state: the GSTINs differ, yet the note carries CGST and SGST.
+    html = render(buyer_gst="29BBBBB0000B1ZT")
+
+    assert "CGST" in html
+    assert "IGST" not in html

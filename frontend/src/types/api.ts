@@ -328,6 +328,7 @@ export type Invoice = {
   company_additional_info: string | null;
   company_terms_text: string | null;
   voucher_type: 'sales' | 'purchase';
+  place_of_supply?: string | null;
   status: 'active' | 'cancelled';
   tax_inclusive: boolean;
   apply_round_off: boolean;
@@ -426,6 +427,7 @@ export type CreditNote = {
   direction: CreditNoteDirection;
   supplier_credit_note_number: string | null;
   supplier_credit_note_date: string | null;
+  credit_note_date: string | null;
   reason: string | null;
   status: CreditNoteStatus;
   taxable_amount: number;
@@ -456,6 +458,7 @@ export type CreditNoteCreate = {
   direction: CreditNoteDirection;
   supplier_credit_note_number?: string | null;
   supplier_credit_note_date?: string | null;
+  credit_note_date?: string | null;
   reason?: string | null;
   items: CreditNoteItemCreate[];
 };
@@ -482,6 +485,7 @@ export type InvoiceCreate = {
   shipping_address_same_as_billing?: boolean;
   shipping_address_id?: number | null;
   new_shipping_address?: { label: string; address: string } | null;
+  place_of_supply?: string | null;
   items: InvoiceItemInput[];
 };
 

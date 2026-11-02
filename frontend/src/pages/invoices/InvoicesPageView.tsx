@@ -12,6 +12,8 @@ import LedgerCombobox from '../../components/LedgerCombobox';
 import formatCurrency from '../../utils/formatting';
 import { toIsoDate } from '../../utils/dateRanges';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../../utils/invoiceTax';
+import { isInterstatePlaceOfSupply, resolvePlaceOfSupply, type PlaceOfSupplyChoice } from '../../utils/gstStates';
+import PlaceOfSupplyField from '../../components/PlaceOfSupplyField';
 import { createDueDateFormState, formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../../utils/invoiceDueDate.ts';
 import { readInvoiceComposerPrefs, updateInvoiceComposerPrefs } from '../../utils/invoiceComposerPrefs.ts';
 import { useFY } from '../../context/FYContext';
@@ -60,6 +62,7 @@ export default function InvoicesPage() {
   const [selectedPaymentAccountId, setSelectedPaymentAccountId] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(toIsoDate(new Date()));
+  const [placeOfSupplyChoice, setPlaceOfSupplyChoice] = useState<PlaceOfSupplyChoice | null>(null);
   const [dueDateMode, setDueDateMode] = useState<DueDateMode>(initialPrefs.dueDateMode);
   const [dueDate, setDueDate] = useState('');
   const [dueDateDays, setDueDateDays] = useState(initialPrefs.dueDateDays);
@@ -295,7 +298,10 @@ export default function InvoicesPage() {
 
   const activeCurrencyCode = company?.currency_code || 'USD';
   const selectedLedger = ledgers.find((entry) => entry.id === Number(selectedLedgerId));
-  const composerInterstateSupply = isInterstateSupply(company?.gst, selectedLedger?.gst);
+  const placeOfSupply = resolvePlaceOfSupply(placeOfSupplyChoice, selectedLedgerId, company?.gst, selectedLedger?.gst);
+  const composerInterstateSupply = voucherType === 'sales' && placeOfSupply
+    ? isInterstatePlaceOfSupply(placeOfSupply, company?.gst)
+    : isInterstateSupply(company?.gst, selectedLedger?.gst);
   const resolvedDueDate = resolveDueDate({
     mode: dueDateMode,
     invoiceDate,
@@ -586,6 +592,7 @@ export default function InvoicesPage() {
     scanTargetRef.current = null;
     setPickerItemId(null);
     setInvoiceDate(toIsoDate(new Date()));
+    setPlaceOfSupplyChoice(null);
     setDueDateMode(prefs.dueDateMode);
     setDueDate('');
     setDueDateDays(prefs.dueDateDays);
@@ -617,6 +624,7 @@ export default function InvoicesPage() {
     setInvoiceDiscountType((invoice.discount_type as 'percentage' | 'net') || 'percentage');
     setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
     setSelectedLedgerId(String(invoice.ledger_id));
+    setPlaceOfSupplyChoice(invoice.place_of_supply ? { ledgerId: String(invoice.ledger_id), code: invoice.place_of_supply } : null);
     setInvoiceDate(invoice.invoice_date ? invoice.invoice_date.slice(0, 10) : toIsoDate(new Date()));
     const dueDateState = createDueDateFormState(invoice.due_date);
     setDueDateMode(dueDateState.mode);
@@ -675,6 +683,7 @@ export default function InvoicesPage() {
     setInvoiceDiscountType((invoice.discount_type as 'percentage' | 'net') || 'percentage');
     setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
     setSelectedLedgerId(String(invoice.ledger_id));
+    setPlaceOfSupplyChoice(invoice.place_of_supply ? { ledgerId: String(invoice.ledger_id), code: invoice.place_of_supply } : null);
     setInvoiceDate(toIsoDate(new Date()));
     setDueDateMode('none');
     setDueDate('');
@@ -784,6 +793,7 @@ export default function InvoicesPage() {
         discount_type: invoiceDiscountType || null,
         discount_value: invoiceDiscountValue ? Number(invoiceDiscountValue) : null,
         ...(voucherType === 'sales' ? {
+          place_of_supply: placeOfSupply || null,
           shipping_address_same_as_billing: shippingSameAsBilling,
           shipping_address_id: (!shippingSameAsBilling && selectedShippingAddressId !== null) ? selectedShippingAddressId : null,
           new_shipping_address: (!shippingSameAsBilling && selectedShippingAddressId === null && newShippingAddress.trim())
@@ -960,6 +970,14 @@ export default function InvoicesPage() {
                   required
                 />
               </div>
+
+              {voucherType === 'sales' && company?.gst?.trim() ? (
+                <PlaceOfSupplyField
+                  id="invoice-place-of-supply"
+                  value={placeOfSupply}
+                  onChange={(code) => setPlaceOfSupplyChoice({ ledgerId: selectedLedgerId, code })}
+                />
+              ) : null}
 
               <div className="field">
                 <label htmlFor="invoice-date">Invoice date</label>

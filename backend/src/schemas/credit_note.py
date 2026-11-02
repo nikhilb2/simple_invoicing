@@ -24,6 +24,8 @@ class CreditNoteCreate(BaseModel):
     direction: Literal["outward", "inward"] = "outward"
     supplier_credit_note_number: Optional[str] = None
     supplier_credit_note_date: Optional[date] = None
+    # The date on the note. None takes today's date in India.
+    credit_note_date: Optional[date] = None
     reason: Optional[str] = None
     items: List[CreditNoteItemCreate] = Field(..., min_length=1)
 
@@ -115,6 +117,7 @@ class CreditNoteOut(BaseModel):
     sgst_amount: float
     igst_amount: float
     total_amount: float
+    credit_note_date: Optional[datetime] = None
     created_at: datetime
     cancelled_at: Optional[datetime] = None
     invoice_ids: List[int] = Field(default_factory=list)

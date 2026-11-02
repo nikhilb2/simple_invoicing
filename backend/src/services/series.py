@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from src.core.config import settings
 from src.models.financial_year import FinancialYear
+from src.core.validation import GSTR1_DOCUMENT_NUMBER_RULE, is_gstr1_document_number
 from src.models.invoice_series import InvoiceSeries
 from src.services.company_access import company_scope
 
@@ -31,6 +32,16 @@ def _format_number(
         return f"{series.prefix}{sep}{year_part}{sep}{seq_str}{suffix}"
     else:
         return f"{series.prefix}{sep}{seq_str}{suffix}"
+
+
+def gstr1_number_problem(series: InvoiceSeries, fy: Optional[FinancialYear]) -> Optional[str]:
+    """Why this series would issue numbers GSTR-1 refuses, or None if it would not."""
+    # Numbers cannot be edited once issued, so leave room for the counter to
+    # grow: a format that only just fits today breaks at the next digit.
+    sample = _format_number(series, max(series.next_sequence or 1, 9999), fy)
+    if is_gstr1_document_number(sample):
+        return None
+    return f"This format gives numbers like {sample}. GSTR-1 needs {GSTR1_DOCUMENT_NUMBER_RULE}."
 
 
 def _number_taken(db: Session, voucher_type: str, number: str, company_id: Optional[int]) -> bool:

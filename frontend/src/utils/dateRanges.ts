@@ -19,6 +19,23 @@ function startOfWeek(today: Date): Date {
   return new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset);
 }
 
+/**
+ * The return most likely being prepared: last month's, due this month. A closed
+ * financial year has no "last month", so that year's final month stands in.
+ */
+export function defaultFilingPeriod(
+  fy?: { start_date: string; end_date: string } | null,
+  today: Date = new Date(),
+): DateRange {
+  const iso = toIsoDate(today);
+  const reference = fy?.end_date && fy.end_date < iso
+    ? new Date(Number(fy.end_date.slice(0, 4)), Number(fy.end_date.slice(5, 7)), 1)
+    : today;
+  const year = reference.getFullYear();
+  const month = reference.getMonth();
+  return { fromDate: toIsoDate(new Date(year, month - 1, 1)), toDate: toIsoDate(new Date(year, month, 0)) };
+}
+
 export type RangePreset = { key: string; label: string } & DateRange;
 
 /**
@@ -40,6 +57,7 @@ export function buildRangePresets(fy?: { start_date: string; end_date: string } 
     { key: 'month', label: 'This month', fromDate: at(year, month, 1), toDate: iso },
     { key: 'last-month', label: 'Last month', fromDate: at(year, month - 1, 1), toDate: at(year, month, 0) },
     { key: 'quarter', label: 'This quarter', fromDate: at(year, quarter, 1), toDate: iso },
+    { key: 'last-quarter', label: 'Last quarter', fromDate: at(year, quarter - 3, 1), toDate: at(year, quarter, 0) },
   ];
 
   if (fy?.start_date && fy?.end_date) {

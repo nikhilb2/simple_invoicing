@@ -34,6 +34,10 @@ class Invoice(Base):
     company_account_number = Column(String, nullable=True)
     company_ifsc_code = Column(String, nullable=True)
     voucher_type = Column(String, nullable=False, default="sales")
+    # Two-digit GST state code. Decides CGST/SGST or IGST on a sale. NULL on
+    # purchases and on sales made before the column existed, which read the
+    # state from the two GSTINs (see gst_tax_service.invoice_is_interstate).
+    place_of_supply = Column(String(2), nullable=True)
     supplier_invoice_number = Column(String, nullable=True)
     reference_notes = Column(String, nullable=True)
     status = Column(String, nullable=False, default="active")

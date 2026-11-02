@@ -11,6 +11,7 @@ from src.models.invoice_series import InvoiceSeries
 from src.models.user import User, UserRole
 from src.schemas.financial_year import FinancialYearCreate, FinancialYearOut
 from src.services.financial_year import activate_fy, get_active_fy
+from src.services.series import gstr1_number_problem
 
 router = APIRouter()
 
@@ -127,6 +128,19 @@ def create_financial_year(
     try:
         db.flush()  # get fy.id before committing
         _seed_series_for_fy(db, fy.id, active_company.id)
+        db.flush()
+        # A series that prints the year label takes on this new label.
+        if (active_company.gst or "").strip():
+            for series in db.query(InvoiceSeries).filter(
+                InvoiceSeries.financial_year_id == fy.id,
+                InvoiceSeries.voucher_type.in_(("sales", "credit_note")),
+                InvoiceSeries.year_format == "FY",
+                InvoiceSeries.include_year.is_(True),
+            ):
+                problem = gstr1_number_problem(series, fy)
+                if problem:
+                    db.rollback()
+                    raise HTTPException(status_code=400, detail=f"Financial year label '{payload.label}': {problem}")
         db.commit()
     except IntegrityError as exc:
         db.rollback()

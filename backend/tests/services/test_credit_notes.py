@@ -17,12 +17,12 @@ from unittest.mock import ANY, MagicMock, call, patch
 import pytest
 
 from src.services.credit_note import (
-    _is_interstate,
     _money,
     _recompute_credit_status,
     cancel_credit_note,
     create_credit_note,
 )
+from src.services.gst_tax_service import is_interstate_supply as _is_interstate
 from src.schemas.credit_note import CreditNoteCreate, CreditNoteItemCreate
 from src.models.buyer import Buyer as Ledger
 from src.models.invoice import Invoice, InvoiceItem
