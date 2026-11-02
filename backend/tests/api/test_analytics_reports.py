@@ -30,19 +30,43 @@ def _create_ledger(client, name):
     return response.json()["id"]
 
 
-def _create_invoice(client, ledger_id, items, *, voucher_type="sales", invoice_date=None):
+def _create_invoice(client, ledger_id, items, *, voucher_type="sales", invoice_date=None, **extra):
     """Create an invoice. Omitting invoice_date lets the column default to
     datetime.utcnow — which, unlike the API's date-only input, carries a real
     time component (see test_invoice_dated_today_is_included)."""
     payload = {"voucher_type": voucher_type, "ledger_id": ledger_id, "items": items}
     if invoice_date is not None:
         payload["invoice_date"] = invoice_date.date().isoformat()
+    payload.update(extra)
     response = client.post("/api/invoices/", json=payload)
     assert response.status_code == 200, response.text
     return response.json()
 
 
 class TestMonthlySales:
+    def test_invoice_discount_reduces_reported_revenue(self, client):
+        """The ex-GST share of an invoice-level discount belongs in revenue."""
+        product = _create_product(client, "DISC-1", "Widget", 1000, purchase_price=600)
+        ledger = _create_ledger(client, "Acme")
+        _create_invoice(
+            client,
+            ledger,
+            [{"product_id": product, "quantity": 1, "unit_price": 1000, "gst_rate": 18}],
+            invoice_date=datetime(2026, 3, 10, 12, 0),
+            discount_type="net",
+            discount_value=118,
+        )
+
+        params = {"from_date": "2026-03-01", "to_date": "2026-03-31"}
+        monthly = client.get("/api/analytics/sales-by-month", params=params).json()
+        product_sales = client.get("/api/analytics/sales-by-product", params=params).json()
+        profit_loss = client.get("/api/analytics/profit-loss", params=params).json()
+
+        assert monthly["rows"][0]["taxable_value"] == 900.00
+        assert product_sales["rows"][0]["sales_amount"] == 900.00
+        assert profit_loss["product_rows"][0]["sales_amount"] == 900.00
+        assert profit_loss["totals"]["revenue"] == 900.00
+
     def test_buckets_invoices_by_month(self, client):
         product = _create_product(client, "MON-1", "Widget", 100)
         ledger = _create_ledger(client, "Acme")
@@ -449,6 +473,31 @@ class TestProfitLoss:
         assert len(narrowed["product_rows"]) == 1
         assert narrowed["monthly_rows"][0]["revenue"] == 100.00
         assert narrowed["monthly_rows"][0]["gross_profit"] == 40.00
+
+    def test_invoice_discount_is_apportioned_before_product_filter(self, client):
+        """A filtered report must not assign a whole header discount to one line."""
+        widget = _create_product(client, "PL-DISC-1", "Widget", 100, purchase_price=60)
+        gadget = _create_product(client, "PL-DISC-2", "Gadget", 50, purchase_price=40)
+        ledger = _create_ledger(client, "Acme")
+        _create_invoice(
+            client,
+            ledger,
+            [
+                {"product_id": widget, "quantity": 1, "unit_price": 100, "gst_rate": 18},
+                {"product_id": gadget, "quantity": 1, "unit_price": 50, "gst_rate": 18},
+            ],
+            invoice_date=datetime(2026, 8, 10, 12, 0),
+            # Rs. 17.70 gross includes Rs. 15.00 ex-GST: Rs. 10 / Rs. 5 per line.
+            discount_type="net",
+            discount_value=17.70,
+        )
+
+        report = client.get("/api/analytics/profit-loss", params={
+            "from_date": "2026-08-01", "to_date": "2026-08-31", "product_id": widget,
+        }).json()
+        assert report["monthly_rows"][0]["revenue"] == 90.00
+        assert report["product_rows"][0]["sales_amount"] == 90.00
+        assert report["product_rows"][0]["gross_profit"] == 30.00
 
     def test_customer_rows_split_by_ledger(self, client):
         product = _create_product(client, "PL-8", "Widget", 100, purchase_price=60)

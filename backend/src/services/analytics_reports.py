@@ -12,6 +12,7 @@ this precedent.
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
+from types import SimpleNamespace
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -155,7 +156,7 @@ def build_monthly_sales_report(
             continue
         bucket.invoice_count += 1
         bucket.total_sales += Decimal(str(invoice.total_amount or 0))
-        bucket.taxable_value += Decimal(str(invoice.taxable_amount or 0))
+        bucket.taxable_value += _discounted_invoice_taxable_amount(invoice)
         bucket.gst_collected += Decimal(str(invoice.total_tax_amount or 0))
         bucket.discount_given += discounts[invoice.id].total_discount
 
@@ -176,6 +177,17 @@ def average_of(total: Decimal, count) -> Decimal:
     if not count:
         return Decimal("0.00")
     return _money(total / Decimal(str(count)))
+
+
+def _discounted_invoice_taxable_amount(invoice: Invoice) -> Decimal:
+    """Return an invoice's ex-GST taxable amount after its header discount."""
+    taxable = Decimal(str(invoice.taxable_amount or 0))
+    share = apportion_invoice_discount(
+        [taxable],
+        invoice_discount=invoice_discount_amount(invoice),
+        invoice_tax=Decimal(str(invoice.total_tax_amount or 0)),
+    )[0]
+    return taxable - share
 
 
 def build_product_sales_report(
@@ -225,6 +237,17 @@ def build_product_sales_report(
         query = query.filter(Product.id == product_id)
 
     grouped = query.group_by(Product.id, Product.name, Product.sku, Product.maintain_inventory).all()
+    discounted_sales: dict[int, Decimal] = {}
+    for pid, _, taxable in _discounted_invoice_lines(
+        db,
+        company_id=company_id,
+        voucher_type=voucher_type,
+        from_date=from_date,
+        to_date=to_date,
+        ledger_id=ledger_id,
+        product_id=product_id,
+    ):
+        discounted_sales[pid] = discounted_sales.get(pid, Decimal("0")) + taxable
 
     # Stock is fetched separately rather than outer-joined: a product with
     # maintain_inventory=False has no meaningful stock, and a join would report
@@ -244,7 +267,7 @@ def build_product_sales_report(
     rows: list[dict] = []
     for pid, name, sku, maintain_inventory, quantity, taxable, tax, revenue, invoice_count in grouped:
         qty = Decimal(str(quantity or 0))
-        sales_amount = Decimal(str(taxable or 0))
+        sales_amount = discounted_sales.get(pid, Decimal(str(taxable or 0)))
         rows.append({
             "product_id": pid,
             "name": name,
@@ -348,9 +371,13 @@ def build_profit_loss_report(
             Invoice.invoice_date,
             Invoice.ledger_id,
             Invoice.ledger_name,
+            Invoice.taxable_amount.label("invoice_taxable_amount"),
+            Invoice.total_tax_amount,
+            Invoice.round_off_amount,
+            Invoice.total_amount,
             InvoiceItem.product_id,
             InvoiceItem.quantity,
-            InvoiceItem.taxable_amount,
+            InvoiceItem.taxable_amount.label("line_taxable_amount"),
             Product.name,
             Product.sku,
             Product.purchase_price,
@@ -367,8 +394,13 @@ def build_profit_loss_report(
     )
     if ledger_id is not None:
         query = query.filter(Invoice.ledger_id == ledger_id)
+
     if product_id is not None:
-        query = query.filter(Product.id == product_id)
+        # Keep every line from matching invoices for discount apportionment.
+        # Filtering the joined rows here would incorrectly assign the complete
+        # header discount to the selected product on a multi-product invoice.
+        containing = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id)
+        query = query.filter(Invoice.id.in_(containing))
 
     # Per-product, per-month, and per-customer accumulators, all built in one pass.
     products: dict[int, dict] = {}
@@ -379,58 +411,67 @@ def build_profit_loss_report(
     customers: dict[int | None, dict] = {}
     total_invoice_ids: set[int] = set()
 
-    for (
-        invoice_id,
-        invoice_date,
-        row_ledger_id,
-        ledger_name,
-        pid,
-        quantity,
-        taxable,
-        name,
-        sku,
-        purchase_price,
-    ) in query.all():
-        qty = Decimal(str(quantity or 0))
-        revenue = Decimal(str(taxable or 0))
-        cost = Decimal(str(purchase_price or 0))
-        line_cogs = qty * cost
+    rows_by_invoice: dict[int, list] = {}
+    for row in query.order_by(Invoice.id, InvoiceItem.id).all():
+        rows_by_invoice.setdefault(row.id, []).append(row)
 
-        product = products.get(pid)
-        if product is None:
-            product = {
-                "product_id": pid,
-                "name": name,
-                "sku": sku,
-                "purchase_price": cost,
-                "quantity_sold": Decimal("0"),
-                "revenue": Decimal("0"),
-            }
-            products[pid] = product
-        product["quantity_sold"] += qty
-        product["revenue"] += revenue
+    for invoice_rows in rows_by_invoice.values():
+        header = invoice_rows[0]
+        taxables = [Decimal(str(row.line_taxable_amount or 0)) for row in invoice_rows]
+        invoice = SimpleNamespace(
+            taxable_amount=header.invoice_taxable_amount,
+            total_tax_amount=header.total_tax_amount,
+            round_off_amount=header.round_off_amount,
+            total_amount=header.total_amount,
+        )
+        shares = apportion_invoice_discount(
+            taxables,
+            invoice_discount=invoice_discount_amount(invoice),
+            invoice_tax=Decimal(str(header.total_tax_amount or 0)),
+        )
+        for row, taxable, share in zip(invoice_rows, taxables, shares):
+            if product_id is not None and row.product_id != product_id:
+                continue
+            qty = Decimal(str(row.quantity or 0))
+            revenue = taxable - share
+            cost = Decimal(str(row.purchase_price or 0))
+            line_cogs = qty * cost
 
-        bucket = months.get((invoice_date.year, invoice_date.month))
-        if bucket is not None:  # defensive: query is already range-bounded
-            bucket["quantity"] += qty
-            bucket["revenue"] += revenue
-            bucket["cogs"] += line_cogs
+            product = products.get(row.product_id)
+            if product is None:
+                product = {
+                    "product_id": row.product_id,
+                    "name": row.name,
+                    "sku": row.sku,
+                    "purchase_price": cost,
+                    "quantity_sold": Decimal("0"),
+                    "revenue": Decimal("0"),
+                }
+                products[row.product_id] = product
+            product["quantity_sold"] += qty
+            product["revenue"] += revenue
 
-        customer = customers.get(row_ledger_id)
-        if customer is None:
-            customer = {
-                "ledger_id": row_ledger_id,
-                "name": ledger_name or "—",
-                "revenue": Decimal("0"),
-                "cogs": Decimal("0"),
-                "invoice_ids": set(),
-            }
-            customers[row_ledger_id] = customer
-        customer["revenue"] += revenue
-        customer["cogs"] += line_cogs
-        customer["invoice_ids"].add(invoice_id)
+            bucket = months.get((row.invoice_date.year, row.invoice_date.month))
+            if bucket is not None:  # defensive: query is already range-bounded
+                bucket["quantity"] += qty
+                bucket["revenue"] += revenue
+                bucket["cogs"] += line_cogs
 
-        total_invoice_ids.add(invoice_id)
+            customer = customers.get(row.ledger_id)
+            if customer is None:
+                customer = {
+                    "ledger_id": row.ledger_id,
+                    "name": row.ledger_name or "—",
+                    "revenue": Decimal("0"),
+                    "cogs": Decimal("0"),
+                    "invoice_ids": set(),
+                }
+                customers[row.ledger_id] = customer
+            customer["revenue"] += revenue
+            customer["cogs"] += line_cogs
+            customer["invoice_ids"].add(row.id)
+
+            total_invoice_ids.add(row.id)
 
     product_rows: list[dict] = []
     for product in products.values():
