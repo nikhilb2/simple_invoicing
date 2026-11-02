@@ -114,6 +114,7 @@ def _seed_tenant(client, act_as, user, name: str, sku: str) -> dict:
     }))
     credit_note = iso._create_credit_note(client, ledger, invoice)
     share = iso._ok(client.post("/api/share/", json={"resource_type": "invoice", "resource_id": invoice["id"]}))
+    iso._ok(client.post("/api/eway-bill/transporters", json={"transporter_name": f"{name} Transport", "is_default": True}))
     return {
         "company": company,
         "ledger": ledger,
@@ -166,6 +167,7 @@ BUSINESS_TABLES = [
     "invoices", "invoice_items", "buyers", "products", "inventory", "payments",
     "payment_invoice_allocations", "credit_notes", "credit_note_items",
     "credit_note_invoice_refs", "financial_years", "invoice_series", "share_links",
+    "eway_bill_transporters",
 ]
 
 
@@ -419,6 +421,7 @@ def test_public_share_page_renders_through_rls(two_tenants, client):
 @pytest.mark.parametrize("path", [
     "/api/invoices/", "/api/ledgers/", "/api/products/", "/api/payments/",
     "/api/credit-notes/", "/api/financial-years/", "/api/invoice-series/", "/api/share/",
+    "/api/eway-bill/transporters",
 ])
 def test_lists_through_the_app_show_own_rows(two_tenants, client, act_as, path):
     db, a, b = two_tenants

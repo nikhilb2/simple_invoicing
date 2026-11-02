@@ -1,7 +1,7 @@
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import axios from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import api from './client';
+import api, { getApiErrorDetails, getApiErrorMessage, getBlobErrorMessage } from './client';
 
 /* Node environment, no DOM: storage is an in-memory stub and the WebView bridge
    a stubbed window. The API's transport is replaced with an adapter that only
@@ -98,5 +98,128 @@ describe('refresh interceptor and the native bridge', () => {
 
     expect(refresh).not.toHaveBeenCalled();
     expect(postMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('reading API errors', () => {
+  function failure(status: number, data: unknown) {
+    const config = { headers: {} } as InternalAxiosRequestConfig;
+    return new AxiosError(
+      `Request failed with status code ${status}`,
+      'ERR_BAD_REQUEST',
+      config,
+      null,
+      { data, status, statusText: String(status), headers: {}, config },
+    );
+  }
+
+  function asBlob(body: unknown) {
+    return new Blob([JSON.stringify(body)], { type: 'application/json' });
+  }
+
+  const serviceBody = {
+    detail: {
+      message: 'Some E-Way Bill details need fixing.',
+      errors: [
+        { field: 'seller_gstin', message: 'Seller GSTIN format is invalid.' },
+        { field: 'buyer_pincode', message: 'Buyer PIN code is required.' },
+      ],
+    },
+  };
+  const fastApiBody = {
+    detail: [
+      { type: 'int_from_float', loc: ['body', 'distance_km'], msg: 'Input should be a valid integer, got a number with a fractional part', input: 1.5 },
+      { type: 'value_error', loc: ['body', 'transporter_gstin'], msg: 'Value error, Transporter GSTIN must be 15 characters.' },
+      { type: 'json_invalid', loc: ['body'], msg: 'JSON decode error' },
+    ],
+  };
+
+  describe('getApiErrorMessage', () => {
+    it('keeps a plain string detail', () => {
+      expect(getApiErrorMessage(failure(404, { detail: 'Invoice 9 not found' }), 'x')).toBe('Invoice 9 not found');
+    });
+
+    it('keeps the message of a coded error', () => {
+      const error = failure(409, { detail: { code: 'company_required', message: 'Create a company first.' } });
+      expect(getApiErrorMessage(error, 'x')).toBe('Create a company first.');
+    });
+
+    it('lists the errors of a {message, errors} detail', () => {
+      expect(getApiErrorMessage(failure(422, serviceBody), 'x')).toBe(
+        'Seller GSTIN format is invalid. Buyer PIN code is required.',
+      );
+    });
+
+    it('reads a FastAPI validation list, naming the field', () => {
+      expect(getApiErrorMessage(failure(422, fastApiBody), 'x')).toBe(
+        'Distance km must be a whole number. Transporter gstin: Transporter GSTIN must be 15 characters. JSON decode error',
+      );
+    });
+
+    it('never shows the status code for a response it cannot read', () => {
+      expect(getApiErrorMessage(failure(500, 'Internal Server Error'), 'Failed to save')).toBe('Failed to save');
+      expect(getApiErrorMessage(failure(502, '<html>Bad gateway</html>'), 'Failed to save')).toBe('Failed to save');
+      expect(getApiErrorMessage(failure(500, { detail: [] }), 'Failed to save')).toBe('Failed to save');
+      expect(getApiErrorMessage(failure(422, asBlob(serviceBody)), 'Failed to save')).toBe('Failed to save');
+    });
+
+    it('still reports a failure with no response at all', () => {
+      expect(getApiErrorMessage(new AxiosError('Network Error'), 'x')).toBe('Network Error');
+      expect(getApiErrorMessage(new Error('boom'), 'x')).toBe('boom');
+      expect(getApiErrorMessage('what', 'x')).toBe('x');
+    });
+  });
+
+  describe('getApiErrorDetails', () => {
+    it('reads field errors out of a blob response, which is the cause of the e-way bill bug', async () => {
+      await expect(getApiErrorDetails(failure(422, asBlob(serviceBody)), 'x')).resolves.toEqual({
+        message: 'Seller GSTIN format is invalid. Buyer PIN code is required.',
+        fieldErrors: serviceBody.detail.errors,
+      });
+    });
+
+    it('reads a FastAPI list out of a blob response', async () => {
+      const { fieldErrors } = await getApiErrorDetails(failure(422, asBlob(fastApiBody)), 'x');
+      expect(fieldErrors).toEqual([
+        { field: 'distance_km', message: 'Distance km must be a whole number.' },
+        { field: 'transporter_gstin', message: 'Transporter gstin: Transporter GSTIN must be 15 characters.' },
+        { field: '', message: 'JSON decode error' },
+      ]);
+    });
+
+    it('reads a plain response the same way', async () => {
+      const details = await getApiErrorDetails(failure(422, serviceBody), 'x');
+      expect(details.fieldErrors).toHaveLength(2);
+    });
+
+    it.each([400, 404, 500])('reads a %i with a string detail out of a blob', async (status) => {
+      await expect(getApiErrorDetails(failure(status, asBlob({ detail: 'Failed to generate E-Way Bill JSON' })), 'x')).resolves.toEqual({
+        message: 'Failed to generate E-Way Bill JSON',
+        fieldErrors: [],
+      });
+    });
+
+    it('falls back when a blob is not JSON', async () => {
+      const error = failure(502, new Blob(['<html>Bad gateway</html>']));
+      await expect(getApiErrorDetails(error, 'Failed to generate')).resolves.toEqual({
+        message: 'Failed to generate',
+        fieldErrors: [],
+      });
+    });
+  });
+
+  describe('getBlobErrorMessage', () => {
+    it('keeps a string detail, as its other callers expect', async () => {
+      await expect(getBlobErrorMessage(failure(400, asBlob({ detail: 'Pick a date range' })), 'x')).resolves.toBe('Pick a date range');
+    });
+
+    it('now also reads coded errors', async () => {
+      const error = failure(409, asBlob({ detail: { code: 'nope', message: 'Not allowed.' } }));
+      await expect(getBlobErrorMessage(error, 'x')).resolves.toBe('Not allowed.');
+    });
+
+    it('uses the fallback for an unreadable blob', async () => {
+      await expect(getBlobErrorMessage(failure(500, new Blob(['oops'])), 'Unable to download')).resolves.toBe('Unable to download');
+    });
   });
 });

@@ -222,6 +222,13 @@ export type CompanyProfile = {
   show_upi_pay_button: boolean;
 };
 
+export type EwayBillSettings = {
+  eway_enabled: boolean;
+  eway_local_threshold: number;
+  eway_interstate_threshold: number;
+  eway_always_show_button: boolean;
+};
+
 export type CompanyListItem = {
   id: number;
   name: string;

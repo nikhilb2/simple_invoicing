@@ -9,39 +9,48 @@ Provides endpoints for:
 """
 
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
-from src.api.deps import get_active_company, get_current_user
+from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.db.session import get_db
 from src.models.buyer import Buyer
 from src.models.company import CompanyProfile
 from src.models.eway_bill import EwayBillTransporter
-from src.models.invoice import Invoice, InvoiceItem
+from src.models.invoice import Invoice
 from src.models.product import Product
-from src.models.user import User
+from src.models.user import User, UserRole
 from src.schemas.eway_bill import (
     EwayBillFormData,
     EwayBillPreCheckResult,
-    EwayBillValidationError,
     TransporterProfileCreate,
     TransporterProfileOut,
     TransporterProfileUpdate,
 )
+from src.services.company_access import company_role
 from src.services.eway_bill_service import (
+    clear_default_transporter,
     generate_eway_bill_json,
     get_or_create_default_transporter,
     pre_check,
+    save_default_transporter,
+    validate_form_against_invoice,
     validate_form_data,
+    validate_invoice,
 )
+
+logger = logging.getLogger(__name__)
+
+_TRANSPORTER_MANAGER_ROLES = (UserRole.admin, UserRole.manager)
 
 
 class EwayBillSettingsOut(BaseModel):
     eway_enabled: bool = True
-    eway_local_threshold: float = 100000
+    eway_local_threshold: float = 50000
     eway_interstate_threshold: float = 50000
     eway_always_show_button: bool = True
 
@@ -60,6 +69,43 @@ def _get_products_map(db: Session, invoice: Invoice, company_id: int) -> dict[in
         .all()
     )
     return {p.id: p for p in products}
+
+
+def _get_eligible_invoice(db: Session, invoice_id: int, company: CompanyProfile) -> Invoice:
+    """Load an invoice both e-way bill routes may act on, or raise why not.
+
+    The one place the rules live, so pre-check and generate can't disagree.
+    """
+    if not company.eway_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail="E-Way Bill generation is turned off for this company. Turn it on in Company Settings.",
+        )
+
+    invoice = (
+        db.query(Invoice)
+        .options(joinedload(Invoice.items))
+        .filter(Invoice.id == invoice_id, Invoice.company_id == company.id)
+        .first()
+    )
+    if not invoice:
+        raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
+
+    if invoice.voucher_type != "sales":
+        raise HTTPException(status_code=400, detail="E-Way Bill is only available for Sales invoices.")
+    if invoice.status != "active":
+        raise HTTPException(status_code=400, detail="E-Way Bill can only be generated for active invoices.")
+    return invoice
+
+
+def _get_invoice_buyer(db: Session, invoice: Invoice, company: CompanyProfile) -> Buyer | None:
+    if not invoice.ledger_id:
+        return None
+    return (
+        db.query(Buyer)
+        .filter(Buyer.id == invoice.ledger_id, Buyer.company_id == company.id)
+        .first()
+    )
 
 
 # ── Settings endpoint ──
@@ -90,27 +136,8 @@ def eway_bill_precheck(
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Check what E-Way Bill data is available and what's missing for this invoice."""
-    invoice = (
-        db.query(Invoice)
-        .options(joinedload(Invoice.items))
-        .filter(Invoice.id == invoice_id, Invoice.company_id == active_company.id)
-        .first()
-    )
-    if not invoice:
-        raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
-
-    # Verify invoice is eligible
-    if invoice.voucher_type not in ("sales",):
-        raise HTTPException(status_code=400, detail="E-Way Bill is only available for Sales invoices.")
-    if invoice.status != "active":
-        raise HTTPException(status_code=400, detail="E-Way Bill can only be generated for active invoices.")
-
-    buyer = (
-        db.query(Buyer)
-        .filter(Buyer.id == invoice.ledger_id, Buyer.company_id == active_company.id)
-        .first()
-    ) if invoice.ledger_id else None
-
+    invoice = _get_eligible_invoice(db, invoice_id, active_company)
+    buyer = _get_invoice_buyer(db, invoice, active_company)
     products_map = _get_products_map(db, invoice, active_company.id)
 
     result = pre_check(invoice, active_company, buyer, invoice.items or [], products_map)
@@ -134,74 +161,39 @@ def eway_bill_generate(
     invoice_id: int,
     form_data: EwayBillFormData,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Generate the E-Way Bill JSON from invoice data and user-supplied form data."""
-    invoice = (
-        db.query(Invoice)
-        .options(joinedload(Invoice.items))
-        .filter(Invoice.id == invoice_id, Invoice.company_id == active_company.id)
-        .first()
+    invoice = _get_eligible_invoice(db, invoice_id, active_company)
+    products_map = _get_products_map(db, invoice, active_company.id)
+
+    errors = (
+        validate_invoice(invoice, invoice.items or [], products_map)
+        + validate_form_data(form_data)
+        + validate_form_against_invoice(form_data, invoice)
     )
-    if not invoice:
-        raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
-
-    if invoice.status != "active":
-        raise HTTPException(status_code=400, detail="E-Way Bill can only be generated for active invoices.")
-
-    # Validate form data
-    errors = validate_form_data(form_data)
     if errors:
         raise HTTPException(status_code=422, detail={
-            "message": "Validation errors",
+            "message": "Some E-Way Bill details need fixing.",
             "errors": [e.model_dump() for e in errors],
         })
 
-    buyer = (
-        db.query(Buyer)
-        .filter(Buyer.id == invoice.ledger_id, Buyer.company_id == active_company.id)
-        .first()
-    ) if invoice.ledger_id else None
-
-    products_map = _get_products_map(db, invoice, active_company.id)
+    # Viewing an invoice is enough to generate a bill, but saving the transporter
+    # is a write to the same master data the transporter routes guard.
+    save_transporter = form_data.save_transporter and bool(form_data.transporter_name.strip())
+    if save_transporter and company_role(db, current_user, active_company.id) not in _TRANSPORTER_MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="Only an admin or manager can save a transporter.")
 
     try:
-        json_data = generate_eway_bill_json(invoice, active_company, buyer, invoice.items or [], products_map, form_data)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate E-Way Bill JSON: {str(e)}")
-
-    # Save transporter if requested
-    if form_data.save_transporter and form_data.transporter_name:
-        existing = (
-            db.query(EwayBillTransporter)
-            .filter(
-                EwayBillTransporter.company_id == active_company.id,
-                EwayBillTransporter.transporter_name == form_data.transporter_name,
-            )
-            .first()
-        )
-        if existing:
-            existing.transporter_gstin = form_data.transporter_gstin or ""
-            existing.transport_mode = form_data.transport_mode or "1"
-            existing.vehicle_type = form_data.vehicle_type or "R"
-            existing.is_default = True
-        else:
-            # Unset current default
-            db.query(EwayBillTransporter).filter(
-                EwayBillTransporter.company_id == active_company.id,
-                EwayBillTransporter.is_default == True,
-            ).update({"is_default": False})
-            transporter = EwayBillTransporter(
-                company_id=active_company.id,
-                transporter_name=form_data.transporter_name,
-                transporter_gstin=form_data.transporter_gstin or "",
-                transport_mode=form_data.transport_mode or "1",
-                vehicle_type=form_data.vehicle_type or "R",
-                is_default=True,
-            )
-            db.add(transporter)
-        db.commit()
+        json_data = generate_eway_bill_json(invoice, invoice.items or [], products_map, form_data)
+        if save_transporter:
+            save_default_transporter(db, active_company.id, form_data)
+            db.commit()
+    except Exception:
+        logger.exception("Error generating E-Way Bill JSON")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to generate E-Way Bill JSON")
 
     filename = f"EWB_{invoice.invoice_number or invoice.id}.json"
     json_str = json.dumps(json_data, indent=2, ensure_ascii=False)
@@ -235,15 +227,12 @@ def list_transporters(
 def create_transporter(
     payload: TransporterProfileCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_company_role(*_TRANSPORTER_MANAGER_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Create a new transporter profile."""
     if payload.is_default:
-        db.query(EwayBillTransporter).filter(
-            EwayBillTransporter.company_id == active_company.id,
-            EwayBillTransporter.is_default == True,
-        ).update({"is_default": False})
+        clear_default_transporter(db, active_company.id)
 
     transporter = EwayBillTransporter(
         company_id=active_company.id,
@@ -264,7 +253,7 @@ def update_transporter(
     transporter_id: int,
     payload: TransporterProfileUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_company_role(*_TRANSPORTER_MANAGER_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Update a transporter profile."""
@@ -286,11 +275,7 @@ def update_transporter(
         transporter.vehicle_type = payload.vehicle_type
     if payload.is_default is not None:
         if payload.is_default:
-            db.query(EwayBillTransporter).filter(
-                EwayBillTransporter.company_id == active_company.id,
-                EwayBillTransporter.is_default == True,
-                EwayBillTransporter.id != transporter_id,
-            ).update({"is_default": False})
+            clear_default_transporter(db, active_company.id, keep_id=transporter_id)
         transporter.is_default = payload.is_default
 
     db.commit()
@@ -302,7 +287,7 @@ def update_transporter(
 def delete_transporter(
     transporter_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_company_role(*_TRANSPORTER_MANAGER_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Delete a transporter profile."""

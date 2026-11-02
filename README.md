@@ -44,6 +44,7 @@ These show a made-up demo business.
 - **Sales and Purchase Invoices** — Automatic inventory effects, plus cancel, restore and duplicate
 - **Credit Notes** — Issue credit notes against invoices with linked ledger and stock reversals
 - **GSTR-1** — Validate a return and export it as JSON, CSV or PDF
+- **E-Way Bill JSON** — Check an invoice and generate the file for the portal's bulk upload (from the invoice preview's "..." menu)
 - **Tax Ledger** — Tax register with CSV and PDF export
 - **GSTIN Validation** — Checks format, state code and check digit (this does not confirm registration on the GST portal)
 - **PDF Invoices** — Generated with WeasyPrint, with your company logo and terms

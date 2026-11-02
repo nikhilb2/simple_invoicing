@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Copy, Download, FileJson, Mail, Printer, Share2 } from 'lucide-react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
-import type { CompanyProfile, Invoice } from '../types/api';
+import type { EwayBillSettings, Invoice } from '../types/api';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import { copyTextToClipboard } from '../utils/clipboard';
 import formatCurrency from '../utils/formatting';
@@ -28,7 +28,7 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
   const [previewFailed, setPreviewFailed] = useState(false);
-  const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
+  const [ewaySettings, setEwaySettings] = useState<EwayBillSettings | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<'idle' | 'copied' | 'error'>('idle');
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const copyFeedbackTimer = useRef<number | null>(null);
@@ -52,10 +52,22 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
     if (!showEmailModal && !showShareModal && !showEwayBillModal) onClose();
   }, [menuOpen, showEmailModal, showShareModal, showEwayBillModal, onClose]));
 
-  // Fetch company profile for E-Way Bill visibility rules
+  // Only sales invoices get a bill, so nothing else needs these settings.
+  const ewayEligible = invoice.voucher_type === 'sales' && invoice.status === 'active';
   useEffect(() => {
-    api.get<CompanyProfile>('/company/').then(res => setCompanyProfile(res.data)).catch(() => {});
-  }, []);
+    if (!ewayEligible) return;
+    let isMounted = true;
+    api.get<EwayBillSettings>('/eway-bill/settings')
+      .then((res) => { if (isMounted) setEwaySettings(res.data); })
+      .catch(() => {});
+    return () => { isMounted = false; };
+  }, [ewayEligible]);
+  const ewayThreshold = Number(invoice.igst_amount) > 0
+    ? ewaySettings?.eway_interstate_threshold
+    : ewaySettings?.eway_local_threshold;
+  const showEwayBill = ewayEligible && Boolean(ewaySettings?.eway_enabled) && (
+    Boolean(ewaySettings?.eway_always_show_button) || Number(invoice.total_amount) > (ewayThreshold ?? 0)
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -204,7 +216,7 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
               title: 'Download invoice PDF',
             },
           ]}
-          menu={invoice.voucher_type === 'sales' && invoice.status === 'active' && companyProfile?.eway_enabled !== false ? [
+          menu={showEwayBill ? [
             {
               label: 'Generate E-Way Bill',
               icon: <FileJson size={16} aria-hidden="true" />,
@@ -255,7 +267,6 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
         <EwayBillModal
           invoice={invoice}
           onClose={() => setShowEwayBillModal(false)}
-          onError={(msg) => onError?.(msg)}
         />
       )}
 

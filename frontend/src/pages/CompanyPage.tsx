@@ -672,7 +672,8 @@ function EWayBillSettingsCard({
             disabled={!form.eway_enabled}
           />
           <small className="field-hint">
-            Applied when seller and buyer are in the same state. Default: ₹1,00,000.
+            Applied when seller and buyer are in the same state. ₹50,000 is the central rule (Rule 138), but your state may
+            notify a different limit for movement within it, so check and set yours here.
           </small>
         </div>
 
@@ -689,7 +690,7 @@ function EWayBillSettingsCard({
             disabled={!form.eway_enabled}
           />
           <small className="field-hint">
-            Applied when seller and buyer are in different states. Default: ₹50,000.
+            Applied when seller and buyer are in different states. Default: ₹50,000 (Rule 138).
           </small>
         </div>
 
@@ -734,7 +735,7 @@ export default function CompanyPage() {
     website: '',
     show_sku_on_pdf: false,
     eway_enabled: true,
-    eway_local_threshold: 100000,
+    eway_local_threshold: 50000,
     eway_interstate_threshold: 50000,
     eway_always_show_button: true,
     show_pay_qr_on_invoice: false,
@@ -783,10 +784,10 @@ export default function CompanyPage() {
         email: data.email || '',
         website: data.website || '',
         show_sku_on_pdf: data.show_sku_on_pdf || false,
-        eway_enabled: data.eway_enabled !== undefined ? data.eway_enabled : true,
-        eway_local_threshold: data.eway_local_threshold || 100000,
-        eway_interstate_threshold: data.eway_interstate_threshold || 50000,
-        eway_always_show_button: data.eway_always_show_button !== undefined ? data.eway_always_show_button : true,
+        eway_enabled: data.eway_enabled ?? true,
+        eway_local_threshold: data.eway_local_threshold ?? 50000,
+        eway_interstate_threshold: data.eway_interstate_threshold ?? 50000,
+        eway_always_show_button: data.eway_always_show_button ?? true,
         show_pay_qr_on_invoice: data.show_pay_qr_on_invoice || false,
         show_upi_pay_button: data.show_upi_pay_button || false,
       });
