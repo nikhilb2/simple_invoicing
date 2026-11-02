@@ -27,6 +27,7 @@ from decimal import Decimal
 from io import BytesIO
 
 import weasyprint
+from src.services.pdf_render import safe_url_fetcher
 from fastapi import HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
@@ -370,7 +371,7 @@ def invoice_upi_payment(
 # ---------------------------------------------------------------------------
 
 def _to_pdf(html: str) -> BytesIO:
-    return BytesIO(weasyprint.HTML(string=html).write_pdf())
+    return BytesIO(weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf())
 
 
 def invoice_bank_accounts(db: Session, company_id: int) -> list[CompanyAccount]:

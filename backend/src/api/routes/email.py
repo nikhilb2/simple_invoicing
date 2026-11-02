@@ -2,6 +2,7 @@ from datetime import date
 from pathlib import Path
 
 import weasyprint
+from src.services.pdf_render import safe_url_fetcher
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel
@@ -293,7 +294,7 @@ async def send_ledger_statement_email(
         entries=statement_data.entries,
         currency=currency_code,
     )
-    pdf_bytes: bytes = weasyprint.HTML(string=html_pdf).write_pdf() or b""
+    pdf_bytes: bytes = weasyprint.HTML(string=html_pdf, url_fetcher=safe_url_fetcher).write_pdf() or b""
 
     # Summarise invoice debits and payment credits separately for the email body
     total_invoiced = sum(entry.debit for entry in statement_data.entries if entry.entry_type == "invoice")

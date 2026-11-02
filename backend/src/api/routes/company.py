@@ -463,9 +463,10 @@ def upload_logo(
     profile: CompanyProfile = Depends(get_active_company),
 ):
 
-    # Decode to check file size before optimization
+    # Decode to check file size before optimization. Strict, because this string is
+    # later written into PDF markup: outside the base64 alphabet it would be HTML.
     try:
-        raw_bytes = base64.b64decode(payload.data)
+        raw_bytes = base64.b64decode(payload.data, validate=True)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid base64 data.")
 
@@ -476,8 +477,17 @@ def upload_logo(
             detail="Logo size cannot exceed 100 KB.",
         )
 
+    # The bytes decide the type, not the client: mime_type is served back on the public
+    # share page, where image/svg+xml would run as a script on this origin.
+    if raw_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        detected_mime = "image/png"
+    elif raw_bytes.startswith(b"\xff\xd8\xff"):
+        detected_mime = "image/jpeg"
+    else:
+        raise HTTPException(status_code=400, detail="Logo must be a PNG or JPEG image.")
+
     # Optimize (resize + compress)
-    optimized_data, optimized_mime = _optimize_logo_image(payload.data, payload.mime_type)
+    optimized_data, optimized_mime = _optimize_logo_image(payload.data, detected_mime)
 
     profile.logo_data = optimized_data
     profile.logo_mime_type = optimized_mime

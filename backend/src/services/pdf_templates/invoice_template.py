@@ -108,7 +108,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     if invoice.company_logo_data and invoice.company_logo_mime_type:
         company_header_html += f"""
     <div class="invoice-sheet__logo">
-      <img src="data:{_e(invoice.company_logo_mime_type)};base64,{invoice.company_logo_data}" alt="Company logo" class="invoice-sheet__logo-img" />
+      <img src="data:{_e(invoice.company_logo_mime_type)};base64,{_e(invoice.company_logo_data)}" alt="Company logo" class="invoice-sheet__logo-img" />
     </div>"""
     if invoice.company_additional_info:
         lines = invoice.company_additional_info.split("\n")

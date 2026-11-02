@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 import weasyprint
+from src.services.pdf_render import safe_url_fetcher
 
 from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.core.analytics import distinct_id_for, track
@@ -817,7 +818,7 @@ def download_day_book_pdf(
       currency=currency,
     )
 
-    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+    pdf_bytes = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf()
     buf = BytesIO(pdf_bytes)
     filename = f"day_book_{from_date}_{to_date}.pdf"
 
@@ -1596,7 +1597,7 @@ def download_tax_ledger_pdf(
         currency=currency,
     )
 
-    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+    pdf_bytes = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf()
     buf = BytesIO(pdf_bytes)
     filename = f"tax_ledger_{from_date}_{to_date}.pdf"
 
@@ -2727,7 +2728,7 @@ def gstr1_export_pdf(
 <p style="font-size: 9px; color: #888;">Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
 </body></html>"""
 
-    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+    pdf_bytes = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf()
     buf = BytesIO(pdf_bytes)
     filename = f"gstr1_{from_date}_{to_date}.pdf"
 

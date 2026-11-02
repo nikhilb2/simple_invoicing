@@ -663,7 +663,8 @@ def public_share_logo(
         return _not_found()
 
     mime = (summary.logo_mime_type or "").strip().lower()
-    if not mime.startswith("image/"):
+    # Rows written before uploads were checked can hold any type the client claimed.
+    if mime not in ("image/png", "image/jpeg", "image/jpg"):
         mime = "image/png"
 
     return Response(content=raw, media_type=mime, headers=dict(_PUBLIC_HEADERS))

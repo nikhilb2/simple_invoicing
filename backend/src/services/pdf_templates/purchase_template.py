@@ -115,7 +115,7 @@ def _build_purchase_invoice_html(
     company_header_html = ""
     if invoice.company_logo_data and invoice.company_logo_mime_type:
         company_header_html += f"""
-      <img src="data:{_e(invoice.company_logo_mime_type)};base64,{invoice.company_logo_data}" alt="Company logo" class="invoice-sheet__purchase-logo-img" />"""
+      <img src="data:{_e(invoice.company_logo_mime_type)};base64,{_e(invoice.company_logo_data)}" alt="Company logo" class="invoice-sheet__purchase-logo-img" />"""
     if invoice.company_additional_info:
         lines = invoice.company_additional_info.split("\n")
         info_html = "<br>".join(_e(line) for line in lines)
