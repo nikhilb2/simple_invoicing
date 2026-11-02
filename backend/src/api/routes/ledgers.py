@@ -31,6 +31,7 @@ from src.schemas.ledger import DayBookEntry, DayBookOut, Gstr1B2BInvoice, Gstr1C
 from src.schemas.ledger_address import LedgerAddressCreate, LedgerAddressOut, LedgerAddressUpdate
 from src.services.credit_note_reporting import get_credit_note_ledger_summary
 from src.services.financial_year import get_active_fy
+from src.services.gst_returns.setoff import compute_setoff
 from src.services.invoice_payments import auto_allocate_outstanding_invoices, build_invoice_payment_summaries, get_outstanding_invoices_for_ledger
 # _build_statement_html is re-exported for src.api.routes.email, which imports it
 # from here; the statement PDF itself is now rendered by src.services.share_documents.
@@ -534,10 +535,10 @@ def _build_tax_liability(entries: list[TaxLedgerEntry]) -> TaxLiability:
     over: an output reversal beyond the output itself becomes credit, and an
     input reversal beyond the input becomes liability.
 
-    The set-off order is the portal's own (s.49A/49B, r.88A): IGST credit is
-    spent first and may cross into CGST and SGST, while CGST and SGST credit
-    clear their own head and can then only spill into IGST — never into each
-    other. Netting the three heads together instead, which is all
+    Set-off follows s.49(5), 49A, 49B and r.88A and is done by
+    `compute_setoff`: IGST credit pays IGST first, then CGST or SGST in
+    whichever order leaves least to pay, while CGST and SGST credit pay their
+    own head and then IGST — never each other. Netting the three heads together instead, which is all
     `net_total_tax` does, understates the cash due whenever CGST credit sits
     against an SGST liability: unusable there, but it looks like it nets off.
     """
@@ -555,25 +556,10 @@ def _build_tax_liability(entries: list[TaxLedgerEntry]) -> TaxLiability:
             # entry's Dr/Cr side, which is already what `side` picked out.
             side[head] += sign * (getattr(entry, f"debit_{head}") + getattr(entry, f"credit_{head}"))
 
-    liability = {h: max(0.0, output[h]) + max(0.0, -inp[h]) for h in heads}
-    credit = {h: max(0.0, inp[h]) + max(0.0, -output[h]) for h in heads}
-    applied = dict.fromkeys(heads, 0.0)
-
-    def set_off(source: str, target: str) -> None:
-        amount = min(credit[source], liability[target])
-        if amount <= 0:
-            return
-        credit[source] -= amount
-        liability[target] -= amount
-        applied[target] += amount
-
-    # IGST credit must discharge IGST liability before it crosses over; spending
-    # it on CGST/SGST first can strand an IGST liability that had credit for it.
-    for target in ("igst", "cgst", "sgst"):
-        set_off("igst", target)
-    for source in ("cgst", "sgst"):
-        set_off(source, source)
-        set_off(source, "igst")
+    result = compute_setoff(output, inp)
+    liability = {h: getattr(result, h).payable for h in heads}
+    credit = {h: getattr(result, h).credit_carried_forward for h in heads}
+    applied = {h: getattr(result, h).credit_used for h in heads}
 
     buckets = {
         head: TaxLiabilityBucket(
