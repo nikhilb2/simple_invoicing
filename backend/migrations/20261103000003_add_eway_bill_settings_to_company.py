@@ -14,13 +14,15 @@ def up(conn) -> None:
         ALTER TABLE company_profiles
         ADD COLUMN IF NOT EXISTS eway_enabled BOOLEAN NOT NULL DEFAULT TRUE;
     """))
+    # Rule 138(1) CGST Rules sets Rs 50,000. States may notify their own intra-state
+    # limit, so this is a starting point each company is expected to check.
     conn.execute(text("""
         ALTER TABLE company_profiles
-        ADD COLUMN IF NOT EXISTS eway_local_threshold DOUBLE PRECISION NOT NULL DEFAULT 100000;
+        ADD COLUMN IF NOT EXISTS eway_local_threshold NUMERIC(12, 2) NOT NULL DEFAULT 50000;
     """))
     conn.execute(text("""
         ALTER TABLE company_profiles
-        ADD COLUMN IF NOT EXISTS eway_interstate_threshold DOUBLE PRECISION NOT NULL DEFAULT 50000;
+        ADD COLUMN IF NOT EXISTS eway_interstate_threshold NUMERIC(12, 2) NOT NULL DEFAULT 50000;
     """))
     conn.execute(text("""
         ALTER TABLE company_profiles

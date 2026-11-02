@@ -1,9 +1,18 @@
 """
 Create eway_bill_transporters table for saved transporter profiles
 used in E-Way Bill JSON generation.
+
+The table is company-scoped, so it is listed in src/db/rls.py. Applying the
+policy here rather than leaving it to the next boot means the table never exists
+on a shared-hosting database without one, however the migration was run. The
+grants come from ALTER DEFAULT PRIVILEGES (see 20261030000030), and the boot
+check refuses to start if they are missing.
 """
 
 from sqlalchemy import text
+
+from src.core.config import settings
+from src.db.rls import ensure_row_level_security
 
 
 def up(conn) -> None:
@@ -25,6 +34,9 @@ def up(conn) -> None:
         CREATE INDEX IF NOT EXISTS idx_eway_bill_transporters_company
         ON eway_bill_transporters(company_id)
     """))
+
+    if settings.is_shared_hosting:
+        ensure_row_level_security(conn)
 
 
 def down(conn) -> None:

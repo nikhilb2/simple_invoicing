@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Float, Integer, String, Text, text
+from sqlalchemy import Boolean, Column, Integer, Numeric, String, Text, text
 from sqlalchemy.orm import relationship
 
 from src.db.base import Base
@@ -26,10 +26,13 @@ class CompanyProfile(Base):
     # server_default so create_all() emits a DB-level default — raw-SQL data
     # migrations (e.g. the company-scope backfill) INSERT without this column.
     show_sku_on_pdf = Column(Boolean, nullable=False, default=False, server_default=text("false"))
-    eway_enabled = Column(Boolean, nullable=False, default=True)
-    eway_local_threshold = Column(Float, nullable=False, default=100000)
-    eway_interstate_threshold = Column(Float, nullable=False, default=50000)
-    eway_always_show_button = Column(Boolean, nullable=False, default=True)
+    # server_default for the same reason as show_sku_on_pdf above.
+    eway_enabled = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    # Guidance only, never a block. Rule 138(1) CGST Rules sets Rs 50,000; a State
+    # may notify a different intra-state limit, which the company has to check.
+    eway_local_threshold = Column(Numeric(12, 2), nullable=False, default=50000, server_default=text("50000"))
+    eway_interstate_threshold = Column(Numeric(12, 2), nullable=False, default=50000, server_default=text("50000"))
+    eway_always_show_button = Column(Boolean, nullable=False, default=True, server_default=text("true"))
     # Off by default on purpose: switching it on makes printing an invoice mint a
     # publicly reachable share link for it, which is the owner's call to make.
     show_pay_qr_on_invoice = Column(Boolean, nullable=False, default=False, server_default=text("false"))

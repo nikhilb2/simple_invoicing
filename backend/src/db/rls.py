@@ -68,6 +68,7 @@ DIRECT_TABLES: tuple[str, ...] = (
     "credit_note_items",
     "credit_notes",
     "email_logs",
+    "eway_bill_transporters",
     "financial_years",
     "inventory",
     "invoice_series",
