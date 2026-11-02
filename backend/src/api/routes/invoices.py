@@ -24,7 +24,7 @@ from src.models.user import User
 from src.schemas.invoice import DuesAgeingOut, InvoiceCreate, InvoiceOut, PaginatedInvoiceOut
 from src.api.deps import get_active_company, get_current_user
 from src.core.analytics import distinct_id_for, track
-from src.services.financial_year import get_active_fy, get_fy_for_date
+from src.services.financial_year import get_active_fy
 from src.services.invoice_payments import (
     build_invoice_payment_summaries,
     is_offset_by_payables,
@@ -35,7 +35,14 @@ from src.services.pdf_templates import (
     _build_multi_copy_invoice_html,
     _copy_label,
 )
+from src.services.invoice_creation import create_invoice_record
 from src.services.invoice_processor import InvoiceProcessor
+from src.services.quotation import (
+    close_after_invoice_restored,
+    lock_source_quotation,
+    reopen_after_invoice_cancelled,
+    require_restorable,
+)
 from src.services.serial_service import SerialManager
 from src.services.share_documents import (
     RESOURCE_INVOICE,
@@ -96,6 +103,47 @@ def _to_invoice_out(
     return result
 
 
+def build_invoice_out(
+    db: Session,
+    invoice: Invoice,
+    active_company: CompanyProfile,
+    warnings: list[str],
+) -> InvoiceOut:
+    """The response for an invoice that has just been committed."""
+    summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
+    _enrich_items_with_product_names([invoice], db, active_company.id)
+    _enrich_items_with_serials([invoice], db)
+    result = _to_invoice_out(invoice, payment_summary=summary)
+    result.warnings = warnings
+    return result
+
+
+def track_invoice_created(
+    current_user: User,
+    invoice: Invoice,
+    payload: InvoiceCreate,
+    warnings: list[str],
+    *,
+    source: str | None = None,
+) -> None:
+    properties = {
+        "invoice_id": invoice.id,
+        "voucher_type": invoice.voucher_type,
+        "line_item_count": len(payload.items),
+        "total_amount": float(invoice.total_amount or 0),
+        "total_tax_amount": float(invoice.total_tax_amount or 0),
+        "tax_inclusive": payload.tax_inclusive,
+        "has_invoice_discount": bool(payload.discount_value),
+        "serial_line_count": sum(
+            1 for line in payload.items if line.serial_numbers
+        ),
+        "outside_active_fy": "invoice_date_outside_fy" in warnings,
+    }
+    if source is not None:
+        properties["source"] = source
+    track("invoice_created", distinct_id_for(current_user), properties)
+
+
 @router.post("", response_model=InvoiceOut, include_in_schema=False)
 @router.post("/", response_model=InvoiceOut)
 def create_invoice(
@@ -106,46 +154,16 @@ def create_invoice(
 ):
     try:
         active_fy = get_active_fy(db, company_id=active_company.id)
-
-        # Determine which FY this invoice belongs to based on its date.
-        # If the invoice date falls within a different FY, use that FY.
-        fy_for_invoice = active_fy
-        if payload.invoice_date:
-            date_fy = get_fy_for_date(db, payload.invoice_date, company_id=active_company.id)
-            if date_fy is not None:
-                fy_for_invoice = date_fy
-        fy_id = fy_for_invoice.id if fy_for_invoice else None
-
-        invoice = Invoice(
-            total_amount=0,
-            created_by=current_user.id,
-            company_id=active_company.id,
-        )
-        db.add(invoice)
-        db.flush()
-        processor = InvoiceProcessor(db)
-        processor.apply_payload(
-            invoice,
+        invoice, warnings = create_invoice_record(
+            db,
             payload,
-            active_company,
             created_by=current_user.id,
-            financial_year_id=fy_id,
-            active_financial_year_id=active_fy.id if active_fy else None,
+            company=active_company,
+            active_fy=active_fy,
         )
         db.commit()
         db.refresh(invoice)
-
-        warnings: list[str] = []
-        if active_fy and payload.invoice_date:
-            inv_date = payload.invoice_date
-            if not (active_fy.start_date <= inv_date <= active_fy.end_date):
-                warnings.append("invoice_date_outside_fy")
-
-        summary = build_invoice_payment_summaries(db, [invoice]).get(invoice.id)
-        _enrich_items_with_product_names([invoice], db, active_company.id)
-        _enrich_items_with_serials([invoice], db)
-        result = _to_invoice_out(invoice, payment_summary=summary)
-        result.warnings = warnings
+        result = build_invoice_out(db, invoice, active_company, warnings)
     except HTTPException:
         db.rollback()
         raise
@@ -158,23 +176,7 @@ def create_invoice(
     # it: the handler turns any stray exception into a 500, and an invoice that
     # is committed and returned must not be reported as a failure because the
     # analytics host was unreachable.
-    track(
-        "invoice_created",
-        distinct_id_for(current_user),
-        {
-            "invoice_id": invoice.id,
-            "voucher_type": invoice.voucher_type,
-            "line_item_count": len(payload.items),
-            "total_amount": float(invoice.total_amount or 0),
-            "total_tax_amount": float(invoice.total_tax_amount or 0),
-            "tax_inclusive": payload.tax_inclusive,
-            "has_invoice_discount": bool(payload.discount_value),
-            "serial_line_count": sum(
-                1 for line in payload.items if line.serial_numbers
-            ),
-            "outside_active_fy": "invoice_date_outside_fy" in warnings,
-        },
-    )
+    track_invoice_created(current_user, invoice, payload, warnings)
     return result
 
 
@@ -683,6 +685,12 @@ def update_invoice(
             detail="Cancelled invoices cannot be edited. Restore the invoice first.",
         )
 
+    if invoice.source_quotation_id is not None and payload.voucher_type != invoice.voucher_type:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot change the voucher type of an invoice created from a quotation",
+        )
+
     try:
         active_fy = get_active_fy(db, company_id=active_company.id)
 
@@ -849,12 +857,15 @@ def cancel_invoice(
         raise HTTPException(status_code=400, detail="Invoice is already cancelled")
 
     try:
+        # Before any stock moves: conversion takes the quotation row first as well.
+        source_quotation = lock_source_quotation(db, invoice)
         processor = InvoiceProcessor(db)
         # Serials first: cancelling a purchase whose units are already sold is
         # refused, and that message is more useful than a stock shortfall.
         processor.reverse_serials(invoice)
         processor.reverse_inventory(invoice)
         invoice.status = "cancelled"
+        reopen_after_invoice_cancelled(source_quotation)
         db.commit()
         db.refresh(invoice)
     except HTTPException:
@@ -897,10 +908,13 @@ def restore_invoice(
         raise HTTPException(status_code=400, detail="Invoice is not cancelled")
 
     try:
+        source_quotation = lock_source_quotation(db, invoice)
+        require_restorable(db, source_quotation, invoice)
         processor = InvoiceProcessor(db)
         processor.restore_serials(invoice, company_id=active_company.id)
         processor.restore_inventory(invoice, company_id=active_company.id)
         invoice.status = "active"
+        close_after_invoice_restored(source_quotation)
         db.commit()
         db.refresh(invoice)
         return invoice

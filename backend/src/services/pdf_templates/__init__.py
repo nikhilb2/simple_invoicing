@@ -24,6 +24,7 @@ from .invoice_template import (
 )
 from .ledger_template import _build_day_book_html, _build_statement_html
 from .purchase_template import _build_purchase_invoice_html
+from .quotation_template import _build_quotation_html
 
 __all__ = [
     "_amount_in_words_indian",
@@ -38,6 +39,7 @@ __all__ = [
     "_build_pdf_tax_header_cells",
     "_build_pdf_tax_row_cells",
     "_build_purchase_invoice_html",
+    "_build_quotation_html",
     "_build_statement_html",
     "_copy_label",
     "_e",

@@ -420,6 +420,8 @@ def _captions(link: ShareLink) -> tuple[str, str, str]:
         return "Party", "Date", "Amount"
     if link.resource_type == "credit_note":
         return "Issued to", "Date", "Credit"
+    if link.resource_type == "quotation":
+        return "Quoted to", "Date", "Quoted total"
     return "Billed to", "Date", "Total"
 
 

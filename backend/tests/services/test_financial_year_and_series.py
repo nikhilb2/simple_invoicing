@@ -65,7 +65,7 @@ class TestSeedSeriesForFy:
 
         added = [call.args[0] for call in db.add.call_args_list]
         assert [row.voucher_type for row in added] == [
-            "sales", "purchase", "payment", "credit_note", "debit_note",
+            "sales", "purchase", "payment", "credit_note", "debit_note", "quotation", "proforma",
         ]
         assert all(row.financial_year_id == 77 for row in added)
         assert all(row.next_sequence == 1 for row in added)
@@ -85,7 +85,7 @@ class TestSeedSeriesForFy:
             _seed_series_for_fy(db, new_fy_id=88)
 
         added = [call.args[0] for call in db.add.call_args_list]
-        assert len(added) == 5
+        assert len(added) == 7
 
         sales = next(row for row in added if row.voucher_type == "sales")
         assert sales.prefix == "RES"
