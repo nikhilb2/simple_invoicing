@@ -1,12 +1,16 @@
 import os
 import hashlib
 import importlib.util
+import math
 from pathlib import Path
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import text
 
@@ -177,6 +181,32 @@ app = FastAPI(
     ],
     lifespan=lifespan,
 )
+
+
+def _json_safe(value):
+    """Make validation error payloads JSON-serializable.
+
+    Python's JSON decoder accepts NaN/Infinity, and Pydantic may echo them in
+    ``input``. Those values cannot be written as JSON, so the default 422
+    handler crashes with 500. Stringify non-finite floats instead.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={"detail": _json_safe(jsonable_encoder(exc.errors()))},
+    )
 
 
 def get_cors_origins() -> list[str]:
