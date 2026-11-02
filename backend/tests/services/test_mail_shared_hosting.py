@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy.orm import Session
 
 from src.core.config import settings
 from src.models.company import CompanyProfile
@@ -126,6 +127,28 @@ async def test_daily_limit_is_per_company_and_ignores_failures_and_old_mail(db_s
     assert len(relay) == 2
     await send_email(db_session, "c@example.com", "other", "<p/>", company_id=other.id)
     assert len(relay) == 3
+
+
+@pytest.mark.anyio
+async def test_a_send_holds_its_place_in_the_limit_while_it_is_in_flight(db_session, company, relay, monkeypatch):
+    """Parallel requests all wait on SMTP together, so a count of finished sends would
+    let every one of them through."""
+    monkeypatch.setattr(settings, "TENANT_EMAIL_DAILY_LIMIT", 1)
+    seen = []
+
+    def while_sending(_msg):
+        # A separate session, as another request would be: only committed rows count.
+        with Session(db_session.get_bind()) as other_request:
+            seen.append([log.status for log in other_request.query(EmailLog).all()])
+
+    monkeypatch.setattr(platform_mail, "_deliver", while_sending)
+
+    await send_email(db_session, "c@example.com", "1", "<p/>", company_id=company.id)
+
+    assert seen == [["sending"]]
+    assert [log.status for log in _logs(db_session)] == ["sent"]
+    with pytest.raises(RuntimeError, match="Daily email limit"):
+        await send_email(db_session, "c@example.com", "2", "<p/>", company_id=company.id)
 
 
 @pytest.mark.anyio

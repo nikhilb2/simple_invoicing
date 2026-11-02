@@ -212,7 +212,7 @@ export default function EmailHistoryPage() {
                     <span
                       className={`status-chip ${log.status === 'sent' ? 'status-chip--active' : 'status-chip--cancelled'}`}
                     >
-                      {log.status === 'sent' ? 'Sent' : 'Failed'}
+                      {log.status === 'sent' ? 'Sent' : log.status === 'sending' ? 'Sending' : 'Failed'}
                     </span>
                     {log.error_message && (
                       <span className="table-subtext">tap to {expandedError === log.id ? 'hide' : 'show'} error</span>

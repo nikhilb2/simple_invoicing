@@ -7,7 +7,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from email.utils import formataddr
 from email_validator import EmailNotValidError, validate_email
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from src.core.config import settings
 from src.models.company import CompanyProfile
@@ -16,6 +16,10 @@ from src.models.email_log import EmailLog
 from src.services import platform_mail
 
 logger = logging.getLogger(__name__)
+
+_STATUS_SENDING = "sending"
+# First half of the advisory lock key, so these locks cannot collide with another use.
+_DAILY_LIMIT_LOCK_NAMESPACE = 7311
 
 def _get_active_smtp_config(db: Session) -> SMTPConfig:
     """Fetches and returns the active SMTP configuration from the database."""
@@ -83,27 +87,40 @@ def _send_sync(config: SMTPConfig, msg: MIMEMultipart) -> None:
         logger.exception("Failed to send email via SMTP %s", config.host)
         raise
 
-def _check_daily_limit(db: Session, company_id: int) -> None:
-    """Refuse once a company has used its share of the host's sending allowance.
+def _reserve_daily_send(db: Session, company_id: int, log_entry: EmailLog) -> None:
+    """Claim one of a company's emails for today, or refuse if they are used up.
 
-    Counted from email_logs rather than in memory so it holds across replicas and
-    restarts. Only delivered mail counts: a failed send cost nobody anything.
+    The claim is the log row itself, committed before anything is sent. Counting only
+    finished sends would let parallel requests all pass while each waits on SMTP. The
+    lock makes the count and the claim one step, and is released by the commit, so it
+    is never held across the send. Counted from email_logs rather than in memory so it
+    holds across replicas and restarts. A failed send stops counting; a process that
+    dies mid-send leaves its claim for 24 hours, which errs on the safe side.
     """
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(:namespace, :company)"),
+            {"namespace": _DAILY_LIMIT_LOCK_NAMESPACE, "company": company_id},
+        )
     since = datetime.now(timezone.utc) - timedelta(days=1)
-    sent = (
+    used = (
         db.query(func.count(EmailLog.id))
         .filter(
             EmailLog.company_id == company_id,
-            EmailLog.status == "sent",
+            EmailLog.status.in_(("sent", _STATUS_SENDING)),
             EmailLog.sent_at >= since,
         )
         .scalar()
     )
-    if sent >= settings.TENANT_EMAIL_DAILY_LIMIT:
+    if used >= settings.TENANT_EMAIL_DAILY_LIMIT:
+        db.rollback()
         raise RuntimeError(
             f"Daily email limit reached ({settings.TENANT_EMAIL_DAILY_LIMIT} per 24 hours). "
             "Please try again later."
         )
+    log_entry.status = _STATUS_SENDING
+    db.add(log_entry)
+    db.commit()
 
 
 def _build_platform_message(
@@ -134,8 +151,6 @@ def _build_platform_message(
             validate_email(address, check_deliverability=False)
         except EmailNotValidError as exc:
             raise RuntimeError(f"{address} is not a valid email address.") from exc
-
-    _check_daily_limit(db, company.id)
 
     company_name = " ".join((company.name or "").split())
     platform_name = settings.PLATFORM_SMTP_FROM_NAME
@@ -192,8 +207,21 @@ async def send_email(
     the caller is the platform's own job and asks for use_smtp_config: the backup mail
     is the whole database, which has no business passing through a third-party relay.
     """
+    log_entry = EmailLog(
+        company_id=company_id,
+        to_email=to,
+        cc=", ".join(cc) if cc else None,
+        subject=subject,
+        email_type=email_type,
+        reference_id=reference_id,
+        sent_by_user_id=sent_by_user_id,
+    )
+    reserved = False
+
     if settings.is_shared_hosting and not use_smtp_config:
         msg = _build_platform_message(db, to, subject, html_body, attachments, cc, company_id)
+        _reserve_daily_send(db, company_id, log_entry)
+        reserved = True
         deliver_args = (_deliver_platform, msg)
     else:
         config = _get_active_smtp_config(db)
@@ -220,18 +248,10 @@ async def send_email(
         error_message = str(exc)
 
     try:
-        log_entry = EmailLog(
-            company_id=company_id,
-            to_email=to,
-            cc=", ".join(cc) if cc else None,
-            subject=subject,
-            email_type=email_type,
-            reference_id=reference_id,
-            status=status,
-            error_message=error_message,
-            sent_by_user_id=sent_by_user_id,
-        )
-        db.add(log_entry)
+        log_entry.status = status
+        log_entry.error_message = error_message
+        if not reserved:
+            db.add(log_entry)
         db.commit()
     except Exception:
         logger.warning("Failed to write email log entry", exc_info=True)

@@ -109,7 +109,7 @@ def generate_next_number(
             )
         )
         if company_id is not None:
-            fallback_query = fallback_query.filter(company_scope(InvoiceSeries.company_id, company_id))
+            fallback_query = fallback_query.filter(InvoiceSeries.company_id == company_id)
         series = fallback_query.with_for_update().first()
 
     if not series:

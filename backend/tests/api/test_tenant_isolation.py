@@ -822,3 +822,35 @@ def test_single_tenant_user_without_membership_gets_the_first_company(client, db
     act_as(user)
     assert _ok(client.get("/api/company/"))["id"] == company.id
     assert [c["id"] for c in _ok(client.get("/api/company/companies"))] == [company.id]
+
+
+# ---------------------------------------------------------------------------
+# MCP admin scope follows the role in the company granted
+# ---------------------------------------------------------------------------
+
+def test_oauth_admin_scope_follows_the_membership_role(db_session, tenants):
+    from src.api.routes.oauth import _filter_scopes_to_user
+    from src.services.oauth.tokens import SCOPE_ADMIN
+
+    gamma = CompanyProfile(name="Gamma Works", address="", gst="", phone_number="")
+    db_session.add(gamma)
+    db_session.commit()
+    add_membership(db_session, tenants.user_a, gamma, UserRole.staff)
+    db_session.commit()
+    requested = ["invoicing:read", SCOPE_ADMIN]
+
+    # Global staff, but admin of the company they created.
+    assert tenants.user_a.role == UserRole.staff
+    assert SCOPE_ADMIN in _filter_scopes_to_user(db_session, requested, tenants.user_a, tenants.company_a)
+    # Only staff here, so the grant for this company must not carry it.
+    assert SCOPE_ADMIN not in _filter_scopes_to_user(db_session, requested, tenants.user_a, gamma.id)
+    # And nothing at all in a company they are not part of.
+    assert SCOPE_ADMIN not in _filter_scopes_to_user(db_session, requested, tenants.user_a, tenants.company_b)
+    # The consent screen, before a company is picked: admin somewhere is enough to offer it.
+    assert SCOPE_ADMIN in _filter_scopes_to_user(db_session, requested, tenants.user_a)
+    assert SCOPE_ADMIN not in _filter_scopes_to_user(db_session, requested, tenants.user_c)
+
+    # A global admin gains nothing where their membership is only staff.
+    tenants.user_a.role = UserRole.admin
+    db_session.commit()
+    assert SCOPE_ADMIN not in _filter_scopes_to_user(db_session, requested, tenants.user_a, gamma.id)

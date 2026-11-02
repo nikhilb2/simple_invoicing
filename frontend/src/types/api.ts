@@ -775,6 +775,9 @@ export type ChangePasswordRequest = {
 
 export type ChangePasswordResponse = {
   detail: string;
+  access_token?: string | null;
+  refresh_token?: string | null;
+  token_type?: string | null;
 };
 
 export type SmtpConfig = {

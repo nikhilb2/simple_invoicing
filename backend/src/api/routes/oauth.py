@@ -46,7 +46,8 @@ from src.schemas.oauth import (
     RevokeGrantResponse,
     ScopeDescription,
 )
-from src.services.company_access import accessible_company_ids, can_access_company
+from src.models.company_membership import CompanyMembership
+from src.services.company_access import accessible_company_ids, can_access_company, company_role
 from src.services.oauth.clients import (
     RegistrationError,
     authenticate_client,
@@ -124,13 +125,26 @@ def _is_expired(value: datetime | None) -> bool:
     return moment is None or moment <= now_utc()
 
 
-def _user_role_value(user: User) -> str:
-    return user.role.value if hasattr(user.role, "value") else str(user.role)
+def _filter_scopes_to_user(
+    db: Session, scopes: list[str], user: User, company_id: int | None = None
+) -> list[str]:
+    """Scope never escalates past the consenting user's role in the company granted.
 
-
-def _filter_scopes_to_user(scopes: list[str], user: User) -> list[str]:
-    """Scope never escalates past the consenting user's own role."""
-    if _user_role_value(user) != UserRole.admin.value:
+    With no company yet (the consent screen, before one is picked) it is enough to be
+    an admin somewhere; the decision re-checks against the company actually chosen.
+    """
+    if company_id is not None:
+        is_admin = company_role(db, user, company_id) == UserRole.admin
+    elif settings.is_shared_hosting:
+        is_admin = (
+            db.query(CompanyMembership.id)
+            .filter(CompanyMembership.user_id == user.id, CompanyMembership.role == UserRole.admin)
+            .first()
+            is not None
+        )
+    else:
+        is_admin = user.role == UserRole.admin
+    if not is_admin:
         return [scope for scope in scopes if scope != SCOPE_ADMIN]
     return list(scopes)
 
@@ -331,7 +345,7 @@ def get_authorize_request(
     if client is None:
         return _oauth_error("invalid_client", "Unknown client", 404)
 
-    granted = _filter_scopes_to_user(parse_scope(auth_request.scope), current_user)
+    granted = _filter_scopes_to_user(db, parse_scope(auth_request.scope), current_user)
     # Only the companies this user can reach: the grant is bound to the one
     # they pick, and listing the rest would leak other tenants' names.
     company_query = db.query(CompanyProfile)
@@ -412,7 +426,7 @@ def authorize_decision(
     if company is None:
         return _oauth_error("invalid_request", "A valid company_id is required to approve", 400)
 
-    granted_scopes = _filter_scopes_to_user(parse_scope(auth_request.scope), current_user)
+    granted_scopes = _filter_scopes_to_user(db, parse_scope(auth_request.scope), current_user, company.id)
 
     raw_code = secrets.token_urlsafe(32)
     code_row = OAuthAuthorizationCode(

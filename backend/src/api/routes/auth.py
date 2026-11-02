@@ -515,10 +515,16 @@ def change_password(
             raise HTTPException(status_code=400, detail="New password must be different from current password")
 
     user.hashed_password = get_password_hash(payload.new_password)
+    # Someone changing their password may well suspect it is known, so a session held
+    # elsewhere must not keep refreshing, the same as after a reset.
+    user.sessions_valid_after = _now()
     db.add(user)
     db.commit()
 
-    return {"detail": "Password updated successfully"}
+    response = {"detail": "Password updated successfully"}
+    if _signed_in_interactively(request):
+        response.update(_issue_tokens(user))
+    return response
 
 
 # ---------------------------------------------------------------------------

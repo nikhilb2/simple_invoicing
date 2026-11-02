@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchMe } from '../api/auth';
 import api, { getApiErrorMessage } from '../api/client';
+import { useAuthStore } from '../store/useAuthStore';
 import StatusToasts from '../components/StatusToasts';
 import type { ChangePasswordRequest, ChangePasswordResponse } from '../types/api';
 
@@ -77,6 +78,11 @@ export default function ChangePasswordPage() {
       setSubmitting(true);
       setError(undefined);
       const response = await api.post<ChangePasswordResponse>('/auth/change-password', payload);
+      // The change ended every session, this one included; stay signed in on the new pair.
+      const { access_token, refresh_token, token_type } = response.data;
+      if (access_token && refresh_token) {
+        await useAuthStore.getState().setSession({ access_token, refresh_token, token_type: token_type ?? 'bearer' });
+      }
       setSuccess(response.data.detail || (hasPassword ? 'Password updated successfully' : 'Password set successfully'));
       await queryClient.invalidateQueries({ queryKey: ['auth-me'] });
       setCurrentPassword('');

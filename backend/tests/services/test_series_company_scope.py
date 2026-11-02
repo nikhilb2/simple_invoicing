@@ -96,3 +96,52 @@ def test_series_less_fallback_numbers_per_company(db_session, mode):
 
     assert generate_next_number(db_session, "sales", company_id=company_a.id) == "INV-000000"
     assert generate_next_number(db_session, "sales", company_id=company_b.id) == "INV-000001"
+
+
+def test_a_company_never_draws_from_a_legacy_shared_series(db_session, mode):
+    """Two companies drawing on one counter is what per-company numbering rules out."""
+    company = CompanyProfile(name="No Series Co", address="")
+    db_session.add(company)
+    db_session.flush()
+    legacy = InvoiceSeries(
+        company_id=None,
+        voucher_type="sales",
+        financial_year_id=None,
+        prefix="SHARED",
+        suffix="",
+        include_year=False,
+        year_format="YYYY",
+        separator="-",
+        next_sequence=7,
+        pad_digits=3,
+    )
+    db_session.add(legacy)
+    db_session.commit()
+
+    number = generate_next_number(db_session, "sales", None, company_id=company.id)
+
+    assert not number.startswith("SHARED")
+    db_session.refresh(legacy)
+    assert legacy.next_sequence == 7
+
+
+def test_a_company_uses_its_own_undated_series(db_session, mode):
+    company = CompanyProfile(name="Own Series Co", address="")
+    db_session.add(company)
+    db_session.flush()
+    for owner, prefix in ((None, "SHARED"), (company.id, "OWN")):
+        db_session.add(InvoiceSeries(
+            company_id=owner,
+            voucher_type="sales",
+            financial_year_id=None,
+            prefix=prefix,
+            suffix="",
+            include_year=False,
+            year_format="YYYY",
+            separator="-",
+            next_sequence=1,
+            pad_digits=3,
+        ))
+    db_session.commit()
+
+    assert generate_next_number(db_session, "sales", None, company_id=company.id) == "OWN-001"

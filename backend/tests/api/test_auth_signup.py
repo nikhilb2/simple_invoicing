@@ -839,3 +839,27 @@ def test_oauth_exchange_is_rate_limited_per_ip(client, frozen_clock):
 
     assert statuses[:20] == [400] * 20
     assert statuses[20] == 429
+
+
+def test_changing_a_password_ends_other_sessions_and_keeps_this_one(client, db_session, real_auth):
+    import time as _time
+
+    _user(db_session, email="owner@example.com", password="OldPass@123")
+    login = {"email": "owner@example.com", "password": "OldPass@123"}
+    elsewhere = client.post("/api/auth/login", json=login).json()
+    here = client.post("/api/auth/login", json=login).json()
+    # Tokens carry whole-second iat; step past the second they were issued in.
+    _time.sleep(1.1)
+
+    response = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "OldPass@123", "new_password": "NewPass@456"},
+        headers={"Authorization": f"Bearer {here['access_token']}"},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert client.post("/api/auth/refresh", json={"refresh_token": elsewhere["refresh_token"]}).status_code == 401
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {elsewhere['access_token']}"}).status_code == 401
+    assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {body['access_token']}"}).status_code == 200
+    assert client.post("/api/auth/refresh", json={"refresh_token": body["refresh_token"]}).status_code == 200

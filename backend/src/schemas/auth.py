@@ -26,6 +26,11 @@ class ChangePasswordRequest(BaseModel):
 
 class ChangePasswordResponse(BaseModel):
     detail: str
+    # Changing the password ends every session, so the browser that did it gets a new
+    # pair to stay signed in. Absent for a caller that is not a signed-in browser.
+    access_token: str | None = None
+    refresh_token: str | None = None
+    token_type: str | None = None
 
 
 class DetailResponse(BaseModel):
