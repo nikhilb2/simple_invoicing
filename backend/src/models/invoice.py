@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, ForeignKey, DateTime, Numeric, String, Text
+from sqlalchemy import Boolean, Column, Integer, ForeignKey, DateTime, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.db.base import Base
@@ -6,9 +6,15 @@ from src.db.base import Base
 
 class Invoice(Base):
     __tablename__ = "invoices"
+    # Numbers are unique per company, not per database: every company's series
+    # starts at -001, and a global constraint would make one tenant's numbers
+    # collide with (and reveal the volume of) another's.
+    __table_args__ = (
+        UniqueConstraint("company_id", "invoice_number", name="uq_invoices_company_invoice_number"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    invoice_number = Column(String, nullable=True, unique=True, index=True)
+    invoice_number = Column(String, nullable=True, index=True)
     company_id = Column(Integer, ForeignKey("company_profiles.id"), nullable=True, index=True)
     ledger_id = Column("buyer_id", Integer, ForeignKey("buyers.id"), nullable=True)
     ledger_name = Column("buyer_name", String, nullable=True)

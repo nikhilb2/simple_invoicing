@@ -16,6 +16,7 @@ from src.models.user import User
 from src.schemas.credit_note import CreditNoteCreate, CreditNoteOut, PaginatedCreditNoteOut
 from src.services.credit_note import cancel_credit_note, create_credit_note
 from src.services.share_documents import render_credit_note_pdf
+from src.services.company_access import company_scope
 
 router = APIRouter()
 
@@ -80,7 +81,7 @@ def list_credit_notes(
         )
     )
     if company_id is not None:
-        q = q.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
+        q = q.filter(company_scope(CreditNote.company_id, company_id))
 
     if ledger_id is not None:
         q = q.filter(CreditNote.ledger_id == ledger_id)
@@ -143,7 +144,7 @@ def get_credit_note(
     company_id = getattr(active_company, "id", None)
     filters = [CreditNote.id == cn_id]
     if company_id is not None:
-        filters.append(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
+        filters.append(company_scope(CreditNote.company_id, company_id))
     cn = (
         db.query(CreditNote)
         .options(
@@ -172,7 +173,7 @@ def download_credit_note_pdf(
     cn = (
         db.query(CreditNote)
         .filter(CreditNote.id == cn_id)
-        .filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
+        .filter(company_scope(CreditNote.company_id, company_id))
         .first()
     )
     if not cn:

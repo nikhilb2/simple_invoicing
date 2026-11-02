@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from src.api.deps import get_current_user, require_roles
+from src.api.deps import get_current_user, require_company_role
 from src.db.session import get_db
 from src.models.company import CompanyProfile
 from src.models.company_account import CompanyAccount
@@ -19,7 +19,7 @@ router = APIRouter()
 def create_company_account(
     payload: CompanyAccountCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     account = CompanyAccount(
@@ -81,7 +81,7 @@ def update_company_account(
     account_id: int,
     payload: CompanyAccountUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     account = db.query(CompanyAccount).filter(
@@ -127,7 +127,7 @@ def update_company_account(
 def deactivate_company_account(
     account_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     account = db.query(CompanyAccount).filter(

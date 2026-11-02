@@ -741,15 +741,43 @@ export type UserProfile = {
   full_name: string;
   role: 'admin' | 'manager' | 'staff';
   active_company_id: number | null;
+  has_password: boolean;
+  email_verified: boolean;
+  /** Role in the active company; `role` is the global one. */
+  company_role?: 'admin' | 'manager' | 'staff' | null;
+  can_manage_platform?: boolean;
+};
+
+export type AuthProvider = {
+  id: string;
+  name: string;
+};
+
+export type AuthConfig = {
+  password_signup_enabled: boolean;
+  password_reset_enabled: boolean;
+  providers: AuthProvider[];
+};
+
+export type RegisterRequest = {
+  email: string;
+  full_name: string;
+};
+
+export type DetailResponse = {
+  detail: string;
 };
 
 export type ChangePasswordRequest = {
-  current_password: string;
+  current_password?: string;
   new_password: string;
 };
 
 export type ChangePasswordResponse = {
   detail: string;
+  access_token?: string | null;
+  refresh_token?: string | null;
+  token_type?: string | null;
 };
 
 export type SmtpConfig = {

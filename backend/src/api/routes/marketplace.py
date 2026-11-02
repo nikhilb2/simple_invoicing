@@ -10,10 +10,9 @@ from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from src.api.deps import get_active_company, get_current_user, require_roles
+from src.api.deps import get_active_company, get_current_user, require_company_role, require_platform_admin
 from src.core.analytics import distinct_id_for, track
 from src.core.validation import normalize_gstin
 from src.db.session import get_db
@@ -57,6 +56,7 @@ from src.services.marketplace.client import (
     build_client,
     client_for_connection,
 )
+from src.services.company_access import company_scope
 
 router = APIRouter()
 
@@ -110,7 +110,7 @@ def get_connection(
 @router.get("/connection/meta", response_model=MarketplaceMetaOut)
 def get_marketplace_meta(
     base_url: str = Query(...),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_company_role(UserRole.admin)),
     __: CompanyProfile = Depends(get_active_company),
 ):
     """Validate a pasted base URL before attempting registration."""
@@ -125,7 +125,7 @@ def get_marketplace_meta(
 def register_connection(
     payload: ConnectionRegisterIn,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin)),
+    current_user: User = Depends(require_company_role(UserRole.admin)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Register this company with a marketplace as a seller.
@@ -192,7 +192,7 @@ def register_connection(
 def update_connection(
     payload: ConnectionUpdateIn,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_company_role(UserRole.admin)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     connection = _require_connection(db, active_company.id)
@@ -212,7 +212,7 @@ def update_connection(
 @router.delete("/connection", response_model=dict)
 def delete_connection(
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_company_role(UserRole.admin)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     connection = _require_connection(db, active_company.id)
@@ -232,7 +232,7 @@ def delete_connection(
 @router.post("/connection/rotate-key", response_model=ConnectionOut)
 def rotate_key(
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_company_role(UserRole.admin)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     connection = _require_connection(db, active_company.id)
@@ -332,7 +332,7 @@ def list_listings(
 def create_listing(
     payload: ListingCreateIn,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MUTATOR_ROLES)),
+    current_user: User = Depends(require_company_role(*_MUTATOR_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     connection = _require_connection(db, active_company.id)
@@ -340,7 +340,7 @@ def create_listing(
         db.query(Product)
         .filter(
             Product.id == payload.product_id,
-            or_(Product.company_id == active_company.id, Product.company_id.is_(None)),
+            company_scope(Product.company_id, active_company.id),
         )
         .first()
     )
@@ -393,7 +393,7 @@ def patch_listing(
     listing_id: int,
     payload: ListingUpdateIn,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(*_MUTATOR_ROLES)),
+    _: User = Depends(require_company_role(*_MUTATOR_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     connection = _require_connection(db, active_company.id)
@@ -421,7 +421,7 @@ def patch_listing(
 def delete_listing(
     listing_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(*_MUTATOR_ROLES)),
+    _: User = Depends(require_company_role(*_MUTATOR_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     connection = _require_connection(db, active_company.id)
@@ -519,7 +519,7 @@ def get_order(
 def create_order(
     payload: OrderCreateIn,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MUTATOR_ROLES)),
+    current_user: User = Depends(require_company_role(*_MUTATOR_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Buy now. The response is mirrored locally straight away — the divergence
@@ -568,7 +568,7 @@ def _load_order(db: Session, company_id: int, order_id: int) -> MarketplaceOrder
 def accept_order(
     order_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MUTATOR_ROLES)),
+    current_user: User = Depends(require_company_role(*_MUTATOR_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     connection = _require_connection(db, active_company.id)
@@ -605,7 +605,7 @@ def reject_order(
     order_id: int,
     payload: OrderRejectIn,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MUTATOR_ROLES)),
+    current_user: User = Depends(require_company_role(*_MUTATOR_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     connection = _require_connection(db, active_company.id)
@@ -642,7 +642,7 @@ def reject_order(
 def cancel_order(
     order_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(*_MUTATOR_ROLES)),
+    _: User = Depends(require_company_role(*_MUTATOR_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     connection = _require_connection(db, active_company.id)
@@ -666,7 +666,7 @@ def cancel_order(
 def retry_posting(
     order_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(*_MUTATOR_ROLES)),
+    _: User = Depends(require_company_role(*_MUTATOR_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """The manual Retry behind a `failed` posting — and the only way to post at
@@ -690,7 +690,7 @@ def link_product(
     order_id: int,
     payload: OrderLinkProductIn,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(*_MUTATOR_ROLES)),
+    _: User = Depends(require_company_role(*_MUTATOR_ROLES)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Remap a remote listing onto an existing local product.
@@ -702,7 +702,7 @@ def link_product(
         db.query(Product)
         .filter(
             Product.id == payload.product_id,
-            or_(Product.company_id == active_company.id, Product.company_id.is_(None)),
+            company_scope(Product.company_id, active_company.id),
         )
         .first()
     )
@@ -755,7 +755,9 @@ def sync_now(
 @router.post("/sync-all", response_model=SyncAllResultOut)
 def sync_all(
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    # Drains every tenant's connection, so in shared hosting it is the
+    # platform's job, not any one company's.
+    _: User = Depends(require_platform_admin()),
 ):
     """Drain every connected company. Authenticated with the ordinary `si_` API
     key scheme so a crontab or CronJob can call it — the only path that works

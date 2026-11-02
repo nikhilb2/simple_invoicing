@@ -340,8 +340,8 @@ def _issue_credit_note(client, headers, buyer_id, invoice) -> tuple[int, str | N
     return response.status_code, number
 
 
-def test_a_second_company_skips_the_number_the_first_used(client, db_session):
-    """Company B's first note takes the next free number, not a 500."""
+def test_a_second_company_numbers_its_notes_independently(client, db_session):
+    """Company B's first note starts its own sequence: no 500 and no gap."""
     from src.models.global_settings import GlobalSettings
 
     db_session.add(GlobalSettings(id=1, max_companies=10))
@@ -357,7 +357,7 @@ def test_a_second_company_skips_the_number_the_first_used(client, db_session):
 
         beta_status, beta_number = _issue_credit_note(client, beta_headers, beta_buyer, beta_invoice)
         assert beta_status == 201, beta_number
-        assert beta_number == f"CN-{_this_year()}-002"
+        assert beta_number == f"CN-{_this_year()}-001"
 
 
 def test_a_number_already_in_the_registry_is_skipped(client, db_session):

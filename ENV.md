@@ -311,7 +311,7 @@ Claude, ChatGPT and other MCP clients connect to this instance.
 | Variable | Development | Production | Purpose | Required |
 |----------|-------------|-----------|---------|----------|
 | `PUBLIC_API_BASE_URL` | `http://localhost:8000` | `https://<your-host>` | Public origin of this API. Doubles as the **OAuth issuer** and the base of the canonical MCP resource URI (`<base>/mcp`). | ✓ when MCP enabled |
-| `PUBLIC_APP_BASE_URL` | `http://localhost:5173` | `https://<your-host>` | Public origin of the web app. Used for the OAuth consent redirect and for `search`/`fetch` citation links. | ✓ when MCP enabled |
+| `PUBLIC_APP_BASE_URL` | `http://localhost:5173` | `https://<your-host>` | Public origin of the web app. Used for the OAuth consent redirect and for `search`/`fetch` citation links — and for the links in verification and reset mail and the Google sign-in redirect URI (see *Deployment Mode / Public Signup Variables*). | ✓ when MCP, signup or Google sign-in is enabled |
 | `MCP_ENABLED` | `true` | `true` | Mounts the `/mcp` endpoint and the OAuth discovery documents. | |
 | `MCP_WRITE_ENABLED` | `false` | `false` | **Kill switch.** With this off, write tools are neither listed nor callable — even for a token that was granted `invoicing:write`. Turn it on deliberately. | |
 | `MCP_DEFAULT_PROFILE` | `core` | `core` | `core` exposes a curated tool set; `all` exposes every generated tool. Clients can also request a profile in the connector URL. | |
@@ -375,6 +375,151 @@ origin.** It defaults to `http://localhost:5173` and several tenants never set i
 trusting it blindly would paste a localhost URL into a customer's chat. When it is not an
 https origin the backend derives the origin from the request the owner's own browser made
 (`X-Forwarded-Proto` and `Host`).
+
+### Deployment Mode / Public Signup Variables
+
+These turn a deployment into the shared, public instance where people register
+themselves. **Every variable here has a default**, and the defaults are exactly the
+per-customer behaviour from before this feature existed: an existing deployment takes an
+image with it and changes nothing.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DEPLOYMENT_MODE` | `single_tenant` | `single_tenant`: every user reaches every company with their global role, as always. `shared_hosting`: a user reaches only the companies they are a member of, the membership role is what counts, and public signup becomes possible. Any other value refuses to boot. |
+| `MIGRATION_DATABASE_URL` | *(blank)* | The **owner** DSN. Used, in either mode, for everything that must not be filtered by row-level security: `create_all` and the migrations on boot (and `migrate.py`, `reset_db.py`, `seed_admin.py`), `pg_dump` and restore on the Backups page and the nightly backup, and the backup email in shared hosting. Shared hosting's `DATABASE_URL` is a non-owner role so that row-level security applies to it, and that role cannot create tables. Blank means `DATABASE_URL` does all of it, as every single-tenant deployment always has. See *Row-level security* below. |
+| `RLS_BOOT_CHECK` | `true` | Shared hosting only. Refuse to boot when the `DATABASE_URL` role would not be constrained by row-level security (see below). Set `false` **only** to run shared hosting locally against a superuser; never in a deployment. |
+| `PLATFORM_SMTP_HOST` | *(blank)* | Mail relay for address verification and password reset and, on shared hosting, all tenant mail too (invoices, statements, reminders). Any SMTP relay works, e.g. Brevo's `smtp-relay.brevo.com`. Separate from the per-company SMTP settings in **Settings → SMTP**. **Blank disables email/password signup** (see below). |
+| `PLATFORM_SMTP_PORT` | `587` | Port on `PLATFORM_SMTP_HOST`. |
+| `PLATFORM_SMTP_USERNAME` | *(blank)* | SMTP login. |
+| `PLATFORM_SMTP_PASSWORD` | *(blank)* | SMTP password. Keep it in the secret, not the env file in git. |
+| `PLATFORM_SMTP_FROM_EMAIL` | *(blank)* | `From` address on verification and reset mail. |
+| `PLATFORM_SMTP_FROM_NAME` | `Simple Invoicing` | Display name beside it. |
+| `PLATFORM_SMTP_USE_STARTTLS` | `true` | Upgrade the connection with STARTTLS. |
+| `TENANT_EMAIL_DAILY_LIMIT` | `50` | Emails one company may send in 24 hours on shared hosting. Every tenant spends the same relay allowance and sender reputation, so size it to your plan. |
+| `OAUTH_GOOGLE_CLIENT_ID` | *(blank)* | "Continue with Google". The provider is offered only when both the id and the secret are set. See *Setting up the Google OAuth client* below. |
+| `OAUTH_GOOGLE_CLIENT_SECRET` | *(blank)* | Secret for the client above. |
+| `MAX_COMPANIES_PER_USER` | `3` | Shared hosting only: how many companies one user may create. Single-tenant deployments keep the global company limit. |
+
+**What is on in which mode:**
+
+- **Email/password signup** needs `DEPLOYMENT_MODE=shared_hosting` **and**
+  `PLATFORM_SMTP_HOST`. Registering people who can never receive their verification mail is
+  worse than not registering them, so with shared hosting and no host the API still boots,
+  keeps signup off, and logs a `Signup disabled` warning on startup. Existing users can
+  still sign in.
+- **Google sign-in** for users who already exist works in either mode once both
+  `OAUTH_GOOGLE_*` values are set.
+- **Google signup** of new users needs shared hosting plus both `OAUTH_GOOGLE_*` values.
+  Google proves the address itself, so it does not need platform SMTP.
+
+**Password reset** (`Forgot password?`) needs only `PLATFORM_SMTP_HOST`, in either mode.
+
+**Email on shared hosting.** Tenants never enter SMTP details. Their mail goes through
+`PLATFORM_SMTP_*`, sent from `PLATFORM_SMTP_FROM_EMAIL` as `<Company> via
+<PLATFORM_SMTP_FROM_NAME>`, with replies going to the email on the company page. The SMTP
+settings page, which only platform admins can reach, then governs just one thing: the
+automatic backup email. That stays off the relay on purpose, because it carries the whole
+database, and it is skipped if no SMTP config is active. Self-hosted deployments are
+unaffected: tenant mail keeps using their own SMTP settings.
+
+With Brevo: host `smtp-relay.brevo.com`, port `587`, username your Brevo SMTP login, and
+password an **SMTP key** from **SMTP & API → SMTP** (an API key will not work). Authenticate
+your domain in Brevo (SPF and DKIM), and set `PLATFORM_SMTP_FROM_EMAIL` to a sender on it:
+the relay rejects any other `From`, and the SMTP login is not a sending address.
+`GET /api/auth/config` reports what is on (`password_signup_enabled`,
+`password_reset_enabled`, and the enabled `providers`), and the login page shows its links and
+buttons from that.
+
+#### Row-level security (shared hosting)
+
+In shared hosting every tenant's rows are in one database, so on top of the application's
+own company checks, Postgres row-level security (RLS) keeps each request inside one company:
+
+- On boot, as the `MIGRATION_DATABASE_URL` owner, the API enables RLS with a
+  `si_tenant_isolation` policy on every business table with a `company_id` (invoices, ledgers,
+  products, inventory, payments, credit notes, financial years, series, share links, API keys,
+  marketplace tables, …) and on their child tables (`invoice_items`, `credit_note_items`,
+  `credit_note_invoice_refs`, `payment_invoice_allocations`, `marketplace_order_items`). The
+  exact list, and why `users`, `company_memberships`, `company_profiles`, the OAuth tables,
+  `global_settings`, `smtp_configs`, `user_shortcuts` and `_migrations` are deliberately left
+  out, is in `backend/src/db/rls.py`. It is idempotent and a no-op on an up-to-date database.
+  Single-tenant databases never get RLS enabled, and RLS is never `FORCE`d, so the owner
+  always sees every row.
+- Each request sets the company it acts for as the transaction-local setting
+  `app.company_id` (and `app.user_id`), re-applied at the start of every transaction, so a
+  commit mid-request keeps it and a pooled connection never carries it into another request.
+  With no company set, a protected table returns no rows and refuses every write.
+- **Boot check.** The API then connects as `DATABASE_URL` and **refuses to start** with
+  `Refusing to start in shared_hosting: …` if that role is a superuser, has `BYPASSRLS`, owns
+  (or is a member of the owner of) any protected table, lacks
+  `SELECT/INSERT/UPDATE/DELETE` on a table or `USAGE` on a sequence, or if RLS is off on a
+  protected table. Each of those either silently disables every policy or breaks the app. On
+  success it logs `✓ Row-level security enforced for database role '<role>'`.
+- **Grants.** Nothing in the code grants privileges. Tables and sequences that migrations
+  create later reach the app role only through `ALTER DEFAULT PRIVILEGES FOR ROLE <owner>`,
+  set up once as the si-common deployment README describes. A restore (Backups page) runs as
+  the owner and recreates the tables, so it relies on the same default privileges. It also
+  first ends every other database session, which belong to the app role: unless the owner is
+  a superuser it needs `GRANT pg_signal_backend TO <owner>` (or membership of the app role).
+- **Cross-company jobs.** `pg_dump`, restore and the backup email use the owner. Marketplace
+  `sync-all` stays on the app role and acts as each company in turn.
+
+#### `PUBLIC_APP_BASE_URL` and sign-in
+
+Every link in verification and reset mail (`<PUBLIC_APP_BASE_URL>/verify-email?token=…`,
+`/reset-password?token=…`) and both ends of Google sign-in are built from
+`PUBLIC_APP_BASE_URL`, so on a deployment that uses either it must be the exact public origin
+of the web app — scheme, host and any port, no trailing path. Its default,
+`http://localhost:5173`, is wrong for anyone not on that port: set it to
+`http://localhost:5174` in your local `backend/.env.development` if that is where Vite runs.
+
+The OAuth redirect URI is on the **web app's** origin, not the API's:
+`<PUBLIC_APP_BASE_URL>/api/auth/oauth/google/callback`. `/api` is same-origin with the app
+everywhere — the Vite dev proxy forwards `^/api/` to the backend, and the ingress routes `/api`
+to it in production — and that matters: the OAuth state lives in a `SameSite=Lax` cookie
+(`si_oauth_state`, signed with a key derived from `SECRET_KEY`, 10 minutes, `Secure` when
+`ENVIRONMENT=production`) set on the way out, and it only comes back if the callback is on the
+same site. A redirect URI on another origin fails every sign-in with `?error=oauth_failed`.
+The same cookie also binds the one-time code the callback hands the SPA to the browser that
+signed in, so the SPA must call the API on its own origin (`VITE_API_BASE_URL=/api`, the
+default) for `POST /api/auth/oauth/exchange` to carry it.
+
+#### Setting up the Google OAuth client
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), pick or create a project.
+2. **APIs & Services → OAuth consent screen**: user type *External*, fill in the app name,
+   support email and the app's domain, and add the scopes `openid`, `.../auth/userinfo.email`
+   and `.../auth/userinfo.profile` (no sensitive scopes are used, so no verification review).
+   Publish the app when you are ready for anyone to sign in; while it is in *Testing* only the
+   listed test users can.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**, application type
+   *Web application*.
+4. **Authorised redirect URIs** — one per origin the app is served from, exactly:
+   - local development: `http://localhost:5174/api/auth/oauth/google/callback`
+   - production: `https://<your-host>/api/auth/oauth/google/callback`
+     (generally `<PUBLIC_APP_BASE_URL>/api/auth/oauth/google/callback`)
+
+   *Authorised JavaScript origins* can stay empty: the browser never calls Google from
+   script, it is a full-page redirect.
+5. Copy the client ID and secret into `OAUTH_GOOGLE_CLIENT_ID` and `OAUTH_GOOGLE_CLIENT_SECRET`
+   (the secret goes in the k8s secret, never in git), and restart the backend.
+
+Google proves the address itself: a Google sign-in whose ID token does not say
+`email_verified: true` is refused, an existing account with the same address is linked to the
+Google identity on first sign-in, and a new person gets an account only where Google signup is
+on (shared hosting).
+
+#### Rate limits
+
+Login, register, resend-verification, forgot-password and the OAuth code exchange are
+rate-limited by client IP and by email, and answer `429` with `Retry-After` past the limit.
+The buckets are held in each process's memory, so the limits are **per replica** — two pods
+allow twice as much. The client IP is the left-most `X-Forwarded-For` entry, as for share-link
+analytics: right behind Traefik with its default `forwardedHeaders` settings, which replace a
+client-sent header with the address Traefik saw. If the load balancer in front of Traefik
+rewrites the source address (for example a `Service` with `externalTrafficPolicy: Cluster`),
+every caller looks like the same IP and shares one login allowance; use
+`externalTrafficPolicy: Local` or the PROXY protocol on the shared instance.
 
 ### Database Variables (Docker Compose)
 

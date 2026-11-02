@@ -6,7 +6,7 @@ can be scanned in one uninterrupted rhythm.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import Literal
 
@@ -25,6 +25,7 @@ from src.schemas.serial import (
 )
 from src.api.deps import get_active_company, get_current_user
 from src.services.serial_service import SerialManager
+from src.services.company_access import company_scope
 
 router = APIRouter()
 
@@ -177,10 +178,7 @@ def list_serials(
 ):
     """List units for the picker, oldest first so the shop moves stock FIFO."""
     query = db.query(ProductSerial).filter(
-        or_(
-            ProductSerial.company_id == active_company.id,
-            ProductSerial.company_id.is_(None),
-        )
+        company_scope(ProductSerial.company_id, active_company.id)
     )
     if product_id is not None:
         query = query.filter(ProductSerial.product_id == product_id)

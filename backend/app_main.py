@@ -1,4 +1,5 @@
 import os
+import hashlib
 import importlib.util
 from pathlib import Path
 
@@ -6,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import text
 
 from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes
@@ -21,11 +23,15 @@ from src.core.analytics import (
 from src.core.config import settings
 from src.services.backup_scheduler import start_scheduler, stop_scheduler
 from src.db.base import Base
-from src.db.session import engine
+from src.db.rls import check_app_role_or_raise, ensure_row_level_security
+from src.db.session import engine, migration_engine
 # Import all models to register them with declarative_base
 import src.models  # noqa: F401
 
-Base.metadata.create_all(bind=engine)
+# DDL runs as the owner (MIGRATION_DATABASE_URL, else DATABASE_URL). In shared
+# hosting the app's own role cannot create tables, and must not own them: an
+# owner is not constrained by row-level security.
+Base.metadata.create_all(bind=migration_engine)
 
 
 def run_pending_migrations() -> None:
@@ -34,7 +40,7 @@ def run_pending_migrations() -> None:
     if not migrations_dir.exists():
         return
 
-    with engine.begin() as conn:
+    with migration_engine.begin() as conn:
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS _migrations (
                 id SERIAL PRIMARY KEY,
@@ -72,6 +78,32 @@ def run_pending_migrations() -> None:
 
 
 run_pending_migrations()
+
+
+def secure_shared_hosting_database() -> None:
+    """Shared hosting: make sure RLS is on, then refuse to boot if it cannot bite.
+
+    The first step runs as the owner and is a no-op on an up-to-date database
+    (src/db/rls.py). The second runs as the APP role and raises -- stopping the
+    process -- when that role is a superuser, has BYPASSRLS, owns a protected
+    table, or lacks its grants: in each case the policies would be silently off
+    or the app broken, and tenants would only be kept apart by application code.
+    """
+    if not settings.is_shared_hosting:
+        return
+    with migration_engine.begin() as conn:
+        for statement in ensure_row_level_security(conn):
+            print(f"  ▸ {statement.split(' USING ')[0]}")
+    if not settings.RLS_BOOT_CHECK:
+        print("⚠ RLS_BOOT_CHECK is off: the app role is NOT checked against row-level security.")
+        return
+    with engine.connect() as conn:
+        check_app_role_or_raise(conn)
+        role = conn.execute(text("SELECT current_user")).scalar()
+    print(f"✓ Row-level security enforced for database role {role!r}.")
+
+
+secure_shared_hosting_database()
 
 
 @asynccontextmanager
@@ -172,6 +204,26 @@ app.add_middleware(
     # the authorization server is. Without this it never starts the OAuth flow --
     # the failure looks like "works in curl, fails in the browser".
     expose_headers=["WWW-Authenticate", "Mcp-Session-Id", "MCP-Protocol-Version"],
+)
+
+
+# Holds the OAuth state, nonce and PKCE verifier between /auth/oauth/<p>/login and
+# its callback -- Authlib keeps them in request.session, and comparing the state
+# that comes back against this cookie is what defeats CSRF on the callback. It is
+# nothing else: the app's own sessions are bearer tokens, not cookies.
+#   - Its own cookie name, so it cannot collide with anything the SPA sets.
+#   - SameSite=Lax: the provider sends the user back with a top-level GET, which
+#     Lax still carries; a cross-site POST or subresource request does not.
+#   - Ten minutes: a sign-in that takes longer simply starts again.
+#   - A key derived from SECRET_KEY rather than SECRET_KEY itself, so the same
+#     bytes never sign both a JWT and a cookie.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=hashlib.sha256(b"oauth-session:" + settings.SECRET_KEY.encode()).hexdigest(),
+    session_cookie="si_oauth_state",
+    max_age=600,
+    same_site="lax",
+    https_only=settings.ENVIRONMENT == "production",
 )
 
 

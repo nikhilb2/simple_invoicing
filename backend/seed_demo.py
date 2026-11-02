@@ -29,7 +29,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import text
 
 from src.db.base import Base
-from src.db.session import SessionLocal, engine
+from src.db.session import SessionLocal, migration_engine as engine
 from src.models.buyer import Buyer
 from src.models.company import CompanyProfile
 from src.models.company_account import CompanyAccount
@@ -1233,6 +1233,12 @@ def seed_all(db) -> None:
 
 
 def main() -> None:
+    from src.core.config import settings
+
+    # Wipes and refills the whole database as one company: never on the shared
+    # instance, where the app role could not write it anyway (row-level security).
+    if settings.is_shared_hosting:
+        raise SystemExit("seed_demo.py is for single-tenant development databases only.")
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:

@@ -3,10 +3,9 @@ from html import escape
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from src.api.deps import get_active_company, get_current_user, require_roles
+from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
@@ -19,6 +18,7 @@ from src.services.series import generate_next_number
 from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.invoice_payments import sync_payment_allocations
 from src.services.share_documents import get_payment as get_shared_payment, render_receipt_pdf
+from src.services.company_access import company_scope
 
 router = APIRouter()
 
@@ -29,7 +29,7 @@ def _get_active_account(db: Session, account_id: int, company_id: int | None) ->
         CompanyAccount.is_active.is_(True),
     )
     if company_id is not None:
-        query = query.filter(or_(CompanyAccount.company_id == company_id, CompanyAccount.company_id.is_(None)))
+        query = query.filter(company_scope(CompanyAccount.company_id, company_id))
     account = query.first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -67,7 +67,7 @@ def _find_existing_opening_balance(
         Payment.status == "active",
     )
     if company_id is not None:
-      query = query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+      query = query.filter(company_scope(Payment.company_id, company_id))
     if exclude_payment_id is not None:
         query = query.filter(Payment.id != exclude_payment_id)
     return query.first()
@@ -101,7 +101,7 @@ def _ensure_single_opening_balance(
 def create_payment(
     payload: PaymentCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
@@ -110,7 +110,7 @@ def create_payment(
     if payload.ledger_id is not None:
         ledger_query = db.query(Ledger).filter(Ledger.id == payload.ledger_id)
         if company_id is not None:
-          ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+          ledger_query = ledger_query.filter(company_scope(Ledger.company_id, company_id))
         ledger = ledger_query.first()
         if not ledger:
             raise HTTPException(status_code=404, detail="Ledger not found")
@@ -221,7 +221,7 @@ def list_payments(
         joinedload(Payment.invoice_allocations).joinedload(PaymentInvoiceAllocation.invoice),
     )
     if company_id is not None:
-      query = query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+      query = query.filter(company_scope(Payment.company_id, company_id))
     if ledger_id is not None:
         query = query.filter(Payment.ledger_id == ledger_id)
     if not include_cancelled:
@@ -239,7 +239,7 @@ def get_payment(
     company_id = getattr(active_company, "id", None)
     filter_args = [Payment.id == payment_id]
     if company_id is not None:
-      filter_args.append(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+      filter_args.append(company_scope(Payment.company_id, company_id))
     payment = (
         db.query(Payment)
         .options(
@@ -259,13 +259,13 @@ def update_payment(
     payment_id: int,
     payload: PaymentUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
     payment_filters = [Payment.id == payment_id, Payment.status == "active"]
     if company_id is not None:
-      payment_filters.append(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+      payment_filters.append(company_scope(Payment.company_id, company_id))
     payment = (
         db.query(Payment)
         .options(joinedload(Payment.invoice_allocations))
@@ -334,13 +334,13 @@ def update_payment(
 def delete_payment(
     payment_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
     query = db.query(Payment).filter(Payment.id == payment_id, Payment.status == "active")
     if company_id is not None:
-      query = query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+      query = query.filter(company_scope(Payment.company_id, company_id))
     payment = query.first()
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")

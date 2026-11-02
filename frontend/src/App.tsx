@@ -5,11 +5,17 @@ import { MotionConfig } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { FYProvider } from './context/FYContext';
 import { ShortcutsProvider } from './context/ShortcutsContext';
+import axios from 'axios';
 import api from './api/client';
 import type { CompanyProfile } from './types/api';
 import { isCompanyConfigured } from './utils/companySetup';
 import { loginPathWithNext, sanitizeNextPath } from './utils/nextPath';
 import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import VerifyEmailPage from './pages/VerifyEmailPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import OAuthCallbackPage from './pages/OAuthCallbackPage';
 import DashboardPage from './pages/DashboardPage';
 import CataloguePage from './pages/CataloguePage';
 import ProduceItemsPage from './pages/ProduceItemsPage';
@@ -84,14 +90,22 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
   return children;
 }
 
-function AdminOnly({ children }: { children: React.ReactNode }) {
-  const { isAdmin } = useAuth();
+function AdminOnly({ platform = false, children }: { platform?: boolean; children: React.ReactNode }) {
+  const { isAdmin, canManagePlatform } = useAuth();
 
-  if (!isAdmin) {
+  if (!isAdmin || (platform && !canManagePlatform)) {
     return <Navigate to="/" replace />;
   }
 
   return children;
+}
+
+function isCompanyRequiredError(error: unknown): boolean {
+  return (
+    axios.isAxiosError(error) &&
+    error.response?.status === 409 &&
+    error.response.data?.detail?.code === 'company_required'
+  );
 }
 
 function CompanyRequired({ children }: { children: React.ReactNode }) {
@@ -106,6 +120,13 @@ function CompanyRequired({ children }: { children: React.ReactNode }) {
 
   if (companyQuery.isLoading) {
     return <div className="empty-state">Loading company profile...</div>;
+  }
+
+  // A 409 company_required is the server saying this user has no company yet
+  // (shared hosting never auto-creates one). Any other failure still lets the
+  // user through, as before.
+  if (isCompanyRequiredError(companyQuery.error)) {
+    return <Navigate to="/settings/company?setup=required" replace />;
   }
 
   if (companyQuery.error) {
@@ -130,10 +151,13 @@ function CompanyRequired({ children }: { children: React.ReactNode }) {
  */
 function SettingsRoute({
   admin = false,
+  platform = false,
   requireCompany = true,
   children,
 }: {
   admin?: boolean;
+  /** Needs platform-admin on top of admin: surfaces the backend gates with require_platform_admin. */
+  platform?: boolean;
   requireCompany?: boolean;
   children: React.ReactNode;
 }) {
@@ -142,7 +166,7 @@ function SettingsRoute({
       <SettingsLayout>{children}</SettingsLayout>
     </Layout>
   );
-  if (admin) node = <AdminOnly>{node}</AdminOnly>;
+  if (admin || platform) node = <AdminOnly platform={platform}>{node}</AdminOnly>;
   if (requireCompany) node = <CompanyRequired>{node}</CompanyRequired>;
   return <Protected>{node}</Protected>;
 }
@@ -195,6 +219,14 @@ function AppRoutes() {
           </PublicOnly>
         }
       />
+      <Route path="/register" element={<PublicOnly><RegisterPage /></PublicOnly>} />
+      {/* Outside PublicOnly: these carry a one-time link or code, and a browser that
+          still holds some session, even an expired one, must not be redirected away
+          from it. */}
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
+      <Route path="/forgot-password" element={<PublicOnly><ForgotPasswordPage /></PublicOnly>} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/auth/callback" element={<OAuthCallbackPage />} />
       {/* Mid-flow from an external MCP client. Deliberately outside Layout and
           CompanyRequired: the visitor is answering one question, and a company
           setup redirect here would strand the pending authorization request. */}
@@ -230,7 +262,7 @@ function AppRoutes() {
       <Route path="/settings" element={<SettingsRoute requireCompany={false}><SettingsOverviewPage /></SettingsRoute>} />
       <Route path="/settings/company" element={<SettingsRoute requireCompany={false}><CompanyPage /></SettingsRoute>} />
       <Route path="/settings/marketplace" element={<SettingsRoute admin><MarketplaceSettingsPage /></SettingsRoute>} />
-      <Route path="/settings/email" element={<SettingsRoute admin><SmtpSettingsPage /></SettingsRoute>} />
+      <Route path="/settings/email" element={<SettingsRoute platform><SmtpSettingsPage /></SettingsRoute>} />
       <Route path="/settings/email-history" element={<SettingsRoute admin><EmailHistoryPage /></SettingsRoute>} />
       <Route path="/settings/security" element={<SettingsRoute><ChangePasswordPage /></SettingsRoute>} />
       <Route path="/settings/shortcuts" element={<SettingsRoute><KeyboardShortcutsPage /></SettingsRoute>} />
@@ -238,7 +270,7 @@ function AppRoutes() {
       <Route path="/settings/api-keys"element={<SettingsRoute admin><ApiKeysPage /></SettingsRoute>} />
       {/* Per-user, not admin-only: a user manages the connectors they themselves consented to. */}
       <Route path="/settings/connected-apps" element={<SettingsRoute><ConnectedAppsPage /></SettingsRoute>} />
-      <Route path="/settings/backups" element={<SettingsRoute admin><BackupsPage /></SettingsRoute>} />
+      <Route path="/settings/backups" element={<SettingsRoute platform><BackupsPage /></SettingsRoute>} />
 
       {/* Where those pages used to live. */}
       {Object.entries(LEGACY_REDIRECTS).map(([from, to]) => (

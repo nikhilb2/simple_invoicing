@@ -142,7 +142,7 @@ def _build_credit_note_html(
     if logo_data and logo_mime_type:
         company_header_html = f"""
     <div class="sheet__logo">
-      <img src="data:{_e(logo_mime_type)};base64,{logo_data}" alt="Company logo" class="sheet__logo-img" />
+      <img src="data:{_e(logo_mime_type)};base64,{_e(logo_data)}" alt="Company logo" class="sheet__logo-img" />
     </div>"""
 
     original_invoices_html = ", ".join(

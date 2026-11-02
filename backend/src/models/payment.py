@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Numeric, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Numeric, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.db.base import Base
@@ -7,6 +7,10 @@ from src.models.company_account import CompanyAccount  # noqa: F401
 
 class Payment(Base):
     __tablename__ = "payments"
+    # Unique per company, like invoice numbers (see Invoice.__table_args__).
+    __table_args__ = (
+        UniqueConstraint("company_id", "payment_number", name="uq_payments_company_payment_number"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("company_profiles.id"), nullable=True, index=True)

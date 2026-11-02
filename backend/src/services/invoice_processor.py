@@ -14,7 +14,6 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.models.buyer import Buyer as Ledger
@@ -31,7 +30,9 @@ from src.services.gst_tax_service import (
 )
 from src.services.inventory_service import InventoryManager
 from src.services.serial_service import SerialManager
+from src.core.config import settings
 from src.services.series import generate_next_number
+from src.services.company_access import company_scope, legacy_default_company
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +103,7 @@ class InvoiceProcessor:
         query = self.db.query(Ledger).filter(Ledger.id == ledger_id)
         if company_id is not None:
             query = query.filter(
-                or_(Ledger.company_id == company_id, Ledger.company_id.is_(None))
+                company_scope(Ledger.company_id, company_id)
             )
         ledger = query.first()
         if not ledger:
@@ -212,10 +213,7 @@ class InvoiceProcessor:
             )
             if company_id is not None:
                 product_query = product_query.filter(
-                    or_(
-                        Product.company_id == company_id,
-                        Product.company_id.is_(None),
-                    )
+                    company_scope(Product.company_id, company_id)
                 )
             product = product_query.first()
             if not product:
@@ -407,11 +405,14 @@ class InvoiceProcessor:
 
         This is the primary entry-point used by both create and update routes.
         """
-        company = active_company or (
-            self.db.query(CompanyProfile)
-            .order_by(CompanyProfile.id.asc())
-            .first()
-        )
+        company = active_company
+        if company is None:
+            # Only a single-tenant DB may assume "the" company. In shared
+            # hosting the first company is a stranger's, so a caller that
+            # forgot to pass one must fail rather than write into it.
+            if settings.is_shared_hosting:
+                raise ValueError("apply_payload requires the active company in shared hosting")
+            company = legacy_default_company(self.db)
         company_id = company.id if company else None
         ledger = self.require_ledger(payload.ledger_id, company_id)
 

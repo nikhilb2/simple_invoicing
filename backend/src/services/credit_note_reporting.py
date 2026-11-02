@@ -2,11 +2,11 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.invoice import Invoice
+from src.services.company_access import company_scope
 
 
 @dataclass
@@ -47,7 +47,7 @@ def get_credit_note_ledger_summary(
     if ledger_id is not None:
         query = query.filter(CreditNote.ledger_id == ledger_id)
     if company_id is not None:
-        query = query.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
+        query = query.filter(company_scope(CreditNote.company_id, company_id))
     if created_before is not None:
         query = query.filter(CreditNote.created_at < created_before)
     if created_from is not None:

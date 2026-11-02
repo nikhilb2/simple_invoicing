@@ -12,6 +12,7 @@ from decimal import Decimal
 logger = logging.getLogger(__name__)
 
 import weasyprint
+from src.services.pdf_render import safe_url_fetcher
 
 from src.db.session import get_db
 from src.models.company_account import CompanyAccount
@@ -764,7 +765,7 @@ def update_invoice(
 def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "") -> BytesIO:
     show_sku = active_company.show_sku_on_pdf if active_company else True
     html = _build_invoice_html(invoice, products, invoice_bank_accounts, copy_label=_copy_label(1), show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html)
-    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+    pdf_bytes = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
 
@@ -772,7 +773,7 @@ def _build_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_a
 def _build_multi_copy_invoice_pdf(invoice: Invoice, products: list[Product], invoice_bank_accounts: list[CompanyAccount], copies: int, active_company: CompanyProfile | None = None, serials: dict[int, list[str]] | None = None, pay_qr_html: str = "") -> BytesIO:
     show_sku = active_company.show_sku_on_pdf if active_company else True
     html = _build_multi_copy_invoice_html(invoice, products, invoice_bank_accounts, copies, show_sku=show_sku, serials=serials, pay_qr_html=pay_qr_html)
-    pdf_bytes = weasyprint.HTML(string=html).write_pdf()
+    pdf_bytes = weasyprint.HTML(string=html, url_fetcher=safe_url_fetcher).write_pdf()
     buf = BytesIO(pdf_bytes)
     return buf
 

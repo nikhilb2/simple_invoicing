@@ -17,8 +17,8 @@ import { useAuth } from '../../context/AuthContext';
  * push the actual settings off a phone screen.
  */
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
-  const { isAdmin } = useAuth();
-  const groups = visibleSettingsGroups(isAdmin);
+  const { isAdmin, canManagePlatform } = useAuth();
+  const groups = visibleSettingsGroups(isAdmin, canManagePlatform);
   const location = useLocation();
   const onOverview = location.pathname === SETTINGS_ROOT;
   const navRef = useRef<HTMLElement>(null);

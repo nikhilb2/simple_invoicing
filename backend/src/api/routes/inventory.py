@@ -13,7 +13,7 @@ from src.models.production_transaction import ProductionTransaction
 from src.models.user import User, UserRole
 from src.schemas.inventory import InventoryAdjust, InventoryOut, PaginatedInventoryOut
 from src.schemas.bom import ProduceRequest, ProductionTransactionOut, PaginatedProductionTransactionOut
-from src.api.deps import get_active_company, get_current_user, require_roles
+from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.core.analytics import distinct_id_for, track
 from src.services import bom_service
 from src.services.serial_service import SerialManager
@@ -29,7 +29,7 @@ def _is_whole_number(value: float) -> bool:
 def adjust_inventory(
     payload: InventoryAdjust,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     product = db.query(Product).filter(
@@ -206,7 +206,7 @@ def list_inventory(
 def produce_item(
     payload: ProduceRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """
