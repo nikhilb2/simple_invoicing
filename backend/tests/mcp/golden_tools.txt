@@ -48,6 +48,9 @@ gstr1_export_json	GET	/api/ledgers/tax-ledger/gstr1/export-json
 gstr1_export_pdf	GET	/api/ledgers/tax-ledger/gstr1/export-pdf
 gstr1_summary	GET	/api/ledgers/tax-ledger/gstr1/summary
 gstr1_validate	GET	/api/ledgers/tax-ledger/gstr1/validate
+gstr3b_export_csv	GET	/api/ledgers/tax-ledger/gstr3b/export-csv
+gstr3b_export_pdf	GET	/api/ledgers/tax-ledger/gstr3b/export-pdf
+gstr3b_worksheet	GET	/api/ledgers/tax-ledger/gstr3b/worksheet
 health_check	GET	/api/health
 inventory_adjust	POST	/api/inventory/adjust
 inventory_list	GET	/api/inventory/

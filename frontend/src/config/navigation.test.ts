@@ -256,6 +256,24 @@ describe('the invoice feed', () => {
   });
 });
 
+describe('the GSTR-3B worksheet entry', () => {
+  const reports = PRIMARY_NAV.find((entry) => entry.kind === 'section' && entry.id === 'reports');
+  const children = reports && reports.kind === 'section' ? reports.children : [];
+
+  it('sits straight after GSTR-1 under Reports', () => {
+    const paths = children.map((child) => child.to);
+    expect(paths.indexOf('/gstr3b')).toBe(paths.indexOf('/gstr1') + 1);
+  });
+
+  it('is called a worksheet, not a filing', () => {
+    expect(children.find((child) => child.to === '/gstr3b')?.label).toBe('GSTR-3B Worksheet');
+  });
+
+  it('opens the Reports section when the page is open', () => {
+    expect(sectionIdForPath('/gstr3b')).toBe('reports');
+  });
+});
+
 describe('sectionIdForPath', () => {
   it('finds the section that owns a path', () => {
     expect(sectionIdForPath('/invoices')).toBe('sales');
@@ -313,6 +331,7 @@ describe('NAV_SHORTCUTS', () => {
     ['go_invoice_dues', '/invoice-dues'],
     ['go_credit_notes', '/credit-notes'],
     ['go_gstr1', '/gstr1'],
+    ['go_gstr3b', '/gstr3b'],
     ['go_dashboard', '/'],
   ])('routes %s to %s', (action, to) => {
     expect(NAV_SHORTCUTS).toContainEqual({ action, to });
