@@ -746,6 +746,29 @@ def test_staff_membership_cannot_reach_admin_routes(client, db_session, tenants,
     assert client.get("/api/invoice-series/", headers=in_own).status_code == 200
 
 
+def test_payment_update_and_cancel_follow_the_membership_role(client, db_session, tenants, act_as):
+    # Self-registered users are global staff, so a global role check here would
+    # lock every company's own admin out of correcting their own payments.
+    company = db_session.get(CompanyProfile, tenants.company_a)
+    add_membership(db_session, tenants.user_b, company, UserRole.staff)
+    db_session.commit()
+    path = f"/api/payments/{tenants.payment['id']}"
+    edit = {"voucher_type": "receipt", "amount": 75, "mode": "cash"}
+
+    act_as(tenants.user_b)
+    in_alpha = _headers(tenants.company_a)
+    assert client.put(path, headers=in_alpha, json=edit).status_code == 403
+    assert client.delete(path, headers=in_alpha).status_code == 403
+
+    act_as(tenants.user_a)
+    assert tenants.user_a.role == UserRole.staff
+    updated = client.put(path, headers=in_alpha, json=edit)
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["amount"] == 75
+    cancelled = client.delete(path, headers=in_alpha)
+    assert cancelled.status_code == 200, cancelled.text
+
+
 # ---------------------------------------------------------------------------
 # Numbering is per company
 # ---------------------------------------------------------------------------
