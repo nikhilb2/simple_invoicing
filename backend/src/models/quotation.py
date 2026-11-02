@@ -31,7 +31,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import deferred, relationship
 
 from src.db.base import Base
 
@@ -87,7 +87,8 @@ class Quotation(Base):
     company_account_name = Column(String, nullable=True)
     company_account_number = Column(String, nullable=True)
     company_ifsc_code = Column(String, nullable=True)
-    company_logo_data = Column(Text, nullable=True)
+    # Base64, and only the PDF wants it: not worth carrying on every list row.
+    company_logo_data = deferred(Column(Text, nullable=True))
     company_logo_mime_type = Column(String(50), nullable=True)
     company_additional_info = Column(Text, nullable=True)
     company_terms_text = Column(Text, nullable=True)

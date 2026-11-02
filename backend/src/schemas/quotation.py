@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 from typing import List, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
@@ -11,6 +12,17 @@ StoredStatus = Literal["open", "accepted", "declined", "converted", "cancelled"]
 StatusFilter = Literal["open", "accepted", "declined", "converted", "cancelled", "expired"]
 # Converted and cancelled are reached through their own actions, not this route.
 SettableStatus = Literal["open", "accepted", "declined"]
+
+
+def _check_places(value: float | None, places: int) -> float | None:
+    """Refuse a figure more precise than its column.
+
+    Totals are worked out from the value as sent and the value is stored rounded, so a
+    price of 33.333 would be quoted at one total and convert at another.
+    """
+    if value is not None and -Decimal(str(value)).normalize().as_tuple().exponent > places:
+        raise ValueError(f"must have at most {places} decimal places")
+    return value
 
 
 class QuotationItemCreate(BaseModel):
@@ -27,7 +39,17 @@ class QuotationItemCreate(BaseModel):
     @field_validator("discount_value", mode="after")
     @classmethod
     def _check_discount_value(cls, value: float | None, info: ValidationInfo) -> float | None:
-        return _validate_discount_value(value, info)
+        return _check_places(_validate_discount_value(value, info), 2)
+
+    @field_validator("unit_price", mode="after")
+    @classmethod
+    def _check_unit_price(cls, value: float | None) -> float | None:
+        return _check_places(value, 2)
+
+    @field_validator("quantity", mode="after")
+    @classmethod
+    def _check_quantity(cls, value: float) -> float:
+        return _check_places(value, 3)
 
 
 class QuotationFields(BaseModel):
@@ -49,7 +71,7 @@ class QuotationFields(BaseModel):
     @field_validator("discount_value", mode="after")
     @classmethod
     def _check_discount_value(cls, value: float | None, info: ValidationInfo) -> float | None:
-        return _validate_discount_value(value, info)
+        return _check_places(_validate_discount_value(value, info), 2)
 
     @model_validator(mode="after")
     def _check_validity(self):

@@ -78,7 +78,9 @@ class Invoice(Base):
     source_quotation_id = Column(Integer, ForeignKey("quotations.id"), nullable=True)
 
     ledger = relationship("Buyer", back_populates="invoices")
-    source_quotation = relationship("Quotation")
+    # selectin: an invoice list reads the number off every row, and most rows have
+    # none, so one IN query for the few that do rather than one query each.
+    source_quotation = relationship("Quotation", lazy="selectin")
     items = relationship("InvoiceItem", back_populates="invoice", cascade="all, delete-orphan")
     payment_allocations = relationship("PaymentInvoiceAllocation", back_populates="invoice", cascade="all, delete-orphan")
 

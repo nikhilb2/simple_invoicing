@@ -413,6 +413,38 @@ def test_cancelling_the_invoice_puts_every_figure_back(client, world, db_session
 # Structural guards
 # ---------------------------------------------------------------------------
 
+def test_invoice_list_reads_quotation_numbers_in_one_query(client, world, db_session):
+    """Reading source_quotation_number off each row must not query once per invoice."""
+    from sqlalchemy import event
+
+    engine = db_session.get_bind()
+
+    for _ in range(3):
+        quote = ok(client.post("/api/quotations/", json={
+            "ledger_id": world["ledger"]["id"],
+            "items": [{"product_id": world["product"]["id"], "quantity": 1, "unit_price": 100}],
+        }))
+        invoice = ok(convert(client, quote["id"]))
+        assert invoice["source_quotation_number"] == quote["quotation_number"]
+
+    statements: list[str] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        listed = ok(client.get("/api/invoices/", params={"page_size": 100}))
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    numbers = [row["source_quotation_number"] for row in listed["items"] if row["source_quotation_number"]]
+    assert len(numbers) == 3
+    quotation_selects = [s for s in statements if "FROM quotations" in s]
+    assert len(quotation_selects) == 1, quotation_selects
+    assert "company_logo_data" not in quotation_selects[0]
+
+
 def test_invoice_voucher_type_still_only_allows_sales_and_purchase():
     from typing import get_args
 

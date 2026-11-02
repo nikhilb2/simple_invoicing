@@ -36,6 +36,7 @@ from src.models.quotation import (
     QuotationItem,
 )
 from src.schemas.invoice import InvoiceCreate, InvoiceItemCreate
+from src.schemas.ledger_address import ShippingAddressInline
 from src.schemas.quotation import (
     ConversionWarning,
     QuotationConversionDraft,
@@ -325,6 +326,10 @@ def update_quotation(db: Session, quotation: Quotation, payload: QuotationUpdate
     valid_until = payload.valid_until if "valid_until" in payload.model_fields_set else quotation.valid_until
     if valid_until is not None and valid_until < quotation_date:
         raise HTTPException(status_code=400, detail="valid_until must be on or after quotation_date")
+    if quotation_date != quotation.quotation_date:
+        fy = get_fy_for_date(db, quotation_date, company_id=company.id)
+        if fy is not None:
+            quotation.financial_year_id = fy.id
     quotation.quotation_date = quotation_date
     quotation.valid_until = valid_until
 
@@ -345,7 +350,14 @@ def duplicate_quotation(db: Session, original: Quotation, *, created_by: int, co
     if original.valid_until is not None:
         valid_until = today + (original.valid_until - original.quotation_date)
 
+    # A snapshot whose saved row has gone is still where the goods were going.
     shipping_id = original.shipping_address_id
+    new_address = None
+    if shipping_id is None and original.shipping_address:
+        new_address = ShippingAddressInline(
+            label=original.shipping_address_label or "Shipping",
+            address=original.shipping_address,
+        )
     fields = {
         "ledger_id": original.ledger_id,
         "document_type": original.document_type,
@@ -356,8 +368,9 @@ def duplicate_quotation(db: Session, original: Quotation, *, created_by: int, co
         "apply_round_off": original.apply_round_off,
         "discount_type": original.discount_type,
         "discount_value": float(original.discount_value) if original.discount_value is not None else None,
-        "shipping_address_same_as_billing": shipping_id is None,
+        "shipping_address_same_as_billing": shipping_id is None and new_address is None,
         "shipping_address_id": shipping_id,
+        "new_shipping_address": new_address,
         "items": [
             QuotationItemCreate(
                 product_id=item.product_id,
@@ -721,10 +734,12 @@ def close_after_invoice_restored(quotation: Quotation | None) -> None:
     """The invoice is live again, so its quotation is converted again.
 
     A quotation cancelled in the meantime stays cancelled: nobody asked to revive the
-    offer, only the invoice.
+    offer, only the invoice. One declined in the meantime does not: a live invoice
+    outranks that answer, and its decline would otherwise contradict the status.
     """
     if quotation is None or quotation.status == STATUS_CANCELLED:
         return
     quotation.status = STATUS_CONVERTED
+    quotation.declined_at = None
     quotation.converted_at = datetime.utcnow()
     quotation.updated_at = quotation.converted_at

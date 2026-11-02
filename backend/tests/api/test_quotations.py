@@ -121,6 +121,31 @@ def test_a_number_that_is_not_a_number_is_refused(setup, field, value):
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize("field, value", [
+    ("unit_price", 33.333),
+    ("quantity", 1.2345),
+    ("discount_value", 12.345),
+])
+def test_a_figure_more_precise_than_its_column_is_refused(setup, field, value):
+    """It would be priced as sent, stored rounded, and convert to a different total."""
+    client, ledger, product = setup
+    decimal_product = create_product(client, "BULK-1", allow_decimal=True)
+    line = {"product_id": decimal_product["id"], "quantity": 1, "unit_price": 100, "discount_type": "net", "discount_value": 1}
+    response = client.post("/api/quotations/", json={"ledger_id": ledger["id"], "items": [{**line, field: value}]})
+    assert response.status_code == 422
+    assert "decimal places" in response.text
+
+
+def test_the_most_precise_figures_allowed_convert_to_the_same_total(setup):
+    client, ledger, _ = setup
+    decimal_product = create_product(client, "BULK-2", allow_decimal=True)
+    quote = ok(client.post("/api/quotations/", json={
+        "ledger_id": ledger["id"],
+        "items": [{"product_id": decimal_product["id"], "quantity": 2.125, "unit_price": 33.33, "discount_type": "percentage", "discount_value": 12.34}],
+    }))
+    assert ok(convert(client, quote["id"]))["total_amount"] == quote["total_amount"]
+
+
 def test_whole_number_rule_applies(setup):
     client, ledger, product = setup
     response = client.post("/api/quotations/", json=quotation_payload(ledger["id"], product["id"], quantity=1.5))
@@ -231,6 +256,22 @@ def test_edit_replaces_lines_and_keeps_the_number(setup):
     assert updated["valid_until"] == quote["valid_until"]
     cleared = ok(client.put(f"/api/quotations/{quote['id']}", json=_update_body(ledger["id"], product["id"], valid_until=None)))
     assert cleared["valid_until"] is None
+
+
+def test_financial_year_follows_the_date_on_edit(setup):
+    client, ledger, product = setup
+    today = date.today()
+    later = ok(client.post("/api/financial-years/", json={
+        "label": "LATER-FY",
+        "start_date": date(today.year + 2, 1, 1).isoformat(),
+        "end_date": date(today.year + 2, 12, 31).isoformat(),
+    }), 201)
+    quote = create_quotation(client, ledger["id"], product["id"], valid_until=None)
+    assert quote["financial_year_id"] != later["id"]
+    updated = ok(client.put(f"/api/quotations/{quote['id']}", json=_update_body(
+        ledger["id"], product["id"], quotation_date=date(today.year + 2, 6, 1).isoformat(),
+    )))
+    assert updated["financial_year_id"] == later["id"]
 
 
 def test_document_type_is_fixed_once_created(setup):
@@ -497,6 +538,24 @@ def test_duplicate_is_fresh_and_open(setup):
     assert copy["reference_notes"] == "Tender 9"
     assert copy["total_amount"] == quote["total_amount"]
     assert copy["invoices"] == []
+
+
+def test_duplicate_keeps_a_shipping_address_whose_saved_row_has_gone(setup, db_session):
+    client, ledger, product = setup
+    address = _saved_address(client, ledger["id"])
+    quote = create_quotation(
+        client, ledger["id"], product["id"],
+        shipping_address_same_as_billing=False,
+        shipping_address_id=address["id"],
+    )
+    row = db_session.query(Quotation).filter(Quotation.id == quote["id"]).one()
+    row.shipping_address_id = None  # What ON DELETE SET NULL leaves on Postgres.
+    db_session.query(LedgerAddress).filter(LedgerAddress.id == address["id"]).delete()
+    db_session.commit()
+
+    copy = ok(client.post(f"/api/quotations/{quote['id']}/duplicate"))
+    assert copy["shipping_address"] == "9 Dock Road"
+    assert copy["shipping_address_label"] == "Warehouse"
 
 
 def test_duplicate_uses_todays_tax_rate(setup):
@@ -961,6 +1020,20 @@ def test_reinvoicing_then_restoring_the_old_invoice_is_blocked(setup):
     # Cancel the newer one and the old one can come back.
     ok(client.delete(f"/api/invoices/{second['id']}"))
     ok(client.post(f"/api/invoices/{first['id']}/restore"))
+
+
+def test_restoring_over_a_later_decline_leaves_no_decline_behind(setup):
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"])
+    invoice = ok(convert(client, quote["id"]))
+    ok(client.delete(f"/api/invoices/{invoice['id']}"))
+    ok(client.post(f"/api/quotations/{quote['id']}/status", json={"status": "declined", "note": "Too dear"}))
+
+    ok(client.post(f"/api/invoices/{invoice['id']}/restore"))
+
+    detail = ok(client.get(f"/api/quotations/{quote['id']}"))
+    assert detail["status"] == "converted"
+    assert detail["declined_at"] is None
 
 
 def test_restoring_after_the_quote_was_cancelled_leaves_it_cancelled(setup):

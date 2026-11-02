@@ -164,6 +164,16 @@ def test_page_says_valid_until_then_expired(setup):
     assert f"This quotation expired on {(past + timedelta(days=30)):%d %b %Y}." in page.text
 
 
+def test_declined_is_not_shown_as_a_live_offer(setup):
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"], valid_until=(date.today() + timedelta(days=3)).isoformat())
+    token = _link(client, quote)["token"]
+    ok(client.post(f"/api/quotations/{quote['id']}/status", json={"status": "declined"}))
+    page = client.get(f"/s/{token}").text
+    assert "This quotation was declined." in page
+    assert "Valid until" not in page
+
+
 def test_page_says_when_it_became_an_invoice(setup):
     client, ledger, product = setup
     quote = create_quotation(client, ledger["id"], product["id"])
