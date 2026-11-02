@@ -233,3 +233,17 @@ def test_unauthenticated_request_gets_401():
     finally:
         if saved_override is not None:
             app.dependency_overrides[get_current_user] = saved_override
+
+
+def test_create_rejects_whitespace_only_name(client, db_session):
+    """A name of only spaces must not become an unnamed key row (issue #668)."""
+    _seed_company(db_session, 1, "Company A")
+    _seed_admin_user(db_session)
+
+    response = client.post(
+        "/api/api-keys/",
+        json={"name": "   ", "expires_at": "2027-06-01T00:00:00Z"},
+    )
+
+    assert response.status_code == 422
+    assert _list_keys(client) == []
