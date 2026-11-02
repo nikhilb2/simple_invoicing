@@ -1,6 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional
+from typing import Literal, Optional
 
 from src.core.validation import normalize_hsn_sac
 
@@ -105,7 +105,7 @@ class ProductWithInventoryUpdate(BaseModel):
     # not be a back door to a negative quantity.
     current_stock: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     reorder_level: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
-    status: Optional[str] = None
+    status: Optional[Literal["active", "inactive"]] = None
     unit: Optional[str] = None
     gst_rate: Optional[float] = Field(default=None, allow_inf_nan=False)
 
@@ -113,6 +113,18 @@ class ProductWithInventoryUpdate(BaseModel):
     @classmethod
     def validate_hsn_sac(cls, value: str | None) -> str | None:
         return normalize_hsn_sac(value)
+
+    @field_validator("unit")
+    @classmethod
+    def validate_unit(cls, value: str | None) -> str | None:
+        # Same check ProductCreate applies: a blank unit must not be saved
+        # as an empty string by the update route.
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Unit is required")
+        return normalized
 
     @field_validator("name", "sku")
     @classmethod
