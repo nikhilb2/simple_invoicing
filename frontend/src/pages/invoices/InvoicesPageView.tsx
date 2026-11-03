@@ -634,6 +634,7 @@ export default function InvoicesPage() {
     setEditingQuotation(null);
     setConversion(null);
     setConversionOutOfDate(false);
+    setAlreadyConverted(null);
     setValidUntil(defaultValidUntil(toIsoDate(new Date())));
     validUntilEditedRef.current = false;
     pendingShippingRef.current = null;
@@ -1052,11 +1053,12 @@ export default function InvoicesPage() {
         /* Someone got there first, or this is a stale tab. Nothing went wrong and
            there is nothing to fix on this form: say where the invoice is. */
         const detail = (err as { response?: { data?: { detail?: { invoice_number?: string | null } } } }).response?.data?.detail;
+        /* In this order: resetting the form clears the banner. */
+        resetInvoiceForm();
         setAlreadyConverted({
           message: getApiErrorMessage(err, 'This was already converted to an invoice.'),
           invoiceNumber: detail?.invoice_number ?? null,
         });
-        resetInvoiceForm();
         clearQuotationParams();
         await queryClient.invalidateQueries({ queryKey: quotationQueryKeys.all });
         return;
