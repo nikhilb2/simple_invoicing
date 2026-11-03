@@ -30,13 +30,14 @@ def _create_ledger(client, name):
     return response.json()["id"]
 
 
-def _create_invoice(client, ledger_id, items, *, voucher_type="sales", invoice_date=None):
+def _create_invoice(client, ledger_id, items, *, voucher_type="sales", invoice_date=None, **extra):
     """Create an invoice. Omitting invoice_date lets the column default to
     datetime.utcnow — which, unlike the API's date-only input, carries a real
     time component (see test_invoice_dated_today_is_included)."""
     payload = {"voucher_type": voucher_type, "ledger_id": ledger_id, "items": items}
     if invoice_date is not None:
         payload["invoice_date"] = invoice_date.date().isoformat()
+    payload.update(extra)
     response = client.post("/api/invoices/", json=payload)
     assert response.status_code == 200, response.text
     return response.json()
@@ -210,6 +211,62 @@ class TestProductSales:
         assert rows["Widget"]["average_selling_price"] == 100.00
         assert rows["Widget"]["sku"] == "PRD-1"
         assert rows["Gadget"]["quantity_sold"] == 4
+
+    def test_invoice_discount_reduces_total_revenue(self, client):
+        """Total Revenue must reflect what the invoice actually charged.
+
+        1 x Rs. 1,000 at 18% GST is Rs. 1,180 gross; a flat Rs. 118
+        invoice-level discount brings the charged total to Rs. 1,062.
+        """
+        product = _create_product(client, "PRD-DISC-1", "Widget", 1000)
+        ledger = _create_ledger(client, "Acme")
+        _create_invoice(
+            client, ledger,
+            [{"product_id": product, "quantity": 1, "unit_price": 1000, "gst_rate": 18}],
+            invoice_date=datetime(2026, 3, 10, 12, 0),
+            discount_type="net",
+            discount_value=118,
+        )
+
+        res = client.get("/api/analytics/sales-by-product", params={"from_date": "2026-03-01", "to_date": "2026-03-31"})
+        assert res.status_code == 200, res.text
+        data = res.json()
+
+        assert data["rows"][0]["total_revenue"] == 1062.00
+        assert data["rows"][0]["sales_amount"] == 1000.00  # ex-GST, untouched by this fix
+        assert data["rows"][0]["total_gst"] == 180.00  # stored GST, untouched by this fix
+        assert data["totals"]["total_revenue"] == 1062.00
+
+    def test_invoice_discount_is_apportioned_before_product_filter(self, client):
+        """A filtered report must not assign a whole header discount to one line.
+
+        Widget (Rs. 100) and Gadget (Rs. 50), both at 18% GST, carry a flat
+        Rs. 17.70 invoice discount: Rs. 11.80 of Widget's gross, Rs. 5.90 of
+        Gadget's. Filtering to Widget must leave Gadget's share out.
+        """
+        widget = _create_product(client, "PRD-DISC-2", "Widget", 100)
+        gadget = _create_product(client, "PRD-DISC-3", "Gadget", 50)
+        ledger = _create_ledger(client, "Acme")
+        _create_invoice(
+            client, ledger,
+            [
+                {"product_id": widget, "quantity": 1, "unit_price": 100, "gst_rate": 18},
+                {"product_id": gadget, "quantity": 1, "unit_price": 50, "gst_rate": 18},
+            ],
+            invoice_date=datetime(2026, 4, 10, 12, 0),
+            discount_type="net",
+            discount_value=17.70,
+        )
+
+        params = {"from_date": "2026-04-01", "to_date": "2026-04-30"}
+        rows = {row["name"]: row for row in client.get("/api/analytics/sales-by-product", params=params).json()["rows"]}
+        assert rows["Widget"]["total_revenue"] == 106.20  # 118.00 - 11.80
+        assert rows["Gadget"]["total_revenue"] == 53.10  # 59.00 - 5.90
+
+        narrowed = client.get("/api/analytics/sales-by-product", params={**params, "product_id": widget}).json()
+        assert len(narrowed["rows"]) == 1
+        assert narrowed["rows"][0]["total_revenue"] == 106.20
+        assert narrowed["totals"]["total_revenue"] == 106.20
 
     def test_invoice_count_is_distinct_per_invoice(self, client):
         """One invoice listing the same product twice must count as one invoice.
