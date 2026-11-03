@@ -608,6 +608,13 @@ def _draft_warnings(
                 "hsn_changed",
                 f"HSN/SAC of {product.name} is now {product.hsn_sac or 'not set'}. The invoice uses the current code.",
             )
+        quoted_quantity = Decimal(str(item.quantity))
+        if not product.allow_decimal and quoted_quantity != quoted_quantity.to_integral_value():
+            warn(
+                "quantity_not_whole",
+                f"{product.name} is now sold in whole numbers, but this quotes {quoted_quantity.normalize():f}. "
+                "Change the quantity before saving.",
+            )
         if product.track_serials:
             units = int(item.quantity)
             warn(

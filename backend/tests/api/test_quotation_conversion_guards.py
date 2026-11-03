@@ -210,6 +210,32 @@ def test_a_second_conversion_with_an_old_draft_still_names_the_invoice(setup):
 
 
 # ---------------------------------------------------------------------------
+# A product that became whole-number after the quote
+# ---------------------------------------------------------------------------
+
+def test_the_draft_warns_about_a_fraction_the_product_no_longer_allows(setup):
+    client, ledger, _ = setup
+    product = create_product(client, sku="ROPE-1", allow_decimal=True)
+    quote = create_quotation(client, ledger["id"], product["id"], quantity=2.5)
+    assert "quantity_not_whole" not in _warning_codes(client, quote)
+
+    ok(client.put(f"/api/products/{product['id']}", json={**product, "allow_decimal": False}))
+    warnings = ok(client.get(f"/api/quotations/{quote['id']}/conversion-draft"))["warnings"]
+    match = next(warning for warning in warnings if warning["code"] == "quantity_not_whole")
+    assert product["name"] in match["message"] and "2.5" in match["message"]
+
+    # It is warning about what the save would refuse.
+    assert convert(client, quote["id"]).status_code == 400
+
+
+def test_no_whole_number_warning_for_a_whole_quantity(setup):
+    client, ledger, _ = setup
+    product = create_product(client, sku="BOLT-1", allow_decimal=False)
+    quote = create_quotation(client, ledger["id"], product["id"], quantity=3)
+    assert "quantity_not_whole" not in _warning_codes(client, quote)
+
+
+# ---------------------------------------------------------------------------
 # The date in India, not on the server
 # ---------------------------------------------------------------------------
 
