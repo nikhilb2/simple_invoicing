@@ -413,7 +413,7 @@ class TestCreateCreditNoteValidation:
         with pytest.raises(HTTPException) as exc:
             create_credit_note(self._discount_payload("5000"), db, current_user_id=1)
         assert exc.value.status_code == 400
-        assert "would exceed its line total of ₹118.00" in exc.value.detail
+        assert "would exceed its line total of 118.00" in exc.value.detail
 
     def test_discount_credit_note_stacked_past_line_total_raises_400(self):
         from fastapi import HTTPException
