@@ -87,7 +87,7 @@ def company(db_session):
     profile = CompanyProfile(
         name="Test Co",
         address="1 Test Street",
-        gst="27AAAAA0000A1Z5",
+        gst="27AAAAA0000A1Z2",
         phone_number="1234567890",
         currency_code="INR",
         email="co@example.com",

@@ -7,6 +7,14 @@ class ApiKeyCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     expires_at: datetime
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("name cannot be empty or only whitespace")
+        return stripped
+
     @field_validator("expires_at")
     @classmethod
     def validate_expiry(cls, v: datetime) -> datetime:

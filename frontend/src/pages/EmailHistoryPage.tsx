@@ -8,9 +8,9 @@ import ScopeBar, { Metric } from '../components/ScopeBar';
 import DateRangePresets from '../components/DateRangePresets';
 import EmptyState from '../components/EmptyState';
 import LoadingState from '../components/LoadingState';
+import PageSizeSelect, { readStoredPageSize, storePageSize } from '../components/PageSizeSelect';
 import { formatDateTime } from '../utils/formatting';
-
-const PAGE_SIZE = 20;
+import { downloadCsv } from '../utils/csv';
 
 const EMAIL_TYPE_LABELS: Record<string, string> = {
   invoice: 'Invoice',
@@ -30,6 +30,7 @@ function monthStart() {
 
 export default function EmailHistoryPage() {
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(() => readStoredPageSize('email-history-page-size'));
   const [fromDate, setFromDate] = useState(monthStart());
   const [toDate, setToDate] = useState(today());
   const [emailType, setEmailType] = useState('');
@@ -37,11 +38,11 @@ export default function EmailHistoryPage() {
   const [expandedError, setExpandedError] = useState<number | null>(null);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['email-logs', page, fromDate, toDate, emailType, status],
+    queryKey: ['email-logs', page, pageSize, fromDate, toDate, emailType, status],
     queryFn: () =>
       listEmailLogs({
         page,
-        page_size: PAGE_SIZE,
+        page_size: pageSize,
         from_date: fromDate || undefined,
         to_date: toDate || undefined,
         email_type: emailType || undefined,
@@ -54,6 +55,26 @@ export default function EmailHistoryPage() {
 
   function handleFilterChange() {
     setPage(1);
+  }
+
+  function handlePageSizeChange(nextPageSize: number) {
+    storePageSize('email-history-page-size', nextPageSize);
+    setPageSize(nextPageSize);
+    setPage(1);
+  }
+
+  function handleExportEmailCsv() {
+    if (!data) return;
+    downloadCsv(
+      `email_history_${new Date().toISOString().slice(0, 10)}.csv`,
+      ['Date', 'Recipient', 'Subject', 'Status'],
+      data.items.map((log) => [
+        formatDateTime(log.sent_at),
+        log.to_email,
+        log.subject,
+        log.status,
+      ]),
+    );
   }
 
   return (
@@ -151,6 +172,16 @@ export default function EmailHistoryPage() {
               <p className="eyebrow">Log</p>
               <h2 className="nav-panel__title">Sent emails</h2>
             </div>
+            <div className="button-row">
+              <button
+                type="button"
+                className="button button--secondary button--small"
+                disabled={isLoading || !data || data.items.length === 0}
+                onClick={handleExportEmailCsv}
+              >
+                Export CSV
+              </button>
+            </div>
           </div>
 
           <div className="invoice-list">
@@ -181,7 +212,7 @@ export default function EmailHistoryPage() {
                     <span
                       className={`status-chip ${log.status === 'sent' ? 'status-chip--active' : 'status-chip--cancelled'}`}
                     >
-                      {log.status === 'sent' ? 'Sent' : 'Failed'}
+                      {log.status === 'sent' ? 'Sent' : log.status === 'sending' ? 'Sending' : 'Failed'}
                     </span>
                     {log.error_message && (
                       <span className="table-subtext">tap to {expandedError === log.id ? 'hide' : 'show'} error</span>
@@ -192,11 +223,11 @@ export default function EmailHistoryPage() {
                   <div
                     style={{
                       padding: '8px 16px',
-                      background: 'var(--color-surface-raised, #fef2f2)',
-                      borderLeft: '3px solid var(--color-error, #e53e3e)',
+                      background: 'var(--color-surface-raised)',
+                      borderLeft: '3px solid var(--color-error)',
                       fontSize: '0.8rem',
                       fontFamily: 'monospace',
-                      color: 'var(--color-error, #c53030)',
+                      color: 'var(--color-error)',
                       marginBottom: '2px',
                     }}
                   >
@@ -207,8 +238,9 @@ export default function EmailHistoryPage() {
             ))}
           </div>
 
-          {data && data.total_pages > 1 && (
+          {data && (
             <div className="button-row">
+              <PageSizeSelect id="email-history-page-size" value={pageSize} onChange={handlePageSizeChange} />
               <button
                 type="button"
                 className="button button--secondary"

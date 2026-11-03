@@ -7,6 +7,7 @@ import ScopeBar from '../components/ScopeBar';
 import DateRangePresets from '../components/DateRangePresets';
 import LoadingState from '../components/LoadingState';
 import { useFY } from '../context/FYContext';
+import useDebouncedValue from '../hooks/useDebouncedValue';
 import type {
   CompanyProfile,
   TaxLedger,
@@ -14,6 +15,7 @@ import type {
   TaxLiabilityBucket,
 } from '../types/api';
 import formatCurrency, { formatDate } from '../utils/formatting';
+import { parseGstRate } from '../utils/gstRate';
 
 function defaultDateRange() {
   const today = new Date();
@@ -56,43 +58,63 @@ export default function TaxLedgerPage() {
     ? rowVirtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end
     : 0;
 
-  const numericGstRate = useMemo(() => {
-    if (!gstRate.trim()) return undefined;
-    const parsed = Number(gstRate);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }, [gstRate]);
+  const debouncedGstRate = useDebouncedValue(gstRate, 300);
+  const numericGstRate = useMemo(
+    () => parseGstRate(debouncedGstRate),
+    [debouncedGstRate],
+  );
 
   // ═══════════════════════════════════════════════════════════════════════
   //  Load & export
   // ═══════════════════════════════════════════════════════════════════════
 
-  async function loadTaxLedger() {
-    try {
-      setLoading(true);
-      setError('');
-      const [taxLedgerResponse, companyResponse] = await Promise.all([
-        api.get<TaxLedger>('/ledgers/tax-ledger/', {
+  // The company profile does not depend on the filters, so load it once.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await api.get<CompanyProfile>('/company/');
+        if (!cancelled) setCompany(response.data);
+      } catch {
+        // Keep the default currency; the ledger itself is still usable.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const response = await api.get<TaxLedger>('/ledgers/tax-ledger/', {
           params: {
             from_date: period.fromDate,
             to_date: period.toDate,
             voucher_type: voucherType === 'all' ? undefined : voucherType,
             gst_rate: numericGstRate,
           },
-        }),
-        api.get<CompanyProfile>('/company/'),
-      ]);
-      setTaxLedger(taxLedgerResponse.data);
-      setCompany(companyResponse.data);
-    } catch (err) {
-      setTaxLedger(null);
-      setError(getApiErrorMessage(err, 'Unable to load tax ledger'));
-    } finally {
-      setLoading(false);
-    }
-  }
+        });
+        if (cancelled) return;
+        setTaxLedger(response.data);
+      } catch (err) {
+        if (cancelled) return;
+        setTaxLedger(null);
+        setError(getApiErrorMessage(err, 'Unable to load tax ledger'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
 
-  useEffect(() => {
-    void loadTaxLedger();
+    return () => {
+      cancelled = true;
+    };
   }, [period.fromDate, period.toDate, voucherType, numericGstRate]);
 
   useEffect(() => {
@@ -196,6 +218,7 @@ export default function TaxLedgerPage() {
             className="table-wrap tax-ledger-scroll"
           >
             <table className="invoice-feed-table tax-ledger-table">
+              <caption className="sr-only">Tax ledger entries</caption>
               <thead className="tax-ledger-thead--sticky">
                 <tr>
                   <th scope="col">Date</th>
@@ -564,6 +587,7 @@ function TaxLiabilityPanel({
         />
         <div className="tax-setoff">
           <table className="tax-setoff__table">
+            <caption className="sr-only">Tax payable set-off by tax head</caption>
             <thead>
               <tr>
                 <th scope="col">Head</th>

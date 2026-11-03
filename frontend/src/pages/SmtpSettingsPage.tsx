@@ -3,6 +3,7 @@ import { CheckCircle, Pencil, Plus, Send, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { SmtpConfig, SmtpConfigCreate, SmtpConfigUpdate } from '../types/api';
 import StatusToasts from '../components/StatusToasts';
+import PasswordInput from '../components/PasswordInput';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import ModalCloseButton from '../components/ModalCloseButton';
@@ -72,7 +73,7 @@ function TestEmailModal({ config, onClose }: TestEmailModalProps) {
           {result && (
             <p
               role={result.kind === 'error' ? 'alert' : 'status'}
-              style={{ color: result.kind === 'error' ? 'var(--color-error, #e53e3e)' : 'var(--color-success, #38a169)', fontSize: '0.875rem' }}
+              style={{ color: result.kind === 'error' ? 'var(--color-error)' : 'var(--color-success)', fontSize: '0.875rem' }}
             >
               {result.message}
             </p>
@@ -248,10 +249,9 @@ function SmtpFormModal({ editing, onClose, onSaved, onError }: SmtpFormModalProp
               <label htmlFor="smtp-password">
                 Password{editing ? ' (leave blank to keep current)' : ''}
               </label>
-              <input
+              <PasswordInput
                 id="smtp-password"
                 className="input"
-                type="password"
                 value={form.password}
                 onChange={(e) => set('password', e.target.value)}
                 placeholder={editing ? '••••••••' : ''}
@@ -450,8 +450,8 @@ export default function SmtpSettingsPage() {
                           borderRadius: '999px',
                           fontSize: '0.75rem',
                           fontWeight: 600,
-                          background: config.is_active ? 'var(--color-success-bg, #c6f6d5)' : 'var(--color-muted-bg, #edf2f7)',
-                          color: config.is_active ? 'var(--color-success-text, #22543d)' : 'var(--color-muted-text, #4a5568)',
+                          background: config.is_active ? 'var(--color-success-bg)' : 'var(--color-muted-bg)',
+                          color: config.is_active ? 'var(--color-success-text)' : 'var(--color-muted-text)',
                         }}
                       >
                         {config.is_active ? 'Active' : 'Inactive'}

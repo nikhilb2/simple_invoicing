@@ -5,6 +5,8 @@ import io
 import pytest
 from fastapi.testclient import TestClient
 
+from src.models.product import Product
+
 
 def _create_product(client: TestClient, sku: str, name: str, price: float = 99.0, gst_rate: float = 18.0, maintain_inventory: bool = True, initial_quantity: float = 0) -> dict:
     res = client.post("/api/products/", json={
@@ -20,6 +22,34 @@ def _create_product(client: TestClient, sku: str, name: str, price: float = 99.0
 
 
 class TestProductsWithInventory:
+    @pytest.mark.parametrize(
+        "allow_decimal, quantity, status, expected_stock",
+        [(False, 2.5, 400, 10), (False, 3, 200, 3), (True, 2.5, 200, 2.5)],
+    )
+    def test_update_inventory_respects_whole_number_products(
+        self, client, allow_decimal, quantity, status, expected_stock
+    ):
+        response = client.post("/api/products/", json={
+            "sku": "WHOLE-STOCK",
+            "name": "Whole Stock",
+            "price": 99,
+            "initial_quantity": 10,
+            "allow_decimal": allow_decimal,
+        })
+        assert response.status_code == 200, response.text
+        product = response.json()
+
+        response = client.put(f"/api/products/{product['id']}/with-inventory", json={
+            "current_stock": quantity,
+        })
+        assert response.status_code == status, response.text
+        if status == 400:
+            assert response.json()["detail"] == "Quantity must be a whole number for this product"
+
+        listing = client.get("/api/products/with-inventory?search=Whole Stock")
+        assert listing.status_code == 200
+        assert listing.json()["items"][0]["current_stock"] == expected_stock
+
     def test_list_products_with_inventory(self, client):
         _create_product(client, "PI001", "Widget A", price=50, initial_quantity=10)
         _create_product(client, "PI002", "Widget B", price=75, initial_quantity=5)
@@ -124,6 +154,37 @@ class TestProductsWithInventory:
         list_res = client.get("/api/products/with-inventory?search=Stock Test")
         assert list_res.json()["items"][0]["current_stock"] == 25
 
+    def test_update_inventory_rejects_negative_stock(self, client):
+        p = _create_product(client, "STK2", "Negative Stock", initial_quantity=10)
+
+        res = client.put(f"/api/products/{p['id']}/with-inventory", json={
+            "current_stock": -1,
+        })
+        assert res.status_code == 422
+
+        list_res = client.get("/api/products/with-inventory?search=Negative Stock")
+        assert list_res.json()["items"][0]["current_stock"] == 10
+
+    def test_update_inventory_accepts_zero_stock(self, client):
+        p = _create_product(client, "STK3", "Zero Stock", initial_quantity=10)
+
+        res = client.put(f"/api/products/{p['id']}/with-inventory", json={
+            "current_stock": 0,
+        })
+        assert res.status_code == 200
+        assert res.json()["current_stock"] == 0
+
+    def test_update_inventory_keeps_serial_tracked_guard(self, client, db_session):
+        p = _create_product(client, "STK4", "Serial Stock", initial_quantity=0)
+        db_session.query(Product).filter(Product.id == p["id"]).update({"track_serials": True})
+        db_session.commit()
+
+        res = client.put(f"/api/products/{p['id']}/with-inventory", json={
+            "current_stock": 5,
+        })
+        assert res.status_code == 400
+        assert "serial-tracked" in res.json()["detail"]
+
     def test_toggle_status(self, client):
         p = _create_product(client, "TOG1", "Toggle Me", maintain_inventory=True, initial_quantity=1)
 
@@ -136,6 +197,29 @@ class TestProductsWithInventory:
         res = client.put(f"/api/products/{p['id']}/with-inventory", json={"status": "active"})
         assert res.status_code == 200
         assert res.json()["status"] == "active"
+
+    @pytest.mark.parametrize("body", [{"unit": "   "}, {"status": "archived"}])
+    def test_update_rejects_blank_unit_and_unknown_status(self, client, body):
+        # Issue #667: the update route must reject a blank unit and an
+        # unknown status with 422 and leave the stored product untouched.
+        res = client.post("/api/products/", json={
+            "sku": "VAL1",
+            "name": "Validate Me",
+            "price": 99.0,
+            "gst_rate": 18.0,
+            "maintain_inventory": True,
+            "initial_quantity": 0,
+            "unit": "Pieces",
+        })
+        assert res.status_code == 200, res.text
+        p = res.json()
+
+        res = client.put(f"/api/products/{p['id']}/with-inventory", json=body)
+        assert res.status_code == 422
+
+        item = client.get("/api/products/with-inventory?search=Validate Me").json()["items"][0]
+        assert item["unit"] == "Pieces"
+        assert item["status"] == "active"
 
     def test_update_nonexistent_product(self, client):
         res = client.put("/api/products/99999/with-inventory", json={"name": "Ghost"})
@@ -250,6 +334,97 @@ class TestCSVImport:
         data = res.json()
         assert data["created"] == 0
         assert len(data["errors"]) > 0
+
+    def test_import_csv_bad_stock_cell_errors_and_keeps_stock(self, client):
+        """An unreadable stock cell must error, not silently zero the inventory (Issue #556)."""
+        _create_product(client, "IMP010", "Stock Keeper", price=10, initial_quantity=7)
+        csv_content = (
+            "Item Name,Item Code,Selling Price,Current Stock\n"
+            "Stock Keeper,IMP010,12,ten\n"
+        )
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 0
+        assert data["updated"] == 0
+        assert data["errors"] == [{"row": 2, "message": "Invalid Current Stock for IMP010"}]
+
+        # Nothing in the failed row was applied: stock and selling price unchanged
+        item = client.get("/api/products/with-inventory?search=Stock Keeper").json()["items"][0]
+        assert item["current_stock"] == 7
+        assert item["selling_price"] == 10
+
+    @pytest.mark.parametrize("header,cell,message", [
+        ("Tax", "150", "Invalid Tax for IMP011"),
+        ("Tax", "eighteen", "Invalid Tax for IMP011"),
+        ("Tax", "nan", "Invalid Tax for IMP011"),
+        ("Current Stock", "ten", "Invalid Current Stock for IMP011"),
+        ("Current Stock", "-5", "Invalid Current Stock for IMP011"),
+        ("Current Stock", "nan", "Invalid Current Stock for IMP011"),
+        ("Current Stock", "inf", "Invalid Current Stock for IMP011"),
+        ("Purchase Price", "three", "Invalid Purchase Price for IMP011"),
+        ("Purchase Price", "-1", "Invalid Purchase Price for IMP011"),
+        ("Reorder Level", "-2", "Invalid Reorder Level for IMP011"),
+    ])
+    def test_import_csv_unreadable_cell_errors(self, client, header, cell, message):
+        """Bad tax/stock/purchase/reorder cells error their row instead of coercing to 0 (Issue #556)."""
+        csv_content = (
+            f"Item Name,Item Code,Selling Price,{header}\n"
+            f"Cell A,IMP011,10,{cell}\n"
+        )
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 0
+        assert data["updated"] == 0
+        assert data["errors"] == [{"row": 2, "message": message}]
+
+    def test_import_csv_tax_percent_and_empty_cells(self, client):
+        """'18%' imports as 18; empty optional cells still mean 0 / defaults (Issue #556)."""
+        csv_content = (
+            "Item Name,Item Code,Selling Price,Current Stock,Tax\n"
+            "Pct A,IMP018,10,,18%\n"
+            "Pct B,IMP019,10,,\n"
+        )
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 2
+        assert data["errors"] == []
+        items = {i["sku"]: i for i in client.get("/api/products/with-inventory?search=Pct").json()["items"]}
+        assert items["IMP018"]["gst_rate"] == 18
+        assert items["IMP019"]["current_stock"] == 0
+        assert items["IMP019"]["gst_rate"] == 0
+
+    def test_import_csv_mixed_rows_partial_failure(self, client):
+        """Rows without errors in the same file still import (Issue #556)."""
+        _create_product(client, "IMP020", "Mixed Keeper", price=10, initial_quantity=4)
+        csv_content = (
+            "Item Name,Item Code,Selling Price,Current Stock\n"
+            "Mixed New,IMP021,10,5\n"
+            "Mixed Keeper,IMP020,12,ten\n"
+        )
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 1
+        assert data["updated"] == 0
+        assert data["errors"] == [{"row": 3, "message": "Invalid Current Stock for IMP020"}]
+        items = {i["sku"]: i for i in client.get("/api/products/with-inventory?search=Mixed").json()["items"]}
+        assert items["IMP021"]["current_stock"] == 5
+        assert items["IMP020"]["current_stock"] == 4
 
 
 class TestProductPurchasePriceAndReorderLevel:

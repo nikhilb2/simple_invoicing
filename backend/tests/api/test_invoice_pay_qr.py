@@ -25,7 +25,7 @@ def _company(db, *, pay_qr: bool) -> CompanyProfile:
     company = CompanyProfile(
         name="Alpha Ltd",
         address="1 Test Road",
-        gst="27AAAAA0000A1Z5",
+        gst="27AAAAA0000A1Z2",
         currency_code="INR",
         show_pay_qr_on_invoice=pay_qr,
     )
@@ -57,7 +57,7 @@ def _invoice(db, company: CompanyProfile) -> Invoice:
         company_id=company.id,
         name="Acme Traders",
         address="9 Buyer Lane",
-        gst="27BBBBB0000B1Z5",
+        gst="27BBBBB0000B1ZT",
         phone_number="+91 9111111111",
     )
     db.add(ledger)

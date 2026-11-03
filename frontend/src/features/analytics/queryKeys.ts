@@ -1,4 +1,4 @@
-import type { AnalyticsFilters, ProductSortBy, SortDir } from './types';
+import type { AnalyticsFilters, PerformanceSortBy, ProductSortBy, SortDir } from './types';
 
 export const analyticsQueryKeys = {
   all: ['analytics'] as const,
@@ -24,6 +24,30 @@ export const analyticsQueryKeys = {
       filters.productId ?? 'all',
       sortBy,
       sortDir,
+    ] as const,
+  // No voucherType: the report covers sales and purchases together.
+  productPerformance: (filters: AnalyticsFilters, sortBy: PerformanceSortBy, sortDir: SortDir) =>
+    [
+      'analytics',
+      'product-performance',
+      filters.financialYearId ?? 'all',
+      filters.fromDate ?? 'auto',
+      filters.toDate ?? 'auto',
+      filters.ledgerId ?? 'all',
+      filters.productId ?? 'all',
+      sortBy,
+      sortDir,
+    ] as const,
+  productPerformanceDetail: (productId: number, filters: AnalyticsFilters) =>
+    [
+      'analytics',
+      'product-performance',
+      'detail',
+      productId,
+      filters.financialYearId ?? 'all',
+      filters.fromDate ?? 'auto',
+      filters.toDate ?? 'auto',
+      filters.ledgerId ?? 'all',
     ] as const,
   profitLoss: (filters: AnalyticsFilters) =>
     [

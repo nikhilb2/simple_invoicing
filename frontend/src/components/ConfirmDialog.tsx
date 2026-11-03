@@ -15,6 +15,8 @@ type ConfirmDialogProps = {
   cancelText?: string;
   /** Optional danger level - affects confirm button styling */
   danger?: boolean;
+  /** Disables the confirm button while the action is in flight */
+  confirmDisabled?: boolean;
 };
 
 /**
@@ -30,6 +32,7 @@ export default function ConfirmDialog({
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   danger = false,
+  confirmDisabled = false,
 }: ConfirmDialogProps) {
   useEscapeClose(onCancel);
 
@@ -67,6 +70,7 @@ export default function ConfirmDialog({
             onClick={onConfirm}
             title={confirmText}
             aria-label={confirmText}
+            disabled={confirmDisabled}
           >
             {confirmText}
           </button>

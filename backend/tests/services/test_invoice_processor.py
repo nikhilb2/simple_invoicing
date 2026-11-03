@@ -28,7 +28,7 @@ from src.services.invoice_processor import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def make_company(db, *, gst="27AABCU9603R1ZX") -> CompanyProfile:
+def make_company(db, *, gst="27AABCU9603R1ZN") -> CompanyProfile:
     company = CompanyProfile(
         name="Test Co",
         address="123 Test St",
@@ -41,7 +41,7 @@ def make_company(db, *, gst="27AABCU9603R1ZX") -> CompanyProfile:
     return company
 
 
-def make_ledger(db, company_id, *, gst="29AABCU9603R1ZX") -> Buyer:
+def make_ledger(db, company_id, *, gst="29AABCU9603R1ZJ") -> Buyer:
     ledger = Buyer(
         company_id=company_id,
         name="Test Ledger",

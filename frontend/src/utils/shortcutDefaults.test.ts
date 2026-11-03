@@ -3,6 +3,7 @@ import {
   ACTION_KEYS,
   ACTION_LABELS,
   DEFAULT_SHORTCUTS,
+  type ActionKey,
 } from './shortcutDefaults';
 
 describe('shortcutDefaults — invariant protection across action keys', () => {
@@ -25,14 +26,14 @@ describe('shortcutDefaults — invariant protection across action keys', () => {
   test('DEFAULT_SHORTCUTS contains only keys defined in ACTION_KEYS', () => {
     const definedKeys = new Set(ACTION_KEYS);
     for (const key of Object.keys(DEFAULT_SHORTCUTS)) {
-      expect(definedKeys.has(key as any)).toBe(true);
+      expect(definedKeys.has(key as ActionKey)).toBe(true);
     }
   });
 
   test('ACTION_LABELS contains only keys defined in ACTION_KEYS', () => {
     const definedKeys = new Set(ACTION_KEYS);
     for (const key of Object.keys(ACTION_LABELS)) {
-      expect(definedKeys.has(key as any)).toBe(true);
+      expect(definedKeys.has(key as ActionKey)).toBe(true);
     }
   });
 });

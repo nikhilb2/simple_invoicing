@@ -12,7 +12,7 @@ import {
 import type { MonthlySalesRow } from '../../../features/analytics/types';
 import useMediaQuery, { NARROW_QUERY } from '../../../hooks/useMediaQuery';
 import formatCurrency, { formatCompactCurrency } from '../../../utils/formatting';
-import { chartColors, tooltipStyle } from './chartTheme';
+import { useChartColors, useChartTooltipStyle } from './chartTheme';
 
 /**
  * Sales bars with the average invoice value overlaid as a line.
@@ -29,6 +29,8 @@ export default function MonthlySalesChart({
   rows: MonthlySalesRow[];
   currencyCode: string;
 }) {
+  const chartColors = useChartColors();
+  const tooltipStyle = useChartTooltipStyle();
   const narrow = useMediaQuery(NARROW_QUERY);
 
   return (

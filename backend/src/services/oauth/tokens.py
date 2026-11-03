@@ -213,7 +213,10 @@ def resolve_bearer(token: str, db: Session) -> OAuthPrincipal | None:
         return None
 
     user = db.query(User).filter(User.id == row.user_id).first()
-    if user is None:
+    # A deactivated account's grants stop with it. Answering 401 here, before
+    # dispatch, matters: the internal token minted later would otherwise be
+    # refused by get_current_user and surface as a server bug.
+    if user is None or user.is_active is False:
         return None
 
     role = user.role.value if hasattr(user.role, "value") else str(user.role)

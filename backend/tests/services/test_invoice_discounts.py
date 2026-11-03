@@ -19,7 +19,11 @@ from src.models.invoice import Invoice
 from src.models.product import Product
 from src.models.user import User, UserRole
 from src.schemas.invoice import InvoiceCreate, InvoiceItemCreate
-from src.services.invoice_discounts import build_invoice_discount_totals
+from src.services.invoice_discounts import (
+    apportion_invoice_discount,
+    build_invoice_discount_totals,
+    invoice_discount_amount,
+)
 from src.services.invoice_processor import InvoiceProcessor
 
 
@@ -374,3 +378,67 @@ class TestRoundTripAgainstProcessor:
         gross = Decimal(str(invoice.taxable_amount)) + Decimal(str(invoice.total_tax_amount))
         charged = Decimal(str(invoice.total_amount)) - Decimal(str(invoice.round_off_amount))
         assert summary.invoice_discount_amount == max(gross - charged, Decimal("0.00"))
+
+
+class TestApportionInvoiceDiscount:
+    """The pure split behind per-product revenue in the product performance
+    report: only the ex-GST share of an invoice discount reaches revenue."""
+
+    @staticmethod
+    def _split(taxables, discount, tax):
+        return apportion_invoice_discount(
+            [Decimal(str(t)) for t in taxables],
+            invoice_discount=Decimal(str(discount)),
+            invoice_tax=Decimal(str(tax)),
+        )
+
+    def test_only_the_ex_gst_share_is_split(self):
+        # 400 + 72 GST; 47.20 off -> 40.00 ex-GST, split 1:3.
+        assert self._split([100, 300], "47.20", 72) == [Decimal("10.00"), Decimal("30.00")]
+
+    def test_zero_tax_invoice_passes_the_whole_discount_through(self):
+        assert self._split([50, 150], 20, 0) == [Decimal("5.00"), Decimal("15.00")]
+
+    def test_shares_always_sum_to_the_ex_gst_total(self):
+        # Three equal lines and a discount that can't split evenly into paise.
+        shares = self._split([10, 10, 10], "1.00", 0)
+        assert sum(shares) == Decimal("1.00")
+        assert sorted(shares) == [Decimal("0.33"), Decimal("0.33"), Decimal("0.34")]
+
+    def test_mixed_gst_rates_use_the_invoice_level_ratio(self):
+        # 100 @ 5% + 100 @ 28% = 200 + 33 tax; 23.30 off -> 20.00 ex-GST.
+        assert self._split([100, 100], "23.30", 33) == [Decimal("10.00"), Decimal("10.00")]
+
+    def test_no_discount_or_no_taxable_yields_zeros(self):
+        assert self._split([100, 200], 0, 54) == [Decimal("0.00"), Decimal("0.00")]
+        assert self._split([0, 0], 10, 0) == [Decimal("0.00"), Decimal("0.00")]
+        assert self._split([], 10, 0) == []
+
+    def test_discount_is_clamped_to_the_gross(self):
+        # The processor never discounts below zero; neither does the split.
+        assert self._split([100], 500, 18) == [Decimal("100.00")]
+
+    def test_round_trip_against_the_processor(self, db_session, processor):
+        """Shares recovered from a real processed invoice sum to the ex-GST
+        part of the discount the processor actually applied."""
+        _, ledger = _seed(db_session)
+        a = _product(db_session, sku="AP1", gst_rate=5.0)
+        b = _product(db_session, sku="AP2", gst_rate=18.0)
+        invoice = _apply(
+            db_session, processor, ledger,
+            discount_type="net", discount_value=77.77, apply_round_off=True,
+            items=[
+                InvoiceItemCreate(product_id=a.id, quantity=3, unit_price=123.45),
+                InvoiceItemCreate(product_id=b.id, quantity=2, unit_price=67.89),
+            ],
+        )
+        items = sorted(invoice.items, key=lambda item: item.id)
+        shares = apportion_invoice_discount(
+            [Decimal(str(item.taxable_amount)) for item in items],
+            invoice_discount=invoice_discount_amount(invoice),
+            invoice_tax=Decimal(str(invoice.total_tax_amount)),
+        )
+        taxable = Decimal(str(invoice.taxable_amount))
+        tax = Decimal(str(invoice.total_tax_amount))
+        expected = (Decimal("77.77") * taxable / (taxable + tax)).quantize(Decimal("0.01"))
+        assert sum(shares) == expected

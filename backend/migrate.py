@@ -23,8 +23,10 @@ MIGRATIONS_TABLE = "_migrations"
 
 
 def get_engine():
-    from src.db.session import engine
-    return engine
+    # The owner (MIGRATION_DATABASE_URL) when set: shared hosting's app role
+    # cannot run DDL.
+    from src.db.session import migration_engine
+    return migration_engine
 
 
 def ensure_migrations_table(conn) -> None:

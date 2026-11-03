@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
-import { Download, ExternalLink, Mail, Printer, Share2 } from 'lucide-react';
-import api, { getApiErrorMessage } from '../api/client';
+import { Download, ExternalLink, FileSpreadsheet, Mail, Printer, Share2 } from 'lucide-react';
+import api, { getApiErrorMessage, getBlobErrorMessage } from '../api/client';
+import { parseContentDispositionFilename } from '../utils/contentDisposition';
 import type { CompanyProfile, Ledger, LedgerStatement } from '../types/api';
 import formatCurrency from '../utils/formatting';
 import SendEmailModal from './SendEmailModal';
@@ -24,6 +25,7 @@ export default function StatementPreview({ ledger, statement, company, currencyC
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [downloadingCsv, setDownloadingCsv] = useState(false);
 
   // The email and share modals stacked on top close themselves on Escape;
   // without this guard the same keypress tears down the preview behind them.
@@ -57,6 +59,37 @@ export default function StatementPreview({ ledger, statement, company, currencyC
       window.URL.revokeObjectURL(url);
     } catch (err) {
       onError?.(getApiErrorMessage(err, 'Unable to download PDF'));
+    }
+  };
+
+  // The CSV comes from the server, not rebuilt on the client: the server
+  // is what owns the opening balance, the running balance and the totals,
+  // so downloading its file keeps all three formats in agreement. The
+  // name prefers the server's Content-Disposition header and falls back
+  // to the same statement_<ledger>_<from>_<to>.csv shape the server uses.
+  const handleDownloadCsv = async () => {
+    try {
+      setDownloadingCsv(true);
+      const response = await api.get(`/ledgers/${ledger.id}/statement/csv`, {
+        params: { from_date: statement.from_date, to_date: statement.to_date },
+        responseType: 'blob',
+      });
+      const safeName = ledger.name.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30)
+        || `ledger_${ledger.id}`;
+      const filename = parseContentDispositionFilename(response.headers['content-disposition'])
+        ?? `statement_${safeName}_${statement.from_date}_${statement.to_date}.csv`;
+      const url = window.URL.createObjectURL(response.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      onError?.(await getBlobErrorMessage(err, 'Unable to download CSV'));
+    } finally {
+      setDownloadingCsv(false);
     }
   };
 
@@ -95,6 +128,13 @@ export default function StatementPreview({ ledger, statement, company, currencyC
               icon: <Download size={16} aria-hidden="true" />,
               onClick: handleDownloadPdf,
               title: 'Download statement PDF',
+            },
+            {
+              label: downloadingCsv ? 'Downloading…' : 'Export CSV',
+              icon: <FileSpreadsheet size={16} aria-hidden="true" />,
+              onClick: () => { void handleDownloadCsv(); },
+              disabled: downloadingCsv,
+              title: 'Download statement CSV',
             },
           ]}
           menu={[

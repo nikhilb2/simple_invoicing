@@ -2,6 +2,9 @@ import api from '../../api/client';
 import type {
   AnalyticsFilters,
   MonthlySalesReport,
+  PerformanceSortBy,
+  ProductPerformanceDetail,
+  ProductPerformanceReport,
   ProductSalesReport,
   ProductSortBy,
   ProfitLossReport,
@@ -48,6 +51,37 @@ export async function fetchProfitLoss(filters: AnalyticsFilters): Promise<Profit
   const response = await api.get<ProfitLossReport>('/analytics/profit-loss', {
     // Profit is sales-only server-side; voucher_type from toParams is ignored there.
     params: { ...toParams(filters), product_id: filters.productId },
+    timeout: REPORT_TIMEOUT_MS,
+  });
+  return response.data;
+}
+
+export async function fetchProductPerformance(
+  filters: AnalyticsFilters,
+  sortBy: PerformanceSortBy,
+  sortDir: SortDir,
+): Promise<ProductPerformanceReport> {
+  const response = await api.get<ProductPerformanceReport>('/analytics/product-performance', {
+    params: {
+      ...toParams(filters),
+      // Sales and purchases are both in this report; axios drops undefined params.
+      voucher_type: undefined,
+      product_id: filters.productId,
+      sort_by: sortBy,
+      sort_dir: sortDir,
+    },
+    timeout: REPORT_TIMEOUT_MS,
+  });
+  return response.data;
+}
+
+export async function fetchProductPerformanceDetail(
+  productId: number,
+  filters: AnalyticsFilters,
+): Promise<ProductPerformanceDetail> {
+  const response = await api.get<ProductPerformanceDetail>(`/analytics/product-performance/${productId}`, {
+    // The product is in the path; like the list, there is no voucher_type.
+    params: { ...toParams(filters), voucher_type: undefined },
     timeout: REPORT_TIMEOUT_MS,
   });
   return response.data;

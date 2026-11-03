@@ -116,6 +116,135 @@ export type ProfitLossReport = {
   totals: ProfitLossTotals;
 };
 
+export type PerformanceSortBy =
+  | 'name'
+  | 'units_sold'
+  | 'units_returned'
+  | 'net_units_sold'
+  | 'units_bought'
+  | 'net_units_bought'
+  | 'average_selling_price'
+  | 'average_buying_price'
+  | 'revenue'
+  | 'purchase_spend'
+  | 'cogs'
+  | 'gross_profit'
+  | 'margin_pct'
+  | 'profit_per_unit'
+  | 'current_stock';
+
+/** Where a row's unit cost came from. null means no cost is known at all. */
+export type CostBasis = 'purchases' | 'current_price';
+
+/**
+ * One product's sales, purchases, returns and margin. All money is ex-GST.
+ * Cost-derived fields are null when the product has no purchases in the period
+ * and no purchase price — render "—", never 0.
+ */
+export type ProductPerformanceRow = {
+  product_id: number;
+  name: string;
+  sku: string | null;
+  units_sold: number;
+  units_returned: number;
+  net_units_sold: number;
+  units_bought: number;
+  units_purchase_returned: number;
+  net_units_bought: number;
+  average_selling_price: number | null;
+  average_buying_price: number | null;
+  cost_basis: CostBasis | null;
+  sales_value: number;
+  return_value: number;
+  revenue: number;
+  purchase_value: number;
+  purchase_return_value: number;
+  purchase_spend: number;
+  cogs: number | null;
+  gross_profit: number | null;
+  margin_pct: number | null;
+  profit_per_unit: number | null;
+  current_stock: number | null;
+};
+
+export type ProductPerformanceTotals = {
+  product_count: number;
+  units_sold: number;
+  units_returned: number;
+  net_units_sold: number;
+  units_bought: number;
+  units_purchase_returned: number;
+  net_units_bought: number;
+  sales_value: number;
+  return_value: number;
+  revenue: number;
+  purchase_value: number;
+  purchase_return_value: number;
+  purchase_spend: number;
+  /** Revenue of the rows that have a cost; profit and margin cover only these. */
+  costed_revenue: number;
+  cogs: number;
+  gross_profit: number;
+  margin_pct: number | null;
+  uncosted_product_count: number;
+  current_price_product_count: number;
+};
+
+export type ProductPerformanceReport = {
+  currency_code: string;
+  period: ReportPeriod;
+  sort_by: PerformanceSortBy;
+  sort_dir: SortDir;
+  rows: ProductPerformanceRow[];
+  totals: ProductPerformanceTotals;
+};
+
+export type ProductPerformanceProduct = {
+  product_id: number;
+  name: string;
+  sku: string | null;
+  unit: string | null;
+  maintain_inventory: boolean;
+  /** Catalogue prices, not what was transacted. */
+  price: number;
+  purchase_price: number;
+  reorder_level: number;
+  /** null when the product isn't stock-tracked. */
+  current_stock: number | null;
+};
+
+/**
+ * One month of a product, under the same rules as its period row: units,
+ * money, COGS and profit sum exactly to `summary`. `average_buying_price` is
+ * what was paid that month, not the period cost COGS is taken at.
+ */
+export type ProductPerformanceMonthlyRow = Omit<
+  ProductPerformanceRow,
+  'product_id' | 'name' | 'sku' | 'cost_basis' | 'current_stock'
+> & {
+  month: string;
+  label: string;
+};
+
+export type ProductSalesVelocity = {
+  /** Days of the period up to today. */
+  elapsed_days: number;
+  /** Net units sold per elapsed day; null when nothing sold. */
+  daily_sales_rate: number | null;
+  /** Current stock / daily_sales_rate; null when undefined or untracked. */
+  stock_cover_days: number | null;
+};
+
+export type ProductPerformanceDetail = {
+  currency_code: string;
+  period: ReportPeriod;
+  product: ProductPerformanceProduct;
+  /** The list row for this product and period; null when nothing moved. */
+  summary: ProductPerformanceRow | null;
+  monthly_rows: ProductPerformanceMonthlyRow[];
+  velocity: ProductSalesVelocity;
+};
+
 /** Filters shared by both reports; product-only fields are optional. */
 export type AnalyticsFilters = {
   voucherType: VoucherType;

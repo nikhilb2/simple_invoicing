@@ -4,6 +4,7 @@ import {
   ArrowUp,
   ArrowUpDown,
   Check,
+  Copy,
   Factory,
   Pencil,
   ScanBarcode,
@@ -71,6 +72,7 @@ type CatalogueTableProps = {
   onOpenSerials: (row: CatalogueRow) => void;
   onConfigureBom: (row: CatalogueRow) => void;
   onOpenFullEdit: (row: CatalogueRow) => void;
+  onDuplicate: (row: CatalogueRow) => void;
   onDelete: (row: CatalogueRow) => void;
 };
 
@@ -94,6 +96,7 @@ export default function CatalogueTable({
   onOpenSerials,
   onConfigureBom,
   onOpenFullEdit,
+  onDuplicate,
   onDelete,
 }: CatalogueTableProps) {
   const firstEditRef = useRef<HTMLInputElement | null>(null);
@@ -105,6 +108,7 @@ export default function CatalogueTable({
   return (
     <div className="catalogue-table-wrap">
       <table className="catalogue-table">
+        <caption className="sr-only">Products</caption>
         <thead>
           <tr>
             {COLUMNS.map((column) => {
@@ -389,6 +393,15 @@ export default function CatalogueTable({
                           aria-label={`All settings for ${row.name}`}
                         >
                           <SlidersHorizontal size={16} aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost button--icon"
+                          onClick={() => onDuplicate(row)}
+                          title={`Duplicate ${row.name}`}
+                          aria-label={`Duplicate ${row.name}`}
+                        >
+                          <Copy size={16} aria-hidden="true" />
                         </button>
                         {row.track_serials ? (
                           <button

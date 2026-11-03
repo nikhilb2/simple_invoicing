@@ -28,6 +28,7 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestRequest = useRef(0);
 
   // Sync label when external value changes (e.g. default product on load)
   useEffect(() => {
@@ -36,7 +37,10 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
   }, [value, products]);
 
   // Cleanup debounce timer on unmount
-  useEffect(() => () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); }, []);
+  useEffect(() => () => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    latestRequest.current += 1;
+  }, []);
 
   // When typing: use server results (already filtered). When not typing: show full prop list.
   const suggestions = open
@@ -57,17 +61,22 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
 
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     if (val.trim() === '') {
+      latestRequest.current += 1;
       setServerResults(null);
       return;
     }
+    const requestId = latestRequest.current + 1;
+    latestRequest.current = requestId;
     searchTimerRef.current = setTimeout(() => {
       void (async () => {
         try {
           const res = await api.get<{ items: Product[] }>('/products/', {
             params: { page: 1, page_size: 30, search: val.trim() },
           });
+          if (latestRequest.current !== requestId) return;
           setServerResults(res.data.items);
         } catch {
+          if (latestRequest.current !== requestId) return;
           // silently ignore search errors
         }
       })();
@@ -75,6 +84,7 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
   }
 
   function handleSelect(product: Product) {
+    latestRequest.current += 1;
     setQuery(`${product.name} (${product.sku})`);
     setOpen(false);
     setActiveIndex(-1);
@@ -104,6 +114,7 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
         handleSelect(suggestions[activeIndex]);
       }
     } else if (e.key === 'Escape') {
+      latestRequest.current += 1;
       setOpen(false);
       setActiveIndex(-1);
       setSearching(false);
@@ -125,6 +136,7 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
   useEffect(() => {
     function handleOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        latestRequest.current += 1;
         setOpen(false);
         setSearching(false);
         setServerResults(null);
@@ -140,6 +152,7 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
   const showClear = Boolean(onClear && value);
 
   function handleClear() {
+    latestRequest.current += 1;
     setQuery('');
     setOpen(false);
     setSearching(false);
@@ -199,10 +212,10 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
             margin: 0,
             padding: 0,
             listStyle: 'none',
-            border: '1px solid var(--border, #d1d5db)',
+            border: '1px solid var(--border)',
             borderRadius: '6px',
-            background: 'var(--surface, #fff)',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+            background: 'var(--surface)',
+            boxShadow: '0 4px 12px rgb(var(--rgb-shadow) / 0.12)',
           }}
         >
           {suggestions.map((p, i) => (
@@ -215,11 +228,11 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
               style={{
                 padding: '8px 12px',
                 cursor: 'pointer',
-                background: i === activeIndex ? 'var(--accent, #3b82f6)' : String(p.id) === value ? 'var(--surface-subtle, #f3f4f6)' : 'transparent',
-                color: i === activeIndex ? '#fff' : '#111827',
+                background: i === activeIndex ? 'var(--accent)' : String(p.id) === value ? 'var(--surface-subtle)' : 'transparent',
+                color: i === activeIndex ? 'var(--on-accent)' : 'var(--text)',
               }}
             >
-              {p.name} <span style={{ opacity: 0.75, fontSize: '0.85em', color: i === activeIndex ? '#fff' : '#374151' }}>({p.sku})</span>
+              {p.name} <span style={{ opacity: 0.75, fontSize: '0.85em', color: i === activeIndex ? 'var(--on-accent)' : 'var(--muted)' }}>({p.sku})</span>
             </li>
           ))}
         </ul>
@@ -233,10 +246,10 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
             right: 0,
             zIndex: 50,
             padding: '8px 12px',
-            border: '1px solid var(--border, #d1d5db)',
+            border: '1px solid var(--border)',
             borderRadius: '6px',
-            background: 'var(--surface, #fff)',
-            color: 'var(--text-muted, #6b7280)',
+            background: 'var(--surface)',
+            color: 'var(--text-muted)',
             fontSize: '0.9em',
           }}
         >

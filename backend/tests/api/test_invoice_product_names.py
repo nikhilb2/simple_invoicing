@@ -19,6 +19,8 @@ if str(BACKEND_ROOT) not in sys.path:
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
 
+import re
+
 import pytest
 
 from src.api.routes.invoices import _enrich_items_with_product_names
@@ -202,14 +204,24 @@ class TestPdfSkuColumnVisibility:
     def test_item_description_wider_when_sku_hidden_intrastate(self):
         """Item description col gets extra width from SKU when hidden (intrastate)."""
         colgroup_without = _build_pdf_table_colgroup(interstate_supply=False, show_sku=False)
-        # Intrastate: Item col goes from 16% to 22% (SKU 6% redistributed)
-        assert "width: 22%" in colgroup_without
+        # Intrastate: Item col goes from 15% to 21% (SKU 6% redistributed)
+        assert "width: 21%" in colgroup_without
 
     def test_item_description_wider_when_sku_hidden_interstate(self):
         """Item description col gets extra width from SKU when hidden (interstate)."""
         colgroup_without = _build_pdf_table_colgroup(interstate_supply=True, show_sku=False)
         # Interstate: Item col goes from 20% to 27% (SKU 7% redistributed)
         assert "width: 27%" in colgroup_without
+
+    @pytest.mark.parametrize("interstate_supply", [False, True])
+    @pytest.mark.parametrize("show_sku", [False, True])
+    def test_hsn_column_fits_an_eight_digit_code(self, interstate_supply, show_sku):
+        """Below 8% an 8-digit HSN code breaks across two lines in the PDF."""
+        colgroup = _build_pdf_table_colgroup(interstate_supply=interstate_supply, show_sku=show_sku)
+        widths = [int(width) for width in re.findall(r"width: (\d+)%", colgroup)]
+        hsn_index = 3 if show_sku else 2
+        assert widths[hsn_index] >= 8
+        assert sum(widths) == 100
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -347,7 +359,7 @@ class TestInvoiceApiProductName:
     def test_create_invoice_returns_product_name(self, client):
         """POST /api/invoices returns product_name in items."""
         with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0001"):
-            ledger_id = _create_ledger(client, name="ProductName Buyer", gst="27ABCDE9999F1Z5")
+            ledger_id = _create_ledger(client, name="ProductName Buyer", gst="27ABCDE9999F1ZW")
             product_id = _create_product(client, sku="TV001", name="OLED TV")
             _add_inventory(client, product_id=product_id, quantity=10)
 
@@ -364,7 +376,7 @@ class TestInvoiceApiProductName:
     def test_list_invoices_returns_product_name(self, client):
         """GET /api/invoices returns product_name in each item."""
         with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0002"):
-            ledger_id = _create_ledger(client, name="List Buyer", gst="27ABCDE9999F1Z6")
+            ledger_id = _create_ledger(client, name="List Buyer", gst="27ABCDE9999F1ZW")
             product_id = _create_product(client, sku="CHAIR", name="Office Chair")
             _add_inventory(client, product_id=product_id, quantity=10)
 
@@ -385,7 +397,7 @@ class TestInvoiceApiProductName:
     def test_get_single_invoice_returns_product_name(self, client):
         """GET /api/invoices/{id} returns product_name in items."""
         with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0003"):
-            ledger_id = _create_ledger(client, name="Single Buyer", gst="27ABCDE9999F1Z7")
+            ledger_id = _create_ledger(client, name="Single Buyer", gst="27ABCDE9999F1ZW")
             product_id = _create_product(client, sku="DESK", name="Standing Desk")
             _add_inventory(client, product_id=product_id, quantity=10)
 
@@ -405,7 +417,7 @@ class TestInvoiceApiProductName:
     def test_update_invoice_returns_product_name(self, client):
         """PUT /api/invoices/{id} returns product_name after update."""
         with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0004"):
-            ledger_id = _create_ledger(client, name="Update Buyer", gst="27ABCDE9999F1Z8")
+            ledger_id = _create_ledger(client, name="Update Buyer", gst="27ABCDE9999F1ZW")
             old_product_id = _create_product(client, sku="MOUSE", name="Wireless Mouse")
             new_product_id = _create_product(client, sku="KB001", name="Mechanical Keyboard")
             _add_inventory(client, product_id=old_product_id, quantity=10)
@@ -431,7 +443,7 @@ class TestInvoiceApiProductName:
     def test_list_invoices_search_matches_product_name(self, client):
         """GET /api/invoices?search=<product> returns invoices containing that product."""
         with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0007"):
-            ledger_id = _create_ledger(client, name="Search Buyer", gst="27ABCDE9999F1Z1")
+            ledger_id = _create_ledger(client, name="Search Buyer", gst="27ABCDE9999F1ZW")
             tv_id = _create_product(client, sku="TVX", name="Plasma Television")
             chair_id = _create_product(client, sku="CHX", name="Recliner Chair")
             _add_inventory(client, product_id=tv_id, quantity=10)
@@ -461,7 +473,7 @@ class TestInvoiceApiProductName:
     def test_search_matches_item_description_only_when_enabled(self, client):
         """search matches the invoice line-item description only when include_description=true."""
         with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0009"):
-            ledger_id = _create_ledger(client, name="Desc Buyer", gst="27ABCDE9999F1Z3")
+            ledger_id = _create_ledger(client, name="Desc Buyer", gst="27ABCDE9999F1ZW")
             # Product name has no match; the per-line-item description does.
             product_id = _create_product(client, sku="GADGET1", name="Gizmo")
             _add_inventory(client, product_id=product_id, quantity=10)
@@ -492,7 +504,7 @@ class TestInvoiceApiProductName:
     def test_search_still_matches_ledger_name(self, client):
         """Searching by party (ledger) name continues to work alongside product search."""
         with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0008"):
-            ledger_id = _create_ledger(client, name="Unique Party Name", gst="27ABCDE9999F1Z2")
+            ledger_id = _create_ledger(client, name="Unique Party Name", gst="27ABCDE9999F1ZW")
             product_id = _create_product(client, sku="WID", name="Widget")
             _add_inventory(client, product_id=product_id, quantity=10)
 
@@ -509,7 +521,7 @@ class TestInvoiceApiProductName:
     def test_product_delete_blocked_when_linked_to_invoice(self, client):
         """A product linked to an invoice cannot be deleted via the API."""
         with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0005"):
-            ledger_id = _create_ledger(client, name="Del Buyer", gst="27ABCDE9999F1Z9")
+            ledger_id = _create_ledger(client, name="Del Buyer", gst="27ABCDE9999F1ZW")
             product_id = _create_product(client, sku="TEMP", name="Temporary Item")
             _add_inventory(client, product_id=product_id, quantity=10)
 
@@ -529,7 +541,7 @@ class TestInvoiceApiProductName:
         simulate orphaned/legacy data by removing the product row directly.
         """
         with patch("src.services.invoice_processor.generate_next_number", return_value="INV-0006"):
-            ledger_id = _create_ledger(client, name="Orphan Buyer", gst="27ABCDE9999F1Z9")
+            ledger_id = _create_ledger(client, name="Orphan Buyer", gst="27ABCDE9999F1ZW")
             product_id = _create_product(client, sku="TEMP", name="Temporary Item")
             _add_inventory(client, product_id=product_id, quantity=10)
 

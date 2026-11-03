@@ -25,7 +25,7 @@ from src.models.product_serial import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _create_ledger(client, name: str, gst: str = "27ABCDE1234F1Z5"):
+def _create_ledger(client, name: str, gst: str = "27ABCDE1234F1Z0"):
     response = client.post(
         "/api/ledgers/",
         json={
@@ -304,7 +304,7 @@ def test_serials_rejected_on_a_non_tracked_product(client, db_session):
 
 def test_sale_consumes_serials_and_marks_them_sold(client, db_session):
     supplier_id = _create_ledger(client, name="Sale Supplier")
-    customer_id = _create_ledger(client, name="Sale Customer", gst="27ABCDE9999F1Z5")
+    customer_id = _create_ledger(client, name="Sale Customer", gst="27ABCDE9999F1ZW")
     product_id = _create_product(client, db_session, sku="SER-SALE")
 
     _stock_of(client, supplier_id, product_id, ["A1", "A2"])
@@ -319,7 +319,7 @@ def test_sale_consumes_serials_and_marks_them_sold(client, db_session):
 
 def test_selling_an_already_sold_serial_names_the_invoice_it_went_out_on(client, db_session):
     supplier_id = _create_ledger(client, name="Resell Supplier")
-    customer_id = _create_ledger(client, name="Resell Customer", gst="27ABCDE9999F1Z5")
+    customer_id = _create_ledger(client, name="Resell Customer", gst="27ABCDE9999F1ZW")
     product_id = _create_product(client, db_session, sku="SER-RESELL")
 
     _stock_of(client, supplier_id, product_id, ["356938035643809"])
@@ -343,7 +343,7 @@ def test_selling_an_already_sold_serial_names_the_invoice_it_went_out_on(client,
 
 def test_selling_a_serial_of_a_different_product_is_rejected(client, db_session):
     supplier_id = _create_ledger(client, name="Mixed Supplier")
-    customer_id = _create_ledger(client, name="Mixed Customer", gst="27ABCDE9999F1Z5")
+    customer_id = _create_ledger(client, name="Mixed Customer", gst="27ABCDE9999F1ZW")
     phone_id = _create_product(client, db_session, sku="SER-PHONE")
     tablet_id = _create_product(
         client, db_session, sku="SER-TABLET", name="iPad Air"
@@ -378,7 +378,7 @@ def test_selling_an_unknown_serial_is_rejected(client, db_session):
 
 def test_invariant_holds_across_a_sales_invoice_lifecycle(client, db_session):
     supplier_id = _create_ledger(client, name="Life Supplier")
-    customer_id = _create_ledger(client, name="Life Customer", gst="27ABCDE9999F1Z5")
+    customer_id = _create_ledger(client, name="Life Customer", gst="27ABCDE9999F1ZW")
     product_id = _create_product(client, db_session, sku="SER-LIFE-SAL")
 
     _stock_of(client, supplier_id, product_id, ["A1", "A2", "A3"])
@@ -466,7 +466,7 @@ def test_invariant_holds_across_a_purchase_invoice_lifecycle(client, db_session)
 
 def test_cancelling_a_purchase_whose_serial_is_sold_is_refused(client, db_session):
     supplier_id = _create_ledger(client, name="Refuse Supplier")
-    customer_id = _create_ledger(client, name="Refuse Customer", gst="27ABCDE9999F1Z5")
+    customer_id = _create_ledger(client, name="Refuse Customer", gst="27ABCDE9999F1ZW")
     product_id = _create_product(client, db_session, sku="SER-REFUSE")
 
     purchase = _create_invoice(
@@ -548,7 +548,7 @@ def test_scan_of_a_sold_serial_carries_its_sales_invoice(client, db_session):
     """The warranty lookup: scan a handset carried back into the shop and see
     the invoice it went out on."""
     supplier_id = _create_ledger(client, name="Warranty Supplier")
-    customer_id = _create_ledger(client, name="Warranty Customer", gst="27ABCDE9999F1Z5")
+    customer_id = _create_ledger(client, name="Warranty Customer", gst="27ABCDE9999F1ZW")
     product_id = _create_product(client, db_session, sku="SER-SCAN-SOLD")
 
     _stock_of(client, supplier_id, product_id, ["356938035643809"])
@@ -639,7 +639,7 @@ def test_scan_does_not_resolve_a_voided_serial(client, db_session):
 
 def test_list_serials_filters_by_product_and_status(client, db_session):
     supplier_id = _create_ledger(client, name="List Supplier")
-    customer_id = _create_ledger(client, name="List Customer", gst="27ABCDE9999F1Z5")
+    customer_id = _create_ledger(client, name="List Customer", gst="27ABCDE9999F1ZW")
     phone_id = _create_product(client, db_session, sku="SER-LIST-PHONE")
     tablet_id = _create_product(
         client, db_session, sku="SER-LIST-TABLET", name="iPad Air"
@@ -726,7 +726,7 @@ def test_list_serials_search_matches_a_partial_number(client, db_session):
 
 def test_serial_numbers_are_returned_on_create_detail_and_list(client, db_session):
     supplier_id = _create_ledger(client, name="Read Supplier")
-    customer_id = _create_ledger(client, name="Read Customer", gst="27ABCDE9999F1Z5")
+    customer_id = _create_ledger(client, name="Read Customer", gst="27ABCDE9999F1ZW")
     product_id = _create_product(client, db_session, sku="SER-READ")
 
     _stock_of(client, supplier_id, product_id, ["A1", "A2"])
@@ -768,7 +768,7 @@ def test_untracked_product_lines_carry_an_empty_serial_list(client, db_session):
 
 def test_duplicating_an_invoice_does_not_copy_serials(client, db_session):
     supplier_id = _create_ledger(client, name="Dup Supplier")
-    customer_id = _create_ledger(client, name="Dup Customer", gst="27ABCDE9999F1Z5")
+    customer_id = _create_ledger(client, name="Dup Customer", gst="27ABCDE9999F1ZW")
     product_id = _create_product(client, db_session, sku="SER-DUP")
 
     _stock_of(client, supplier_id, product_id, ["A1", "A2"])
@@ -798,7 +798,7 @@ def test_duplicating_an_invoice_does_not_copy_serials(client, db_session):
 
 def test_editing_a_sale_to_add_a_sold_serial_names_the_other_invoice(client, db_session):
     supplier_id = _create_ledger(client, name="Edit Supplier")
-    customer_id = _create_ledger(client, name="Edit Customer", gst="27ABCDE9999F1Z5")
+    customer_id = _create_ledger(client, name="Edit Customer", gst="27ABCDE9999F1ZW")
     product_id = _create_product(client, db_session, sku="SER-EDIT-SOLD")
 
     _stock_of(client, supplier_id, product_id, ["A1", "A2"])
@@ -841,7 +841,7 @@ def test_editing_a_purchase_to_add_a_registered_serial_is_rejected(client, db_se
 
 def test_editing_a_sale_can_move_a_unit_to_a_different_product(client, db_session):
     supplier_id = _create_ledger(client, name="Swap Supplier")
-    customer_id = _create_ledger(client, name="Swap Customer", gst="27ABCDE9999F1Z5")
+    customer_id = _create_ledger(client, name="Swap Customer", gst="27ABCDE9999F1ZW")
     phone_id = _create_product(client, db_session, sku="SER-SWAP-PHONE")
     tablet_id = _create_product(
         client, db_session, sku="SER-SWAP-TABLET", name="iPad Air"
@@ -873,7 +873,7 @@ def _other_company(db_session):
     company = CompanyProfile(
         name="Second Shop",
         address="Pune",
-        gst="27ZZZZZ1234F1Z5",
+        gst="27ZZZZZ1234F1ZH",
         phone_number="8888888888",
         currency_code="INR",
     )
@@ -921,7 +921,7 @@ def test_editing_a_sale_to_a_quantity_the_serials_do_not_cover_is_rejected(clien
     quantity alone must report the serial count — not the stock shortfall that
     follows from it."""
     supplier_id = _create_ledger(client, name="Qty Edit Supplier")
-    customer_id = _create_ledger(client, name="Qty Edit Customer", gst="27ABCDE9999F1Z5")
+    customer_id = _create_ledger(client, name="Qty Edit Customer", gst="27ABCDE9999F1ZW")
     product_id = _create_product(client, db_session, sku="SER-EDIT-QTY")
 
     _stock_of(client, supplier_id, product_id, ["A1"])
@@ -944,7 +944,7 @@ def test_editing_a_sale_reports_the_serial_count_when_stock_is_ample(client, db_
     inventory delta succeeds and validation reports the real problem.  The two
     together pin the bug to the ordering, not to the message itself."""
     supplier_id = _create_ledger(client, name="Ample Supplier")
-    customer_id = _create_ledger(client, name="Ample Customer", gst="27ABCDE9999F1Z5")
+    customer_id = _create_ledger(client, name="Ample Customer", gst="27ABCDE9999F1ZW")
     product_id = _create_product(client, db_session, sku="SER-EDIT-AMPLE")
 
     _stock_of(
@@ -969,7 +969,7 @@ def test_creating_a_sale_reports_the_serial_problem_before_the_stock_shortfall(c
     availability check, so a bad IMEI reports itself rather than the shortfall
     it causes."""
     supplier_id = _create_ledger(client, name="Order Supplier")
-    customer_id = _create_ledger(client, name="Order Customer", gst="27ABCDE9999F1Z5")
+    customer_id = _create_ledger(client, name="Order Customer", gst="27ABCDE9999F1ZW")
     product_id = _create_product(client, db_session, sku="SER-ORDER")
 
     _stock_of(client, supplier_id, product_id, ["A1"])

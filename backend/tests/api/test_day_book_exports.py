@@ -35,7 +35,7 @@ def _seed_day_book_rows(db_session):
         company_id=company.id,
         name="Acme Stores",
         address="42 Market Road",
-        gst="29ABCDE1234F1Z5",
+        gst="29ABCDE1234F1ZW",
         phone_number="9999999999",
         email="ledger@example.com",
     )

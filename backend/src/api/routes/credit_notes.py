@@ -1,4 +1,5 @@
 import math
+from datetime import date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,6 +16,7 @@ from src.models.user import User
 from src.schemas.credit_note import CreditNoteCreate, CreditNoteOut, PaginatedCreditNoteOut
 from src.services.credit_note import cancel_credit_note, create_credit_note
 from src.services.share_documents import render_credit_note_pdf
+from src.services.company_access import company_scope
 
 router = APIRouter()
 
@@ -64,8 +66,8 @@ def list_credit_notes(
     status: Optional[str] = Query(None),
     direction: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -79,7 +81,7 @@ def list_credit_notes(
         )
     )
     if company_id is not None:
-        q = q.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
+        q = q.filter(company_scope(CreditNote.company_id, company_id))
 
     if ledger_id is not None:
         q = q.filter(CreditNote.ledger_id == ledger_id)
@@ -108,17 +110,20 @@ def list_credit_notes(
             )
         )
 
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise HTTPException(status_code=400, detail="date_from must be before or equal to date_to")
+
     if date_from:
-        from datetime import datetime as dt
-        q = q.filter(CreditNote.created_at >= dt.fromisoformat(date_from))
+        q = q.filter(CreditNote.credit_note_date >= date_from)
 
     if date_to:
-        from datetime import datetime as dt
-        q = q.filter(CreditNote.created_at <= dt.fromisoformat(date_to))
+        # Whole-day semantics: credit_note_date is a timestamp, so the end of the
+        # selected day is midnight of the day after date_to, as email_logs does.
+        q = q.filter(CreditNote.credit_note_date < date_to + timedelta(days=1))
 
     total = q.count()
     total_pages = math.ceil(total / page_size) if total else 1
-    cns = q.order_by(CreditNote.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    cns = q.order_by(CreditNote.credit_note_date.desc(), CreditNote.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
     return PaginatedCreditNoteOut(
         items=[_to_out(cn) for cn in cns],
@@ -139,7 +144,7 @@ def get_credit_note(
     company_id = getattr(active_company, "id", None)
     filters = [CreditNote.id == cn_id]
     if company_id is not None:
-        filters.append(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
+        filters.append(company_scope(CreditNote.company_id, company_id))
     cn = (
         db.query(CreditNote)
         .options(
@@ -168,7 +173,7 @@ def download_credit_note_pdf(
     cn = (
         db.query(CreditNote)
         .filter(CreditNote.id == cn_id)
-        .filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
+        .filter(company_scope(CreditNote.company_id, company_id))
         .first()
     )
     if not cn:

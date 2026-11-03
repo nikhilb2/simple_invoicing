@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect, clickNavLink } from './fixtures';
+import { test, expect, clickNavLink, ensureSalesData } from './fixtures';
 
 /** Pick the first option in a combobox — avoids depending on seeded names. */
 async function selectFirstOption(page: Page, inputId: string) {
@@ -94,6 +94,7 @@ test.describe('Analytics', () => {
   });
 
   test('customer field has no clear button until one is picked', async ({ authedPage: page }) => {
+    await ensureSalesData(page);
     await page.goto('/analytics');
     await expect(clearButton(page, 'analytics-ledger')).toBeHidden();
 
@@ -102,6 +103,7 @@ test.describe('Analytics', () => {
   });
 
   test('clearing the customer keeps the date range', async ({ authedPage: page }) => {
+    await ensureSalesData(page);
     // The point of a per-field clear: dropping a customer shouldn't cost you
     // the dates you just set.
     await page.goto('/analytics?from=2026-01-01&to=2026-02-01');
@@ -117,6 +119,7 @@ test.describe('Analytics', () => {
   });
 
   test('clearing the product keeps the other filters', async ({ authedPage: page }) => {
+    await ensureSalesData(page);
     await page.goto('/analytics?tab=product-wise&from=2026-01-01&to=2026-02-01');
     await selectFirstOption(page, 'analytics-product');
     await expect(page).toHaveURL(/product=/);
@@ -151,12 +154,25 @@ test.describe('Analytics', () => {
   test.describe('on a phone-sized viewport', () => {
     test.use({ viewport: { width: 390, height: 844 } });
 
+    // These measure a populated table, so there has to be an invoice in range.
+    // The rail is collapsed at phone width, so seed at desktop width first.
+    test.beforeEach(async ({ authedPage: page }) => {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await ensureSalesData(page);
+      await page.setViewportSize({ width: 390, height: 844 });
+    });
+
+    // A fixed window around today rather than the active financial year, which
+    // other specs move around and which may not contain the seeded invoice.
+    const year = new Date().getFullYear();
+    const range = `from=${year - 1}-01-01&to=${year + 1}-12-31`;
+
     // The reports are wider than a phone, so they scroll inside their own
     // container. If an ancestor stops constraining them the whole page starts
     // scrolling sideways instead — which is what this guards.
     for (const [name, url] of [
-      ['month-wise', '/analytics'],
-      ['product-wise', '/analytics?tab=product-wise'],
+      ['month-wise', `/analytics?${range}`],
+      ['product-wise', `/analytics?tab=product-wise&${range}`],
     ] as const) {
       test(`${name} does not scroll the page sideways`, async ({ authedPage: page }) => {
         await page.goto(url);
@@ -171,7 +187,7 @@ test.describe('Analytics', () => {
     }
 
     test('the wide table still scrolls within its own container', async ({ authedPage: page }) => {
-      await page.goto('/analytics');
+      await page.goto(`/analytics?${range}`);
       const scroller = page.locator('.analytics-table-scroll');
       await expect(scroller).toBeVisible();
 

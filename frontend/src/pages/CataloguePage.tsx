@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Download, FileText, Plus, Search, Upload, X } from 'lucide-react';
+import { Download, FileText, Plus, Upload } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -8,10 +8,12 @@ import EmptyState from '../components/EmptyState';
 import LoadingState from '../components/LoadingState';
 import Pagination from '../components/Pagination';
 import Tabs from '../components/Tabs';
+import SearchInput from '../components/SearchInput';
 import BOMConfigModal from '../components/BOMConfigModal';
 import SerialBackfillModal from '../components/SerialBackfillModal';
 import useDebouncedValue from '../hooks/useDebouncedValue';
 import { numericParam, useDeepLinkScroll } from '../utils/deepLink';
+import { parseRowEdit } from '../utils/catalogueRowEdit';
 import { scanCode } from '../features/serials/api';
 import type { CompanyProfile, Product, ProductCreate } from '../types/api';
 import CatalogueTable from './catalogue/CatalogueTable';
@@ -92,6 +94,7 @@ export default function CataloguePage() {
   const [rowError, setRowError] = useState('');
 
   const [formRow, setFormRow] = useState<CatalogueRow | null>(null);
+  const [formTemplate, setFormTemplate] = useState<CatalogueRow | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [adjustRow, setAdjustRow] = useState<CatalogueRow | null>(null);
   const [serialsRow, setSerialsRow] = useState<CatalogueRow | null>(null);
@@ -274,34 +277,9 @@ export default function CataloguePage() {
   async function saveEdit() {
     if (editingId === null || !editValues) return;
 
-    // Said inline, beside the row, rather than as a toast that appears far from
-    // the field that caused it.
-    if (!editValues.name.trim()) {
-      setRowError('Product name cannot be empty.');
-      return;
-    }
-    if (!editValues.sku.trim()) {
-      setRowError('SKU cannot be empty.');
-      return;
-    }
-    const selling = Number(editValues.selling_price);
-    const purchase = Number(editValues.purchase_price);
-    const reorder = Number(editValues.reorder_level);
-    const gst = Number(editValues.gst_rate);
-    if (Number.isNaN(selling) || selling < 0) {
-      setRowError('Selling price must be a number of 0 or more.');
-      return;
-    }
-    if (Number.isNaN(purchase) || purchase < 0) {
-      setRowError('Purchase price must be a number of 0 or more.');
-      return;
-    }
-    if (Number.isNaN(reorder) || reorder < 0) {
-      setRowError('Reorder level must be a number of 0 or more.');
-      return;
-    }
-    if (Number.isNaN(gst) || gst < 0 || gst > 100) {
-      setRowError('GST rate must be between 0 and 100.');
+    const parsed = parseRowEdit(editValues);
+    if (!parsed.ok) {
+      setRowError(parsed.error);
       return;
     }
 
@@ -310,14 +288,7 @@ export default function CataloguePage() {
       setRowError('');
       // current_stock is deliberately absent: stock moves only through the
       // audited adjustment flow, so a row edit can never overwrite it.
-      await api.put(`/products/${editingId}/with-inventory`, {
-        name: editValues.name.trim(),
-        sku: editValues.sku.trim(),
-        selling_price: selling,
-        purchase_price: purchase,
-        reorder_level: reorder,
-        gst_rate: gst,
-      });
+      await api.put(`/products/${editingId}/with-inventory`, parsed.value);
       setSuccess(`${editValues.name.trim()} saved.`);
       cancelEdit();
       await loadData();
@@ -411,6 +382,7 @@ export default function CataloguePage() {
             className="button button--primary"
             onClick={() => {
               setFormRow(null);
+              setFormTemplate(null);
               setFormOpen(true);
             }}
           >
@@ -467,31 +439,17 @@ export default function CataloguePage() {
           <Tabs tabs={VIEWS.map((v) => ({ id: v.id, label: v.label }))} value={view} onChange={changeView} label="Catalogue views" />
 
           <div className="catalogue-toolbar">
-            <div className="catalogue-search">
-              <Search size={16} className="catalogue-search__icon" aria-hidden="true" />
-              <label className="sr-only" htmlFor="catalogue-search">
-                Search the catalogue
-              </label>
-              <input
-                id="catalogue-search"
-                className="input catalogue-search__input"
-                type="search"
-                placeholder="Search by name, SKU or serial..."
-                value={search}
-                onChange={(e) => changeSearch(e.target.value)}
-              />
-              {search ? (
-                <button
-                  type="button"
-                  className="catalogue-search__clear"
-                  onClick={() => changeSearch('')}
-                  title="Clear search"
-                  aria-label="Clear search"
-                >
-                  <X size={14} aria-hidden="true" />
-                </button>
-              ) : null}
-            </div>
+            <SearchInput
+              id="catalogue-search"
+              wrapperClassName="catalogue-search"
+              inputClassName="input catalogue-search__input"
+              iconClassName="catalogue-search__icon"
+              clearClassName="catalogue-search__clear"
+              label="Search the catalogue"
+              placeholder="Search by name, SKU or serial..."
+              value={search}
+              onChange={changeSearch}
+            />
             <label className="catalogue-filter">
               <span className="catalogue-filter__label">Serials</span>
               {/* A select, not a second tab bar: three more segmented buttons
@@ -546,6 +504,7 @@ export default function CataloguePage() {
                 label: 'Add first product',
                 onClick: () => {
                   setFormRow(null);
+                  setFormTemplate(null);
                   setFormOpen(true);
                 },
               }}
@@ -574,6 +533,12 @@ export default function CataloguePage() {
               onConfigureBom={(row) => setBomTarget({ id: row.id, name: row.name })}
               onOpenFullEdit={(row) => {
                 setFormRow(row);
+                setFormTemplate(null);
+                setFormOpen(true);
+              }}
+              onDuplicate={(row) => {
+                setFormRow(null);
+                setFormTemplate(row);
                 setFormOpen(true);
               }}
               onDelete={setDeleteRow}
@@ -596,6 +561,7 @@ export default function CataloguePage() {
       {formOpen ? (
         <ProductFormModal
           row={formRow}
+          template={formTemplate}
           onCancel={() => setFormOpen(false)}
           onSaved={(message) => {
             setFormOpen(false);

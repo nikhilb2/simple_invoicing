@@ -178,6 +178,7 @@ export default function MarketplaceBrowsePage() {
                 <input
                   className="input marketplace-toolbar__search"
                   type="search"
+                  aria-label="Search marketplace listings"
                   placeholder="Search titles and descriptions…"
                   value={filters.q}
                   onChange={(event) => setQuery(event.target.value)}
@@ -336,6 +337,7 @@ export default function MarketplaceBrowsePage() {
               {!catalogQuery.isLoading && listings.length > 0 && viewType === 'table' && (
                 <div className="marketplace-table-scroll">
                   <table className="marketplace-table">
+                    <caption className="sr-only">Marketplace listings</caption>
                     <thead>
                       <tr>
                         <th scope="col">Listing</th>

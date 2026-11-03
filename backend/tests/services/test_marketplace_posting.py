@@ -27,9 +27,9 @@ from src.models.user import User, UserRole
 from src.services.marketplace import posting as posting_service
 from src.services.marketplace import sync as sync_service
 
-SELLER_GST = "27AABCU9603R1ZX"
-BUYER_SAME_STATE = "27ABCDE1234F1Z5"
-BUYER_OTHER_STATE = "29ABCDE1234F1Z5"
+SELLER_GST = "27AABCU9603R1ZN"
+BUYER_SAME_STATE = "27ABCDE1234F1Z0"
+BUYER_OTHER_STATE = "29ABCDE1234F1ZW"
 
 
 # ---------------------------------------------------------------------------
@@ -629,7 +629,7 @@ class TestPayloadDivergence:
             {"line": {"quantity": "20"}},
             {"line": {"unit_price": "1.00"}},
             {"line": {"listing_id": "lst_evil"}},
-            {"seller_gstin": "07ABCDE1234F1Z5"},
+            {"seller_gstin": "07ABCDE1234F1Z2"},
             {"lines": []},
         ],
     )

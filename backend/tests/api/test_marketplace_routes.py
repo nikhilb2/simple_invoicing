@@ -27,8 +27,8 @@ from src.models.user import User, UserRole
 from src.services.marketplace import client as client_module
 from tests.fakes.fake_marketplace import FakeMarketplace
 
-GST_A = "27AABCU9603R1ZX"
-GST_B = "29ABCDE1234F1Z5"
+GST_A = "27AABCU9603R1ZN"
+GST_B = "29ABCDE1234F1ZW"
 
 
 @pytest.fixture

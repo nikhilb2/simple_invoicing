@@ -1,0 +1,39 @@
+{#
+  verify_email.html — Sent when someone registers, or asks for the link again,
+  to prove they own the address. Extends base.html.
+
+  Variables (in addition to base.html variables):
+    action_url  (str) — {PUBLIC_APP_BASE_URL}/verify-email?token=…
+    valid_for   (str) — How long the link works, e.g. "24 hours"
+#}
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Confirm your email address{% endblock %}
+{% block preheader %}<div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #f5f3ef;">One click and your account is ready.</div>{% endblock %}
+
+{% block content %}
+{# No name in the greeting, on purpose: whoever registers an address chooses the
+   name, and it need not be the person who owns the inbox. Echoing it would let
+   anyone put a sentence of their choosing into a mail sent to a stranger. #}
+<p style="margin: 0 0 12px 0; font-size: 15px; color: #fcfbf8;">Hello,</p>
+<p style="margin: 0 0 20px 0; font-size: 15px; line-height: 1.6; color: #c0bcaf;">Thanks for signing up. Open the link below to confirm your email address and choose your password.</p>
+
+{% call ui.recap("Account", "Confirm your email address") %}
+    {{ ui.button(action_url, "Confirm and choose a password") }}
+    {{ ui.hint("This link works for " ~ valid_for ~ ".") }}
+{% endcall %}
+
+{{ ui.closing("If you did not create an account, ignore this email. Nothing happens until the link is clicked.") }}
+<p style="margin: 10px 0 0 0; font-size: 12.5px; line-height: 1.6; color: #a29d91; word-break: break-all;">
+    Button not working? Paste this into your browser:<br>{{ action_url }}
+</p>
+{% endblock %}
+
+{# Account mail, not a marketing send: no pitch. #}
+{% block pitch %}{% endblock %}
+
+{% block footer %}
+<strong style="color: #4a463f;">{{ company_name }}</strong><br>
+You are receiving this because this address was used to register.
+{% endblock %}

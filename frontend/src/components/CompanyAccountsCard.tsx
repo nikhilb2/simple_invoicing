@@ -248,8 +248,8 @@ export default function CompanyAccountsCard({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <div className="stack" style={{ gap: '12px' }}>
-      {error ? <div className="empty-state" style={{ color: 'var(--color-danger, #b91c1c)' }}>{error}</div> : null}
-      {success ? <div className="empty-state" style={{ color: 'var(--color-success, #166534)' }}>{success}</div> : null}
+      {error ? <div className="empty-state" style={{ color: 'var(--color-danger)' }}>{error}</div> : null}
+      {success ? <div className="empty-state" style={{ color: 'var(--color-success)' }}>{success}</div> : null}
 
       <section className="content-grid" style={{ alignItems: 'start' }}>
         <article className="panel stack">

@@ -40,7 +40,7 @@ def _company(db, name: str) -> CompanyProfile:
     company = CompanyProfile(
         name=name,
         address="1 Test Road",
-        gst="27AAAAA0000A1Z5",
+        gst="27AAAAA0000A1Z2",
         phone_number="+91 9000000000",
         currency_code="INR",
         email="owner@example.com",
@@ -75,7 +75,7 @@ def _ledger(db, company: CompanyProfile, name: str = "Acme Traders") -> Ledger:
         company_id=company.id,
         name=name,
         address="9 Buyer Lane",
-        gst="27BBBBB0000B1Z5",
+        gst="27BBBBB0000B1ZT",
         phone_number="+91 9111111111",
     )
     db.add(ledger)

@@ -2,6 +2,7 @@ import { Eye, Pencil, RotateCcw, Trash2, FileText, Copy } from 'lucide-react';
 import type { Invoice } from '../types/api';
 import formatCurrency from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
+import OverdueBadge from './OverdueBadge';
 
 interface InvoicesCompactCardProps {
   invoice: Invoice;
@@ -38,6 +39,7 @@ interface InvoicesCompactCardProps {
               )}
             </div>
               <div className="invoice-compact-card__badges">
+              <OverdueBadge invoice={invoice} />
               {isCancelled && (
                   <span className="invoice-compact-card__cancelled-badge">
                   Cancelled

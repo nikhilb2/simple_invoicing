@@ -18,7 +18,12 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import text
 
 from src.core.config import settings
-from src.db.session import engine
+# Dumps, restores and their migration bookkeeping run as the OWNER. In shared
+# hosting the app's role is filtered by row-level security, and a pg_dump taken
+# through it would succeed while silently leaving out every tenant's rows.
+# Without MIGRATION_DATABASE_URL the two engines are the same object.
+from src.db.session import engine as app_engine
+from src.db.session import migration_engine as engine
 
 
 BACKUP_DIR = Path(os.getenv("BACKUP_DIR", "./backups"))
@@ -409,8 +414,21 @@ def _apply_pending_migrations() -> int:
             applied_count += 1
             logger.debug(f"applied migration after restore: {migration_file.stem}")
 
+        # A restored archive may come from a database that never had the
+        # policies (a single-tenant one): put them back before anyone reads.
+        if settings.is_shared_hosting:
+            from src.db.rls import ensure_row_level_security
+
+            ensure_row_level_security(conn)
+
         logger.debug(f"pending migrations applied count: {applied_count}")
     return applied_count
+
+
+def _dispose_engines() -> None:
+    engine.dispose()
+    if app_engine is not engine:
+        app_engine.dispose()
 
 
 def _terminate_other_db_sessions(env: dict[str, str]) -> None:
@@ -436,6 +454,13 @@ def _terminate_other_db_sessions(env: dict[str, str]) -> None:
     except subprocess.CalledProcessError as err:
         detail = (err.stderr or err.stdout or "failed to terminate active DB sessions").strip()
         logger.error(f"terminate sessions failed: {detail}")
+        if "permission denied to terminate" in detail:
+            # Shared hosting: the owner restores, but the open sessions belong
+            # to the app role, and a non-superuser may only end its own.
+            detail += (
+                " -- the MIGRATION_DATABASE_URL role must be allowed to end the app's "
+                "sessions: GRANT pg_signal_backend TO <owner role>"
+            )
         raise HTTPException(status_code=500, detail=f"Restore failed: {detail}") from err
 
 
@@ -460,9 +485,9 @@ def restore_backup(upload: UploadFile) -> tuple[str, int]:
 
         # Ensure app-side pooled connections don't hold stale state.
         logger.debug("disposing SQLAlchemy engine before restore")
-        engine.dispose()
+        _dispose_engines()
         _terminate_other_db_sessions(env)
-        engine.dispose()
+        _dispose_engines()
 
         # Step 1: extract plain SQL from the custom-format dump.
         # --clean --if-exists generates DROP … IF EXISTS before each object.
@@ -530,7 +555,7 @@ def restore_backup(upload: UploadFile) -> tuple[str, int]:
         # Discard all pooled connections — they point to the pre-restore state.
         # SQLAlchemy will open fresh connections on the next request.
         logger.debug("disposing SQLAlchemy engine after restore")
-        engine.dispose()
+        _dispose_engines()
 
         applied_count = _apply_pending_migrations()
         logger.debug(f"restore completed: compatibility={compatibility}, applied_migrations={applied_count}")
@@ -539,4 +564,4 @@ def restore_backup(upload: UploadFile) -> tuple[str, int]:
         logger.debug("cleanup temp dir and dispose engine")
         prepared.temp_dir.cleanup()
         # On both success and failure, force pool reset so new requests reconnect cleanly.
-        engine.dispose()
+        _dispose_engines()

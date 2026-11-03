@@ -1,28 +1,32 @@
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BadgeCheck,
   ChevronLeft,
   ChevronRight,
+  Download,
   Eye,
   Globe,
   Landmark,
   Mail,
   MapPin,
   Pencil,
-  Phone,
   Plus,
-  Search,
   Trash2,
-  X,
 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
+import useDebouncedValue from '../hooks/useDebouncedValue';
 import StatusToasts from '../components/StatusToasts';
 import type { CompanyProfile, Ledger, PaginatedLedgers } from '../types/api';
 import formatCurrency from '../utils/formatting';
 import ConfirmDialog from '../components/ConfirmDialog';
+import LedgerCardPhoneChips from '../components/LedgerCardPhoneChips';
 import EmptyState from '../components/EmptyState';
 import LoadingState from '../components/LoadingState';
+import PageSizeSelect, { readStoredPageSize, storePageSize } from '../components/PageSizeSelect';
+import SearchInput from '../components/SearchInput';
+import { exportLedgersCsv } from './ledgers/exports';
+import { buildLedgerListParams, parseLedgerListFilters } from '../utils/ledgerListFilters';
 
 /** Monogram for the row avatar — first letters of the first two words. */
 function ledgerInitials(name: string): string {
@@ -66,11 +70,30 @@ export default function LedgersPage() {
   const [pendingDeleteLedgerId, setPendingDeleteLedgerId] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
+  // Search, sort and page live in the URL, like the Day Book page, so a
+  // refresh, a back navigation or a shared link keeps the view. Deriving
+  // them from the query string (rather than initialising state from it)
+  // also makes back and forward update the list without a remount, and
+  // keeps the search input a controlled input driven by the same value
+  // the user just typed, so typing stays immediate with no cursor jump.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { search, sort, page } = parseLedgerListFilters(searchParams);
+
+  // Replace, never push: typing must not stack a history entry per
+  // keystroke, and a filter change should not trap Back behind every
+  // nudge either. Changing search or sort resets to page 1, as before.
+  function updateLedgerFilters(patch: { search?: string; sort?: string; page?: number }) {
+    setSearchParams(
+      buildLedgerListParams({ search, sort, page, ...patch }, searchParams),
+      { replace: true },
+    );
+  }
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const pageSize = 20;
+  const [pageSize, setPageSize] = useState(() => readStoredPageSize('ledgers-page-size'));
+  const [exporting, setExporting] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const debouncedSearch = useDebouncedValue(search, 300);
 
   useEffect(() => {
     const state = location.state as { success?: string } | null;
@@ -80,26 +103,52 @@ export default function LedgersPage() {
     }
   }, [location.state]);
 
-  async function loadLedgers(currentPage: number, currentSearch: string) {
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const res = await api.get<PaginatedLedgers>('/ledgers/', {
+          params: { page, page_size: pageSize, search: debouncedSearch, sort },
+        });
+        if (cancelled) return;
+        setLedgers(res.data.items);
+        setTotal(res.data.total);
+        setTotalPages(res.data.total_pages);
+      } catch (err) {
+        if (cancelled) return;
+        setError(getApiErrorMessage(err, 'Unable to load ledgers'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [page, debouncedSearch, sort, pageSize, reloadKey]);
+
+  // Exports every ledger the current search and sort select, not just the
+  // visible page: the export pages the list endpoint itself (see ledgers/exports).
+  async function handleExportCsv() {
     try {
-      setLoading(true);
+      setExporting(true);
       setError('');
-      const res = await api.get<PaginatedLedgers>('/ledgers/', {
-        params: { page: currentPage, page_size: pageSize, search: currentSearch },
-      });
-      setLedgers(res.data.items);
-      setTotal(res.data.total);
-      setTotalPages(res.data.total_pages);
+      await exportLedgersCsv(search, sort);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to load ledgers'));
+      setError(getApiErrorMessage(err, 'Unable to export ledgers as CSV'));
     } finally {
-      setLoading(false);
+      setExporting(false);
     }
   }
 
-  useEffect(() => {
-    void loadLedgers(page, search);
-  }, [page, search]);
+  function handlePageSizeChange(nextPageSize: number) {
+    storePageSize('ledgers-page-size', nextPageSize);
+    setPageSize(nextPageSize);
+    updateLedgerFilters({ page: 1 });
+  }
 
   // Currency is only needed to render balances; a failure here leaves the
   // default in place rather than blocking the registry.
@@ -140,6 +189,7 @@ export default function LedgersPage() {
       setLedgers((current) => current.filter((l) => l.id !== pendingDeleteLedgerId));
       setTotal((t) => t - 1);
       setSuccess('Ledger deleted successfully.');
+      setReloadKey((k) => k + 1);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to delete ledger'));
     } finally {
@@ -162,6 +212,17 @@ export default function LedgersPage() {
         </div>
         <div className="page-hero__actions">
           <div className="status-chip">{total} ledgers listed</div>
+          <button
+            type="button"
+            className="button button--secondary"
+            disabled={exporting || total === 0}
+            onClick={() => void handleExportCsv()}
+            title="Export ledgers as CSV"
+            aria-label="Export ledgers as CSV"
+          >
+            <Download size={16} />
+            {exporting ? 'Exporting…' : 'Export CSV'}
+          </button>
           <button
             className="button button--primary"
             onClick={() => navigate('/ledgers/new')}
@@ -186,36 +247,37 @@ export default function LedgersPage() {
           </div>
 
           <div className="ledger-toolbar">
-            <div className="ledger-search">
-              <label htmlFor="ledger-search" className="sr-only">
-                Search ledgers by name
+            <SearchInput
+              id="ledger-search"
+              wrapperClassName="ledger-search"
+              inputClassName="input ledger-search__input"
+              iconClassName="ledger-search__icon"
+              clearClassName="ledger-search__clear"
+              label="Search ledgers by name"
+              placeholder="Search ledgers by name, GST or contact..."
+              value={search}
+              onChange={(value) => {
+                updateLedgerFilters({ search: value, page: 1 });
+              }}
+            />
+            <div>
+              <label htmlFor="ledger-sort" className="sr-only">
+                Sort ledgers
               </label>
-              <Search size={16} className="ledger-search__icon" aria-hidden="true" />
-              <input
-                id="ledger-search"
-                className="input ledger-search__input"
-                type="search"
-                placeholder="Search ledgers by name, GST or contact..."
-                value={search}
+              <select
+                id="ledger-sort"
+                className="input"
+                aria-label="Sort ledgers"
+                value={sort}
                 onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
+                  updateLedgerFilters({ sort: e.target.value, page: 1 });
                 }}
-              />
-              {search ? (
-                <button
-                  type="button"
-                  className="ledger-search__clear"
-                  onClick={() => {
-                    setSearch('');
-                    setPage(1);
-                  }}
-                  title="Clear search"
-                  aria-label="Clear search"
-                >
-                  <X size={14} />
-                </button>
-              ) : null}
+              >
+                <option value="name">Name A to Z</option>
+                <option value="-name">Name Z to A</option>
+                <option value="newest">Newest first</option>
+                <option value="balance_desc">Highest balance first</option>
+              </select>
             </div>
             {!loading && total > 0 ? (
               <p className="ledger-toolbar__count">
@@ -284,10 +346,7 @@ export default function LedgersPage() {
                         {ledger.phone_number || ledger.email || ledger.website ? (
                           <div className="ledger-card__contacts">
                             {ledger.phone_number ? (
-                              <span className="ledger-chip">
-                                <Phone size={13} />
-                                {ledger.phone_number}
-                              </span>
+                              <LedgerCardPhoneChips phone={ledger.phone_number} />
                             ) : null}
                             {ledger.email ? (
                               <span className="ledger-chip">
@@ -396,13 +455,13 @@ export default function LedgersPage() {
               : null}
           </div>
 
-          {totalPages > 1 ? (
+          {total > 0 ? (
             <div className="ledger-pagination">
               <button
                 type="button"
                 className="button button--ghost button--small"
                 disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
+                onClick={() => updateLedgerFilters({ page: page - 1 })}
                 title="Previous page"
                 aria-label="Previous page"
               >
@@ -416,13 +475,14 @@ export default function LedgersPage() {
                 type="button"
                 className="button button--ghost button--small"
                 disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
+                onClick={() => updateLedgerFilters({ page: page + 1 })}
                 title="Next page"
                 aria-label="Next page"
               >
                 Next
                 <ChevronRight size={15} />
               </button>
+              <PageSizeSelect id="ledgers-page-size" value={pageSize} onChange={handlePageSizeChange} />
             </div>
           ) : null}
         </article>

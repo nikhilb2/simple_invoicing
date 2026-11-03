@@ -1,5 +1,6 @@
 import csv
 import io
+import math
 from datetime import datetime
 from typing import Optional
 
@@ -15,6 +16,7 @@ from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
 from src.models.product_serial import ProductSerial
+from src.models.quotation import Quotation, QuotationItem
 from src.models.user import User, UserRole
 from src.schemas.product import (
     ImportCSVResult,
@@ -24,7 +26,7 @@ from src.schemas.product import (
     ProductWithInventoryOut,
     ProductWithInventoryUpdate,
 )
-from src.api.deps import get_active_company, get_current_user, require_roles
+from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.core.analytics import distinct_id_for, track
 from src.services.serial_service import SerialManager
 
@@ -44,10 +46,10 @@ def _plural(count: int, noun: str) -> str:
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
-    if payload.gst_rate < 0 or payload.gst_rate > 100:
+    if not 0 <= payload.gst_rate <= 100:
         raise HTTPException(status_code=400, detail="GST rate must be between 0 and 100")
 
     sku = payload.sku.strip().upper()
@@ -187,10 +189,10 @@ def update_product(
     product_id: int,
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
-    if payload.gst_rate < 0 or payload.gst_rate > 100:
+    if not 0 <= payload.gst_rate <= 100:
         raise HTTPException(status_code=400, detail="GST rate must be between 0 and 100")
 
     product = db.query(Product).filter(Product.id == product_id, Product.company_id == active_company.id).first()
@@ -323,7 +325,7 @@ def _backfill_serials(
 def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     product = db.query(Product).filter(Product.id == product_id, Product.company_id == active_company.id).first()
@@ -338,6 +340,15 @@ def delete_product(
     )
     if has_invoice_items:
         raise HTTPException(status_code=400, detail="Cannot delete product linked to invoices")
+
+    has_quotation_items = (
+        db.query(QuotationItem.id)
+        .join(Quotation, QuotationItem.quotation_id == Quotation.id)
+        .filter(QuotationItem.product_id == product_id, Quotation.company_id == active_company.id)
+        .first()
+    )
+    if has_quotation_items:
+        raise HTTPException(status_code=400, detail="Cannot delete product linked to quotations")
 
     inventory = db.query(Inventory).filter(
         Inventory.product_id == product_id,
@@ -556,7 +567,7 @@ def update_product_with_inventory(
     product_id: int,
     payload: ProductWithInventoryUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Update product fields and optionally inventory quantity in one call."""
@@ -596,7 +607,7 @@ def update_product_with_inventory(
     if payload.reorder_level is not None:
         product.reorder_level = payload.reorder_level
     if payload.gst_rate is not None:
-        if payload.gst_rate < 0 or payload.gst_rate > 100:
+        if not 0 <= payload.gst_rate <= 100:
             raise HTTPException(status_code=400, detail="GST rate must be between 0 and 100")
         product.gst_rate = payload.gst_rate
     if payload.unit is not None:
@@ -610,6 +621,8 @@ def update_product_with_inventory(
 
     # Update inventory quantity if provided
     if payload.current_stock is not None:
+        if not product.allow_decimal and not _is_whole_number(payload.current_stock):
+            raise HTTPException(status_code=400, detail="Quantity must be a whole number for this product")
         inventory = (
             db.query(Inventory)
             .filter(
@@ -750,7 +763,7 @@ def export_products_csv(
 async def import_products_csv(
     file: UploadFile = FastAPIFile(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Import products from CSV — upsert by Item Code (SKU).
@@ -773,6 +786,16 @@ async def import_products_csv(
         },
     )
     return result
+
+
+def _csv_number(raw) -> float:
+    """A numeric CSV cell: an empty (or absent) value means 0; anything float()
+    cannot read — including 'nan'/'inf', which float() accepts — raises ValueError."""
+    text = str(raw or "").strip()
+    value = float(text) if text else 0.0
+    if math.isnan(value) or math.isinf(value):
+        raise ValueError(f"non-finite value: {text}")
+    return value
 
 
 def _import_csv_from_content(content: bytes, db: Session, active_company: CompanyProfile) -> dict:
@@ -816,26 +839,37 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             continue
 
         try:
-            gst_rate = float(values.get("tax") or values.get("gst") or 0)
+            tax_cell = values.get("tax") or values.get("gst") or ""
+            gst_rate = _csv_number(tax_cell.removesuffix("%"))
             if gst_rate < 0 or gst_rate > 100:
-                gst_rate = 0
+                raise ValueError(gst_rate)
         except ValueError:
-            gst_rate = 0
+            errors.append({"row": row_num, "message": f"Invalid Tax for {sku}"})
+            continue
 
         try:
-            stock = float(values.get("current_stock") or values.get("stock") or 0)
+            stock = _csv_number(values.get("current_stock") or values.get("stock") or 0)
+            if stock < 0:
+                raise ValueError(stock)
         except ValueError:
-            stock = 0
+            errors.append({"row": row_num, "message": f"Invalid Current Stock for {sku}"})
+            continue
 
         try:
-            purchase_price = float(values.get("purchase_price") or 0)
+            purchase_price = _csv_number(values.get("purchase_price") or 0)
+            if purchase_price < 0:
+                raise ValueError(purchase_price)
         except ValueError:
-            purchase_price = 0
+            errors.append({"row": row_num, "message": f"Invalid Purchase Price for {sku}"})
+            continue
 
         try:
-            reorder_level = float(values.get("reorder_level") or 0)
+            reorder_level = _csv_number(values.get("reorder_level") or 0)
+            if reorder_level < 0:
+                raise ValueError(reorder_level)
         except ValueError:
-            reorder_level = 0
+            errors.append({"row": row_num, "message": f"Invalid Reorder Level for {sku}"})
+            continue
 
         existing = (
             db.query(Product)

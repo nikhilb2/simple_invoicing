@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from pydantic import BaseModel, Field, field_validator
 
-from src.core.validation import normalize_gstin
+from src.core.validation import normalize_gstin, normalize_gstin_format
 
 
 class LedgerCreate(BaseModel):
@@ -22,6 +22,21 @@ class LedgerCreate(BaseModel):
     @classmethod
     def validate_gst(cls, value: str | None) -> str | None:
         return normalize_gstin(value)
+
+    @field_validator("name", "address")
+    @classmethod
+    def validate_required_text_not_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Value must not be blank")
+        return normalized
+
+    @field_validator("phone_number")
+    @classmethod
+    def validate_phone_number(cls, value: str) -> str:
+        # Optional today: test_request_schemas_normalize_valid_gstin builds a
+        # LedgerCreate with an empty phone number, so strip without rejecting.
+        return value.strip()
 
 
 class LedgerOut(BaseModel):
@@ -45,7 +60,7 @@ class LedgerOut(BaseModel):
     @field_validator("gst", mode="before")
     @classmethod
     def normalize_gst_output(cls, value: str | None) -> str:
-        normalized = normalize_gstin(value)
+        normalized = normalize_gstin_format(value)
         return normalized or ""
 
     class Config:
@@ -264,6 +279,10 @@ class Gstr1Summary(BaseModel):
     nil_rated: Gstr1CategorySummary = Gstr1CategorySummary()
     exempt: Gstr1CategorySummary = Gstr1CategorySummary()
     non_gst: Gstr1CategorySummary = Gstr1CategorySummary()
+    # Invoices with lines at 0% and those lines' value. They are in the B2B, B2CL
+    # or B2CS figures above; the export files them at rate 0.
+    zero_rate_invoices: int = 0
+    zero_rate_value: float = 0.0
     hsn_summary: list[Gstr1HsnSummaryItem] = []
     doc_summary: Gstr1DocSummary = Gstr1DocSummary()
 

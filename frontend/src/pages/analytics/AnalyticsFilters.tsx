@@ -15,6 +15,10 @@ type Props = {
   canReset: boolean;
   /** The product picker only applies to the product report. */
   showProductFilter?: boolean;
+  /** Hidden on reports that cover sales and purchases together. */
+  showVoucherType?: boolean;
+  /** "Party" where the ledger can be a supplier as well as a customer. */
+  ledgerLabel?: string;
 };
 
 export default function AnalyticsFilters({
@@ -23,6 +27,8 @@ export default function AnalyticsFilters({
   onReset,
   canReset,
   showProductFilter = false,
+  showVoucherType = true,
+  ledgerLabel = 'Customer',
 }: Props) {
   const { fyList } = useFY();
 
@@ -94,24 +100,26 @@ export default function AnalyticsFilters({
         />
       </label>
 
-      <label className="analytics-filters__field">
-        <span>Type</span>
-        <select
-          className="input"
-          value={filters.voucherType}
-          onChange={(event) => onChange({ ...filters, voucherType: event.target.value as Filters['voucherType'] })}
-        >
-          <option value="sales">Sales</option>
-          <option value="purchase">Purchase</option>
-        </select>
-      </label>
+      {showVoucherType && (
+        <label className="analytics-filters__field">
+          <span>Type</span>
+          <select
+            className="input"
+            value={filters.voucherType}
+            onChange={(event) => onChange({ ...filters, voucherType: event.target.value as Filters['voucherType'] })}
+          >
+            <option value="sales">Sales</option>
+            <option value="purchase">Purchase</option>
+          </select>
+        </label>
+      )}
 
       {/* Every other filter here wraps its control in a <label>; these two used
           a plain <div> + <span>, so the combobox input had no accessible name
           at all. htmlFor rather than wrapping, because the combobox carries a
           clear button and a listbox of its own. */}
       <label className="analytics-filters__field" htmlFor="analytics-ledger">
-        <span>Customer</span>
+        <span>{ledgerLabel}</span>
         <LedgerCombobox
           id="analytics-ledger"
           ledgers={ledgersQuery.data ?? []}

@@ -5,14 +5,17 @@ import {
   Boxes,
   Building2,
   ChartColumn,
+  ClipboardList,
   Compass,
   DatabaseBackup,
   Factory,
   FileCheck2,
   FileMinus2,
+  FileSignature,
   FileText,
   KeyRound,
   Keyboard,
+  Palette,
   Plug,
   LayoutDashboard,
   LayoutList,
@@ -66,6 +69,12 @@ export type NavLeaf = {
   end?: boolean;
   /** Hide the link from non-admins. Visibility only; see file header. */
   adminOnly?: boolean;
+  /**
+   * Hide the link unless the user also runs the platform (`canManagePlatform`).
+   * For surfaces the backend gates with require_platform_admin: in shared
+   * hosting a company admin is not one. Implies adminOnly.
+   */
+  platformOnly?: boolean;
   shortcutAction?: ActionKey;
   /** Child paths that share this item's identity for titling purposes. */
   alsoTitles?: { path: string; title: string }[];
@@ -118,6 +127,7 @@ export const PRIMARY_NAV: NavEntry[] = [
         title: 'Advanced Invoice View',
         icon: LayoutList,
       },
+      { to: '/quotations', label: 'Quotations', icon: FileSignature, shortcutAction: 'go_quotations' },
       { to: '/invoice-dues', label: 'Invoice Dues', icon: AlarmClock, shortcutAction: 'go_invoice_dues' },
       // One page, both directions — the same shape as Invoices, which hosts
       // purchases behind its own voucher toggle.
@@ -156,6 +166,8 @@ export const PRIMARY_NAV: NavEntry[] = [
       // destination, not a view of the ledger beside it — and buried in a tab
       // it was unreachable from the rail, unlinkable, and lost on reload.
       { to: '/gstr1', label: 'GSTR-1 Filing', icon: FileCheck2, shortcutAction: 'go_gstr1' },
+      // "Worksheet", not "Filing": it estimates from the books and files nothing.
+      { to: '/gstr3b', label: 'GSTR-3B Worksheet', icon: ClipboardList, shortcutAction: 'go_gstr3b' },
     ],
   },
   {
@@ -228,6 +240,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         title: 'Email Settings',
         icon: Mail,
         adminOnly: true,
+        platformOnly: true,
         description: 'SMTP server, sender identity, and a send test before you rely on it.',
       },
       {
@@ -255,6 +268,12 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         label: 'Keyboard Shortcuts',
         icon: Keyboard,
         description: 'Rebind the shortcuts you reach for most, or reset them all.',
+      },
+      {
+        to: '/settings/appearance',
+        label: 'Appearance',
+        icon: Palette,
+        description: 'Follow your device, or always use the light or dark theme.',
       },
     ],
   },
@@ -284,6 +303,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         title: 'Database Backups',
         icon: DatabaseBackup,
         adminOnly: true,
+        platformOnly: true,
         description: 'Take a snapshot of the database, or restore one you took earlier.',
       },
     ],
@@ -319,22 +339,28 @@ export const NAV_ITEMS: NavLeaf[] = [
   ...HIDDEN_ROUTES,
 ];
 
+/** Whether a nav item may be shown to a user with these capabilities. */
+export function isNavItemVisible(item: NavLeaf, isAdmin: boolean, canManagePlatform: boolean): boolean {
+  if (item.platformOnly) return isAdmin && canManagePlatform;
+  return !item.adminOnly || isAdmin;
+}
+
 /** PRIMARY_NAV with unauthorised items — and any section thereby emptied — dropped. */
-export function visiblePrimaryNav(isAdmin: boolean): NavEntry[] {
+export function visiblePrimaryNav(isAdmin: boolean, canManagePlatform = false): NavEntry[] {
   return PRIMARY_NAV.flatMap<NavEntry>((entry) => {
     if (entry.kind === 'link') {
-      return entry.adminOnly && !isAdmin ? [] : [entry];
+      return isNavItemVisible(entry, isAdmin, canManagePlatform) ? [entry] : [];
     }
-    const children = entry.children.filter((item) => !item.adminOnly || isAdmin);
+    const children = entry.children.filter((item) => isNavItemVisible(item, isAdmin, canManagePlatform));
     return children.length > 0 ? [{ ...entry, children }] : [];
   });
 }
 
 /** SETTINGS_GROUPS with unauthorised items — and any group thereby emptied — dropped. */
-export function visibleSettingsGroups(isAdmin: boolean): SettingsGroup[] {
+export function visibleSettingsGroups(isAdmin: boolean, canManagePlatform = false): SettingsGroup[] {
   return SETTINGS_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => !item.adminOnly || isAdmin),
+    items: group.items.filter((item) => isNavItemVisible(item, isAdmin, canManagePlatform)),
   })).filter((group) => group.items.length > 0);
 }
 

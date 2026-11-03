@@ -179,11 +179,27 @@ describe('visibleSettingsGroups', () => {
     expect(paths).toContain('/settings/security');
   });
 
-  it('shows admin-only pages to admins', () => {
-    const paths = visibleSettingsGroups(true).flatMap((g) => g.items.map((item) => item.to));
+  it('shows company-admin pages to admins, but not platform pages', () => {
+    const paths = visibleSettingsGroups(true, false).flatMap((g) => g.items.map((item) => item.to));
     expect(paths).toContain('/settings/api-keys');
-    expect(paths).toContain('/settings/email');
-    expect(paths).toContain('/settings/backups');
+    expect(paths).toContain('/settings/marketplace');
+    expect(paths).toContain('/settings/email-history');
+    expect(paths).not.toContain('/settings/email');
+    expect(paths).not.toContain('/settings/backups');
+  });
+
+  it('shows platform pages only to admins who can manage the platform', () => {
+    const pathsFor = (isAdmin: boolean, platform: boolean) =>
+      visibleSettingsGroups(isAdmin, platform).flatMap((g) => g.items.map((item) => item.to));
+    expect(pathsFor(true, true)).toEqual(expect.arrayContaining(['/settings/email', '/settings/backups']));
+    expect(pathsFor(false, true)).not.toContain('/settings/email');
+    expect(pathsFor(false, true)).not.toContain('/settings/backups');
+  });
+
+  it('marks every platform-only item admin-only too', () => {
+    for (const item of SETTINGS_GROUPS.flatMap((g) => g.items)) {
+      if (item.platformOnly) expect(item.adminOnly).toBe(true);
+    }
   });
 
   it('leaves a non-admin something to see, so /settings is never a dead end', () => {
@@ -240,6 +256,24 @@ describe('the invoice feed', () => {
   });
 });
 
+describe('the GSTR-3B worksheet entry', () => {
+  const reports = PRIMARY_NAV.find((entry) => entry.kind === 'section' && entry.id === 'reports');
+  const children = reports && reports.kind === 'section' ? reports.children : [];
+
+  it('sits straight after GSTR-1 under Reports', () => {
+    const paths = children.map((child) => child.to);
+    expect(paths.indexOf('/gstr3b')).toBe(paths.indexOf('/gstr1') + 1);
+  });
+
+  it('is called a worksheet, not a filing', () => {
+    expect(children.find((child) => child.to === '/gstr3b')?.label).toBe('GSTR-3B Worksheet');
+  });
+
+  it('opens the Reports section when the page is open', () => {
+    expect(sectionIdForPath('/gstr3b')).toBe('reports');
+  });
+});
+
 describe('sectionIdForPath', () => {
   it('finds the section that owns a path', () => {
     expect(sectionIdForPath('/invoices')).toBe('sales');
@@ -292,11 +326,29 @@ describe('LEGACY_REDIRECTS', () => {
   });
 });
 
+describe('quotations in the navigation', () => {
+  it('sits under Sales, after the two invoice pages', () => {
+    const sales = PRIMARY_NAV.find((entry) => entry.kind === 'section' && entry.id === 'sales');
+    expect(sales?.kind).toBe('section');
+    const paths = sales?.kind === 'section' ? sales.children.map((child) => child.to) : [];
+    expect(paths.indexOf('/quotations')).toBe(paths.indexOf('/invoices-view') + 1);
+  });
+
+  it('is titled, and open to everyone who can use invoices', () => {
+    expect(resolveDocumentTitle('/quotations')).toBe('Quotations');
+    expect(pathsOf(false)).toContain('/quotations');
+    expect(pathsOf(true)).toContain('/quotations');
+    expect(sectionIdForPath('/quotations')).toBe('sales');
+  });
+});
+
 describe('NAV_SHORTCUTS', () => {
   it.each([
     ['go_invoice_dues', '/invoice-dues'],
     ['go_credit_notes', '/credit-notes'],
+    ['go_quotations', '/quotations'],
     ['go_gstr1', '/gstr1'],
+    ['go_gstr3b', '/gstr3b'],
     ['go_dashboard', '/'],
   ])('routes %s to %s', (action, to) => {
     expect(NAV_SHORTCUTS).toContainEqual({ action, to });

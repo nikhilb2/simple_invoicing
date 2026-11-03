@@ -19,6 +19,7 @@ import uuid
 from typing import Any
 from urllib.parse import urlparse
 
+import httpcore
 import httpx
 
 from src.core.config import settings
@@ -69,8 +70,11 @@ _BLOCKED_HOSTNAMES = {"localhost", "localhost.localdomain", "metadata.google.int
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    # ::ffff:127.0.0.1 reaches loopback but does not report itself as such.
+    ip = getattr(ip, "ipv4_mapped", None) or ip
     return (
-        ip.is_loopback
+        not ip.is_global
+        or ip.is_loopback
         or ip.is_link_local
         or ip.is_private
         or ip.is_reserved
@@ -141,6 +145,35 @@ def validate_base_url(base_url: str) -> str:
     return normalized
 
 
+class _PublicAddressBackend(httpcore.SyncBackend):
+    """Connects only to the public addresses it checked itself.
+
+    validate_base_url alone is not enough: the name is resolved again at connect time,
+    and a hostile DNS server can answer with a public address for the check and an
+    internal one for the connection. Here the address that gets checked is the one
+    that gets dialled. TLS still verifies against the hostname, which httpcore passes
+    separately.
+    """
+
+    def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        try:
+            infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except OSError as exc:
+            raise httpcore.ConnectError(f"Could not resolve {host}") from exc
+        addresses = [info[4][0] for info in infos]
+        if not addresses or any(_is_blocked_ip(ipaddress.ip_address(a)) for a in addresses):
+            raise httpcore.ConnectError(f"{host} resolves to a local or private address")
+        return super().connect_tcp(addresses[0], port, timeout, local_address, socket_options)
+
+
+def _public_only_transport() -> httpx.HTTPTransport:
+    transport = httpx.HTTPTransport()
+    # httpx has no public way in. test_marketplace_client proves this still takes
+    # effect, so an httpcore upgrade that moves it fails a test rather than the guard.
+    transport._pool._network_backend = _PublicAddressBackend()
+    return transport
+
+
 # ---------------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------------
@@ -164,6 +197,8 @@ class MarketplaceClient:
     ) -> None:
         if validate_url and transport is None:
             base_url = validate_base_url(base_url)
+            if not settings.MARKETPLACE_ALLOW_INSECURE_URL:
+                transport = _public_only_transport()
         else:
             base_url = (base_url or "").strip().rstrip("/")
 

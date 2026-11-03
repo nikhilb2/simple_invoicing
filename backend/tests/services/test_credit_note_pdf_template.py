@@ -14,14 +14,14 @@ from src.models.product import Product
 from src.services.pdf_templates import _build_credit_note_html
 
 
-def make_note(*, buyer_gst="27BBBBB0000B1Z5", status="active", credit_note_type="return"):
+def make_note(*, buyer_gst="27BBBBB0000B1ZT", status="active", credit_note_type="return"):
     invoice_item = InvoiceItem(id=11, product_id=5, hsn_sac="8471")
     invoice = Invoice(
         id=3,
         invoice_number="INV-0042",
         invoice_date=datetime(2026, 6, 1),
         company_name="Mofna Traders",
-        company_gst="27AAAAA0000A1Z5",
+        company_gst="27AAAAA0000A1Z2",
         company_currency_code="INR",
         ledger_name="Acme & Sons",
         ledger_address="9 Buyer Lane",
@@ -85,7 +85,7 @@ def test_intrastate_note_splits_cgst_and_sgst():
 
 
 def test_interstate_note_shows_igst():
-    note, invoices, products, ledger = make_note(buyer_gst="24BBBBB0000B1Z5")
+    note, invoices, products, ledger = make_note(buyer_gst="24BBBBB0000B1ZZ")
     note.cgst_amount = note.sgst_amount = Decimal("0")
     note.igst_amount = Decimal("36.00")
     html = _build_credit_note_html(note, invoices, products, None, ledger)
@@ -101,3 +101,12 @@ def test_cancelled_note_says_so():
     html = render(status="cancelled")
     assert "Cancelled on 06 Jun 2026" in html
     assert "Cancelled on" not in render()
+
+
+def test_note_columns_follow_its_stored_tax_not_the_buyers_gstin():
+    # A registered buyer from another state can take delivery in the seller's
+    # state: the GSTINs differ, yet the note carries CGST and SGST.
+    html = render(buyer_gst="29BBBBB0000B1ZT")
+
+    assert "CGST" in html
+    assert "IGST" not in html

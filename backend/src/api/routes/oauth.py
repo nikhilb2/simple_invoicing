@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from src.api.deps import get_current_user
+from src.api.deps import get_session_user
 from src.core.config import settings
 from src.db.session import get_db
 from src.models.company import CompanyProfile
@@ -46,6 +46,8 @@ from src.schemas.oauth import (
     RevokeGrantResponse,
     ScopeDescription,
 )
+from src.models.company_membership import CompanyMembership
+from src.services.company_access import accessible_company_ids, can_access_company, company_role
 from src.services.oauth.clients import (
     RegistrationError,
     authenticate_client,
@@ -123,13 +125,26 @@ def _is_expired(value: datetime | None) -> bool:
     return moment is None or moment <= now_utc()
 
 
-def _user_role_value(user: User) -> str:
-    return user.role.value if hasattr(user.role, "value") else str(user.role)
+def _filter_scopes_to_user(
+    db: Session, scopes: list[str], user: User, company_id: int | None = None
+) -> list[str]:
+    """Scope never escalates past the consenting user's role in the company granted.
 
-
-def _filter_scopes_to_user(scopes: list[str], user: User) -> list[str]:
-    """Scope never escalates past the consenting user's own role."""
-    if _user_role_value(user) != UserRole.admin.value:
+    With no company yet (the consent screen, before one is picked) it is enough to be
+    an admin somewhere; the decision re-checks against the company actually chosen.
+    """
+    if company_id is not None:
+        is_admin = company_role(db, user, company_id) == UserRole.admin
+    elif settings.is_shared_hosting:
+        is_admin = (
+            db.query(CompanyMembership.id)
+            .filter(CompanyMembership.user_id == user.id, CompanyMembership.role == UserRole.admin)
+            .first()
+            is not None
+        )
+    else:
+        is_admin = user.role == UserRole.admin
+    if not is_admin:
         return [scope for scope in scopes if scope != SCOPE_ADMIN]
     return list(scopes)
 
@@ -314,7 +329,7 @@ def authorize(request: Request, db: Session = Depends(get_db)):
 def get_authorize_request(
     request_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_session_user),
 ):
     auth_request = (
         db.query(OAuthAuthRequest).filter(OAuthAuthRequest.request_id == request_id).first()
@@ -330,14 +345,20 @@ def get_authorize_request(
     if client is None:
         return _oauth_error("invalid_client", "Unknown client", 404)
 
-    granted = _filter_scopes_to_user(parse_scope(auth_request.scope), current_user)
-    companies = db.query(CompanyProfile).order_by(
+    granted = _filter_scopes_to_user(db, parse_scope(auth_request.scope), current_user)
+    # Only the companies this user can reach: the grant is bound to the one
+    # they pick, and listing the rest would leak other tenants' names.
+    company_query = db.query(CompanyProfile)
+    allowed_ids = accessible_company_ids(db, current_user)
+    if allowed_ids is not None:
+        company_query = company_query.filter(CompanyProfile.id.in_(allowed_ids))
+    companies = company_query.order_by(
         CompanyProfile.name.asc(), CompanyProfile.id.asc()
     ).all()
 
     default_company_id = current_user.active_company_id
-    if default_company_id is None and companies:
-        default_company_id = companies[0].id
+    if default_company_id not in {c.id for c in companies}:
+        default_company_id = companies[0].id if companies else None
 
     return AuthorizationRequestInfo(
         request_id=auth_request.request_id,
@@ -369,7 +390,7 @@ def get_authorize_request(
 def authorize_decision(
     payload: AuthorizationDecisionRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_session_user),
 ):
     auth_request = (
         db.query(OAuthAuthRequest)
@@ -399,13 +420,13 @@ def authorize_decision(
     company_id = payload.company_id if payload.company_id is not None else current_user.active_company_id
     company = (
         db.query(CompanyProfile).filter(CompanyProfile.id == company_id).first()
-        if company_id is not None
+        if company_id is not None and can_access_company(db, current_user, company_id)
         else None
     )
     if company is None:
         return _oauth_error("invalid_request", "A valid company_id is required to approve", 400)
 
-    granted_scopes = _filter_scopes_to_user(parse_scope(auth_request.scope), current_user)
+    granted_scopes = _filter_scopes_to_user(db, parse_scope(auth_request.scope), current_user, company.id)
 
     raw_code = secrets.token_urlsafe(32)
     code_row = OAuthAuthorizationCode(
@@ -668,7 +689,7 @@ async def revoke(request: Request, db: Session = Depends(get_db)):
 @router.get("/grants", response_model=list[GrantResponse], include_in_schema=False)
 def list_grants(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_session_user),
 ):
     rows = (
         db.query(OAuthToken)
@@ -686,10 +707,16 @@ def list_grants(
         .filter(OAuthClient.client_id.in_({row.client_id for row in live}))
         .all()
     }
+    # Only name companies the user can still reach; a grant for one they have
+    # since left keeps showing (so it can be revoked) but without the name.
+    grant_company_ids = {row.company_id for row in live if row.company_id}
+    allowed_ids = accessible_company_ids(db, current_user)
+    if allowed_ids is not None:
+        grant_company_ids &= allowed_ids
     companies = {
         c.id: c
         for c in db.query(CompanyProfile)
-        .filter(CompanyProfile.id.in_({row.company_id for row in live if row.company_id}))
+        .filter(CompanyProfile.id.in_(grant_company_ids))
         .all()
     }
 
@@ -727,7 +754,7 @@ def list_grants(
 def revoke_grant(
     client_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_session_user),
 ):
     rows = (
         db.query(OAuthToken)

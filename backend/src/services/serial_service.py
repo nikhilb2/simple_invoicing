@@ -28,6 +28,7 @@ from src.models.product_serial import (
     ProductSerial,
 )
 from src.schemas.invoice import InvoiceCreate
+from src.services.company_access import company_scope
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +67,7 @@ class SerialManager:
         if company_id is None:
             return query
         return query.filter(
-            or_(
-                ProductSerial.company_id == company_id,
-                ProductSerial.company_id.is_(None),
-            )
+            company_scope(ProductSerial.company_id, company_id)
         )
 
     def _live_row(self, code: str, company_id: int | None) -> ProductSerial | None:
@@ -103,10 +101,7 @@ class SerialManager:
         query = self.db.query(Product).filter(Product.id == product_id)
         if company_id is not None:
             query = query.filter(
-                or_(
-                    Product.company_id == company_id,
-                    Product.company_id.is_(None),
-                )
+                company_scope(Product.company_id, company_id)
             )
         product = query.first()
         if not product:

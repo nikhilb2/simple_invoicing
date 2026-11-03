@@ -132,6 +132,7 @@ export default function ProfitLossTab({ filters }: { filters: AnalyticsFilters }
 
           <div className="analytics-table-scroll">
             <table className="invoice-feed-table">
+              <caption className="sr-only">{selectedProduct ? `${selectedProduct.name}: monthly profit` : 'Monthly profit'}</caption>
               <thead>
                 <tr>
                   <th scope="col">Month</th>
@@ -199,6 +200,7 @@ export default function ProfitLossTab({ filters }: { filters: AnalyticsFilters }
 
               <div className="analytics-table-scroll">
                 <table className="invoice-feed-table">
+                  <caption className="sr-only">Profit by product</caption>
                   <thead>
                     <tr>
                       <th scope="col">Product</th>
@@ -252,6 +254,7 @@ export default function ProfitLossTab({ filters }: { filters: AnalyticsFilters }
           ) : (
             <div className="analytics-table-scroll">
               <table className="invoice-feed-table">
+                <caption className="sr-only">Profit by customer</caption>
                 <thead>
                   <tr>
                     <th scope="col">Customer</th>

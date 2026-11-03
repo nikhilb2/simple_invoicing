@@ -1,7 +1,11 @@
 """Navigation shortcuts can be listed, customised, and reset independently."""
 
+import re
+from pathlib import Path
+
 import pytest
 
+from src.api.routes.shortcuts import DEFAULTS
 from src.models.user import User, UserRole
 from src.models.user_shortcut import UserShortcut
 
@@ -37,6 +41,7 @@ def shortcut_map(client):
         ("go_invoice_dues", "Alt+U"),
         ("go_credit_notes", "Alt+N"),
         ("go_gstr1", "Alt+G"),
+        ("go_gstr3b", "Alt+B"),
         ("go_dashboard", "Alt+O"),
     ],
 )
@@ -61,3 +66,37 @@ def test_navigation_shortcut_can_be_customised_and_reset(
     reset = shortcut_map(client)
     assert reset[action_key] == default_key
     assert reset["go_invoices"] == "Alt+X"
+
+
+# The frontend carries its own copy of the defaults. The backend list is what
+# the shortcuts API returns, so a key missing from it never reaches the page
+# (go_tax_ledger was exactly that), and a key left behind (go_inventory) shows
+# up as an action nothing handles. Comparing the two files catches both.
+FRONTEND_DEFAULTS = (
+    Path(__file__).resolve().parents[3] / "frontend" / "src" / "utils" / "shortcutDefaults.ts"
+)
+
+
+def _frontend_default_shortcuts():
+    if not FRONTEND_DEFAULTS.exists():
+        pytest.skip(f"frontend shortcut defaults not found at {FRONTEND_DEFAULTS}")
+    source = FRONTEND_DEFAULTS.read_text(encoding="utf-8")
+    block = re.search(r"DEFAULT_SHORTCUTS[^=]*=\s*\{(.*?)\}", source, re.DOTALL)
+    assert block, "could not find DEFAULT_SHORTCUTS in shortcutDefaults.ts"
+    parsed = dict(re.findall(r"(\w+)\s*:\s*'([^']+)'", block.group(1)))
+    # A changed file layout must fail loudly rather than compare against nothing.
+    assert len(parsed) >= 10, f"parsed too few frontend shortcuts: {sorted(parsed)}"
+    return parsed
+
+
+def test_backend_default_shortcuts_have_the_same_actions_as_the_frontend():
+    frontend = _frontend_default_shortcuts()
+
+    assert set(DEFAULTS) == set(frontend), (
+        f"missing from backend: {sorted(set(frontend) - set(DEFAULTS))}, "
+        f"only in backend: {sorted(set(DEFAULTS) - set(frontend))}"
+    )
+
+
+def test_backend_default_shortcuts_have_the_same_keys_as_the_frontend():
+    assert DEFAULTS == _frontend_default_shortcuts()

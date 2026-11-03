@@ -11,6 +11,7 @@ from src.models.product import Product
 from src.services.bom_service import (
     CircularBOMError,
     calculate_bom_cost_recursive,
+    execute_production,
     get_bom_requirements,
     validate_bom_availability,
     validate_no_circular_bom,
@@ -362,3 +363,95 @@ class TestValidateBomAvailability:
         assert validate_bom_availability(
             db_session, company.id, product.id, Decimal("1")
         ) == (True, "")
+
+
+class TestExecuteProductionGuards:
+    def test_rejects_serial_tracked_product_without_touching_stock(self, db_session, company):
+        product = make_product(
+            db_session, company.id, "FINISHED", is_producable=True, track_serials=True
+        )
+        component = make_product(db_session, company.id, "RAW", price="1")
+        add_component(db_session, company.id, product.id, component.id, "1")
+        make_inventory(db_session, company.id, component.id, "10")
+
+        result = execute_production(db_session, company.id, product.id, Decimal("2"), user_id=1)
+
+        assert result["success"] is False
+        assert "Serial-tracked" in result["message"]
+        assert (
+            db_session.query(Inventory)
+            .filter(Inventory.product_id == component.id)
+            .first()
+            .quantity
+            == Decimal("10")
+        )
+        assert (
+            db_session.query(Inventory)
+            .filter(Inventory.product_id == product.id)
+            .first()
+            is None
+        )
+
+    def test_rejects_serial_tracked_component_without_touching_stock(
+        self, db_session, company
+    ):
+        product = make_product(db_session, company.id, "FINISHED", is_producable=True)
+        component = make_product(
+            db_session, company.id, "RAW", price="1", track_serials=True
+        )
+        add_component(db_session, company.id, product.id, component.id, "1")
+        make_inventory(db_session, company.id, component.id, "10")
+
+        result = execute_production(db_session, company.id, product.id, Decimal("2"), user_id=1)
+
+        assert result["success"] is False
+        assert "Serial-tracked" in result["message"]
+        assert (
+            db_session.query(Inventory)
+            .filter(Inventory.product_id == component.id)
+            .first()
+            .quantity
+            == Decimal("10")
+        )
+
+    def test_rejects_fractional_quantity_for_whole_number_product(self, db_session, company):
+        product = make_product(
+            db_session, company.id, "FINISHED", is_producable=True, allow_decimal=False
+        )
+        component = make_product(db_session, company.id, "RAW", price="1")
+        add_component(db_session, company.id, product.id, component.id, "1")
+        make_inventory(db_session, company.id, component.id, "10")
+
+        result = execute_production(db_session, company.id, product.id, Decimal("2.5"), user_id=1)
+
+        assert result["success"] is False
+        assert result["message"] == "Quantity must be a whole number for this product"
+        assert (
+            db_session.query(Inventory)
+            .filter(Inventory.product_id == component.id)
+            .first()
+            .quantity
+            == Decimal("10")
+        )
+
+    def test_whole_and_decimal_quantities_still_produce(self, db_session, company):
+        whole_product = make_product(
+            db_session, company.id, "WHOLE", is_producable=True, allow_decimal=False
+        )
+        decimal_product = make_product(
+            db_session, company.id, "DECIMAL", is_producable=True, allow_decimal=True
+        )
+        raw_a = make_product(db_session, company.id, "RAW-A", price="1")
+        raw_b = make_product(db_session, company.id, "RAW-B", price="1")
+        add_component(db_session, company.id, whole_product.id, raw_a.id, "1")
+        add_component(db_session, company.id, decimal_product.id, raw_b.id, "1")
+        make_inventory(db_session, company.id, raw_a.id, "10")
+        make_inventory(db_session, company.id, raw_b.id, "10")
+
+        ok_whole = execute_production(db_session, company.id, whole_product.id, Decimal("2"), user_id=1)
+        ok_decimal = execute_production(
+            db_session, company.id, decimal_product.id, Decimal("2.5"), user_id=1
+        )
+
+        assert ok_whole["success"] is True
+        assert ok_decimal["success"] is True

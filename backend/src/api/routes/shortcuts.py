@@ -20,13 +20,15 @@ DEFAULTS: dict[str, str] = {
     "go_invoices":    "Alt+I",
     "go_ledgers":     "Alt+L",
     "go_products":    "Alt+P",
-    "go_inventory":   "Alt+V",
     "go_day_book":    "Alt+D",
+    "go_tax_ledger":  "Alt+T",
     "focus_scan":     "Alt+S",
     "go_invoice_dues": "Alt+U",
     "go_credit_notes": "Alt+N",
     "go_gstr1":        "Alt+G",
+    "go_gstr3b":       "Alt+B",
     "go_dashboard":    "Alt+O",
+    "go_quotations":   "Alt+Q",
 }
 
 router = APIRouter()

@@ -17,12 +17,12 @@ from unittest.mock import ANY, MagicMock, call, patch
 import pytest
 
 from src.services.credit_note import (
-    _is_interstate,
     _money,
     _recompute_credit_status,
     cancel_credit_note,
     create_credit_note,
 )
+from src.services.gst_tax_service import is_interstate_supply as _is_interstate
 from src.schemas.credit_note import CreditNoteCreate, CreditNoteItemCreate
 from src.models.buyer import Buyer as Ledger
 from src.models.invoice import Invoice, InvoiceItem
@@ -33,15 +33,15 @@ from src.models.credit_note import CreditNote, CreditNoteItem
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def make_ledger(id=1, gst="29ABCDE1234F1Z5"):
+def make_ledger(id=1, gst="29ABCDE1234F1ZW"):
     l = Ledger()
     l.id = id
     l.gst = gst
     return l
 
 
-def make_invoice(id, ledger_id=1, status="active", company_gst="29XYZAB1234C1Z7", taxable_amount=1000,
-                 voucher_type="sales"):
+def make_invoice(id, ledger_id=1, status="active", company_gst="29XYZAB1234C1ZQ", taxable_amount=1000,
+                 voucher_type="sales", total_amount=None):
     inv = Invoice()
     inv.id = id
     inv.ledger_id = ledger_id
@@ -49,6 +49,7 @@ def make_invoice(id, ledger_id=1, status="active", company_gst="29XYZAB1234C1Z7"
     inv.status = status
     inv.company_gst = company_gst
     inv.taxable_amount = taxable_amount
+    inv.total_amount = total_amount
     inv.credit_status = "not_credited"
     return inv
 
@@ -61,6 +62,9 @@ def make_invoice_item(id, invoice_id, product_id=1, quantity=10, unit_price=100,
     ii.quantity = quantity
     ii.unit_price = unit_price
     ii.gst_rate = gst_rate
+    ii.taxable_amount = Decimal(str(quantity * unit_price))
+    ii.tax_amount = ii.taxable_amount * Decimal(str(gst_rate)) / Decimal("100")
+    ii.line_total = ii.taxable_amount + ii.tax_amount
     return ii
 
 
@@ -98,14 +102,14 @@ class TestHelpers:
         assert _money(Decimal("1.004")) == Decimal("1.00")
 
     def test_is_interstate_same_state(self):
-        assert _is_interstate("29ABCDE1234F1Z5", "29XYZAB1234C1Z7") is False
+        assert _is_interstate("29ABCDE1234F1ZW", "29XYZAB1234C1ZQ") is False
 
     def test_is_interstate_different_state(self):
-        assert _is_interstate("29ABCDE1234F1Z5", "27XYZAB1234C1Z7") is True
+        assert _is_interstate("29ABCDE1234F1ZW", "27XYZAB1234C1ZU") is True
 
     def test_is_interstate_missing_gst(self):
-        assert _is_interstate(None, "29XYZAB1234C1Z7") is False
-        assert _is_interstate("29ABCDE1234F1Z5", None) is False
+        assert _is_interstate(None, "29XYZAB1234C1ZQ") is False
+        assert _is_interstate("29ABCDE1234F1ZW", None) is False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -171,7 +175,7 @@ class TestRecomputeCreditStatus:
         return db
 
     def test_sets_not_credited_when_no_cns(self):
-        invoice = make_invoice(1, taxable_amount=1000)
+        invoice = make_invoice(1, taxable_amount=1000, total_amount=1180)
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = invoice
         db.query.return_value.join.return_value.filter.return_value.scalar.return_value = None
@@ -179,18 +183,29 @@ class TestRecomputeCreditStatus:
         assert invoice.credit_status == "not_credited"
 
     def test_sets_partially_credited(self):
-        invoice = make_invoice(1, taxable_amount=1000)
+        invoice = make_invoice(1, taxable_amount=1000, total_amount=1180)
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = invoice
         db.query.return_value.join.return_value.filter.return_value.scalar.return_value = Decimal("500")
         _recompute_credit_status(1, db)
         assert invoice.credit_status == "partially_credited"
 
-    def test_sets_fully_credited(self):
-        invoice = make_invoice(1, taxable_amount=1000)
+    def test_credited_total_including_tax_is_not_fully_credited(self):
+        # 10 x Rs 100 at 18% -> taxable 1000, total 1180. Returning 9 units
+        # credits 1062 (incl. tax); comparing against taxable 1000 would mark
+        # it fully credited even though Rs 118 is still open.
+        invoice = make_invoice(1, taxable_amount=1000, total_amount=1180)
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = invoice
-        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = Decimal("1000")
+        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = Decimal("1062")
+        _recompute_credit_status(1, db)
+        assert invoice.credit_status == "partially_credited"
+
+    def test_sets_fully_credited_when_total_including_tax_covered(self):
+        invoice = make_invoice(1, taxable_amount=1000, total_amount=1180)
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = invoice
+        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = Decimal("1180")
         _recompute_credit_status(1, db)
         assert invoice.credit_status == "fully_credited"
 
@@ -333,6 +348,7 @@ class TestCreateCreditNoteValidation:
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = ledger
         db.query.return_value.filter.return_value.all.side_effect = [[inv], [ii]]
+        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = 0
 
         with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
              patch("src.services.credit_note.get_fy_for_date", return_value=None), \
@@ -363,6 +379,77 @@ class TestCreateCreditNoteValidation:
         assert Decimal(str(added_credit_note.cgst_amount + added_credit_note.sgst_amount)) == Decimal("18.00")
         mock_change_inventory.assert_not_called()
 
+    def _discount_setup(self, *, line_total, already_credited):
+        ledger = make_ledger(id=1)
+        inv = make_invoice(id=1, ledger_id=1)
+        ii = make_invoice_item(id=10, invoice_id=1, product_id=22, quantity=1, unit_price=100, gst_rate=18)
+        ii.line_total = Decimal(line_total)
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = ledger
+        db.query.return_value.filter.return_value.all.side_effect = [[inv], [ii]]
+        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = Decimal(
+            already_credited
+        )
+        return db
+
+    def _discount_payload(self, amount):
+        return CreditNoteCreate(
+            ledger_id=1,
+            invoice_ids=[1],
+            credit_note_type="discount",
+            items=[
+                CreditNoteItemCreate(
+                    invoice_id=1,
+                    invoice_item_id=10,
+                    discount_amount_inclusive=Decimal(amount),
+                )
+            ],
+        )
+
+    def test_discount_credit_note_larger_than_line_total_raises_400(self):
+        from fastapi import HTTPException
+
+        db = self._discount_setup(line_total="118", already_credited="0")
+        with pytest.raises(HTTPException) as exc:
+            create_credit_note(self._discount_payload("5000"), db, current_user_id=1)
+        assert exc.value.status_code == 400
+        assert "would exceed its line total of 118.00" in exc.value.detail
+
+    def test_discount_credit_note_stacked_past_line_total_raises_400(self):
+        from fastapi import HTTPException
+
+        # ₹100 already credited against the same line; ₹19 more passes ₹118.
+        db = self._discount_setup(line_total="118", already_credited="100")
+        with pytest.raises(HTTPException) as exc:
+            create_credit_note(self._discount_payload("19"), db, current_user_id=1)
+        assert exc.value.status_code == 400
+
+    def test_discount_after_partial_return_is_capped_at_what_is_left(self):
+        from fastapi import HTTPException
+
+        # A return already credited ₹59 of the ₹118 line; ₹60 more is too much.
+        db = self._discount_setup(line_total="118", already_credited="59")
+        with pytest.raises(HTTPException) as exc:
+            create_credit_note(self._discount_payload("60"), db, current_user_id=1)
+        assert exc.value.status_code == 400
+
+    def test_discount_equal_to_remaining_amount_is_accepted(self):
+        # ₹59 already credited; the remaining ₹59 of the ₹118 line is allowed.
+        db = self._discount_setup(line_total="118", already_credited="59")
+
+        with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
+             patch("src.services.credit_note.get_fy_for_date", return_value=None), \
+             patch("src.services.credit_note.generate_next_number", return_value="CN-001"), \
+             patch("src.services.credit_note._recompute_credit_status"), \
+             patch("src.services.credit_note._change_inventory_quantity"):
+            create_credit_note(self._discount_payload("59"), db, current_user_id=1)
+
+        added_items = [
+            c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], CreditNoteItem)
+        ]
+        assert len(added_items) == 1
+        assert Decimal(str(added_items[0].line_total)) == Decimal("59.00")
+
     def test_discount_credit_note_intrastate_keeps_item_split_equal_for_odd_paise_tax(self):
         ledger = make_ledger(id=1)
         inv = make_invoice(id=1, ledger_id=1)
@@ -384,6 +471,7 @@ class TestCreateCreditNoteValidation:
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = ledger
         db.query.return_value.filter.return_value.all.side_effect = [[inv], [ii]]
+        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = 0
 
         with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
              patch("src.services.credit_note.get_fy_for_date", return_value=None), \

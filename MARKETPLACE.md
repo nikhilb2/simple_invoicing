@@ -97,7 +97,7 @@ attempting registration.
 ```http
 POST /v1/sellers/register                                         (no auth)
 {
-  "gstin": "27ABCDE1234F1Z5",
+  "gstin": "27ABCDE1234F1Z0",
   "legal_name": "Acme Traders Pvt Ltd",
   "address": "12 Industrial Estate, Pune",
   "state_code": "27",
@@ -174,7 +174,7 @@ GET /v1/listings?q=&hsn_sac=&gst_rate=&min_price=&max_price=&seller_state_code=
     "available_quantity_as_of": "2026-08-22T09:51:00Z",
     "seller": {
       "seller_id": "sel_...", "legal_name": "...",
-      "gstin": "27ABCDE1234F1Z5", "state_code": "27",
+      "gstin": "27ABCDE1234F1Z0", "state_code": "27",
       "verified": false
     }
   }],
@@ -247,7 +247,7 @@ POST /v1/orders/{order_id}/posting       (auth: seller, Idempotency-Key)
   "invoice_number": "INV-2026-27-000042",
   "invoice_date": "2026-08-22",
   "currency_code": "INR",
-  "seller_gstin": "27ABCDE1234F1Z5",
+  "seller_gstin": "27ABCDE1234F1Z0",
   "taxable_amount": "1250.00",
   "tax_amount": "225.00",
   "total_amount": "1475.00",

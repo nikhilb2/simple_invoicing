@@ -80,7 +80,7 @@ def _other_company(db_session) -> int:
     company = CompanyProfile(
         name="Second Shop",
         address="Pune",
-        gst="27ZZZZZ1234F1Z5",
+        gst="27ZZZZZ1234F1ZH",
         phone_number="8888888888",
         currency_code="INR",
     )
@@ -161,7 +161,7 @@ class TestCatalogueSupersetFields:
 
     def test_cancelled_invoices_do_not_count_as_a_sale(self, client):
         product = _create_product(client, "CAT-SOLD-2", "Cancelled Sale Item", initial_quantity=20)
-        ledger = _create_ledger(client, "Cancelled Customer", "29AADCB2230M1ZX")
+        ledger = _create_ledger(client, "Cancelled Customer", "29AADCB2230M1ZP")
 
         _create_invoice(client, product["id"], ledger["id"], "2026-01-15")
         latest = _create_invoice(client, product["id"], ledger["id"], "2026-03-20")
@@ -174,7 +174,7 @@ class TestCatalogueSupersetFields:
 
     def test_last_sold_at_is_null_when_only_sale_is_cancelled(self, client):
         product = _create_product(client, "CAT-SOLD-3", "Only Cancelled Item", initial_quantity=20)
-        ledger = _create_ledger(client, "Only Cancelled Customer", "24AADCB2230M1ZP")
+        ledger = _create_ledger(client, "Only Cancelled Customer", "24AADCB2230M1ZZ")
 
         invoice = _create_invoice(client, product["id"], ledger["id"], "2026-02-10")
         cancel = client.delete(f"/api/invoices/{invoice['id']}")

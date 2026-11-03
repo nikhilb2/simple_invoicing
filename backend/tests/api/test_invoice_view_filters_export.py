@@ -55,7 +55,7 @@ def _create_invoice(client: TestClient, product_id: int, ledger_id: int,
 def _seed(client: TestClient) -> None:
     product = _create_product(client, "VF-1", "View Filter Product")
     sales_ledger = _create_ledger(client, "Sales Customer", "27AADCB2230M1ZT")
-    purchase_ledger = _create_ledger(client, "Purchase Supplier", "29AADCB2230M1ZX")
+    purchase_ledger = _create_ledger(client, "Purchase Supplier", "29AADCB2230M1ZP")
     _create_invoice(client, product["id"], sales_ledger["id"], "sales", "2026-01-15")
     _create_invoice(client, product["id"], sales_ledger["id"], "sales", "2026-03-20")
     _create_invoice(client, product["id"], purchase_ledger["id"], "purchase", "2026-02-10")

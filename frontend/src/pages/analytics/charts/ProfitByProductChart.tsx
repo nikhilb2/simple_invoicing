@@ -11,7 +11,7 @@ import {
 import type { ProfitLossProductRow } from '../../../features/analytics/types';
 import useMediaQuery, { NARROW_QUERY } from '../../../hooks/useMediaQuery';
 import formatCurrency, { formatCompactCurrency } from '../../../utils/formatting';
-import { chartColors, tooltipStyle } from './chartTheme';
+import { useChartColors, useChartTooltipStyle } from './chartTheme';
 
 /**
  * Horizontal ranked bars of gross profit by product. Loss-makers turn red so a
@@ -24,6 +24,8 @@ export default function ProfitByProductChart({
   rows: ProfitLossProductRow[];
   currencyCode: string;
 }) {
+  const chartColors = useChartColors();
+  const tooltipStyle = useChartTooltipStyle();
   const narrow = useMediaQuery(NARROW_QUERY);
   const height = Math.max(220, rows.length * 34 + 60);
 

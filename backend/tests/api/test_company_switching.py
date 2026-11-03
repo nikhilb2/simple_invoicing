@@ -5,6 +5,7 @@ from app_main import app
 from src.api.deps import get_current_user
 from src.db.session import get_db
 from src.models.user import User, UserRole
+from src.models.buyer import Buyer
 from src.models.global_settings import GlobalSettings
 import pytest
 
@@ -222,7 +223,7 @@ def test_company_header_scopes_ledger_queries(client):
 
         create_a = client.post(
             "/api/ledgers/",
-            json=_ledger_payload("Header Scoped Ledger", "29AAAAA1111A1Z1"),
+            json=_ledger_payload("Header Scoped Ledger", "29AAAAA1111A1ZS"),
             headers=_headers(company_a_id),
         )
         assert create_a.status_code == 200, create_a.text
@@ -249,7 +250,7 @@ def test_ledgers_are_scoped_by_company_header(client):
 
         create_a = client.post(
             "/api/ledgers/",
-            json=_ledger_payload("Ledger A", "27ABCDE1234F1Z5"),
+            json=_ledger_payload("Ledger A", "27ABCDE1234F1Z0"),
             headers=_headers(company_a_id),
         )
         assert create_a.status_code == 200, create_a.text
@@ -273,24 +274,70 @@ def test_ledger_same_gst_allowed_across_companies_and_blocked_within_company(cli
 
         create_a = client.post(
             "/api/ledgers/",
-            json=_ledger_payload("Ledger GST A", "27ABCDE1234F1Z5"),
+            json=_ledger_payload("Ledger GST A", "27ABCDE1234F1Z0"),
             headers=_headers(company_a_id),
         )
         assert create_a.status_code == 200, create_a.text
 
         create_b = client.post(
             "/api/ledgers/",
-            json=_ledger_payload("Ledger GST B", "27ABCDE1234F1Z5"),
+            json=_ledger_payload("Ledger GST B", "27ABCDE1234F1Z0"),
             headers=_headers(company_b_id),
         )
         assert create_b.status_code == 200, create_b.text
 
         duplicate_same_company = client.post(
             "/api/ledgers/",
-            json=_ledger_payload("Ledger GST Duplicate", "27ABCDE1234F1Z5"),
+            json=_ledger_payload("Ledger GST Duplicate", "27ABCDE1234F1Z0"),
             headers=_headers(company_b_id),
         )
         assert duplicate_same_company.status_code == 400
+    finally:
+        _restore_user_override(old_override)
+
+
+@pytest.mark.parametrize("legacy_gstin, corrected_gstin", [
+    ("27ABCDE1234F1Z5", "27ABCDE1234F1Z0"),
+    ("00ABCDE1234F1ZG", "01ABCDE1234F1ZE"),
+])
+def test_legacy_ledger_gstin_can_be_read_and_corrected_but_not_resubmitted(
+    client, db_session, legacy_gstin, corrected_gstin
+):
+    old_override = _with_persistent_user_override()
+    try:
+        company_id = _create_company(client, "Legacy GST")
+        headers = _headers(company_id)
+        created = client.post("/api/ledgers/", json=_ledger_payload("Legacy Ledger", ""), headers=headers)
+        assert created.status_code == 200, created.text
+        ledger_id = created.json()["id"]
+
+        # Represent a row accepted before state/check-digit validation existed.
+        ledger = db_session.query(Buyer).filter(Buyer.id == ledger_id).one()
+        ledger.gst = legacy_gstin
+        db_session.commit()
+
+        detail = client.get(f"/api/ledgers/{ledger_id}", headers=headers)
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["gst"] == legacy_gstin
+        listing = client.get("/api/ledgers/", headers=headers)
+        assert listing.status_code == 200, listing.text
+        assert listing.json()["items"][0]["gst"] == legacy_gstin
+
+        rejected = client.put(
+            f"/api/ledgers/{ledger_id}", json=_ledger_payload("Legacy Ledger", legacy_gstin), headers=headers,
+        )
+        assert rejected.status_code == 422, rejected.text
+        db_session.refresh(ledger)
+        assert ledger.gst == legacy_gstin
+
+        corrected = client.put(
+            f"/api/ledgers/{ledger_id}",
+            json=_ledger_payload("Legacy Ledger", f" {corrected_gstin.lower()} "), headers=headers,
+        )
+        assert corrected.status_code == 200, corrected.text
+        assert corrected.json()["gst"] == corrected_gstin
+        db_session.refresh(ledger)
+        assert ledger.gst == corrected_gstin
     finally:
         _restore_user_override(old_override)
 

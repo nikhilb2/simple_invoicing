@@ -1,6 +1,7 @@
 import type { AxiosResponse } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import api from '../api/client';
+import { queryClient } from '../lib/queryClient';
 import { useAuthStore } from './useAuthStore';
 
 /* The store reads localStorage the moment its module loads, so the in-memory
@@ -65,5 +66,37 @@ describe('auth store and the native bridge', () => {
     expect(sentMessages()).toEqual([{ type: 'logout' }]);
     expect(storageWhenPosted).toEqual({});
     expect(useAuthStore.getState().token).toBeNull();
+  });
+
+  it('logout drops every cached query, so the next login cannot see this user\'s figures', () => {
+    queryClient.setQueryData(['gstr3b', 'worksheet', '2026-06-01', '2026-06-30'], { total: 1 });
+
+    useAuthStore.getState().logout();
+
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+  });
+
+  it('setSession stores the pair, tells the native bridge and records the active company', async () => {
+    api.defaults.adapter = async (config): Promise<AxiosResponse> => ({
+      data: { role: 'staff', active_company_id: 7 },
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+    });
+
+    await useAuthStore.getState().setSession({ access_token: 'a2', refresh_token: 'r2', token_type: 'bearer' });
+
+    expect(store).toMatchObject({ token: 'a2', refresh_token: 'r2', active_company_id: '7' });
+    expect(sentMessages()).toEqual([{ type: 'tokens', accessToken: 'a2', refreshToken: 'r2' }]);
+    expect(useAuthStore.getState()).toMatchObject({ token: 'a2', userRole: 'staff' });
+  });
+
+  it('setSession clears a stale active company when the user has none', async () => {
+    store.active_company_id = '99';
+
+    await useAuthStore.getState().setSession({ access_token: 'a3', refresh_token: 'r3', token_type: 'bearer' });
+
+    expect(store.active_company_id).toBeUndefined();
   });
 });

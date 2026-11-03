@@ -29,7 +29,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import text
 
 from src.db.base import Base
-from src.db.session import SessionLocal, engine
+from src.db.session import SessionLocal, migration_engine as engine
 from src.models.buyer import Buyer
 from src.models.company import CompanyProfile
 from src.models.company_account import CompanyAccount
@@ -69,7 +69,7 @@ PRIOR_PURCHASE_INVOICE_COUNT = 18
 COMPANY = dict(
     name="Respawn Technologies Pvt Ltd",
     address="Unit 5, Pinnacle Tech Park, 5th Floor, Bannerghatta Road, Bengaluru 560 029",
-    gst="29AAABB1234C1Z5",          # Karnataka state code 29
+    gst="29AAABB1234C1ZD",          # Karnataka state code 29
     phone_number="9876543210",
     currency_code="INR",
     email="accounts@respawn.in",
@@ -86,21 +86,21 @@ BUYERS = [
     dict(
         name="Apex Retail Solutions",
         address="12 MG Road, Bengaluru 560 001",
-        gst="29AABCA1234D1Z3",
+        gst="29AABCA1234D1Z9",
         phone_number="9845001001",
         email="finance@apexretail.in",
     ),
     dict(
         name="Zenith Traders",
         address="45 Anna Salai, Chennai 600 002",
-        gst="33AABZT9876E1Z1",
+        gst="33AABZT9876E1ZS",
         phone_number="9444001002",
         email="accounts@zenithtraders.in",
     ),
     dict(
         name="Nova Enterprises",
         address="8 Linking Road, Mumbai 400 050",
-        gst="27AABNV5432F1Z2",
+        gst="27AABNV5432F1ZT",
         phone_number="9833001003",
         email="bills@novae.in",
     ),
@@ -114,35 +114,35 @@ BUYERS = [
     dict(
         name="Pinnacle Goods Ltd",
         address="7 CP, New Delhi 110 001",
-        gst="07AABPG4321H1Z5",
+        gst="07AABPG4321H1Z8",
         phone_number="9811001005",
         email="finance@pinnaclegoods.in",
     ),
     dict(
         name="Stellar Corp",
         address="14 Hitech City, Hyderabad 500 081",
-        gst="36AABSC7654I1Z6",
+        gst="36AABSC7654I1ZK",
         phone_number="9966001006",
         email="accounts@stellarcorp.in",
     ),
     dict(
         name="Orbit Supplies Pvt Ltd",
         address="33 Salt Lake, Kolkata 700 064",
-        gst="19AABOS3210J1Z7",
+        gst="19AABOS3210J1ZU",
         phone_number="9830001007",
         email="bills@orbitsupplies.in",
     ),
     dict(
         name="Vertex Systems",
         address="56 Lavelle Road, Bengaluru 560 001",
-        gst="29AABVS2109K1Z8",
+        gst="29AABVS2109K1Z9",
         phone_number="9845001008",
         email="finance@vertexsys.in",
     ),
     dict(
         name="Prime IT Solutions",
         address="3 Connaught Place, New Delhi 110 001",
-        gst="07AABPI6543L1Z9",
+        gst="07AABPI6543L1ZL",
         phone_number="9899001009",
         email="accounts@primeit.in",
     ),
@@ -269,6 +269,8 @@ def _ensure_series_for_financial_year(db, fy: FinancialYear, company_id: int) ->
         "payment": "PAY",
         "credit_note": "CN",
         "debit_note": "DN",
+        "quotation": "QT",
+        "proforma": "PI",
     }
 
     for voucher_type, default_prefix in defaults.items():
@@ -355,8 +357,11 @@ _DEMO_TABLES = (
     "marketplace_connections",
     "share_links",
     "email_logs",
+    "eway_bill_transporters",
     "invoice_items",
     "invoices",
+    "quotation_items",
+    "quotations",
     "production_transactions",
     "bill_of_materials",
     "product_serials",
@@ -1233,6 +1238,12 @@ def seed_all(db) -> None:
 
 
 def main() -> None:
+    from src.core.config import settings
+
+    # Wipes and refills the whole database as one company: never on the shared
+    # instance, where the app role could not write it anyway (row-level security).
+    if settings.is_shared_hosting:
+        raise SystemExit("seed_demo.py is for single-tenant development databases only.")
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:

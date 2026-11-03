@@ -71,8 +71,8 @@ def test_update_purchase_invoice_succeeds_when_current_inventory_is_zero(client,
         "src.services.invoice_processor.generate_next_number",
         side_effect=lambda *args, **kwargs: next(invoice_numbers),
     ):
-        purchase_ledger_id = _create_ledger(client, name="Purchase Ledger", gst="27ABCDE1234F1Z5")
-        sales_ledger_id = _create_ledger(client, name="Sales Ledger", gst="27ABCDE9999F1Z5")
+        purchase_ledger_id = _create_ledger(client, name="Purchase Ledger", gst="27ABCDE1234F1Z0")
+        sales_ledger_id = _create_ledger(client, name="Sales Ledger", gst="27ABCDE9999F1ZW")
         product_id = _create_product(client)
 
         purchase_invoice = _create_invoice(
@@ -116,7 +116,7 @@ def test_update_purchase_invoice_succeeds_when_current_inventory_is_zero(client,
 
 def test_sales_invoice_allows_untracked_product_without_inventory(client, db_session):
     with patch("src.services.invoice_processor.generate_next_number", return_value="SAL-UNTRACKED-001"):
-        sales_ledger_id = _create_ledger(client, name="Sales Ledger Untracked", gst="27ABCDE9999F1Z5")
+        sales_ledger_id = _create_ledger(client, name="Sales Ledger Untracked", gst="27ABCDE9999F1ZW")
         product_id = _create_product(client, sku="UPD-INV-UNTRACK-1", maintain_inventory=False)
 
         create_response = client.post(
@@ -137,7 +137,7 @@ def test_sales_invoice_allows_untracked_product_without_inventory(client, db_ses
 
 def test_update_sales_invoice_with_untracked_product_does_not_create_inventory(client, db_session):
     with patch("src.services.invoice_processor.generate_next_number", return_value="SAL-UNTRACKED-002"):
-        sales_ledger_id = _create_ledger(client, name="Sales Ledger Update", gst="27ABCDE8888F1Z5")
+        sales_ledger_id = _create_ledger(client, name="Sales Ledger Update", gst="27ABCDE8888F1Z2")
         product_id = _create_product(client, sku="UPD-INV-UNTRACK-2", maintain_inventory=False)
 
         invoice = _create_invoice(
@@ -166,7 +166,7 @@ def test_update_sales_invoice_with_untracked_product_does_not_create_inventory(c
 
 def test_invoice_rejects_decimal_quantity_for_whole_number_product(client):
     with patch("src.services.invoice_processor.generate_next_number", return_value="SAL-WHOLE-001"):
-        ledger_id = _create_ledger(client, name="Sales Whole Qty", gst="27ABCDE1234F1Z5")
+        ledger_id = _create_ledger(client, name="Sales Whole Qty", gst="27ABCDE1234F1Z0")
         product_id = _create_product(client, sku="UPD-INV-WHOLE-QTY", allow_decimal=False, unit="Pieces")
 
         response = client.post(
@@ -186,7 +186,7 @@ def test_invoice_rejects_decimal_quantity_for_whole_number_product(client):
 
 def test_invoice_accepts_decimal_quantity_for_decimal_enabled_product(client):
     with patch("src.services.invoice_processor.generate_next_number", return_value="PUR-DEC-001"):
-        ledger_id = _create_ledger(client, name="Purchase Decimal Qty", gst="27ABCDE1234F1Z5")
+        ledger_id = _create_ledger(client, name="Purchase Decimal Qty", gst="27ABCDE1234F1Z0")
         product_id = _create_product(client, sku="UPD-INV-DEC-QTY", allow_decimal=True, unit="Kg")
 
         response = client.post(

@@ -1,5 +1,5 @@
 import api from '../../api/client';
-import type { CompanyProfile, Invoice, Ledger, LedgerAddress, LedgerAddressCreate, LedgerAddressUpdate, OutstandingInvoice, PaginatedInvoices, Product } from '../../types/api';
+import type { CompanyProfile, DuesAgeing, Invoice, Ledger, LedgerAddress, LedgerAddressCreate, LedgerAddressUpdate, OutstandingInvoice, PaginatedInvoices, Product } from '../../types/api';
 
 export type VoucherTypeFilter = 'all' | 'sales' | 'purchase';
 
@@ -107,6 +107,32 @@ export async function fetchDueInvoicePage(filters: DueInvoiceFilters): Promise<P
   }
 
   const res = await api.get<PaginatedInvoices>('/invoices/dues', { params });
+  return res.data;
+}
+
+export type DuesAgeingFilters = {
+  search: string;
+  ledgerId?: number;
+  dueDateFrom?: string;
+  dueDateTo?: string;
+};
+
+export async function fetchDuesAgeing(filters: DuesAgeingFilters): Promise<DuesAgeing> {
+  const params: Record<string, string | number> = {
+    search: filters.search,
+  };
+
+  if (typeof filters.ledgerId === 'number') {
+    params.ledger_id = filters.ledgerId;
+  }
+  if (filters.dueDateFrom) {
+    params.due_date_from = filters.dueDateFrom;
+  }
+  if (filters.dueDateTo) {
+    params.due_date_to = filters.dueDateTo;
+  }
+
+  const res = await api.get<DuesAgeing>('/invoices/dues/ageing', { params });
   return res.data;
 }
 

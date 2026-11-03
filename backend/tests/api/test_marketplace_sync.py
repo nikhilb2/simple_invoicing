@@ -29,8 +29,8 @@ from src.services.marketplace import sync as sync_service
 from src.services.marketplace.client import build_client
 from tests.fakes.fake_marketplace import FakeMarketplace
 
-SELLER_GST = "27AABCU9603R1ZX"
-BUYER_GST = "29ABCDE1234F1Z5"
+SELLER_GST = "27AABCU9603R1ZN"
+BUYER_GST = "29ABCDE1234F1ZW"
 
 
 @pytest.fixture

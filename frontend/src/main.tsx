@@ -5,15 +5,25 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { queryClient } from './lib/queryClient';
 import { identifyUser, initAnalytics } from './lib/analytics';
+import { scrubUrlSecrets } from './lib/urlSecrets';
 import { isNativeApp } from './lib/nativeBridge';
 import { useAuthStore } from './store/useAuthStore';
+import { initThemeListener } from './store/useThemeStore';
 import './styles.css';
+
+// Before the recording starts, so a verification token or OAuth code in the
+// address bar never reaches a replay.
+scrubUrlSecrets();
 
 // Starts the session recording. No React provider wraps the tree any more: the
 // app captures no events in the browser, so nothing needs the PostHog context,
 // and exceptions are reported by the backend where the request that caused them
 // is already known.
 initAnalytics();
+
+// Keeps data-theme in step with the OS while the preference is "system". The
+// inline script in index.html has already set the first value.
+initThemeListener();
 
 // Inside the mobile app the web login never runs -- the app signs in natively
 // and hands us the tokens through localStorage -- so the identify that login()

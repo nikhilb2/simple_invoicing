@@ -2,9 +2,11 @@
 
 # Simple Invoicing
 
-**Modern, open-source invoicing & accounting system for small businesses**
+**Free GST software for Indian small businesses**
 
-A Tally-inspired full-stack application with dual-voucher accounting, inventory management, ledger statements, and day-book registers.
+Create GST invoices, export GSTR-1, and manage inventory, ledgers and payments online. Open source, with staff logins for your team and [an MCP server](#connect-ai-assistants-mcp) for Claude, ChatGPT and other AI assistants.
+
+**[Sign up at app.simpleinvoicings.com](https://app.simpleinvoicings.com/register)** — nothing to install
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -16,49 +18,123 @@ A Tally-inspired full-stack application with dual-voucher accounting, inventory 
 
 ---
 
+## Screenshots
+
+These show a made-up demo business.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/dashboard.png" alt="Dashboard with sales, outstanding and overdue totals, a 12-month trend chart and payment status"><br><sub><b>Dashboard</b>: sales, receivables, stock and trends at a glance.</sub></td>
+    <td width="50%"><img src="docs/screenshots/invoice-composer.png" alt="Invoice form with company details, ledger, line items and automatic CGST and SGST"><br><sub><b>Create invoices</b>: GST is worked out as you add each line.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/invoice-pdf.png" alt="Tax invoice PDF with HSN codes, CGST and SGST split, bank details, a pay-by-UPI QR code and total due"><br><sub><b>PDF tax invoice</b>: HSN codes, tax breakup and a QR code to pay by UPI.</sub></td>
+    <td width="50%"><img src="docs/screenshots/gstr1-summary.png" alt="GSTR-1 filing summary with B2B, B2CL and B2CS categories and JSON, CSV and PDF export buttons"><br><sub><b>GSTR-1</b>: review each return category, then export JSON, CSV or PDF.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/products.png" alt="Products and stock table with prices, reorder levels, GST rates and low-stock badges"><br><sub><b>Products and stock</b>: prices, GST rates and low-stock alerts.</sub></td>
+    <td width="50%"><img src="docs/screenshots/analytics.png" alt="Analytics page with a month-wise sales chart and a table of sales, taxable value and GST collected"><br><sub><b>Analytics</b>: sales and GST by month, product and period.</sub></td>
+  </tr>
+</table>
+
 ## Features
 
-- **Dual-Voucher Accounting** — Sales and Purchase invoices with automatic inventory effects
+### GST and billing
+
+- **Sales and Purchase Invoices** — Automatic inventory effects, plus cancel, restore and duplicate
+- **Quotations & Proforma Invoices** — Offers on their own number series with PDF and share links, converted to an invoice through the composer. No effect on stock, ledgers or returns until then
 - **Credit Notes** — Issue credit notes against invoices with linked ledger and stock reversals
-- **Ledger Statements** — Period-based financial views per account (Tally-style)
-- **Day Book Register** — Cross-ledger voucher register for reconciliation
-- **Inventory Management** — Real-time stock tracking with automatic adjustments
-- **Manufacturing / Bill of Materials** — Define BOMs and record production transactions that consume raw materials and produce finished goods
-- **Cash & Bank** — Manage cash and bank accounts with company-account mappings
-- **Dashboard Analytics** — Server-side metrics with monthly trend, payment-status, and top-product charts
-- **Payment Tracking** — Record and track payments against invoices, with due/receivables views
-- **PDF Invoice Generation** — Generate professional invoices with WeasyPrint
-- **Pay by UPI** — Optional QR on invoice PDFs that opens the invoice's share page, where the customer pays the live outstanding balance from any UPI app
-- **Email Delivery** — Send invoices over SMTP with per-company config and full email history/logs
+- **GSTR-1** — Validate a return and export it as JSON, CSV or PDF
+- **E-Way Bill JSON** — Check an invoice and generate the file for the portal's bulk upload (from the invoice preview's "..." menu)
+- **Tax Ledger** — Tax register with CSV and PDF export
+- **GSTIN Validation** — Checks format, state code and check digit (this does not confirm registration on the GST portal)
+- **PDF Invoices** — Generated with WeasyPrint, with your company logo and terms
 - **Custom Invoice Numbering** — Configurable invoice series per financial year
 - **Financial Years** — Period management for scoping vouchers and reports
-- **GST Compliance** — Built-in tax fields and GST rate support
-- **GSTR-1 Export** — Generate and validate GSTR-1 returns with government-ready JSON (plus CSV/PDF) export
-- **Role-Based Access** — Admin, Manager, and Staff roles with JWT auth
-- **Backups** — On-demand database backups from the admin UI
-- **Keyboard Shortcuts** — Configurable shortcuts for power users
-- **Docker Ready** — One-command dev and production setup
-- **E2E Tested** — Playwright test suite for critical workflows
+
+### Getting paid
+
+- **Payment Tracking** — Record payments against invoices, with PDF receipts, dues and an ageing view
+- **Pay by UPI** — Optional QR on invoice PDFs that opens the invoice's share page, where the customer pays the live outstanding balance from any UPI app
+- **Share Links** — Public links to documents, with WhatsApp sharing
+- **Email Delivery** — Send invoices, ledger statements and payment reminders, with full email history
+
+### Inventory and manufacturing
+
+- **Inventory Management** — Real-time stock tracking with automatic adjustments
+- **Serial Tracking** — Track individual units, and scan serial or SKU codes
+- **Manufacturing / Bill of Materials** — Define BOMs and record production that consumes raw materials and produces finished goods
+- **Product CSV Import and Export** — Move your catalogue in and out in bulk
+
+### Accounting and reports
+
+- **Ledger Statements** — Period-based financial views per account (Tally-style), with PDF and CSV export
+- **Day Book Register** — Cross-ledger voucher register for reconciliation
+- **Cash & Bank** — Manage cash and bank accounts with company-account mappings
+- **Dashboard** — Monthly trend, payment-status and top-product charts
+- **Analytics** — Monthly sales, sales by product, product performance, and profit and loss
+
+### Teams and administration
+
+- **Multiple Companies** — Run more than one company from one login
+- **Role-Based Access** — Admin, Manager and Staff roles
+- **Accounts** — Email verification, password reset and optional Google sign-in
+- **Backups** — On-demand and nightly backups, with download and restore
+- **Dark Mode and Keyboard Shortcuts** — Light or dark theme, and configurable shortcuts
+
+### Integrations
+
+- **REST API and API Keys** — Interactive docs at `/docs`
+- **MCP Server** — Connect Claude, ChatGPT and other AI assistants to your books ([how to connect](#connect-ai-assistants-mcp))
+- **Marketplace** — Optional B2B listings and orders through a central server. No money passes through it, so businesses settle directly with each other ([contract](MARKETPLACE.md))
+
+## Connect AI Assistants (MCP)
+
+Simple Invoicing has a built-in [MCP](https://modelcontextprotocol.io/) server, so Claude, ChatGPT and other MCP clients can work with your invoices, ledgers, stock and reports. You can ask things like:
+
+- "Which invoices are still unpaid?"
+- "What was my profit last quarter?"
+- "Show me the GSTR-1 summary for October."
+- "How much stock do I have left of this product?"
+
+**To connect:**
+
+1. Add a custom connector in your AI assistant, using one of these URLs:
+   - Hosted: `https://app.simpleinvoicings.com/mcp`
+   - Your own copy: `https://<your-host>/mcp`
+2. Sign in to Simple Invoicing and approve the access you want to give.
+3. To review or revoke that access later, go to **Settings → Connected Apps**.
+
+**If you run your own copy:**
+
+- In production, set `PUBLIC_API_BASE_URL` and `PUBLIC_APP_BASE_URL` to your `https://` addresses. MCP stays off until you do.
+- Tools that change data stay off until you set `MCP_WRITE_ENABLED=true`.
+- Clients get a curated set of tools by default. Add `?profile=all` to the URL for all of them.
+
+See [ENV.md](ENV.md) for every MCP setting.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
 | **Backend** | Python 3.11, FastAPI 0.115, SQLAlchemy 2.0, Pydantic 2 |
-| **Frontend** | React 18, TypeScript 5.6, Vite 5, Tailwind CSS, TanStack Query 5, Framer Motion |
+| **Frontend** | React 18, TypeScript 5, Vite 5, Tailwind CSS 3, TanStack Query 5, Zustand, React Router 6, Recharts, Framer Motion |
 | **Database** | PostgreSQL 16 |
-| **Auth** | JWT with bcrypt password hashing |
+| **Auth** | JWT with bcrypt password hashing, optional Google sign-in |
 | **PDF** | WeasyPrint |
 | **Email** | SMTP (per-company configuration) |
-| **Testing** | Playwright (E2E), pytest (backend) |
-| **Deploy** | Docker, Docker Compose, Kubernetes (Kaniko) configs included |
+| **Analytics** | PostHog (optional; does nothing until `POSTHOG_PROJECT_API_KEY` is set) |
+| **Testing** | Playwright (E2E), Vitest (frontend), pytest (backend), GitHub Actions (CI) |
+| **Deploy** | Docker, Docker Compose, Kaniko build manifests |
 
 ## Quick Start
+
+To use the app without installing anything, [create an account](https://app.simpleinvoicings.com/register) on the hosted version. The steps below are for running your own copy.
 
 ### Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) & Docker Compose
-- Or: Python 3.11+, Node.js 20+, PostgreSQL 16+
+- Or: Python 3.11, Node.js 22+, PostgreSQL 16+
 
 ### Option 1: Docker (recommended)
 
@@ -79,6 +155,8 @@ make dev
 make seed
 ```
 
+Database migrations run automatically when the backend starts.
+
 The app will be available at:
 - **Frontend**: http://localhost:5173
 - **Backend API**: http://localhost:8000
@@ -88,6 +166,8 @@ The app will be available at:
 
 <details>
 <summary>Click to expand manual setup instructions</summary>
+
+WeasyPrint needs Pango and related system libraries. See [PDFGENERATION.md](PDFGENERATION.md) for how to install them.
 
 **Backend:**
 
@@ -126,6 +206,10 @@ After seeding, log in with:
 
 > ⚠️ Change these immediately in production!
 
+### Production
+
+See [DOCKER.md](DOCKER.md) for running production with `make prod`, and [ENV.md](ENV.md) for all settings.
+
 ## Project Structure
 
 ```
@@ -136,69 +220,95 @@ simple_invoicing/
 │   │   ├── models/         # SQLAlchemy ORM models
 │   │   ├── schemas/        # Pydantic request/response schemas
 │   │   ├── services/       # Business logic layer
+│   │   ├── mcp_server/     # MCP server
 │   │   ├── db/             # Engine, session, and declarative base
 │   │   └── core/           # Config and security
 │   ├── migrations/         # Database migrations
+│   ├── tests/              # pytest suite
+│   ├── migrate.py          # Migration runner
+│   ├── reset_db.py         # Reset the database schema
 │   ├── seed_admin.py       # Seed the initial admin user
 │   ├── seed_demo.py        # Seed demo data
 │   └── requirements.txt
 ├── frontend/               # React SPA
 │   ├── src/
 │   │   ├── pages/          # Route-level components
-│   │   ├── components/     # Shared UI components (incl. DashboardCharts)
+│   │   ├── features/       # Feature modules (analytics, invoices, marketplace, serials and more)
+│   │   ├── components/     # Shared UI components
 │   │   ├── api/            # Axios client & interceptors
-│   │   ├── context/        # React context (auth)
+│   │   ├── hooks/          # Shared React hooks
+│   │   ├── store/          # Zustand stores
+│   │   ├── context/        # React context
 │   │   └── types/          # TypeScript type definitions
 │   ├── e2e/                # Playwright E2E tests
 │   └── package.json
+├── docs/screenshots/       # Screenshots
 ├── docker-compose.yml      # Multi-container orchestration
-├── Makefile                # Developer shortcuts
-├── DOCKER.md               # Docker guide
-├── ENV.md                  # Environment variable guide
-├── MIGRATION.md            # Migration workflow
-├── PDFGENERATION.md        # PDF invoice generation notes
-├── CREDIT_NOTE.md          # Credit note design
-├── CASH_BANK.md            # Cash & bank module notes
-├── INVOICE_DUE.md          # Invoice dues / receivables notes
-└── project.md              # Architecture and API context
+└── Makefile                # Developer shortcuts
 ```
+
+## Documentation
+
+| Guide | Covers |
+|-------|--------|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Local setup, tests and how to contribute |
+| [DOCKER.md](DOCKER.md) | Docker guide |
+| [ENV.md](ENV.md) | Environment variables |
+| [MIGRATION.md](MIGRATION.md) | Migration workflow |
+| [PDFGENERATION.md](PDFGENERATION.md) | PDF invoice generation |
+| [CREDIT_NOTE.md](CREDIT_NOTE.md) | Credit note design |
+| [CASH_BANK.md](CASH_BANK.md) | Cash & bank module |
+| [INVOICE_DUE.md](INVOICE_DUE.md) | Invoice dues and receivables |
+| [MARKETPLACE.md](MARKETPLACE.md) | Marketplace API contract |
+| [SECURITY.md](SECURITY.md) | Security policy |
+| [project.md](project.md) | Architecture and API context |
 
 ## API Overview
 
-| Endpoint | Description |
-|----------|-------------|
-| `POST /api/auth/login` | Authenticate and get JWT token |
-| `GET/POST /api/products/` | Product catalog CRUD |
-| `GET/POST /api/invoices/` | Create sales/purchase invoices |
-| `GET/POST /api/credit-notes/` | Issue and manage credit notes |
-| `GET/POST /api/payments/` | Record and track payments |
-| `GET/POST /api/ledgers/` | Ledger account management |
-| `GET /api/ledgers/{id}/statement` | Period-based ledger statement |
-| `GET /api/ledgers/day-book` | Cross-ledger voucher register |
-| `GET /api/ledgers/tax-ledger/gstr1/summary` | GSTR-1 summary for a period |
-| `GET /api/ledgers/tax-ledger/gstr1/export-json` | Export government-ready GSTR-1 JSON |
-| `GET/POST /api/inventory/` | Stock levels and adjustments |
-| `GET/POST /api/bom/` | Bills of material and production transactions |
-| `GET /api/dashboard/` | Server-side dashboard metrics and chart data |
-| `GET/POST /api/financial-years/` | Financial year management |
-| `GET/POST /api/invoice-series/` | Custom invoice numbering series |
-| `GET/POST /api/company/` | Company profile and terms |
-| `GET/POST /api/company-accounts/` | Cash & bank / company accounts |
-| `POST /api/email/` | Send invoices via SMTP |
-| `GET /api/email-logs/` | Email delivery history |
-| `GET/POST /api/smtp-configs/` | Per-company SMTP configuration |
-| `POST /api/backups/` | Trigger database backups |
-| `GET/POST /api/users/` | User management (admin) |
+All routes sit under `/api`. Full interactive docs are at `/docs` (Swagger UI) when the backend is running.
 
-Full interactive docs available at `/docs` (Swagger UI) when the backend is running.
+| Prefix | Description |
+|--------|-------------|
+| `/api/auth` | Login, registration, email verification, password reset |
+| `/api/users` | User management |
+| `/api/api-keys` | API key management |
+| `/api/company` | Company profiles, logo and terms |
+| `/api/company-accounts` | Cash & bank and company accounts |
+| `/api/products` | Product catalogue, CSV import and export |
+| `/api/inventory` | Stock levels, adjustments and production |
+| `/api/bom` | Bills of material |
+| `/api/serials` | Serial-tracked units and code scanning |
+| `/api/invoices` | Sales and purchase invoices, dues, PDF and export |
+| `/api/credit-notes` | Credit notes |
+| `/api/quotations` | Quotations and proforma invoices |
+| `/api/payments` | Payments and receipts |
+| `/api/ledgers` | Ledgers, statements, day book, tax ledger, GSTR-1 and the GSTR-3B worksheet (an estimate, not a filing) |
+| `/api/invoice-series` | Invoice numbering series |
+| `/api/financial-years` | Financial year management |
+| `/api/dashboard` | Dashboard metrics and chart data |
+| `/api/analytics` | Sales, product performance, and profit and loss reports |
+| `/api/email` | Send invoices, statements and reminders |
+| `/api/email-logs` | Email delivery history |
+| `/api/smtp-configs` | Per-company SMTP configuration |
+| `/api/share` | Public share links |
+| `/api/shortcuts` | Keyboard shortcuts |
+| `/api/backups` | Create, schedule, download and restore backups |
+| `/api/marketplace` | Marketplace listings and orders |
+
+The MCP endpoint is at `/mcp`, and its OAuth server is at `/api/oauth`.
 
 ## Development
 
 ```bash
 make dev                              # Start dev environment (Docker)
 make prod                             # Start production environment
-make test                             # Run all tests
-make lint                             # Lint backend and frontend
+make build                            # Build the dev Docker images
+make install                          # Install backend and frontend dependencies
+make test                             # Run the Playwright E2E suite
+make test-unit                        # Run frontend Vitest unit tests (single run)
+make test-backend                     # Run backend pytest suite (needs Postgres)
+make test-all                         # Run test-unit, test-backend and test
+make lint                             # Compile-check backend Python and build frontend
 make migrate                          # Run all pending migrations
 make migrate-status                   # Show migration status
 make migrate-down                     # Roll back last migration
@@ -220,11 +330,12 @@ See the [Makefile](Makefile) for all available commands.
 
 - [x] Email invoice delivery
 - [x] Dashboard analytics and charts
+- [x] CSV export
+- [x] Dark mode
 - [ ] Multi-currency support
-- [ ] CSV/Excel export
+- [ ] Excel (.xlsx) export
 - [ ] Recurring invoices
 - [ ] Audit log
-- [ ] Dark mode
 - [ ] Mobile-responsive redesign
 
 Interested in working on any of these? Check out our [Contributing Guide](CONTRIBUTING.md) and look for issues labeled **good first issue**.
@@ -242,4 +353,3 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 ## Acknowledgments
 
 Inspired by [Tally](https://tallysolutions.com/) accounting software. Built with FastAPI, React, and PostgreSQL.
-

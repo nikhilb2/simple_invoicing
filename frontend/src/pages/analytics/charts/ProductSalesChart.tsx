@@ -10,7 +10,7 @@ import {
 import type { ProductSalesRow } from '../../../features/analytics/types';
 import useMediaQuery, { NARROW_QUERY } from '../../../hooks/useMediaQuery';
 import formatCurrency, { formatCompactCurrency } from '../../../utils/formatting';
-import { chartColors, tooltipStyle } from './chartTheme';
+import { useChartColors, useChartTooltipStyle } from './chartTheme';
 
 export type ProductMetric = 'revenue' | 'quantity';
 
@@ -27,6 +27,8 @@ export default function ProductSalesChart({
   metric: ProductMetric;
   currencyCode: string;
 }) {
+  const chartColors = useChartColors();
+  const tooltipStyle = useChartTooltipStyle();
   const narrow = useMediaQuery(NARROW_QUERY);
 
   const dataKey = metric === 'revenue' ? 'total_revenue' : 'quantity_sold';

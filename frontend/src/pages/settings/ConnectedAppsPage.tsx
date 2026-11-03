@@ -115,14 +115,15 @@ export default function ConnectedAppsPage() {
       ) : (
         <div className="panel">
           <table className="data-table">
+            <caption className="sr-only">Connected applications</caption>
             <thead>
               <tr>
-                <th>Application</th>
-                <th>Company</th>
-                <th>Access</th>
-                <th>Connected</th>
-                <th>Last used</th>
-                <th style={{ width: '48px' }} />
+                <th scope="col">Application</th>
+                <th scope="col">Company</th>
+                <th scope="col">Access</th>
+                <th scope="col">Connected</th>
+                <th scope="col">Last used</th>
+                <th scope="col" style={{ width: '48px' }}><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>

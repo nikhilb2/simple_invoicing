@@ -17,6 +17,7 @@ import { useInvoiceCancelStore } from '../store/useInvoiceCancelStore';
 import { exportInvoicesCsv, fetchCompanyProfile, fetchInvoicePage, fetchProducts } from '../features/invoices/api';
 import { invoiceQueryKeys } from '../features/invoices/queryKeys';
 import EmptyState from '../components/EmptyState';
+import PageSizeSelect, { readStoredPageSize, storePageSize } from '../components/PageSizeSelect';
 import { numericParam, textParam } from '../utils/deepLink';
 
 type Breakdown = {
@@ -285,7 +286,7 @@ export default function InvoicesAdvancedView() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLinkInvoiceId]);
-  const pageSize = 20;
+  const [pageSize, setPageSize] = useState(() => readStoredPageSize('invoices-page-size'));
   const shouldUseAllFY = allowAllFY;
   const isFYReady = shouldUseAllFY || Boolean(activeFY);
   const financialYearId = shouldUseAllFY ? undefined : activeFY?.id;
@@ -323,6 +324,7 @@ export default function InvoicesAdvancedView() {
 
   const invoices = invoicesQuery.data?.items ?? [];
   const totalPages = invoicesQuery.data?.total_pages ?? 1;
+  const totalInvoices = invoicesQuery.data?.total ?? 0;
   const company = companyQuery.data ?? null;
   const activeCurrencyCode = company?.currency_code || 'INR';
   const products = productsQuery.data ?? [];
@@ -675,7 +677,7 @@ export default function InvoicesAdvancedView() {
       </section>
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {totalInvoices > 0 && (
         <div className="invoice-feed-view__pagination button-row">
           <button
             type="button"
@@ -696,6 +698,15 @@ export default function InvoicesAdvancedView() {
           >
             Next
           </button>
+          <PageSizeSelect
+            id="invoices-page-size"
+            value={pageSize}
+            onChange={(nextPageSize) => {
+              storePageSize('invoices-page-size', nextPageSize);
+              setPageSize(nextPageSize);
+              resetPage();
+            }}
+          />
         </div>
       )}
 

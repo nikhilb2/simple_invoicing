@@ -3,11 +3,19 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from src.core.config import settings
 from src.models.financial_year import FinancialYear
+
+
+def _require_company_in_shared_hosting(company_id: int | None) -> None:
+    """No company means "every company's FYs" -- only safe on a single-tenant DB."""
+    if company_id is None and settings.is_shared_hosting:
+        raise ValueError("A company_id is required in shared hosting")
 
 
 def get_active_fy(db: Session, company_id: int | None = None) -> Optional[FinancialYear]:
     """Return the currently active financial year, or None if none is set."""
+    _require_company_in_shared_hosting(company_id)
     query = db.query(FinancialYear).filter(FinancialYear.is_active.is_(True))
     if company_id is not None:
         query = query.filter(FinancialYear.company_id == company_id)
@@ -16,6 +24,7 @@ def get_active_fy(db: Session, company_id: int | None = None) -> Optional[Financ
 
 def get_fy_for_date(db: Session, invoice_date: date, company_id: int | None = None) -> Optional[FinancialYear]:
     """Return the financial year whose range contains invoice_date, or None."""
+    _require_company_in_shared_hosting(company_id)
     query = db.query(FinancialYear).filter(
         FinancialYear.start_date <= invoice_date,
         FinancialYear.end_date >= invoice_date,
@@ -27,6 +36,7 @@ def get_fy_for_date(db: Session, invoice_date: date, company_id: int | None = No
 
 def activate_fy(db: Session, fy_id: int, company_id: int | None = None) -> FinancialYear:
     """Set the target FY as active; deactivate all others atomically."""
+    _require_company_in_shared_hosting(company_id)
     target_query = db.query(FinancialYear).filter(FinancialYear.id == fy_id)
     if company_id is not None:
         target_query = target_query.filter(FinancialYear.company_id == company_id)

@@ -1,4 +1,46 @@
+from decimal import Decimal
+
+from src.models.bom import BillOfMaterial
+from src.models.company import CompanyProfile
 from src.models.inventory import Inventory
+from src.models.product import Product
+
+
+def _make_producible_setup(db_session):
+    """Create a company, a producable product, its BOM, and component stock."""
+    company = CompanyProfile(name="Notes Test Co", address="123 Test St")
+    db_session.add(company)
+    db_session.flush()
+
+    finished = Product(
+        company_id=company.id,
+        sku="NOTESFIN01",
+        name="Finished Goods",
+        price=Decimal("10"),
+        is_producable=True,
+    )
+    component = Product(
+        company_id=company.id,
+        sku="NOTESRAW01",
+        name="Raw Material",
+        price=Decimal("2"),
+    )
+    db_session.add_all([finished, component])
+    db_session.flush()
+
+    db_session.add(
+        BillOfMaterial(
+            company_id=company.id,
+            product_id=finished.id,
+            component_product_id=component.id,
+            quantity_required=Decimal("1"),
+        )
+    )
+    db_session.add(
+        Inventory(company_id=company.id, product_id=component.id, quantity=Decimal("5"))
+    )
+    db_session.commit()
+    return finished
 
 
 def test_inventory_list_includes_products_without_inventory_rows(client, db_session):
@@ -127,3 +169,110 @@ def test_adjust_inventory_accepts_fractional_quantity_for_decimal_product(client
     assert item["unit"] == "l"
     assert item["allow_decimal"] is True
     assert item["quantity"] == 1.5
+
+
+def _decimal_product(client, sku: str = "DECINVNF"):
+    created = client.post(
+        "/api/products/",
+        json={
+            "sku": sku,
+            "name": "Liquid Product",
+            "price": 90,
+            "gst_rate": 18,
+            "unit": "l",
+            "allow_decimal": True,
+            "initial_quantity": 2,
+        },
+    )
+    assert created.status_code == 200
+    return created.json()["id"]
+
+
+def test_adjust_inventory_rejects_nan_quantity(client):
+    product_id = _decimal_product(client, "DECINVNAN")
+    response = client.post(
+        "/api/inventory/adjust",
+        content=f'{{"product_id": {product_id}, "quantity": NaN}}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    listing = client.get("/api/inventory/?search=Liquid&page=1&page_size=50")
+    assert listing.status_code == 200
+    item = next(i for i in listing.json()["items"] if i["sku"] == "DECINVNAN")
+    assert item["quantity"] == 2
+
+
+def test_adjust_inventory_rejects_infinity_quantity(client):
+    product_id = _decimal_product(client, "DECINVINF")
+    response = client.post(
+        "/api/inventory/adjust",
+        content=f'{{"product_id": {product_id}, "quantity": Infinity}}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    listing = client.get("/api/inventory/?search=Liquid&page=1&page_size=50")
+    assert listing.status_code == 200
+    item = next(i for i in listing.json()["items"] if i["sku"] == "DECINVINF")
+    assert item["quantity"] == 2
+
+
+def test_adjust_inventory_rejects_negative_infinity_quantity(client):
+    product_id = _decimal_product(client, "DECINVNINF")
+    response = client.post(
+        "/api/inventory/adjust",
+        content=f'{{"product_id": {product_id}, "quantity": -Infinity}}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    listing = client.get("/api/inventory/?search=Liquid&page=1&page_size=50")
+    assert listing.status_code == 200
+    item = next(i for i in listing.json()["items"] if i["sku"] == "DECINVNINF")
+    assert item["quantity"] == 2
+
+
+def test_produce_saves_notes_in_production_history(client, db_session):
+    finished = _make_producible_setup(db_session)
+
+    produce_response = client.post(
+        "/api/inventory/produce",
+        json={"product_id": finished.id, "quantity": 1, "notes": "Batch 7"},
+    )
+    assert produce_response.status_code == 200, produce_response.text
+
+    history_response = client.get("/api/inventory/production-history")
+    assert history_response.status_code == 200
+
+    items = history_response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["notes"] == "Batch 7"
+
+
+def test_produce_stores_blank_notes_as_null(client, db_session):
+    finished = _make_producible_setup(db_session)
+
+    produce_response = client.post(
+        "/api/inventory/produce",
+        json={"product_id": finished.id, "quantity": 1, "notes": "   "},
+    )
+    assert produce_response.status_code == 200, produce_response.text
+
+    history_response = client.get("/api/inventory/production-history")
+    assert history_response.status_code == 200
+    assert history_response.json()["items"][0]["notes"] is None
+
+
+def test_produce_without_notes_field_still_works(client, db_session):
+    finished = _make_producible_setup(db_session)
+
+    produce_response = client.post(
+        "/api/inventory/produce",
+        json={"product_id": finished.id, "quantity": 2},
+    )
+    assert produce_response.status_code == 200, produce_response.text
+
+    history_response = client.get("/api/inventory/production-history")
+    assert history_response.status_code == 200
+    items = history_response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["notes"] is None
+    assert items[0]["quantity_produced"] == 2

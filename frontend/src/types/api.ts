@@ -167,6 +167,20 @@ export type PaginatedInvoices = {
   };
 };
 
+export type DuesAgeingBucket = {
+  key: string;
+  label: string;
+  invoice_count: number;
+  total_remaining: number;
+};
+
+export type DuesAgeing = {
+  as_of_date: string;
+  buckets: DuesAgeingBucket[];
+  total_invoice_count: number;
+  total_remaining: number;
+};
+
 export type CreditNoteType = 'return' | 'discount' | 'adjustment';
 export type CreditNoteStatus = 'active' | 'cancelled';
 // Outward is a note we issued against a sale. Inward is the supplier's own
@@ -200,8 +214,19 @@ export type CompanyProfile = {
   additional_company_info: string | null;
   terms: CompanyTermOut[];
   show_sku_on_pdf: boolean;
+  eway_enabled: boolean;
+  eway_local_threshold: number;
+  eway_interstate_threshold: number;
+  eway_always_show_button: boolean;
   show_pay_qr_on_invoice: boolean;
   show_upi_pay_button: boolean;
+};
+
+export type EwayBillSettings = {
+  eway_enabled: boolean;
+  eway_local_threshold: number;
+  eway_interstate_threshold: number;
+  eway_always_show_button: boolean;
 };
 
 export type CompanyListItem = {
@@ -237,6 +262,10 @@ export type CompanyProfileUpdate = {
   ifsc_code?: string;
   additional_company_info?: string | null;
   show_sku_on_pdf?: boolean;
+  eway_enabled?: boolean;
+  eway_local_threshold?: number;
+  eway_interstate_threshold?: number;
+  eway_always_show_button?: boolean;
   show_pay_qr_on_invoice?: boolean;
   show_upi_pay_button?: boolean;
 };
@@ -314,6 +343,7 @@ export type Invoice = {
   company_additional_info: string | null;
   company_terms_text: string | null;
   voucher_type: 'sales' | 'purchase';
+  place_of_supply?: string | null;
   status: 'active' | 'cancelled';
   tax_inclusive: boolean;
   apply_round_off: boolean;
@@ -344,6 +374,9 @@ export type Invoice = {
   warnings?: string[];
   shipping_address: string | null;
   shipping_address_label: string | null;
+  /** The quotation or proforma this was converted from. */
+  source_quotation_id?: number | null;
+  source_quotation_number?: string | null;
 };
 
 export type OutstandingInvoice = {
@@ -380,6 +413,122 @@ export type InvoiceItem = {
   serial_numbers?: string[];
 };
 
+export type QuotationDocumentType = 'quotation' | 'proforma';
+export type QuotationStatus = 'open' | 'accepted' | 'declined' | 'converted' | 'cancelled';
+/** The stored status, or `expired`, which is derived from the date and never stored. */
+export type QuotationDisplayStatus = QuotationStatus | 'expired';
+export type QuotationSettableStatus = 'open' | 'accepted' | 'declined';
+
+export type QuotationItem = {
+  id: number;
+  product_id: number;
+  product_name: string | null;
+  hsn_sac: string | null;
+  quantity: number;
+  unit_price: number;
+  gst_rate: number;
+  taxable_amount: number;
+  tax_amount: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  line_total: number;
+  description: string | null;
+  discount_type: string | null;
+  discount_value: number | null;
+};
+
+export type Quotation = {
+  id: number;
+  document_type: QuotationDocumentType;
+  quotation_number: string;
+  status: QuotationStatus;
+  is_expired: boolean;
+  display_status: QuotationDisplayStatus;
+  quotation_date: string;
+  valid_until: string | null;
+  financial_year_id: number | null;
+  ledger_id: number;
+  ledger_name: string | null;
+  ledger_address: string | null;
+  ledger_gst: string | null;
+  ledger_phone: string | null;
+  company_name: string | null;
+  company_gst: string | null;
+  company_currency_code: string | null;
+  shipping_address: string | null;
+  shipping_address_label: string | null;
+  shipping_address_id: number | null;
+  reference_notes: string | null;
+  tax_inclusive: boolean;
+  apply_round_off: boolean;
+  round_off_amount: number;
+  discount_type: string | null;
+  discount_value: number | null;
+  taxable_amount: number;
+  total_tax_amount: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  total_amount: number;
+  status_note: string | null;
+  accepted_at: string | null;
+  declined_at: string | null;
+  converted_at: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+  items: QuotationItem[];
+  /** The one live invoice, if any. */
+  converted_invoice_id: number | null;
+  converted_invoice_number: string | null;
+  /** Every invoice ever created from this, cancelled ones included. */
+  invoices: { id: number; invoice_number: string | null; status: string }[];
+};
+
+export type QuotationFields = {
+  ledger_id: number;
+  quotation_date?: string;
+  /** Null means it never expires. Left out, the server defaults to 30 days. */
+  valid_until?: string | null;
+  reference_notes?: string | null;
+  tax_inclusive?: boolean;
+  apply_round_off?: boolean;
+  discount_type?: 'percentage' | 'net' | null;
+  discount_value?: number | null;
+  shipping_address_same_as_billing?: boolean;
+  shipping_address_id?: number | null;
+  new_shipping_address?: { label: string; address: string } | null;
+  items: Omit<InvoiceItemInput, 'serial_numbers'>[];
+};
+
+export type QuotationCreate = QuotationFields & { document_type: QuotationDocumentType };
+export type QuotationUpdate = QuotationFields;
+
+export type PaginatedQuotations = {
+  items: Quotation[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  status_counts: Partial<Record<QuotationDisplayStatus, number>>;
+};
+
+export type QuotationConversionWarning = { code: string; message: string };
+
+/** An invoice, and which version of the quotation it was drawn from. */
+export type QuotationConvert = InvoiceCreate & {
+  quotation_updated_at?: string | null;
+};
+
+export type QuotationConversionDraft = {
+  quotation_id: number;
+  quotation_number: string;
+  document_type: QuotationDocumentType;
+  invoice: QuotationConvert;
+  warnings: QuotationConversionWarning[];
+};
+
 export type InvoiceItemInput = {
   product_id: number;
   quantity: number;
@@ -412,6 +561,7 @@ export type CreditNote = {
   direction: CreditNoteDirection;
   supplier_credit_note_number: string | null;
   supplier_credit_note_date: string | null;
+  credit_note_date: string | null;
   reason: string | null;
   status: CreditNoteStatus;
   taxable_amount: number;
@@ -442,6 +592,7 @@ export type CreditNoteCreate = {
   direction: CreditNoteDirection;
   supplier_credit_note_number?: string | null;
   supplier_credit_note_date?: string | null;
+  credit_note_date?: string | null;
   reason?: string | null;
   items: CreditNoteItemCreate[];
 };
@@ -468,6 +619,7 @@ export type InvoiceCreate = {
   shipping_address_same_as_billing?: boolean;
   shipping_address_id?: number | null;
   new_shipping_address?: { label: string; address: string } | null;
+  place_of_supply?: string | null;
   items: InvoiceItemInput[];
 };
 
@@ -663,6 +815,8 @@ export type Gstr1Summary = {
   nil_rated: Gstr1CategorySummary;
   exempt: Gstr1CategorySummary;
   non_gst: Gstr1CategorySummary;
+  zero_rate_invoices?: number;
+  zero_rate_value?: number;
   hsn_summary: Gstr1HsnSummaryItem[];
   doc_summary: Gstr1DocSummary;
 };
@@ -727,15 +881,43 @@ export type UserProfile = {
   full_name: string;
   role: 'admin' | 'manager' | 'staff';
   active_company_id: number | null;
+  has_password: boolean;
+  email_verified: boolean;
+  /** Role in the active company; `role` is the global one. */
+  company_role?: 'admin' | 'manager' | 'staff' | null;
+  can_manage_platform?: boolean;
+};
+
+export type AuthProvider = {
+  id: string;
+  name: string;
+};
+
+export type AuthConfig = {
+  password_signup_enabled: boolean;
+  password_reset_enabled: boolean;
+  providers: AuthProvider[];
+};
+
+export type RegisterRequest = {
+  email: string;
+  full_name: string;
+};
+
+export type DetailResponse = {
+  detail: string;
 };
 
 export type ChangePasswordRequest = {
-  current_password: string;
+  current_password?: string;
   new_password: string;
 };
 
 export type ChangePasswordResponse = {
   detail: string;
+  access_token?: string | null;
+  refresh_token?: string | null;
+  token_type?: string | null;
 };
 
 export type SmtpConfig = {
@@ -794,6 +976,8 @@ export type InvoiceSeries = {
   next_sequence: number;
   pad_digits: 2 | 3 | 4;
   created_at: string | null;
+  /** Set when GSTR-1 will soon refuse, or already refuses, this series' numbers. */
+  gstr1_warning?: string | null;
 };
 
 export type InvoiceSeriesUpdate = {
@@ -878,6 +1062,7 @@ export type BOMUpdate = {
 export type ProduceRequest = {
   product_id: number;
   quantity: number;
+  notes?: string;
 };
 
 export type ProductionTransaction = {
@@ -987,7 +1172,7 @@ export type DashboardMetrics = {
 };
 
 /** What a public share link can point at. */
-export type ShareResourceType = 'invoice' | 'ledger_statement' | 'payment' | 'credit_note';
+export type ShareResourceType = 'invoice' | 'ledger_statement' | 'payment' | 'credit_note' | 'quotation';
 
 /**
  * A public, tokenised URL for one document, handed to a customer over WhatsApp.

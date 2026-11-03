@@ -13,7 +13,7 @@ import {
 import type { ProfitLossMonthlyRow } from '../../../features/analytics/types';
 import useMediaQuery, { NARROW_QUERY } from '../../../hooks/useMediaQuery';
 import formatCurrency, { formatCompactCurrency } from '../../../utils/formatting';
-import { chartColors, tooltipStyle } from './chartTheme';
+import { useChartColors, useChartTooltipStyle } from './chartTheme';
 
 /**
  * Monthly gross profit as bars with the margin % overlaid as a line. A losing
@@ -28,6 +28,8 @@ export default function MonthlyProfitChart({
   rows: ProfitLossMonthlyRow[];
   currencyCode: string;
 }) {
+  const chartColors = useChartColors();
+  const tooltipStyle = useChartTooltipStyle();
   const narrow = useMediaQuery(NARROW_QUERY);
 
   return (

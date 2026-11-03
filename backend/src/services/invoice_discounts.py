@@ -129,6 +129,56 @@ def invoice_discount_amount(invoice: Invoice) -> Decimal:
     return _money(discount)
 
 
+def apportion_invoice_discount(
+    line_taxables: list[Decimal],
+    *,
+    invoice_discount: Decimal,
+    invoice_tax: Decimal,
+) -> list[Decimal]:
+    """Split an invoice-level discount into each line's ex-GST share.
+
+    Item ``taxable_amount`` already nets off *line* discounts but never the
+    invoice-level one: ``InvoiceProcessor._apply_totals`` subtracts that from
+    ``raw_total`` (taxable + GST) after line and tax totals are fixed, so no
+    stored line or tax figure ever reflects it. A per-product revenue or spend
+    figure built from line ``taxable_amount`` therefore overstates by the
+    invoice discount unless it is apportioned back onto the lines.
+
+    GST treatment: the discount is taken off the GST-*inclusive* raw total, so
+    only part of it is a reduction in the ex-GST value of the goods. That part
+    is ``invoice_discount * taxable / (taxable + tax)``, where ``taxable`` is
+    the sum of ``line_taxables`` and ``tax`` is the invoice's stored total GST.
+    The remainder corresponds to GST that was nominally charged but not
+    collected; it is not revenue, so it is dropped here (the stored GST figures
+    are left as the processor wrote them). This holds for tax-inclusive
+    invoices too, since their line ``taxable_amount`` is already ex-GST.
+
+    The ex-GST share is then split across lines pro-rata by line
+    ``taxable_amount``. Each share is rounded to paise and the rounding residue
+    lands on the largest line, so the shares always sum exactly to the ex-GST
+    share and a report's total never drifts from the invoice by a paisa.
+
+    Returns one non-negative Decimal per input line, in the same order.
+    """
+    taxables = [_dec(value) for value in line_taxables]
+    taxable_total = sum(taxables, Decimal("0"))
+    discount = _dec(invoice_discount)
+    gross = taxable_total + _dec(invoice_tax)
+
+    if discount <= 0 or taxable_total <= 0 or gross <= 0:
+        return [Decimal("0.00") for _ in taxables]
+
+    ex_gst_share = _money(min(discount, gross) * taxable_total / gross)
+    shares = [_money(ex_gst_share * taxable / taxable_total) for taxable in taxables]
+
+    residue = ex_gst_share - sum(shares, Decimal("0"))
+    if residue:
+        largest = max(range(len(taxables)), key=lambda index: taxables[index])
+        shares[largest] = _money(shares[largest] + residue)
+
+    return shares
+
+
 def build_invoice_discount_totals(
     db: Session,
     invoices: list[Invoice],

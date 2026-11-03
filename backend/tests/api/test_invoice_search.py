@@ -92,7 +92,7 @@ def _create_ledger(client, name: str, company_id: int | None = None) -> int:
     response = client.post("/api/ledgers/", headers=_headers(company_id), json={
         "name": name,
         "address": "Mumbai",
-        "gst": "27ABCDE1234F1Z5",
+        "gst": "27ABCDE1234F1Z0",
         "phone_number": "9999999999",
         "email": "ledger@example.com",
         "website": "",

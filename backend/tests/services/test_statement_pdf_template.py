@@ -38,7 +38,7 @@ def make_ledger(**overrides) -> Ledger:
         company_id=1,
         name="Acme Stores",
         address="42 Market Road",
-        gst="29ABCDE1234F1Z5",
+        gst="29ABCDE1234F1ZW",
         phone_number="9899001009",
         email="books@acme.in",
     )
@@ -100,13 +100,13 @@ class TestLedgerDetailsLine:
     def test_appends_the_ledger_email(self):
         html = render()
         assert (
-            "GST: 29ABCDE1234F1Z5 &middot; Phone: 9899001009 &middot; books@acme.in"
+            "GST: 29ABCDE1234F1ZW &middot; Phone: 9899001009 &middot; books@acme.in"
             in html
         )
 
     def test_omits_a_stray_separator_when_the_email_is_unset(self):
         html = render(ledger=make_ledger(email=None))
-        assert "GST: 29ABCDE1234F1Z5 &middot; Phone: 9899001009" in html
+        assert "GST: 29ABCDE1234F1ZW &middot; Phone: 9899001009" in html
         assert "9899001009 &middot; </p>" not in html
 
     def test_email_alone_carries_no_bare_gst_label(self):

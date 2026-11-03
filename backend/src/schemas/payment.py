@@ -8,7 +8,8 @@ PAYMENT_VOUCHER_TYPES = ("receipt", "payment", "opening_balance")
 
 class PaymentInvoiceAllocationCreate(BaseModel):
     invoice_id: int
-    allocated_amount: float
+    # Non-finite / out-of-range values blow Numeric(10,2) and break the payments list.
+    allocated_amount: float = Field(lt=100_000_000, allow_inf_nan=False)
 
 
 class PaymentInvoiceAllocationOut(BaseModel):
@@ -25,13 +26,14 @@ class PaymentInvoiceAllocationOut(BaseModel):
 
 class PaymentUpdate(BaseModel):
     voucher_type: str
-    amount: float
+    # Lower bound allows negative opening_balance; upper matches Numeric(10, 2).
+    amount: float = Field(gt=-100_000_000, lt=100_000_000, allow_inf_nan=False)
     account_id: int | None = None
     date: datetime | None = None
     mode: str | None = None
     reference: str | None = None
     notes: str | None = None
-    invoice_allocations: list[PaymentInvoiceAllocationCreate] = Field(default_factory=list)
+    invoice_allocations: list[PaymentInvoiceAllocationCreate] | None = None
 
     @field_validator("voucher_type")
     @classmethod
@@ -56,7 +58,8 @@ class PaymentUpdate(BaseModel):
 class PaymentCreate(BaseModel):
     ledger_id: int | None = None
     voucher_type: str  # "receipt", "payment" or "opening_balance"
-    amount: float
+    # Lower bound allows negative opening_balance; upper matches Numeric(10, 2).
+    amount: float = Field(gt=-100_000_000, lt=100_000_000, allow_inf_nan=False)
     account_id: int | None = None
     date: datetime | None = None
     mode: str | None = None

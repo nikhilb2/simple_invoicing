@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/shallow';
 import api from '../api/client';
 import { useAuth } from './AuthContext';
 import { ACTION_KEYS, DEFAULT_SHORTCUTS, type ActionKey } from '../utils/shortcutDefaults';
+import { isTypingTarget, normalizeCombo } from '../utils/keyboard';
 
 type ShortcutEntry = {
   action_key: string;
@@ -50,38 +51,6 @@ const useShortcutsStore = create<ShortcutsStore>((set, get) => ({
     }
   },
 }));
-
-/**
- * Whether the keystroke is someone typing rather than reaching for a shortcut.
- *
- * The listener is on `window`, so it sees every keystroke in the app including
- * the ones going into an invoice line. A combo carrying Ctrl/Alt/Meta is still
- * honoured there — Ctrl+S from inside a field is the whole point of Ctrl+S —
- * but a bare key is indistinguishable from typing, and a user who remaps an
- * action onto one would otherwise fire it on every matching character.
- */
-function isTypingTarget(e: KeyboardEvent): boolean {
-  if (e.ctrlKey || e.altKey || e.metaKey) {
-    return false;
-  }
-  const target = e.target as HTMLElement | null;
-  if (!target) {
-    return false;
-  }
-  const tag = target.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
-}
-
-function normalizeCombo(e: KeyboardEvent): string {
-  const parts: string[] = [];
-  if (e.ctrlKey) parts.push('Ctrl');
-  if (e.shiftKey) parts.push('Shift');
-  if (e.altKey) parts.push('Alt');
-  if (e.metaKey) parts.push('Meta');
-  const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
-  parts.push(key);
-  return parts.join('+');
-}
 
 export function ShortcutsProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();

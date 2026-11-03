@@ -197,10 +197,10 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, 
             margin: 0,
             padding: 0,
             listStyle: 'none',
-            border: '1px solid var(--border, #d1d5db)',
+            border: '1px solid var(--border)',
             borderRadius: '6px',
-            background: 'var(--surface, #fff)',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+            background: 'var(--surface)',
+            boxShadow: '0 4px 12px rgb(var(--rgb-shadow) / 0.12)',
           }}
         >
           {suggestions.map((l, i) => (
@@ -213,13 +213,13 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, 
               style={{
                 padding: '8px 12px',
                 cursor: 'pointer',
-                background: i === activeIndex ? 'var(--accent, #3b82f6)' : String(l.id) === value ? 'var(--surface-subtle, #f3f4f6)' : 'transparent',
-                color: i === activeIndex ? '#fff' : '#111827',
+                background: i === activeIndex ? 'var(--accent)' : String(l.id) === value ? 'var(--surface-subtle)' : 'transparent',
+                color: i === activeIndex ? 'var(--on-accent)' : 'var(--text)',
               }}
             >
               {l.name}
               {l.gst ? (
-                <span style={{ opacity: 0.75, fontSize: '0.85em', color: i === activeIndex ? '#fff' : '#374151' }}> ({l.gst})</span>
+                <span style={{ opacity: 0.75, fontSize: '0.85em', color: i === activeIndex ? 'var(--on-accent)' : 'var(--muted)' }}> ({l.gst})</span>
               ) : null}
             </li>
           ))}
@@ -234,10 +234,10 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, 
             right: 0,
             zIndex: 50,
             padding: '8px 12px',
-            border: '1px solid var(--border, #d1d5db)',
+            border: '1px solid var(--border)',
             borderRadius: '6px',
-            background: 'var(--surface, #fff)',
-            color: 'var(--text-muted, #6b7280)',
+            background: 'var(--surface)',
+            color: 'var(--text-muted)',
             fontSize: '0.9em',
           }}
         >

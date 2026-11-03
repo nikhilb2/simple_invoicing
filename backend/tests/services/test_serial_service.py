@@ -28,7 +28,7 @@ from src.services.serial_service import SerialManager
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
 
-def make_company(db, *, name="Test Co", gst="27AABCU9603R1ZX") -> CompanyProfile:
+def make_company(db, *, name="Test Co", gst="27AABCU9603R1ZN") -> CompanyProfile:
     company = CompanyProfile(
         name=name,
         address="123 Test St",
@@ -588,8 +588,8 @@ class TestTenantScopedUniqueness:
     def test_same_serial_allowed_in_two_companies(self, db_session):
         """Two shops can legitimately hold handsets with the same code on file —
         uniqueness is per tenant, not global."""
-        company_a = make_company(db_session, name="Shop A", gst="27AABCU9603R1ZX")
-        company_b = make_company(db_session, name="Shop B", gst="29AABCU9603R1ZY")
+        company_a = make_company(db_session, name="Shop A", gst="27AABCU9603R1ZN")
+        company_b = make_company(db_session, name="Shop B", gst="29AABCU9603R1ZJ")
         product_a = make_product(db_session, company_a.id, sku="A-PHONE")
         product_b = make_product(db_session, company_b.id, sku="B-PHONE")
         purchase_a = make_invoice(db_session, company_a.id, voucher_type="purchase")
@@ -613,8 +613,8 @@ class TestTenantScopedUniqueness:
         assert numbers_of(db_session, product_b.id) == ["356938035643809"]
 
     def test_lookup_does_not_cross_company_boundaries(self, db_session):
-        company_a = make_company(db_session, name="Shop A", gst="27AABCU9603R1ZX")
-        company_b = make_company(db_session, name="Shop B", gst="29AABCU9603R1ZY")
+        company_a = make_company(db_session, name="Shop A", gst="27AABCU9603R1ZN")
+        company_b = make_company(db_session, name="Shop B", gst="29AABCU9603R1ZJ")
         product_a = make_product(db_session, company_a.id, sku="A-PHONE2")
         purchase_a = make_invoice(db_session, company_a.id, voucher_type="purchase")
 

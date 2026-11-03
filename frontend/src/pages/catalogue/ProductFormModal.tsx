@@ -28,6 +28,8 @@ export type BackfillTarget = { id: number; name: string; sku: string };
 type ProductFormModalProps = {
   /** The row being edited, or null to create. */
   row: CatalogueRow | null;
+  /** When creating, an existing product to start from (the row's Duplicate action). */
+  template?: CatalogueRow | null;
   onCancel: () => void;
   onSaved: (message: string) => void;
   /**
@@ -103,17 +105,38 @@ function formFromRow(row: CatalogueRow): FormState {
   };
 }
 
+/**
+ * A new product's form, prefilled from an existing one. The SKU is left blank
+ * because it must be unique, and the opening stock starts empty: serials name
+ * physical units, and the source product's stock is its own. The bill of
+ * materials belongs to the source product's id, so a producable copy gets its
+ * own from the row menu once saved.
+ */
+function duplicateForm(source: CatalogueRow): FormState {
+  return {
+    ...formFromRow(source),
+    sku: '',
+    initial_quantity: '0',
+    serial_numbers: [],
+  };
+}
+
 export default function ProductFormModal({
   row,
+  template = null,
   onCancel,
   onSaved,
   onNeedsSerialBackfill,
   onConfigureBom,
 }: ProductFormModalProps) {
   const isEdit = row !== null;
-  const [form, setForm] = useState<FormState>(() => (row ? formFromRow(row) : emptyForm()));
+  const source = row ?? template;
+  const [form, setForm] = useState<FormState>(() => {
+    if (row) return formFromRow(row);
+    return template ? duplicateForm(template) : emptyForm();
+  });
   const [customUnit, setCustomUnit] = useState(() =>
-    row && row.unit && !UNIT_OPTIONS.includes(row.unit) ? row.unit : '',
+    source && source.unit && !UNIT_OPTIONS.includes(source.unit) ? source.unit : '',
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -261,7 +284,7 @@ export default function ProductFormModal({
           <div>
             <p className="eyebrow">{isEdit ? 'Edit' : 'New'}</p>
             <h2 className="nav-panel__title" id={titleId}>
-              {isEdit ? `Editing ${row?.name}` : 'Add a product'}
+              {isEdit ? `Editing ${row?.name}` : template ? `New product from ${template.name}` : 'Add a product'}
             </h2>
           </div>
           <ModalCloseButton onClick={onCancel} label="Close product form" />

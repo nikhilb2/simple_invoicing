@@ -18,7 +18,7 @@ from pathlib import Path
 from sqlalchemy import text
 
 from src.db.base import Base
-from src.db.session import engine
+from src.db.session import migration_engine as engine
 
 
 def reset_schema() -> None:

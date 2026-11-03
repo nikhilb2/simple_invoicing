@@ -98,7 +98,33 @@ We follow Conventional Commits:
 
 Run tests before opening a PR.
 
+### Frontend unit tests
+
+Run the Vitest suite from the repository root:
+
+```bash
+cd frontend && npm test
+cd frontend && npm test -- --run
+```
+
+The first command starts Vitest in watch mode; use the second for a single run.
+
+Frontend CI runs the suite before the production build.
+
+#### Writing frontend tests
+
+Frontend tests run in a plain Node environment, with no DOM. Do not write tests that require `document`, `window` events, user clicks, or `useEffect`.
+
+* Test pure functions directly; extract component logic into `utils/` when needed.
+* For markup, use `renderToString` or `renderToStaticMarkup` from `react-dom/server` and assert on the HTML output. Effects do not run during server rendering.
+* Use Vitest fake timers (`vi.useFakeTimers()` and `vi.setSystemTime()`) for date- or time-dependent logic.
+* For timezone-sensitive tests, run `TZ=Asia/Kolkata npm test -- --run <file>` from `frontend/`.
+* Hooks and effects cannot be unit tested in this Node-only setup. Extract testable logic or describe the manual check in your PR.
+* Examples: [SearchInput.test.tsx](frontend/src/components/SearchInput.test.tsx), [dateRanges.test.ts](frontend/src/utils/dateRanges.test.ts), and [gstin.test.ts](frontend/src/utils/gstin.test.ts).
+
+
 ### Frontend E2E
+
 ```bash
 cd frontend
 npm run test:e2e
@@ -164,30 +190,18 @@ cd backend && python -m compileall .
 
 ## Good First Issues
 
-New to the project? Here are some concrete, beginner-friendly tasks to get you started. Each one includes what you need to know and which files to touch.
+New to the project? Start from the live list of open issues labelled
+`good first issue`, instead of a fixed table that can go stale:
 
-### 🐛 Bug Fixes
+- [Open issues labelled `good first issue`](https://github.com/nikhilb2/simple_invoicing/issues?q=is%3Aopen+label%3A%22good+first+issue%22)
 
-| # | Task | Skill | Files |
-|---|------|-------|-------|
-| 1 | **Fix the IndentationError in `create_product`** — when product name has leading/trailing spaces, the PDF template renders misaligned | Beginner Python | `backend/app/services/invoice_generator.py` |
-| 2 | **Extract the low-stock threshold magic number** — replace hardcoded `10` with a configurable env constant | Beginner Python / Refactor | `backend/app/services/inventory.py` |
-| 3 | **Fix date filter off-by-one on ledger statement** — end date is currently exclusive, should be inclusive | Beginner Python | `backend/app/api/routes/ledger_routes.py` |
+For example, [issue #427](https://github.com/nikhilb2/simple_invoicing/issues/427)
+([Frontend Easy] a11y: add scope to table headers on tax pages) covers
+`frontend/src/pages/TaxLedgerPage.tsx` and
+`frontend/src/pages/Gstr1FilingPage.tsx`.
 
-### ✨ Small Features
-
-| # | Task | Skill | Files |
-|---|------|-------|-------|
-| 4 | **Add `isManager` flag to AuthContext** — expose user role in the frontend auth context so UI can conditionally show admin controls | Beginner React/TypeScript | `frontend/src/context/AuthContext.tsx` |
-| 5 | **Expand `formatCurrency` locale map** — add support for INR (₹), EUR (€), GBP (£) symbols alongside USD ($) | Beginner TypeScript | `frontend/src/utils/format.ts` |
-| 6 | **Add loading skeleton for invoice list** — show shimmer placeholders while invoices load instead of blank screen | Beginner React/CSS | `frontend/src/components/invoice/InvoiceList.tsx` |
-
-### 📝 Documentation & Tests
-
-| # | Task | Skill | Files |
-|---|------|-------|-------|
-| 7 | **Add a unit test for the products API** — write basic CRUD tests using pytest for GET/POST endpoints | Beginner Python / Testing | `backend/tests/test_products.py` (new) |
-| 8 | **Add JSDoc comments to utility functions** — document params and return types for `formatCurrency`, `formatDate`, `truncateText` | Beginner TypeScript | `frontend/src/utils/*.ts` |
+Check the issue itself before starting: if it already has a claim comment
+or an open pull request, pick another issue from the live list.
 
 ### How to claim a task
 

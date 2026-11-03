@@ -8,7 +8,7 @@ def _create_ledger(client):
         json={
             "name": "Dues Ledger",
             "address": "Mumbai",
-            "gst": "27ABCDE1234F1Z5",
+            "gst": "27ABCDE1234F1Z0",
             "phone_number": "9999999999",
             "email": "ledger@example.com",
             "website": "",

@@ -173,7 +173,11 @@ def _build_pdf_tax_header_cells(interstate_supply: bool) -> str:
 
 
 def _build_pdf_table_colgroup(interstate_supply: bool, show_sku: bool = True) -> str:
-    """Build table column group for invoice PDF based on tax type and SKU visibility."""
+    """Build table column group for invoice PDF based on tax type and SKU visibility.
+
+    HSN/SAC stays at 8% or wider in every layout: anything narrower breaks an
+    8-digit HSN code across two lines at the table's 8px font size.
+    """
     if interstate_supply:
         if show_sku:
             return (
@@ -209,9 +213,9 @@ def _build_pdf_table_colgroup(interstate_supply: bool, show_sku: bool = True) ->
         return (
             '<colgroup>'
             '<col style="width: 3%;" />'
-            '<col style="width: 16%;" />'
+            '<col style="width: 15%;" />'
             '<col style="width: 6%;" />'
-            '<col style="width: 7%;" />'
+            '<col style="width: 8%;" />'
             '<col style="width: 5%;" />'
             '<col style="width: 5%;" />'
             '<col style="width: 10%;" />'
@@ -226,8 +230,8 @@ def _build_pdf_table_colgroup(interstate_supply: bool, show_sku: bool = True) ->
     return (
         '<colgroup>'
         '<col style="width: 3%;" />'
-        '<col style="width: 22%;" />'
-        '<col style="width: 7%;" />'
+        '<col style="width: 21%;" />'
+        '<col style="width: 8%;" />'
         '<col style="width: 5%;" />'
         '<col style="width: 5%;" />'
         '<col style="width: 10%;" />'

@@ -1,6 +1,7 @@
 import type { Invoice } from '../types/api';
 import formatCurrency from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
+import OverdueBadge from './OverdueBadge';
 
 interface InvoicesTableProps {
   invoices: Invoice[];
@@ -42,8 +43,9 @@ export default function InvoicesTable({ invoices, currencyCode, onRowClick }: In
                 <td>
                   {formatInvoiceDateLabel(invoice.invoice_date)}
                 </td>
-                <td>
-                  {formatInvoiceDateLabel(invoice.due_date)}
+                <td className="invoice-feed-table__due">
+                  <div>{formatInvoiceDateLabel(invoice.due_date)}</div>
+                  <OverdueBadge invoice={invoice} />
                 </td>
                 <td>
                   <div className="invoice-feed-table__ledger">{invoice.ledger?.name || 'Unknown'}</div>

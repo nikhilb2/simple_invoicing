@@ -77,6 +77,14 @@ frontend-shell:
 test:
 	docker compose --profile dev exec frontend-dev npm run test:e2e
 
+test-unit:
+	docker compose --profile dev exec frontend-dev npm test -- --run
+
+test-backend:
+	docker compose --profile dev exec backend-dev sh -c "pip install -q pytest && python -m pytest tests/ -v"
+
+test-all: test-unit test-backend test
+
 lint:
 	docker compose --profile dev exec backend-dev python -m compileall .
 	docker compose --profile dev exec frontend-dev npm run build

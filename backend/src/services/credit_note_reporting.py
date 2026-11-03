@@ -2,11 +2,11 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.invoice import Invoice
+from src.services.company_access import company_scope
 
 
 @dataclass
@@ -47,15 +47,15 @@ def get_credit_note_ledger_summary(
     if ledger_id is not None:
         query = query.filter(CreditNote.ledger_id == ledger_id)
     if company_id is not None:
-        query = query.filter(or_(CreditNote.company_id == company_id, CreditNote.company_id.is_(None)))
+        query = query.filter(company_scope(CreditNote.company_id, company_id))
     if created_before is not None:
-        query = query.filter(CreditNote.created_at < created_before)
+        query = query.filter(CreditNote.credit_note_date < created_before)
     if created_from is not None:
-        query = query.filter(CreditNote.created_at >= created_from)
+        query = query.filter(CreditNote.credit_note_date >= created_from)
     if created_to is not None:
-        query = query.filter(CreditNote.created_at <= created_to)
+        query = query.filter(CreditNote.credit_note_date <= created_to)
 
-    rows = query.order_by(CreditNote.created_at.asc(), CreditNote.id.asc(), CreditNoteItem.id.asc()).all()
+    rows = query.order_by(CreditNote.credit_note_date.asc(), CreditNote.id.asc(), CreditNoteItem.id.asc()).all()
 
     entry_buckets: dict[int, dict] = {}
     entry_order: list[int] = []
@@ -74,7 +74,7 @@ def get_credit_note_ledger_summary(
                 "supplier_credit_note_number": getattr(
                     credit_note, "supplier_credit_note_number", None
                 ),
-                "date": credit_note.created_at,
+                "date": getattr(credit_note, "credit_note_date", None) or credit_note.created_at,
                 "ledger_name": invoice.ledger_name or "Unknown ledger",
                 "invoice_numbers": [],
                 "seen_invoice_numbers": set(),

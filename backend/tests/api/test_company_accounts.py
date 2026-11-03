@@ -52,7 +52,7 @@ def test_company_account_create_list_and_deactivate(client):
 
 
 def test_payment_supports_company_account_assignment_and_unassignment(client):
-    ledger_response = client.post("/api/ledgers/", json=_ledger_payload("Ledger Cash Flow", "27ABCDE1234F1Z5"))
+    ledger_response = client.post("/api/ledgers/", json=_ledger_payload("Ledger Cash Flow", "27ABCDE1234F1Z0"))
     assert ledger_response.status_code == 200, ledger_response.text
     ledger_id = ledger_response.json()["id"]
 

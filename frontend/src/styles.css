@@ -4,41 +4,333 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* Colour tokens.
+
+   Every colour in the app resolves to one of these custom properties, so a
+   theme is just a different set of values. Default (no data-theme attribute)
+   is the dark palette, so nothing changes if the bootstrap script in
+   index.html has not run.
+
+   Conventions:
+   - `--rgb-<name>: R G B;` is a bare, space-separated RGB triplet for a hue
+     that is used at several alphas. Consume it as `rgb(var(--rgb-<name>))`
+     (opaque) or `rgb(var(--rgb-<name>) / 0.12)` (keep the alpha exactly as it
+     was written). This renders identically to the old `rgba(R, G, B, 0.12)`.
+   - Plain tokens (`--text-soft: #c7d7f4;`) hold an opaque colour that is only
+     used solid.
+   - Names describe the ROLE, not today's value: `--rgb-overlay` is white on
+     the dark theme but becomes a dark ink on the light one, `--rgb-shadow` is
+     whatever casts shadows, and the `--text-on-*-tint` pastels are text meant
+     to sit on a tinted chip, which needs a darker counterpart on light.
+   - Do not tokenise `.invoice-sheet*`, `.invoice-badge*`, the `@media print`
+     block or `.invoice-print-root`: they are deliberately light paper. */
+:root,
+:root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #08111f;
+}
+
+/* Light palette. Overrides every colour token declared in the dark :root
+   block below (that block has the role comments). Derived tokens such as
+   --bg, --text or --accent are built from the triplets there, so they follow
+   automatically; only the opaque ones are repeated here. Navy text on
+   off-white surfaces, a darker teal accent (#0f766e) that clears 4.5:1 as
+   text, and --rgb-overlay turned into navy ink so the dark theme's white
+   sheens become faint tints. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Hue triplets */
+  --rgb-overlay: 15 29 48;
+  --rgb-shadow: 0 0 0;
+  --rgb-scrim: 51 65 85;
+  --rgb-text: 10 20 36;
+  --rgb-muted: 52 64 86;
+  --rgb-accent: 11 100 93;
+  --rgb-on-accent: 255 255 255;
+  --rgb-accent-2: 37 99 235;
+  --rgb-accent-violet: 99 102 241;
+  --rgb-info: 52 98 186;
+  --rgb-tag-line: 100 116 139;
+  --rgb-danger: 180 35 24;
+  --rgb-danger-strong: 220 38 38;
+  --rgb-warning: 115 75 0;
+  --rgb-success: 21 128 61;
+  --rgb-orange: 154 52 10;
+  --rgb-highlight: 59 130 246;
+
+  /* Navy surfaces become white / near-white surfaces */
+  --rgb-bg: 244 247 251;
+  --rgb-panel: 255 255 255;
+  --rgb-panel-top: 255 255 255;
+  --rgb-panel-raised: 255 255 255;
+  --rgb-panel-hover-top: 236 244 252;
+  --rgb-panel-hover-bottom: 248 250 253;
+  --rgb-panel-sticky: 248 250 252;
+  --rgb-panel-alt: 255 255 255;
+  --rgb-panel-row: 255 255 255;
+  --rgb-card-strong: 255 255 255;
+  --rgb-panel-well: 236 241 248;
+  --rgb-panel-field: 255 255 255;
+  --rgb-panel-section: 248 250 252;
+  --rgb-hero-top: 228 238 250;
+  --rgb-hero-bottom: 244 247 251;
+
+  /* Avatar tones: dark enough to read as text on their own tint */
+  --rgb-avatar-default: 40 72 140;
+  --rgb-avatar-1: 12 92 86;
+  --rgb-avatar-2: 52 72 170;
+  --rgb-avatar-3: 98 56 170;
+  --rgb-avatar-4: 120 80 0;
+  --rgb-avatar-5: 160 30 60;
+  --rgb-avatar-6: 20 100 56;
+
+  /* Core */
+  --bg-soft: #e9eff7;
+  --bg-card: rgba(255, 255, 255, 0.9);
+  --line: rgba(15, 29, 48, 0.14);
+  --accent-deep: #115e59;
+  --shadow: 0 24px 60px rgb(15 29 48 / 0.12);
+  --body-bg: #f4f7fb;
+  --page-bg:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 26%),
+    linear-gradient(160deg, #f8fafc 0%, #f4f7fb 50%, #eaf0f8 100%);
+
+  /* Fills and ink on fills */
+  --accent-bright: #0f7a70;
+  --secondary-start: #3b6fd8;
+  --secondary-end: #2852b8;
+  --on-secondary: #ffffff;
+  --on-warning: #fffaf0;
+  --strength-weak: #c2410c;
+  --strength-strong: #15803d;
+  --outline-info: #2563eb;
+
+  /* Opaque surfaces */
+  --bg-pdf-frame: #e9eff7;
+  --bg-sticky-head: #f1f5fa;
+  --bg-pinned-hover: #e2edf0;
+  --bg-pinned-hover-info: #eaeff8;
+  --bg-pinned-editing: #e6eff2;
+
+  /* Text tones */
+  --text-strong: #0b1626;
+  --text-soft: #334155;
+  --text-tax-grid: #334a6b;
+  --text-allocation-amount: #334155;
+  --text-bank-facts: #1e293b;
+  --text-summary-stat: #0f1d30;
+  --text-tip-strong: #1e3a6e;
+  --text-debit: #1d5aa0;
+  --text-credit: #a8401a;
+  --text-balance-debit: #024a36;
+  --text-balance-credit: #7c2a0e;
+  --text-sales: #3f6212;
+  --text-danger-soft: #b91c1c;
+  --text-on-danger-tint: #991b1b;
+  --text-on-danger-tint-2: #991b1b;
+  --text-on-danger-tint-3: #991b1b;
+  --text-on-accent-tint: #07433d;
+  --text-on-accent-tint-2: #0b5952;
+  --text-on-accent-tint-3: #0b5952;
+  --text-on-accent-tint-4: #0b5952;
+  --text-on-info-tint: #1e3a7a;
+  --text-on-info-tint-2: #1e3a7a;
+  --text-on-info-tint-3: #1e3a7a;
+  --text-on-success-tint: #166534;
+  --text-on-orange-tint: #9a3412;
+  --text-placeholder: #64748b;
+  --line-neutral: #e2e8f0;
+  --line-neutral-strong: #cbd5e1;
+  --logo-frame-bg: #f9fafb;
+
+  /* Charts (series checked against the white chart card) */
+  --chart-sales: #2563eb;
+  --chart-secondary: #b45309;
+  --chart-revenue: #047857;
+  --chart-profit: #047857;
+  --chart-loss: #dc2626;
+  --chart-purchases: #4f63c8;
+  --chart-axis: rgb(var(--rgb-muted));
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-text: rgb(var(--rgb-text));
+
+  /* Sidebar follows the theme */
+  --sidebar-bg: #ffffff;
+  --sidebar-text: rgb(var(--rgb-text));
+  --sidebar-muted: rgb(var(--rgb-muted));
+  --sidebar-section-label: rgb(var(--rgb-muted) / 0.9);
+  --sidebar-active-text: #115e59;
+
+  /* --color-* aliases with literal values */
+  --color-success: #0d5c32;
+  --color-success-text: #0d5c32;
+}
+
+/* Light-only rule fixes where a token alone cannot reach 4.5:1. */
+:root[data-theme="light"] .step-rail__item--current .step-rail__index,
+:root[data-theme="light"] .step-rail__item--done .step-rail__index {
+  color: var(--text-on-accent-tint);
+}
+
+:root {
+  /* --- Hue triplets (consume as rgb(var(--rgb-x) / alpha)) --- */
+  --rgb-overlay: 255 255 255;        /* sheen/hover/fill laid over a surface */
+  --rgb-shadow: 0 0 0;               /* drop shadows, scrims, dark count badges */
+  --rgb-scrim: 4 9 16;               /* modal overlay */
+  --rgb-text: 230 238 251;           /* = --text */
+  --rgb-muted: 156 173 207;          /* = --muted */
+  --rgb-accent: 87 209 201;          /* = --accent (teal) */
+  --rgb-on-accent: 5 45 42;          /* = --on-accent (ink on teal fills) */
+  --rgb-accent-2: 79 125 255;        /* secondary blue glow in hover/backdrop gradients */
+  --rgb-accent-violet: 126 141 255;  /* end of the ledger-card accent bar */
+  --rgb-info: 148 184 255;           /* cool-blue lines and info tints (= --line-strong hue) */
+  --rgb-tag-line: 168 185 220;       /* tax-ledger note tag border */
+  --rgb-danger: 255 139 139;         /* = --danger */
+  --rgb-danger-strong: 239 68 68;    /* unpaid allocation chip tint */
+  --rgb-warning: 246 214 123;        /* = --warning */
+  --rgb-success: 34 197 94;          /* green: sales, paid, done */
+  --rgb-orange: 251 146 60;          /* orange: purchase */
+  --rgb-highlight: 59 130 246;       /* setup-highlight ring (CompanyPage inline style) */
+
+  /* Navy surfaces. Several near-identical shades exist; each keeps its own
+     token so the dark theme stays pixel-identical. Grouped by role so the
+     light theme can map them onto a few light surfaces. */
+  --rgb-bg: 8 17 31;                 /* = --bg: page colour, frosted page header, sticky feed thead */
+  --rgb-panel: 9 17 31;              /* cards: login, oauth, stat-card base, modal base */
+  --rgb-panel-top: 11 20 34;         /* modal top, register day bar (= --bg-modal-header) */
+  --rgb-panel-raised: 12 23 40;      /* stat-card top */
+  --rgb-panel-hover-top: 16 31 53;   /* linked stat-card hover, top */
+  --rgb-panel-hover-bottom: 11 21 38;/* linked stat-card hover, bottom */
+  --rgb-panel-sticky: 13 25 42;      /* sticky bars: scope bar, register head/foot */
+  --rgb-panel-alt: 9 18 33;          /* toast, password-guide items */
+  --rgb-panel-row: 10 22 40;         /* row cards (invoice row, ledger card) gradient start, ledger skeleton */
+  --rgb-card-strong: 15 29 48;       /* = --bg-card-strong hue; row-card gradient end */
+  --rgb-panel-well: 8 16 29;         /* inset wells inside cards (tax grid, totals, notes, catalogue table) */
+  --rgb-panel-field: 7 13 24;        /* inputs and tab tracks */
+  --rgb-panel-section: 6 12 22;      /* form sections */
+  --rgb-hero-top: 7 14 24;           /* login hero gradient, top */
+  --rgb-hero-bottom: 10 20 35;       /* login hero gradient, bottom */
+
+  /* Ledger avatar tones (consumed through --tone). */
+  --rgb-avatar-default: 148 184 255;
+  --rgb-avatar-1: 87 209 201;
+  --rgb-avatar-2: 141 171 255;
+  --rgb-avatar-3: 183 155 255;
+  --rgb-avatar-4: 246 214 123;
+  --rgb-avatar-5: 255 152 164;
+  --rgb-avatar-6: 126 231 166;
+
+  /* --- Core tokens --- */
+  --bg: rgb(var(--rgb-bg));
   --bg-soft: #101c2f;
   --bg-card: rgba(10, 19, 33, 0.82);
-  --bg-card-strong: rgba(15, 29, 48, 0.96);
+  --bg-card-strong: rgb(var(--rgb-card-strong) / 0.96);
   --line: rgba(142, 169, 214, 0.18);
-  --line-strong: rgba(148, 184, 255, 0.32);
-  --text: #e6eefb;
-  --muted: #9cadcf;
-  --accent: #57d1c9;
+  --line-strong: rgb(var(--rgb-info) / 0.32);
+  --text: rgb(var(--rgb-text));
+  --muted: rgb(var(--rgb-muted));
+  --accent: rgb(var(--rgb-accent));
   --accent-deep: #1e7e88;
-  --danger: #ff8b8b;
-  --warning: #f6d67b;
-  --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+  --danger: rgb(var(--rgb-danger));
+  --warning: rgb(var(--rgb-warning));
+  --shadow: 0 24px 80px rgb(var(--rgb-shadow) / 0.35);
   /* Matches the top of the .modal-panel gradient, but fully opaque: the pinned
      dialog header has form fields sliding underneath it, and at 0.98 alpha
      their text ghosts through. */
-  --bg-modal-header: #0b1422;
+  --bg-modal-header: rgb(var(--rgb-panel-top));
+
+  /* The body colour that actually shows behind the app. It used to come from a
+     Tailwind bg-slate-950 class on <body>, which hid the html gradient below. */
+  --body-bg: #020617;
+
+  /* The whole page background (html rule): a blue glow over a navy ramp. */
+  --page-bg:
+    radial-gradient(circle at top right, rgba(63, 133, 255, 0.14), transparent 26%),
+    linear-gradient(160deg, #050b14 0%, #08111f 50%, #0d1730 100%);
+
+  /* --- Fills and ink on coloured fills --- */
+  --on-accent: rgb(var(--rgb-on-accent)); /* text on the teal primary button */
+  --accent-bright: #7ff1d6;               /* primary button gradient end */
+  --secondary-start: #8fb8ff;             /* secondary button gradient */
+  --secondary-end: #5e8fff;
+  /* Ink on the blue secondary button. Was white, which is 2.5:1 on the light
+     end of the gradient; this navy is 5.6:1 on the dark end. */
+  --on-secondary: #0a1a3d;
+  --on-warning: #2c2103;                  /* text on a solid --warning fill */
+  --strength-weak: #ffae70;               /* password strength bar */
+  --strength-strong: #7ddfa5;
+  --outline-info: #5585e8;                /* invoice-number copy button focus outline */
+
+  /* --- Opaque surfaces --- */
+  --bg-pdf-frame: #111827;          /* PDF iframe before the PDF paints */
+  --bg-sticky-head: #0d1a2b;        /* sticky tax-ledger thead */
+  /* Row-hover tints pre-mixed over --bg for pinned (sticky) first cells. */
+  --bg-pinned-hover: #0e202d;       /* accent 8% (product performance) */
+  --bg-pinned-hover-info: #10203a;  /* catalogue row hover */
+  --bg-pinned-editing: #0e2733;     /* catalogue row being edited */
+
+  /* --- Text tones. Pale pastels written for a dark background; the light
+     theme needs darker counterparts. --- */
+  --text-strong: #e9f0ff;           /* emphasised figures in voucher/allocation strips */
+  --text-soft: #c7d7f4;             /* secondary labels: meta chips, strip titles, ledger chips */
+  --text-tax-grid: #bdd0f2;
+  --text-allocation-amount: #cdd9ef;
+  --text-bank-facts: #dce7fb;
+  --text-summary-stat: #e6edfa;
+  --text-tip-strong: #d9edff;
+  --text-debit: #a9d8ff;            /* register debit column */
+  --text-credit: #ffc9a6;           /* register credit column */
+  --text-balance-debit: #7ee2b8;    /* ledger card balance */
+  --text-balance-credit: #ffab8f;
+  --text-sales: #84cc16;            /* lime: sales amounts and labels */
+  --text-purchase: rgb(var(--rgb-orange)); /* orange: purchase amounts and labels */
+  --text-danger-soft: #fca5a5;      /* unpaid / cancelled figures */
+  --text-on-danger-tint: #ffc1c1;   /* on rgb(--rgb-danger) tints: tags, error toast, low pill */
+  --text-on-danger-tint-2: #ffc7c7; /* feed error, cancelled status/badge */
+  --text-on-danger-tint-3: #ffd9d9; /* overdue badge */
+  --text-on-accent-tint: #bffbf6;   /* status chips */
+  --text-on-accent-tint-2: #bcfff9; /* success toast, ok pill */
+  --text-on-accent-tint-3: #9af4de; /* password card badge */
+  --text-on-accent-tint-4: #a8f0e8; /* ledger GST / WhatsApp chips */
+  --text-on-info-tint: #dbe7ff;     /* update toast */
+  --text-on-info-tint-2: #bcd3ff;   /* register payment/receipt tag */
+  --text-on-info-tint-3: #c8d8ff;   /* tax-ledger note tag */
+  --text-on-success-tint: #8ce7b4;  /* register sales tag */
+  --text-on-orange-tint: #ffc48a;   /* register purchase tag */
+  --text-placeholder: #9ca3af;      /* CompanyPage upload/empty hints (inline styles) */
+  --line-neutral: #e5e7eb;          /* CompanyPage logo frame / term cards (inline styles) */
+  --line-neutral-strong: #d1d5db;   /* CompanyPage dashed upload box (inline style) */
+  --logo-frame-bg: #f9fafb;         /* CompanyPage logo preview: light on purpose */
+
+  /* --- Charts (pages/analytics/charts/chartTheme.ts and .chart__*) --- */
+  --chart-sales: #6ea8fe;
+  --chart-secondary: #f6d67b;
+  --chart-revenue: #7ee0c0;
+  --chart-profit: #7ee0c0;
+  --chart-loss: #ff8b8b;
+  --chart-purchases: #6f8bd8;
+  --chart-grid: rgb(var(--rgb-info) / 0.14);
+  --chart-axis: rgb(var(--rgb-muted) / 0.75);
+  --chart-cursor: rgb(var(--rgb-info) / 0.08);
+  --chart-tooltip-bg: #0d1426;
+  --chart-tooltip-text: #e6eefb;
+  --chart-tooltip-border: rgb(var(--rgb-info) / 0.24);
 
   /* Sidebar tokens */
   --sidebar-width: 240px;
   --sidebar-bg: #0d1426;
-  --sidebar-border: rgba(148, 184, 255, 0.12);
+  --sidebar-border: rgb(var(--rgb-info) / 0.12);
   --sidebar-text: #e6eefb;
   /* 0.55 over --sidebar-bg is 3.29:1 and 0.45 is 2.61:1 — both under the 4.5:1
      WCAG AA floor for the brand tagline and the nav section headings. Same
      hue, raised alpha: 5.3:1 and 4.6:1, with the two still a step apart. */
-  --sidebar-muted: rgba(156, 173, 207, 0.78);
-  --sidebar-active-bg: rgba(87, 209, 201, 0.12);
-  --sidebar-active-border: rgba(87, 209, 201, 0.25);
+  --sidebar-muted: rgb(var(--rgb-muted) / 0.78);
+  --sidebar-active-bg: rgb(var(--rgb-accent) / 0.12);
+  --sidebar-active-border: rgb(var(--rgb-accent) / 0.25);
   --sidebar-active-text: #57d1c9;
-  --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
-  --sidebar-section-label: rgba(156, 173, 207, 0.7);
-  --sidebar-footer-bg: rgba(148, 184, 255, 0.06);
+  --sidebar-hover-bg: rgb(var(--rgb-overlay) / 0.05);
+  --sidebar-section-label: rgb(var(--rgb-muted) / 0.7);
+  --sidebar-footer-bg: rgb(var(--rgb-info) / 0.06);
 
   /* Aliases for a --color-* naming that a number of pages reach for inline
      (ApiKeys, SmtpSettings, EmailHistory, Company, ProduceItems, BOMConfig,
@@ -58,12 +350,23 @@
   --color-error: var(--danger);
   --color-success: #7ce9b0;
   --color-success-text: #7ce9b0;
-  --color-surface-2: rgba(255, 255, 255, 0.04);
-  --color-surface-raised: rgba(255, 255, 255, 0.04);
-  --color-error-bg: rgba(255, 139, 139, 0.12);
-  --color-success-bg: rgba(34, 197, 94, 0.15);
-  --color-muted-bg: rgba(148, 184, 255, 0.1);
-  --color-focus-ring: rgba(87, 209, 201, 0.18);
+  --color-surface-2: rgb(var(--rgb-overlay) / 0.04);
+  --color-surface-raised: rgb(var(--rgb-overlay) / 0.04);
+  --color-error-bg: rgb(var(--rgb-danger) / 0.12);
+  --color-success-bg: rgb(var(--rgb-success) / 0.15);
+  --color-muted-bg: rgb(var(--rgb-info) / 0.1);
+  --color-focus-ring: rgb(var(--rgb-accent) / 0.18);
+
+  /* Same story for a second naming used by inline styles in .tsx files
+     (Ledger/ProductCombobox, CreditNotes, CompanySelector, SidebarFYSwitcher,
+     InvoiceDues). Undeclared until now, so their light-theme fallbacks
+     (#fff popups, #d1d5db borders, #ef4444 errors, #155724 success) applied. */
+  --border: var(--line);
+  --text-muted: var(--muted);
+  --surface: var(--bg);
+  --surface-subtle: var(--color-surface-2);
+  --error: var(--danger);
+  --success-color: var(--color-success);
 }
 
 * {
@@ -72,9 +375,7 @@
 
 html {
   min-height: 100%;
-  background:
-    radial-gradient(circle at top right, rgba(63, 133, 255, 0.14), transparent 26%),
-    linear-gradient(160deg, #050b14 0%, #08111f 50%, #0d1730 100%);
+  background: var(--page-bg);
 }
 
 body {
@@ -82,7 +383,7 @@ body {
   min-height: 100vh;
   font-family: 'Manrope', sans-serif;
   color: var(--text);
-  background: transparent;
+  background: var(--body-bg);
 }
 
 #root {
@@ -320,7 +621,7 @@ textarea {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgb(var(--rgb-shadow) / 0.55);
   z-index: 299;
 }
 
@@ -338,13 +639,13 @@ textarea {
 .app-shell__backdrop--left {
   top: 4rem;
   left: -8rem;
-  background: rgba(87, 209, 201, 0.2);
+  background: rgb(var(--rgb-accent) / 0.2);
 }
 
 .app-shell__backdrop--right {
   right: -6rem;
   bottom: 5rem;
-  background: rgba(79, 125, 255, 0.18);
+  background: rgb(var(--rgb-accent-2) / 0.18);
 }
 
 .page-header {
@@ -354,7 +655,7 @@ textarea {
   justify-content: flex-end;
   padding: 0 clamp(16px, 3vw, 36px);
   border-bottom: 1px solid var(--line);
-  background: rgba(8, 17, 31, 0.75);
+  background: rgb(var(--rgb-bg) / 0.75);
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
@@ -362,16 +663,89 @@ textarea {
 }
 
 .page-header__shortcut-hint {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
   font-size: 0.75rem;
   color: var(--muted);
+  cursor: pointer;
 }
 
-.page-header__shortcut-hint kbd {
-  background: rgba(255, 255, 255, 0.08);
+.page-header__shortcut-hint:hover {
+  color: var(--text);
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  margin-left: 12px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  background: rgb(var(--rgb-overlay) / 0.08);
+}
+
+@media (max-width: 767px) {
+  .theme-toggle {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+.page-header__shortcut-hint kbd,
+.shortcut-cheat-sheet kbd {
+  background: rgb(var(--rgb-overlay) / 0.08);
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 1px 5px;
   font-size: 0.7rem;
+}
+
+.shortcut-cheat-sheet {
+  max-width: 440px;
+}
+
+.shortcut-cheat-sheet:focus {
+  outline: none;
+}
+
+.shortcut-cheat-sheet__list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.shortcut-cheat-sheet__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.shortcut-cheat-sheet__row dd {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.shortcut-cheat-sheet__footer {
+  margin: 16px 0 0;
+  font-size: 0.85rem;
+}
+
+.shortcut-cheat-sheet__footer a {
+  color: var(--accent);
 }
 
 .page-frame,
@@ -396,6 +770,13 @@ textarea {
   color: var(--muted);
   /* Emails, URLs and SKUs are unbreakable tokens; without this they run out of
      their grid track and over the next column. */
+  overflow-wrap: anywhere;
+}
+
+/* An inline validation message under a field, shown before the form is sent. */
+.field-error {
+  color: var(--danger);
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
@@ -425,8 +806,8 @@ textarea {
   padding: 48px 20px;
   text-align: center;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px dashed rgba(148, 184, 255, 0.15);
+  background: rgb(var(--rgb-overlay) / 0.02);
+  border: 1px dashed rgb(var(--rgb-info) / 0.15);
   margin: 12px 0;
 }
 
@@ -436,9 +817,9 @@ textarea {
   gap: 8px;
   padding: 10px 14px;
   border-radius: 10px;
-  background: rgba(246, 214, 123, 0.15);
-  border: 1px solid rgba(246, 214, 123, 0.4);
-  color: #f6d67b;
+  background: rgb(var(--rgb-warning) / 0.15);
+  border: 1px solid rgb(var(--rgb-warning) / 0.4);
+  color: var(--warning);
   font-size: 0.84rem;
   line-height: 1.45;
   margin-top: 6px;
@@ -450,7 +831,7 @@ textarea {
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(156, 173, 207, 0.8);
+  color: rgb(var(--rgb-muted) / 0.8);
 }
 
 .section-card {
@@ -593,7 +974,7 @@ textarea {
   padding: 14px 18px;
   border: 1px solid var(--line);
   border-radius: 20px;
-  background: rgba(13, 25, 42, 0.94);
+  background: rgb(var(--rgb-panel-sticky) / 0.94);
   backdrop-filter: blur(14px);
 }
 
@@ -604,7 +985,7 @@ textarea {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px 12px;
-  align-items: end;
+  align-items: start;
   flex: 1 1 320px;
   min-width: 0;
 }
@@ -638,7 +1019,7 @@ textarea {
 .scope-bar__trailing {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 12px 18px;
   flex: 0 1 auto;
   margin-left: auto;
@@ -660,13 +1041,8 @@ textarea {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
-
-/* Divides the presets row from the fields under it without a full rule, which
-   at this density read as a second panel edge. */
-.scope-bar__row + .scope-bar__fields {
-  padding-top: 12px;
-  border-top: 1px solid rgba(148, 184, 255, 0.1);
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgb(var(--rgb-info) / 0.1);
 }
 
 /* ── Scope presets ────────────────────────────────────────────────── */
@@ -685,7 +1061,7 @@ textarea {
   padding: 5px 12px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--rgb-overlay) / 0.03);
   color: var(--muted);
   font: inherit;
   font-size: 0.78rem;
@@ -701,8 +1077,8 @@ textarea {
 }
 
 .scope-preset--on {
-  background: rgba(87, 209, 201, 0.14);
-  border-color: rgba(87, 209, 201, 0.42);
+  background: rgb(var(--rgb-accent) / 0.14);
+  border-color: rgb(var(--rgb-accent) / 0.42);
   color: var(--accent);
 }
 
@@ -729,7 +1105,7 @@ textarea {
   padding: 5px 14px 5px 6px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--rgb-overlay) / 0.03);
   color: var(--muted);
   font-size: 0.8rem;
   font-weight: 700;
@@ -737,13 +1113,13 @@ textarea {
 }
 
 .step-rail__item--done {
-  border-color: rgba(87, 209, 201, 0.24);
+  border-color: rgb(var(--rgb-accent) / 0.24);
   color: var(--text);
 }
 
 .step-rail__item--current {
-  border-color: rgba(87, 209, 201, 0.42);
-  background: rgba(87, 209, 201, 0.14);
+  border-color: rgb(var(--rgb-accent) / 0.42);
+  background: rgb(var(--rgb-accent) / 0.14);
   color: var(--accent);
 }
 
@@ -756,14 +1132,14 @@ textarea {
   height: 20px;
   flex-shrink: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgb(var(--rgb-overlay) / 0.06);
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
 }
 
 .step-rail__item--current .step-rail__index,
 .step-rail__item--done .step-rail__index {
-  background: rgba(87, 209, 201, 0.22);
+  background: rgb(var(--rgb-accent) / 0.22);
 }
 
 /* ── GSTR-1 categories ────────────────────────────────────────────── */
@@ -781,8 +1157,8 @@ textarea {
   gap: 6px;
   padding: 16px;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(148, 184, 255, 0.08);
+  background: rgb(var(--rgb-overlay) / 0.03);
+  border: 1px solid rgb(var(--rgb-info) / 0.08);
 }
 
 /* A category with nothing in it still has to be present — a reader checking a
@@ -905,7 +1281,7 @@ textarea {
   height: var(--register-head-h);
   padding-block: 0;
   align-items: center;
-  background: rgba(13, 25, 42, 0.96);
+  background: rgb(var(--rgb-panel-sticky) / 0.96);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line-strong);
   border-radius: 12px 12px 0 0;
@@ -917,7 +1293,7 @@ textarea {
 }
 
 .register__row {
-  border-bottom: 1px solid rgba(148, 184, 255, 0.08);
+  border-bottom: 1px solid rgb(var(--rgb-info) / 0.08);
   transition: background 140ms ease;
 }
 
@@ -929,7 +1305,7 @@ textarea {
 }
 
 .register__row:hover {
-  background: rgba(87, 209, 201, 0.06);
+  background: rgb(var(--rgb-accent) / 0.06);
 }
 
 /* One line per day, the way a day book is actually read. Without it a hundred
@@ -943,7 +1319,7 @@ textarea {
   align-items: baseline;
   gap: 10px;
   padding: 14px 14px 8px;
-  background: rgba(11, 20, 34, 0.94);
+  background: rgb(var(--rgb-panel-top) / 0.94);
   backdrop-filter: blur(10px);
   font-size: 0.76rem;
   font-weight: 800;
@@ -968,7 +1344,7 @@ textarea {
   margin-top: 4px;
   border-top: 1px solid var(--line-strong);
   border-radius: 0 0 12px 12px;
-  background: rgba(13, 25, 42, 0.96);
+  background: rgb(var(--rgb-panel-sticky) / 0.96);
   backdrop-filter: blur(12px);
   font-weight: 800;
 }
@@ -998,15 +1374,15 @@ textarea {
    equal weight in adjacent columns they are easy to read across. A zero is
    dropped to a dash so the eye lands only on the side that carries a figure. */
 .register__debit {
-  color: #a9d8ff;
+  color: var(--text-debit);
 }
 
 .register__credit {
-  color: #ffc9a6;
+  color: var(--text-credit);
 }
 
 .register__nil {
-  color: rgba(156, 173, 207, 0.35);
+  color: rgb(var(--rgb-muted) / 0.8);
 }
 
 /* The voucher kind, as a tag rather than a word in a sentence. Kept small on
@@ -1018,7 +1394,7 @@ textarea {
   padding: 1px 7px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgb(var(--rgb-overlay) / 0.04);
   font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -1027,29 +1403,29 @@ textarea {
 }
 
 .register__tag--sales {
-  border-color: rgba(34, 197, 94, 0.38);
-  background: rgba(34, 197, 94, 0.12);
-  color: #8ce7b4;
+  border-color: rgb(var(--rgb-success) / 0.38);
+  background: rgb(var(--rgb-success) / 0.12);
+  color: var(--text-on-success-tint);
 }
 
 .register__tag--purchase {
-  border-color: rgba(251, 146, 60, 0.38);
-  background: rgba(251, 146, 60, 0.12);
-  color: #ffc48a;
+  border-color: rgb(var(--rgb-orange) / 0.38);
+  background: rgb(var(--rgb-orange) / 0.12);
+  color: var(--text-on-orange-tint);
 }
 
 .register__tag--payment,
 .register__tag--receipt {
-  border-color: rgba(148, 184, 255, 0.38);
-  background: rgba(148, 184, 255, 0.12);
-  color: #bcd3ff;
+  border-color: rgb(var(--rgb-info) / 0.38);
+  background: rgb(var(--rgb-info) / 0.12);
+  color: var(--text-on-info-tint-2);
 }
 
 .register__tag--credit-note,
 .register__tag--debit-note {
-  border-color: rgba(255, 139, 139, 0.38);
-  background: rgba(255, 139, 139, 0.12);
-  color: #ffc1c1;
+  border-color: rgb(var(--rgb-danger) / 0.38);
+  background: rgb(var(--rgb-danger) / 0.12);
+  color: var(--text-on-danger-tint);
 }
 
 /* Six tracks stop fitting here. The per-row date is the column to lose first:
@@ -1121,7 +1497,7 @@ textarea {
 
 .stat-card {
   border: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(12, 23, 40, 0.92) 0%, rgba(9, 17, 31, 0.82) 100%);
+  background: linear-gradient(180deg, rgb(var(--rgb-panel-raised) / 0.92) 0%, rgb(var(--rgb-panel) / 0.82) 100%);
   border-radius: 24px;
 }
 
@@ -1138,7 +1514,7 @@ textarea {
 .stat-card--link:hover {
   border-color: var(--line-strong);
   transform: translateY(-2px);
-  background: linear-gradient(180deg, rgba(16, 31, 53, 0.95) 0%, rgba(11, 21, 38, 0.86) 100%);
+  background: linear-gradient(180deg, rgb(var(--rgb-panel-hover-top) / 0.95) 0%, rgb(var(--rgb-panel-hover-bottom) / 0.86) 100%);
 }
 
 .stat-card__value {
@@ -1262,7 +1638,7 @@ textarea {
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgb(var(--rgb-overlay) / 0.02);
   cursor: pointer;
 }
 
@@ -1336,8 +1712,8 @@ textarea {
 .select,
 .textarea {
   width: 100%;
-  border: 1px solid rgba(148, 184, 255, 0.14);
-  background: rgba(7, 13, 24, 0.82);
+  border: 1px solid rgb(var(--rgb-info) / 0.14);
+  background: rgb(var(--rgb-panel-field) / 0.82);
   color: var(--text);
   border-radius: 12px;
   /* Matches .button — see the control scale note there. */
@@ -1352,8 +1728,8 @@ textarea {
 .input:focus,
 .select:focus,
 .textarea:focus {
-  border-color: rgba(87, 209, 201, 0.55);
-  box-shadow: 0 0 0 4px rgba(87, 209, 201, 0.12);
+  border-color: rgb(var(--rgb-accent) / 0.55);
+  box-shadow: 0 0 0 4px rgb(var(--rgb-accent) / 0.12);
 }
 
 .textarea {
@@ -1386,9 +1762,9 @@ textarea {
   display: grid;
   gap: 14px;
   padding: 18px;
-  border: 1px solid rgba(148, 184, 255, 0.1);
+  border: 1px solid rgb(var(--rgb-info) / 0.1);
   border-radius: 22px;
-  background: rgba(6, 12, 22, 0.4);
+  background: rgb(var(--rgb-panel-section) / 0.4);
 }
 
 .form-section + .form-section {
@@ -1432,7 +1808,7 @@ textarea {
   align-items: center;
   flex-wrap: wrap;
   padding-top: 18px;
-  border-top: 1px solid rgba(148, 184, 255, 0.1);
+  border-top: 1px solid rgb(var(--rgb-info) / 0.1);
 }
 
 .form-action-bar__meta {
@@ -1498,23 +1874,23 @@ textarea {
 }
 
 .button--primary {
-  background: linear-gradient(135deg, var(--accent) 0%, #7ff1d6 100%);
-  color: #052d2a;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-bright) 100%);
+  color: var(--on-accent);
 }
 
 .button--secondary {
-  background: linear-gradient(135deg, #8fb8ff 0%, #5e8fff 100%);
-  color: white;
+  background: linear-gradient(135deg, var(--secondary-start) 0%, var(--secondary-end) 100%);
+  color: var(--on-secondary);
 }
 
 .button--ghost {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgb(var(--rgb-overlay) / 0.04);
   color: var(--text);
   border: 1px solid var(--line);
 }
 
 .button--danger {
-  background: rgba(255, 139, 139, 0.12);
+  background: rgb(var(--rgb-danger) / 0.12);
   color: var(--danger);
 }
 
@@ -1576,7 +1952,7 @@ textarea {
 
 .split-button__caret {
   border-radius: 0 12px 12px 0 !important;
-  border-left: 1px solid rgba(5, 45, 42, 0.25) !important;
+  border-left: 1px solid rgb(var(--rgb-on-accent) / 0.25) !important;
   width: 30px;
   padding: 0;
   display: inline-flex;
@@ -1602,7 +1978,7 @@ textarea {
   display: grid;
   gap: 2px;
   z-index: 200;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 24px rgb(var(--rgb-shadow) / 0.4);
 }
 
 .action-dropdown__item {
@@ -1623,7 +1999,7 @@ textarea {
 }
 
 .action-dropdown__item:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgb(var(--rgb-overlay) / 0.07);
 }
 
 .toast-stack {
@@ -1643,22 +2019,22 @@ textarea {
   gap: 12px;
   padding: 14px 16px;
   border-radius: 18px;
-  border: 1px solid rgba(148, 184, 255, 0.16);
-  background: rgba(9, 18, 33, 0.92);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  border: 1px solid rgb(var(--rgb-info) / 0.16);
+  background: rgb(var(--rgb-panel-alt) / 0.92);
+  box-shadow: 0 18px 48px rgb(var(--rgb-shadow) / 0.28);
   backdrop-filter: blur(12px);
   animation: toast-slide-in 180ms ease-out;
   pointer-events: auto;
 }
 
 .toast--error {
-  border-color: rgba(255, 139, 139, 0.28);
-  color: #ffc1c1;
+  border-color: rgb(var(--rgb-danger) / 0.28);
+  color: var(--text-on-danger-tint);
 }
 
 .toast--success {
-  border-color: rgba(87, 209, 201, 0.28);
-  color: #bcfff9;
+  border-color: rgb(var(--rgb-accent) / 0.28);
+  color: var(--text-on-accent-tint-2);
 }
 
 /* The app-level stack (update prompts from Layout) sits in the opposite corner
@@ -1669,8 +2045,8 @@ textarea {
 }
 
 .toast--update {
-  border-color: rgba(148, 184, 255, 0.32);
-  color: #dbe7ff;
+  border-color: rgb(var(--rgb-info) / 0.32);
+  color: var(--text-on-info-tint);
 }
 
 .toast__action {
@@ -1678,8 +2054,8 @@ textarea {
   margin-top: 6px;
   padding: 6px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(148, 184, 255, 0.32);
-  background: rgba(148, 184, 255, 0.14);
+  border: 1px solid rgb(var(--rgb-info) / 0.32);
+  background: rgb(var(--rgb-info) / 0.14);
   color: inherit;
   font: inherit;
   font-size: 0.85rem;
@@ -1687,7 +2063,7 @@ textarea {
 }
 
 .toast__action:hover {
-  background: rgba(148, 184, 255, 0.22);
+  background: rgb(var(--rgb-info) / 0.22);
 }
 
 .toast__content {
@@ -1733,7 +2109,7 @@ textarea {
   gap: 12px;
   padding-bottom: 14px;
   margin-bottom: 4px;
-  border-bottom: 1px solid rgba(148, 184, 255, 0.16);
+  border-bottom: 1px solid rgb(var(--rgb-info) / 0.16);
 }
 
 .change-password-card__eyebrow {
@@ -1755,9 +2131,9 @@ textarea {
 .change-password-card__badge {
   white-space: nowrap;
   border-radius: 999px;
-  border: 1px solid rgba(87, 209, 201, 0.4);
-  background: rgba(87, 209, 201, 0.14);
-  color: #9af4de;
+  border: 1px solid rgb(var(--rgb-accent) / 0.4);
+  background: rgb(var(--rgb-accent) / 0.14);
+  color: var(--text-on-accent-tint-3);
   font-size: 0.76rem;
   font-weight: 700;
   padding: 6px 10px;
@@ -1785,6 +2161,32 @@ textarea {
   transform: translateY(calc(-50% - 1px));
 }
 
+/* Shared password field toggle (PasswordInput). The button sits inside the
+   input's right padding, so the input keeps its full width and the surrounding
+   layout does not move, including at mobile widths. */
+.password-input-wrap {
+  position: relative;
+}
+
+.password-input-wrap .input {
+  padding-right: 44px;
+}
+
+.password-input-wrap__toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  padding: 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
 .change-password-strength {
   margin-top: 6px;
   display: grid;
@@ -1795,7 +2197,7 @@ textarea {
   width: 100%;
   height: 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgb(var(--rgb-overlay) / 0.06);
   overflow: hidden;
 }
 
@@ -1807,19 +2209,19 @@ textarea {
 }
 
 .change-password-strength__fill--very-weak {
-  background: #ff8b8b;
+  background: var(--danger);
 }
 
 .change-password-strength__fill--weak {
-  background: #ffae70;
+  background: var(--strength-weak);
 }
 
 .change-password-strength__fill--fair {
-  background: #f6d67b;
+  background: var(--warning);
 }
 
 .change-password-strength__fill--strong {
-  background: #7ddfa5;
+  background: var(--strength-strong);
 }
 
 .change-password-strength__fill--very-strong {
@@ -1850,8 +2252,8 @@ textarea {
 }
 
 .change-password-guide__list li {
-  border: 1px solid rgba(148, 184, 255, 0.14);
-  background: rgba(9, 18, 33, 0.55);
+  border: 1px solid rgb(var(--rgb-info) / 0.14);
+  background: rgb(var(--rgb-panel-alt) / 0.55);
   border-radius: 12px;
   padding: 9px 12px;
   color: var(--muted);
@@ -1861,13 +2263,13 @@ textarea {
 .change-password-guide__list li::before {
   content: '○';
   margin-right: 8px;
-  color: rgba(156, 173, 207, 0.8);
+  color: rgb(var(--rgb-muted) / 0.8);
 }
 
 .change-password-guide__list li.is-pass {
   color: var(--text);
-  border-color: rgba(87, 209, 201, 0.34);
-  background: rgba(87, 209, 201, 0.12);
+  border-color: rgb(var(--rgb-accent) / 0.34);
+  background: rgb(var(--rgb-accent) / 0.12);
 }
 
 .change-password-guide__list li.is-pass::before {
@@ -1878,15 +2280,15 @@ textarea {
 .change-password-guide__tip {
   margin-top: 4px;
   border-radius: 14px;
-  border: 1px solid rgba(148, 184, 255, 0.16);
+  border: 1px solid rgb(var(--rgb-info) / 0.16);
   padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--rgb-overlay) / 0.03);
 }
 
 .change-password-guide__tip strong {
   display: block;
   margin-bottom: 4px;
-  color: #d9edff;
+  color: var(--text-tip-strong);
   font-size: 0.82rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1921,8 +2323,8 @@ textarea {
   white-space: nowrap;
   border-radius: 999px;
   padding: 8px 12px;
-  background: rgba(87, 209, 201, 0.1);
-  color: #bffbf6;
+  background: rgb(var(--rgb-accent) / 0.1);
+  color: var(--text-on-accent-tint);
   font-size: 0.84rem;
   font-weight: 700;
 }
@@ -1944,12 +2346,12 @@ textarea {
 /* Used by the tax-ledger validation chip; without these it fell back to the
    neutral teal and an invalid state read as a passing one. */
 .status-chip--success {
-  background: rgba(87, 209, 201, 0.12);
-  color: #bffbf6;
+  background: rgb(var(--rgb-accent) / 0.12);
+  color: var(--text-on-accent-tint);
 }
 
 .status-chip--error {
-  background: rgba(255, 139, 139, 0.12);
+  background: rgb(var(--rgb-danger) / 0.12);
   color: var(--danger);
 }
 
@@ -1997,8 +2399,8 @@ textarea {
   align-items: center;
   padding: 16px;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(148, 184, 255, 0.08);
+  background: rgb(var(--rgb-overlay) / 0.03);
+  border: 1px solid rgb(var(--rgb-info) / 0.08);
   transition: all 200ms ease;
 }
 
@@ -2007,8 +2409,8 @@ textarea {
   align-items: start;
   padding: 20px;
   border-radius: 24px;
-  background: linear-gradient(135deg, rgba(10, 22, 40, 0.6) 0%, rgba(15, 29, 48, 0.4) 100%);
-  border: 1px solid rgba(148, 184, 255, 0.12);
+  background: linear-gradient(135deg, rgb(var(--rgb-panel-row) / 0.6) 0%, rgb(var(--rgb-card-strong) / 0.4) 100%);
+  border: 1px solid rgb(var(--rgb-info) / 0.12);
   gap: 18px;
 }
 
@@ -2026,10 +2428,10 @@ a.invoice-row {
 }
 
 .invoice-row:hover {
-  background: linear-gradient(135deg, rgba(87, 209, 201, 0.08) 0%, rgba(79, 125, 255, 0.08) 100%);
-  border-color: rgba(148, 184, 255, 0.24);
+  background: linear-gradient(135deg, rgb(var(--rgb-accent) / 0.08) 0%, rgb(var(--rgb-accent-2) / 0.08) 100%);
+  border-color: rgb(var(--rgb-info) / 0.24);
   transform: translateY(-2px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 32px rgb(var(--rgb-shadow) / 0.2);
 }
 
 /* Two tracks fit meta + price. A row that also carries actions needs a third,
@@ -2039,19 +2441,19 @@ a.invoice-row {
 }
 
 .invoice-row--sales {
-  border-left: 4px solid rgba(34, 197, 94, 0.4);
+  border-left: 4px solid rgb(var(--rgb-success) / 0.4);
 }
 
 .invoice-row--sales:hover {
-  border-left-color: rgba(34, 197, 94, 0.8);
+  border-left-color: rgb(var(--rgb-success) / 0.8);
 }
 
 .invoice-row--purchase {
-  border-left: 4px solid rgba(251, 146, 60, 0.4);
+  border-left: 4px solid rgb(var(--rgb-orange) / 0.4);
 }
 
 .invoice-row--purchase:hover {
-  border-left-color: rgba(251, 146, 60, 0.8);
+  border-left-color: rgb(var(--rgb-orange) / 0.8);
 }
 
 /* Most rows are meta + one trailing cell (actions, or a figure). Two tracks
@@ -2204,15 +2606,15 @@ a.invoice-row {
 }
 
 .invoice-type-badge--sales {
-  background: rgba(34, 197, 94, 0.2);
-  color: #84cc16;
-  border: 1px solid rgba(34, 197, 94, 0.4);
+  background: rgb(var(--rgb-success) / 0.2);
+  color: var(--text-sales);
+  border: 1px solid rgb(var(--rgb-success) / 0.4);
 }
 
 .invoice-type-badge--purchase {
-  background: rgba(251, 146, 60, 0.2);
-  color: #fb923c;
-  border: 1px solid rgba(251, 146, 60, 0.4);
+  background: rgb(var(--rgb-orange) / 0.2);
+  color: var(--text-purchase);
+  border: 1px solid rgb(var(--rgb-orange) / 0.4);
 }
 
 .invoice-row__header {
@@ -2259,9 +2661,9 @@ a.invoice-row {
   padding: 6px 10px;
   font-size: 0.78rem;
   font-weight: 700;
-  color: #c7d7f4;
-  background: rgba(148, 184, 255, 0.1);
-  border: 1px solid rgba(148, 184, 255, 0.2);
+  color: var(--text-soft);
+  background: rgb(var(--rgb-info) / 0.1);
+  border: 1px solid rgb(var(--rgb-info) / 0.2);
 }
 
 .invoice-row__items,
@@ -2277,12 +2679,12 @@ a.invoice-row {
   gap: 8px;
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(8, 16, 29, 0.66);
-  border: 1px solid rgba(148, 184, 255, 0.14);
+  background: rgb(var(--rgb-panel-well) / 0.66);
+  border: 1px solid rgb(var(--rgb-info) / 0.14);
 }
 
 .invoice-row__tax-grid span {
-  color: #bdd0f2;
+  color: var(--text-tax-grid);
   font-size: 0.82rem;
   font-weight: 600;
 }
@@ -2302,8 +2704,8 @@ a.invoice-row {
   margin-top: 8px;
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(8, 16, 29, 0.56);
-  border: 1px solid rgba(148, 184, 255, 0.14);
+  background: rgb(var(--rgb-panel-well) / 0.56);
+  border: 1px solid rgb(var(--rgb-info) / 0.14);
   display: grid;
   gap: 8px;
 }
@@ -2312,8 +2714,8 @@ a.invoice-row {
   margin-top: 6px;
   padding: 6px 10px;
   border-radius: 10px;
-  background: rgba(8, 16, 29, 0.56);
-  border: 1px solid rgba(148, 184, 255, 0.14);
+  background: rgb(var(--rgb-panel-well) / 0.56);
+  border: 1px solid rgb(var(--rgb-info) / 0.14);
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -2323,7 +2725,7 @@ a.invoice-row {
 }
 
 .voucher-note__label {
-  color: #c7d7f4;
+  color: var(--text-soft);
   font-weight: 700;
   text-transform: uppercase;
   font-size: 0.68rem;
@@ -2332,7 +2734,7 @@ a.invoice-row {
 }
 
 .voucher-note__text {
-  color: #e9f0ff;
+  color: var(--text-strong);
 }
 
 .statement-entry-note {
@@ -2352,13 +2754,13 @@ a.invoice-row {
 }
 
 .receipt-allocation-strip__title {
-  color: #c7d7f4;
+  color: var(--text-soft);
   font-size: 0.78rem;
   font-weight: 700;
 }
 
 .receipt-allocation-strip__total {
-  color: #e9f0ff;
+  color: var(--text-strong);
   font-size: 0.78rem;
   font-weight: 800;
   /* The strip sits inside .invoice-row__meta, which breaks anywhere so that
@@ -2381,13 +2783,13 @@ a.invoice-row {
   gap: 6px;
   border-radius: 999px;
   padding: 4px 10px;
-  border: 1px solid rgba(148, 184, 255, 0.24);
-  background: rgba(148, 184, 255, 0.1);
+  border: 1px solid rgb(var(--rgb-info) / 0.24);
+  background: rgb(var(--rgb-info) / 0.1);
   white-space: nowrap;
 }
 
 .receipt-allocation-chip__invoice {
-  color: #e9f0ff;
+  color: var(--text-strong);
   font-size: 0.76rem;
   font-weight: 700;
 }
@@ -2402,22 +2804,22 @@ a.invoice-row {
 }
 
 .receipt-allocation-chip__status--full {
-  color: #7ce9b0;
-  background: rgba(34, 197, 94, 0.15);
+  color: var(--color-success);
+  background: rgb(var(--rgb-success) / 0.15);
 }
 
 .receipt-allocation-chip__status--partial {
-  color: #f6d67b;
-  background: rgba(246, 214, 123, 0.16);
+  color: var(--warning);
+  background: rgb(var(--rgb-warning) / 0.16);
 }
 
 .receipt-allocation-chip__status--unpaid {
-  color: #fca5a5;
-  background: rgba(239, 68, 68, 0.16);
+  color: var(--text-danger-soft);
+  background: rgb(var(--rgb-danger-strong) / 0.16);
 }
 
 .receipt-allocation-chip__amount {
-  color: #cdd9ef;
+  color: var(--text-allocation-amount);
   font-size: 0.74rem;
   font-weight: 700;
 }
@@ -2457,8 +2859,8 @@ a.invoice-row {
   gap: 6px;
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(8, 16, 29, 0.66);
-  border: 1px solid rgba(148, 184, 255, 0.14);
+  background: rgb(var(--rgb-panel-well) / 0.66);
+  border: 1px solid rgb(var(--rgb-info) / 0.14);
 }
 
 .invoice-row__amount {
@@ -2469,11 +2871,11 @@ a.invoice-row {
 }
 
 .invoice-row__amount--sales {
-  color: rgba(34, 197, 94, 0.8);
+  color: rgb(var(--rgb-success) / 0.8);
 }
 
 .invoice-row__amount--purchase {
-  color: rgba(251, 146, 60, 0.8);
+  color: rgb(var(--rgb-orange) / 0.8);
 }
 
 .line-item__price,
@@ -2496,24 +2898,24 @@ a.invoice-row {
   border-radius: 999px;
   padding: 8px 12px;
   font-weight: 800;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--rgb-overlay) / 0.05);
 }
 
 .pill--low {
-  background: rgba(255, 139, 139, 0.12);
-  color: #ffc1c1;
+  background: rgb(var(--rgb-danger) / 0.12);
+  color: var(--text-on-danger-tint);
 }
 
 .pill--ok {
-  background: rgba(87, 209, 201, 0.12);
-  color: #bcfff9;
+  background: rgb(var(--rgb-accent) / 0.12);
+  color: var(--text-on-accent-tint-2);
 }
 
 .summary-box {
   padding: 18px;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(148, 184, 255, 0.08);
+  background: rgb(var(--rgb-overlay) / 0.03);
+  border: 1px solid rgb(var(--rgb-info) / 0.08);
 }
 
 .summary-box__value {
@@ -2574,12 +2976,12 @@ a.invoice-row {
 
 .login-hero {
   background:
-    radial-gradient(circle at top left, rgba(87, 209, 201, 0.18), transparent 34%),
-    linear-gradient(180deg, rgba(7, 14, 24, 0.92) 0%, rgba(10, 20, 35, 0.88) 100%);
+    radial-gradient(circle at top left, rgb(var(--rgb-accent) / 0.18), transparent 34%),
+    linear-gradient(180deg, rgb(var(--rgb-hero-top) / 0.92) 0%, rgb(var(--rgb-hero-bottom) / 0.88) 100%);
 }
 
 .login-card {
-  background: rgba(9, 17, 31, 0.94);
+  background: rgb(var(--rgb-panel) / 0.94);
   box-shadow: var(--shadow);
   width: min(460px, 100%);
   justify-self: end;
@@ -2603,8 +3005,8 @@ a.invoice-row {
 .login-metric {
   padding: 18px;
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(148, 184, 255, 0.08);
+  background: rgb(var(--rgb-overlay) / 0.04);
+  border: 1px solid rgb(var(--rgb-info) / 0.08);
 }
 
 .login-metric strong {
@@ -2640,7 +3042,7 @@ a.invoice-row {
   padding: 20px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: rgba(4, 9, 16, 0.72);
+  background: rgb(var(--rgb-scrim) / 0.72);
   backdrop-filter: blur(6px);
 }
 
@@ -2651,7 +3053,7 @@ a.invoice-row {
   border-radius: 24px;
   padding: 22px;
   overflow-y: auto;
-  background: linear-gradient(180deg, rgba(11, 20, 34, 0.98) 0%, rgba(9, 17, 31, 0.96) 100%);
+  background: linear-gradient(180deg, rgb(var(--rgb-panel-top) / 0.98) 0%, rgb(var(--rgb-panel) / 0.96) 100%);
   box-shadow: var(--shadow);
 }
 
@@ -2700,7 +3102,7 @@ a.invoice-row {
   place-items: center;
   border: 1px solid var(--line-strong);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgb(var(--rgb-overlay) / 0.02);
   overflow: hidden;
 }
 
@@ -2708,7 +3110,7 @@ a.invoice-row {
   width: 100%;
   min-height: 72vh;
   border: none;
-  background: #111827;
+  background: var(--bg-pdf-frame);
 }
 
 .restore-progress-panel {
@@ -2730,8 +3132,8 @@ a.invoice-row {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  border: 3px solid rgba(255, 255, 255, 0.12);
-  border-top-color: var(--accent, #3b82f6);
+  border: 3px solid rgb(var(--rgb-overlay) / 0.12);
+  border-top-color: var(--accent);
   animation: restore-spin 0.8s linear infinite;
   margin-bottom: 20px;
 }
@@ -2740,8 +3142,8 @@ a.invoice-row {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: rgba(34, 197, 94, 0.18);
-  color: #22c55e;
+  background: rgb(var(--rgb-success) / 0.18);
+  color: rgb(var(--rgb-success));
   font-size: 1.5rem;
   display: flex;
   align-items: center;
@@ -2846,6 +3248,12 @@ a.invoice-row {
   border: 1px solid #d9e2f2;
 }
 
+.table-scroll {
+  /* Contain absolutely positioned screen-reader labels as well as the table. */
+  position: relative;
+  overflow-x: auto;
+}
+
 /* Generic settings-page tables. Both class names were used in markup but
    defined nowhere, so their cells had no padding and collided. */
 .table,
@@ -2930,7 +3338,7 @@ a.invoice-row {
 }
 
 .skeleton {
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 25%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.04) 75%);
+  background: linear-gradient(90deg, rgb(var(--rgb-overlay) / 0.04) 25%, rgb(var(--rgb-overlay) / 0.1) 50%, rgb(var(--rgb-overlay) / 0.04) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s infinite;
   border-radius: 8px;
@@ -3008,7 +3416,7 @@ a.invoice-row {
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(7, 13, 24, 0.55);
+  background: rgb(var(--rgb-panel-field) / 0.55);
   flex-shrink: 0;
 }
 
@@ -3029,7 +3437,7 @@ a.invoice-row {
   height: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.28);
+  background: rgb(var(--rgb-shadow) / 0.28);
   font-size: 0.72rem;
   font-weight: 800;
   line-height: 1;
@@ -3106,9 +3514,9 @@ a.invoice-row {
 }
 
 .invoice-feed-view__error {
-  border: 1px solid rgba(255, 139, 139, 0.3);
-  background: rgba(255, 139, 139, 0.12);
-  color: #ffc7c7;
+  border: 1px solid rgb(var(--rgb-danger) / 0.3);
+  background: rgb(var(--rgb-danger) / 0.12);
+  color: var(--text-on-danger-tint-2);
   border-radius: 14px;
   padding: 10px 14px;
 }
@@ -3166,7 +3574,7 @@ a.invoice-row {
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 12px;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgb(var(--rgb-overlay) / 0.02);
   text-align: center;
 }
 
@@ -3183,15 +3591,15 @@ a.invoice-row {
 }
 
 .invoice-feed-breakdown__value--purchase {
-  color: #fb923c;
+  color: var(--text-purchase);
 }
 
 .invoice-feed-breakdown__value--sales {
-  color: #84cc16;
+  color: var(--text-sales);
 }
 
 .invoice-feed-breakdown__value--cancelled {
-  color: #fca5a5;
+  color: var(--text-danger-soft);
 }
 
 .invoice-feed-breakdown__value--active {
@@ -3218,7 +3626,7 @@ a.invoice-row {
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
-  background: rgba(8, 17, 31, 0.95);
+  background: rgb(var(--rgb-bg) / 0.95);
 }
 
 .invoice-feed-table tbody td {
@@ -3233,7 +3641,7 @@ a.invoice-row {
 }
 
 .invoice-feed-table tbody tr:hover {
-  background: rgba(87, 209, 201, 0.08);
+  background: rgb(var(--rgb-accent) / 0.08);
 }
 
 .invoice-feed-table tbody tr.is-cancelled {
@@ -3266,15 +3674,15 @@ a.invoice-row {
 }
 
 .invoice-feed-table__status--active {
-  color: #bffbf6;
-  background: rgba(87, 209, 201, 0.14);
-  border: 1px solid rgba(87, 209, 201, 0.25);
+  color: var(--text-on-accent-tint);
+  background: rgb(var(--rgb-accent) / 0.14);
+  border: 1px solid rgb(var(--rgb-accent) / 0.25);
 }
 
 .invoice-feed-table__status--cancelled {
-  color: #ffc7c7;
-  background: rgba(255, 139, 139, 0.14);
-  border: 1px solid rgba(255, 139, 139, 0.25);
+  color: var(--text-on-danger-tint-2);
+  background: rgb(var(--rgb-danger) / 0.14);
+  border: 1px solid rgb(var(--rgb-danger) / 0.25);
 }
 
 /* Tax ledger — period totals ────────────────────────────────────────────
@@ -3292,14 +3700,14 @@ a.invoice-row {
   align-self: center;
   font-size: 1.25rem;
   font-weight: 800;
-  color: rgba(156, 173, 207, 0.5);
+  color: rgb(var(--rgb-muted) / 0.5);
 }
 
 .tax-bucket-group {
   display: grid;
   gap: 10px;
   padding-top: 16px;
-  border-top: 1px solid rgba(148, 184, 255, 0.1);
+  border-top: 1px solid rgb(var(--rgb-info) / 0.1);
 }
 
 .tax-bucket-grid {
@@ -3314,15 +3722,15 @@ a.invoice-row {
   gap: 6px;
   padding: 18px;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(148, 184, 255, 0.08);
+  background: rgb(var(--rgb-overlay) / 0.03);
+  border: 1px solid rgb(var(--rgb-info) / 0.08);
 }
 
 /* The gross figure is the one that has to tie back to the books, so it is the
    only tile that carries the accent; the two it is built from stay quiet. */
 .tax-total--headline {
-  background: linear-gradient(140deg, rgba(87, 209, 201, 0.16), rgba(87, 209, 201, 0.03));
-  border-color: rgba(87, 209, 201, 0.28);
+  background: linear-gradient(140deg, rgb(var(--rgb-accent) / 0.16), rgb(var(--rgb-accent) / 0.03));
+  border-color: rgb(var(--rgb-accent) / 0.28);
 }
 
 .tax-total__label {
@@ -3340,7 +3748,13 @@ a.invoice-row {
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
-  color: rgba(156, 173, 207, 0.65);
+  color: rgb(var(--rgb-muted) / 0.9);
+}
+
+/* The eyebrow's 0.8 alpha is 4.3:1 on the teal headline tint; full --muted
+   clears 4.5:1 there. */
+.tax-total--headline .tax-total__label {
+  color: var(--muted);
 }
 
 .tax-total__value {
@@ -3391,7 +3805,7 @@ a.invoice-row {
 
 .tax-total__split b {
   font-weight: 700;
-  color: rgba(230, 238, 251, 0.85);
+  color: rgb(var(--rgb-text) / 0.85);
 }
 
 /* The payable figure leads and the set-off working sits beside it, so the
@@ -3410,8 +3824,8 @@ a.invoice-row {
   gap: 10px;
   padding: 16px 18px;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(148, 184, 255, 0.08);
+  background: rgb(var(--rgb-overlay) / 0.03);
+  border: 1px solid rgb(var(--rgb-info) / 0.08);
   /* Five money columns; on a narrow panel the table scrolls in place rather
      than widening the page. */
   overflow-x: auto;
@@ -3435,9 +3849,9 @@ a.invoice-row {
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(156, 173, 207, 0.8);
+  color: rgb(var(--rgb-muted) / 0.8);
   text-align: left;
-  border-bottom: 1px solid rgba(148, 184, 255, 0.12);
+  border-bottom: 1px solid rgb(var(--rgb-info) / 0.12);
 }
 
 .tax-setoff__table tbody th,
@@ -3448,7 +3862,7 @@ a.invoice-row {
 
 .tax-setoff__table tfoot th,
 .tax-setoff__table tfoot td {
-  border-top: 1px solid rgba(148, 184, 255, 0.16);
+  border-top: 1px solid rgb(var(--rgb-info) / 0.16);
 }
 
 /* The column the row is read for. */
@@ -3468,7 +3882,7 @@ a.invoice-row {
 }
 
 .tax-setoff__note strong {
-  color: rgba(230, 238, 251, 0.9);
+  color: rgb(var(--rgb-text) / 0.9);
 }
 
 @media (max-width: 1100px) {
@@ -3522,7 +3936,7 @@ a.invoice-row {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: var(--panel-bg, #0d1a2b);
+  background: var(--bg-sticky-head);
 }
 
 .tax-ledger-table tbody tr {
@@ -3530,17 +3944,17 @@ a.invoice-row {
 }
 
 .tax-ledger-table tbody tr:hover {
-  background: rgba(87, 209, 201, 0.04);
+  background: rgb(var(--rgb-accent) / 0.04);
 }
 
 .tax-ledger-table tbody tr.tax-ledger-row--sales {
-  box-shadow: inset 3px 0 0 rgba(34, 197, 94, 0.55);
-  background: linear-gradient(90deg, rgba(34, 197, 94, 0.08) 0%, rgba(34, 197, 94, 0.01) 22%, transparent 60%);
+  box-shadow: inset 3px 0 0 rgb(var(--rgb-success) / 0.55);
+  background: linear-gradient(90deg, rgb(var(--rgb-success) / 0.08) 0%, rgb(var(--rgb-success) / 0.01) 22%, transparent 60%);
 }
 
 .tax-ledger-table tbody tr.tax-ledger-row--purchase {
-  box-shadow: inset 3px 0 0 rgba(251, 146, 60, 0.55);
-  background: linear-gradient(90deg, rgba(251, 146, 60, 0.08) 0%, rgba(251, 146, 60, 0.01) 22%, transparent 60%);
+  box-shadow: inset 3px 0 0 rgb(var(--rgb-orange) / 0.55);
+  background: linear-gradient(90deg, rgb(var(--rgb-orange) / 0.08) 0%, rgb(var(--rgb-orange) / 0.01) 22%, transparent 60%);
 }
 
 .tax-ledger-type-cell {
@@ -3558,30 +3972,30 @@ a.invoice-row {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #c8d8ff;
-  border: 1px solid rgba(168, 185, 220, 0.28);
-  background: rgba(148, 184, 255, 0.12);
+  color: var(--text-on-info-tint-3);
+  border: 1px solid rgb(var(--rgb-tag-line) / 0.28);
+  background: rgb(var(--rgb-info) / 0.12);
 }
 
 .invoice-compact-card {
   border-radius: 20px;
-  border: 1px solid rgba(148, 184, 255, 0.12);
-  background: linear-gradient(135deg, rgba(10, 22, 40, 0.6) 0%, rgba(15, 29, 48, 0.45) 100%);
+  border: 1px solid rgb(var(--rgb-info) / 0.12);
+  background: linear-gradient(135deg, rgb(var(--rgb-panel-row) / 0.6) 0%, rgb(var(--rgb-card-strong) / 0.45) 100%);
   padding: 16px;
   transition: border-color 180ms ease, transform 180ms ease;
 }
 
 .invoice-compact-card:hover {
   transform: translateY(-1px);
-  border-color: rgba(148, 184, 255, 0.24);
+  border-color: rgb(var(--rgb-info) / 0.24);
 }
 
 .invoice-compact-card--sales {
-  border-left: 4px solid rgba(34, 197, 94, 0.45);
+  border-left: 4px solid rgb(var(--rgb-success) / 0.45);
 }
 
 .invoice-compact-card--purchase {
-  border-left: 4px solid rgba(251, 146, 60, 0.45);
+  border-left: 4px solid rgb(var(--rgb-orange) / 0.45);
 }
 
 .invoice-compact-card--cancelled {
@@ -3620,16 +4034,39 @@ a.invoice-row {
   display: inline-flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
   flex-shrink: 0;
+}
+
+/* Compact overdue pill. No minimum width, unlike .pill, so it fits in a
+   table cell and beside a due date. The clock icon and day count keep it
+   distinct from the Cancelled badge, which shares the danger colour. */
+.overdue-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--rgb-danger) / 0.45);
+  color: var(--text-on-danger-tint-3);
+  background: rgb(var(--rgb-danger) / 0.22);
+  font-size: 0.74rem;
+  font-weight: 800;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.invoice-feed-table__due .overdue-badge {
+  margin-top: 4px;
 }
 
 .invoice-compact-card__cancelled-badge {
   display: inline-flex;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 139, 139, 0.3);
-  color: #ffc7c7;
-  background: rgba(255, 139, 139, 0.14);
+  border: 1px solid rgb(var(--rgb-danger) / 0.3);
+  color: var(--text-on-danger-tint-2);
+  background: rgb(var(--rgb-danger) / 0.14);
   font-size: 0.76rem;
   font-weight: 700;
 }
@@ -3679,11 +4116,11 @@ a.invoice-row {
 }
 
 .invoice-compact-card__amount--sales {
-  color: #84cc16;
+  color: var(--text-sales);
 }
 
 .invoice-compact-card__amount--purchase {
-  color: #fb923c;
+  color: var(--text-purchase);
 }
 
 .invoice-compact-card__actions {
@@ -3912,7 +4349,7 @@ a.invoice-row {
   /* Stacked, the figures form a column of their own; the extra weight is what
      tells that column apart from the labels facing it. */
   .summary-box__stat dd {
-    color: #e6edfa;
+    color: var(--text-summary-stat);
     font-weight: 600;
   }
 
@@ -4070,7 +4507,7 @@ a.invoice-row {
 }
 
 .chart__swatch--purchases {
-  background: #6f8bd8;
+  background: var(--chart-purchases);
 }
 
 .chart__swatch--receipts {
@@ -4098,7 +4535,7 @@ a.invoice-row {
 }
 
 .chart__bar--purchases {
-  fill: #6f8bd8;
+  fill: var(--chart-purchases);
 }
 
 .chart__line {
@@ -4522,7 +4959,7 @@ a.invoice-row {
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(7, 13, 24, 0.55);
+  background: rgb(var(--rgb-panel-field) / 0.55);
   flex-wrap: wrap;
   max-width: 100%;
 }
@@ -4619,13 +5056,163 @@ a.invoice-row {
   margin-left: 8px;
   padding: 1px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 139, 139, 0.4);
-  background: rgba(255, 139, 139, 0.12);
+  border: 1px solid rgb(var(--rgb-danger) / 0.4);
+  background: rgb(var(--rgb-danger) / 0.12);
   color: var(--danger);
   font-size: 0.7rem;
   font-weight: 600;
   vertical-align: middle;
   white-space: nowrap;
+}
+
+/* Product performance: a second, quieter line under a cell's main figure. */
+.product-performance__sku,
+.product-performance__sub {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Marks a row costed at today's purchase price because the period had no
+   purchases of it — its margin is an estimate, not what the goods cost. */
+.product-performance__basis {
+  display: block;
+  width: fit-content;
+  margin-left: auto;
+  margin-top: 2px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--warning);
+  font-size: 0.66rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* The product name opens its page. Looks like the cell text until hovered —
+   the whole row is the target, the link is what keyboards and new tabs use. */
+.product-performance__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.product-performance__link svg {
+  color: var(--muted);
+  transition: transform 160ms ease, color 160ms ease;
+}
+
+.product-performance__table tbody tr:hover .product-performance__link,
+.product-performance__link:focus-visible {
+  color: var(--accent);
+}
+
+.product-performance__table tbody tr:hover .product-performance__link svg {
+  color: var(--accent);
+  transform: translateX(2px);
+}
+
+/* Fourteen columns scroll sideways on any phone; keep the product name pinned
+   so a figure never loses its row label. Opaque, or scrolled cells show
+   through. */
+.product-performance__table tbody td:first-child,
+.product-performance__table tfoot th:first-child,
+.product-performance__table thead th:first-child,
+.product-detail__table tbody th,
+.product-detail__table tfoot th:first-child,
+.product-detail__table thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+}
+
+/* The row hover tint (accent at 8%) pre-mixed over --bg, since the pinned
+   cell's own background would otherwise hide it. */
+.product-performance__table tbody tr:hover td:first-child {
+  background: var(--bg-pinned-hover);
+}
+
+.product-performance__table thead th:first-child,
+.product-detail__table thead th:first-child {
+  z-index: 2;
+}
+
+/* Totals rows. invoice-feed-table never styled a tfoot, so these cells were
+   falling back to the user agent's 1px, centred <th>. */
+.product-performance__table tfoot th,
+.product-detail__table tfoot th {
+  padding: 12px;
+  border-top: 1px solid var(--line-strong);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.product-performance__table tfoot th:first-child,
+.product-detail__table tfoot th:first-child {
+  text-align: left;
+}
+
+/* ── Product performance: one product (/analytics/products/:id) ───── */
+.product-detail__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+/* Two charts a row where there is room for twelve months each, one below. */
+.product-detail__charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 1100px) {
+  .product-detail__charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.product-detail__chart {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 12px 8px;
+}
+
+.product-detail__chart-title {
+  margin: 0 4px;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.product-detail__chart-caption {
+  margin: 0 4px 8px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* Month rows are a readout, not a link like the report rows they sit among. */
+.product-detail__table tbody tr {
+  cursor: default;
+}
+
+.product-detail__table tbody th {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.product-detail__quiet td {
+  color: var(--muted);
 }
 
 .chart-frame {
@@ -4709,7 +5296,7 @@ a.invoice-row {
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(7, 13, 24, 0.55);
+  background: rgb(var(--rgb-panel-field) / 0.55);
   flex-shrink: 0;
 }
 
@@ -4759,7 +5346,7 @@ a.invoice-row {
   height: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.28);
+  background: rgb(var(--rgb-shadow) / 0.28);
   font-size: 0.72rem;
   font-weight: 800;
   line-height: 1;
@@ -4921,8 +5508,8 @@ a.invoice-row {
   gap: 4px;
   padding: 1px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(246, 214, 123, 0.4);
-  background: rgba(246, 214, 123, 0.12);
+  border: 1px solid rgb(var(--rgb-warning) / 0.4);
+  background: rgb(var(--rgb-warning) / 0.12);
   color: var(--warning);
   font-size: 0.68rem;
   font-weight: 700;
@@ -4936,7 +5523,7 @@ a.invoice-row {
 .promo-card {
   border-color: var(--line-strong);
   background:
-    linear-gradient(135deg, rgba(87, 209, 201, 0.09) 0%, rgba(87, 209, 201, 0) 55%),
+    linear-gradient(135deg, rgb(var(--rgb-accent) / 0.09) 0%, rgb(var(--rgb-accent) / 0) 55%),
     var(--bg-card-strong);
 }
 
@@ -4965,7 +5552,7 @@ a.invoice-row {
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(156, 173, 207, 0.8);
+  color: rgb(var(--rgb-muted) / 0.8);
 }
 
 .marketplace-price-mode label {
@@ -4992,7 +5579,7 @@ a.invoice-row {
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--line-strong);
-  background: rgba(87, 209, 201, 0.08);
+  background: rgb(var(--rgb-accent) / 0.08);
   color: var(--text);
 }
 
@@ -5014,8 +5601,8 @@ a.invoice-row {
   align-items: flex-start;
   padding: 14px 16px;
   border-radius: 16px;
-  border: 1px solid rgba(246, 214, 123, 0.35);
-  background: rgba(246, 214, 123, 0.1);
+  border: 1px solid rgb(var(--rgb-warning) / 0.35);
+  background: rgb(var(--rgb-warning) / 0.1);
   color: var(--warning);
 }
 
@@ -5081,7 +5668,7 @@ a.invoice-row {
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: rgba(87, 209, 201, 0.06);
+  background: rgb(var(--rgb-accent) / 0.06);
 }
 
 .marketplace-meta h3 {
@@ -5167,7 +5754,7 @@ a.invoice-row {
 
 /* A failed auto-post is the one thing on this page a user must not scroll past. */
 .marketplace-row--failed td {
-  background: rgba(255, 139, 139, 0.08);
+  background: rgb(var(--rgb-danger) / 0.08);
 }
 
 .marketplace-linklike {
@@ -5204,7 +5791,7 @@ a.invoice-row {
 .status-chip--pending,
 .status-chip--paused,
 .status-chip--draft {
-  background: rgba(246, 214, 123, 0.12);
+  background: rgb(var(--rgb-warning) / 0.12);
   color: var(--warning);
 }
 
@@ -5213,12 +5800,12 @@ a.invoice-row {
 .status-chip--rejected,
 .status-chip--cancelled,
 .status-chip--expired {
-  background: rgba(255, 139, 139, 0.12);
+  background: rgb(var(--rgb-danger) / 0.12);
   color: var(--danger);
 }
 
 .status-chip--withdrawn {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgb(var(--rgb-overlay) / 0.06);
   color: var(--muted);
 }
 
@@ -5291,7 +5878,7 @@ a.invoice-row {
 .ledger-search__icon {
   position: absolute;
   left: 13px;
-  color: rgba(156, 173, 207, 0.75);
+  color: rgb(var(--rgb-muted) / 0.75);
   pointer-events: none;
 }
 
@@ -5317,14 +5904,14 @@ a.invoice-row {
   padding: 0;
   border: 0;
   border-radius: 999px;
-  background: rgba(148, 184, 255, 0.12);
+  background: rgb(var(--rgb-info) / 0.12);
   color: var(--muted);
   cursor: pointer;
   transition: background 160ms ease, color 160ms ease;
 }
 
 .ledger-search__clear:hover {
-  background: rgba(148, 184, 255, 0.22);
+  background: rgb(var(--rgb-info) / 0.22);
   color: var(--text);
 }
 
@@ -5357,8 +5944,8 @@ a.invoice-row {
   gap: 16px;
   padding: 18px 20px;
   border-radius: 22px;
-  border: 1px solid rgba(148, 184, 255, 0.12);
-  background: linear-gradient(135deg, rgba(10, 22, 40, 0.6) 0%, rgba(15, 29, 48, 0.4) 100%);
+  border: 1px solid rgb(var(--rgb-info) / 0.12);
+  background: linear-gradient(135deg, rgb(var(--rgb-panel-row) / 0.6) 0%, rgb(var(--rgb-card-strong) / 0.4) 100%);
   overflow: hidden;
   transition: transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease, background 200ms ease;
 }
@@ -5371,7 +5958,7 @@ a.invoice-row {
   inset: 14px auto 14px 0;
   width: 3px;
   border-radius: 0 3px 3px 0;
-  background: linear-gradient(180deg, var(--accent) 0%, rgba(126, 141, 255, 0.9) 100%);
+  background: linear-gradient(180deg, var(--accent) 0%, rgb(var(--rgb-accent-violet) / 0.9) 100%);
   opacity: 0;
   transform: scaleY(0.35);
   transition: opacity 200ms ease, transform 200ms ease;
@@ -5379,9 +5966,9 @@ a.invoice-row {
 
 .ledger-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(148, 184, 255, 0.26);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
-  background: linear-gradient(135deg, rgba(87, 209, 201, 0.07) 0%, rgba(79, 125, 255, 0.07) 100%);
+  border-color: rgb(var(--rgb-info) / 0.26);
+  box-shadow: 0 14px 34px rgb(var(--rgb-shadow) / 0.28);
+  background: linear-gradient(135deg, rgb(var(--rgb-accent) / 0.07) 0%, rgb(var(--rgb-accent-2) / 0.07) 100%);
 }
 
 .ledger-card:hover::before,
@@ -5394,7 +5981,7 @@ a.invoice-row {
    the same colour wherever it appears and the eye can find it again without
    reading. */
 .ledger-card__avatar {
-  --tone: 148, 184, 255;
+  --tone: var(--rgb-avatar-default);
   display: grid;
   place-items: center;
   width: 46px;
@@ -5404,17 +5991,17 @@ a.invoice-row {
   font-size: 1rem;
   font-weight: 700;
   color: rgb(var(--tone));
-  background: linear-gradient(150deg, rgba(var(--tone), 0.26) 0%, rgba(var(--tone), 0.07) 100%);
-  border: 1px solid rgba(var(--tone), 0.3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: linear-gradient(150deg, rgb(var(--tone) / 0.26) 0%, rgb(var(--tone) / 0.07) 100%);
+  border: 1px solid rgb(var(--tone) / 0.3);
+  box-shadow: inset 0 1px 0 rgb(var(--rgb-overlay) / 0.06);
 }
 
-.ledger-card__avatar--1 { --tone: 87, 209, 201; }
-.ledger-card__avatar--2 { --tone: 141, 171, 255; }
-.ledger-card__avatar--3 { --tone: 183, 155, 255; }
-.ledger-card__avatar--4 { --tone: 246, 214, 123; }
-.ledger-card__avatar--5 { --tone: 255, 152, 164; }
-.ledger-card__avatar--6 { --tone: 126, 231, 166; }
+.ledger-card__avatar--1 { --tone: var(--rgb-avatar-1); }
+.ledger-card__avatar--2 { --tone: var(--rgb-avatar-2); }
+.ledger-card__avatar--3 { --tone: var(--rgb-avatar-3); }
+.ledger-card__avatar--4 { --tone: var(--rgb-avatar-4); }
+.ledger-card__avatar--5 { --tone: var(--rgb-avatar-5); }
+.ledger-card__avatar--6 { --tone: var(--rgb-avatar-6); }
 
 .ledger-card__body {
   gap: 10px;
@@ -5450,7 +6037,7 @@ a.invoice-row {
 }
 
 .ledger-card__name:focus-visible {
-  outline: 2px solid rgba(87, 209, 201, 0.6);
+  outline: 2px solid rgb(var(--rgb-accent) / 0.6);
   outline-offset: 3px;
   border-radius: 6px;
 }
@@ -5467,9 +6054,9 @@ a.invoice-row {
   gap: 6px;
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(148, 184, 255, 0.07);
-  border: 1px solid rgba(148, 184, 255, 0.14);
-  color: #c7d7f4;
+  background: rgb(var(--rgb-info) / 0.07);
+  border: 1px solid rgb(var(--rgb-info) / 0.14);
+  color: var(--text-soft);
   font-size: 0.76rem;
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -5477,13 +6064,13 @@ a.invoice-row {
 
 .ledger-chip > svg {
   flex-shrink: 0;
-  color: rgba(156, 173, 207, 0.7);
+  color: rgb(var(--rgb-muted) / 0.7);
 }
 
 .ledger-chip--gst {
-  background: rgba(87, 209, 201, 0.1);
-  border-color: rgba(87, 209, 201, 0.26);
-  color: #a8f0e8;
+  background: rgb(var(--rgb-accent) / 0.1);
+  border-color: rgb(var(--rgb-accent) / 0.26);
+  color: var(--text-on-accent-tint-4);
   font-weight: 700;
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
@@ -5491,6 +6078,31 @@ a.invoice-row {
 
 .ledger-chip--gst > svg {
   color: var(--accent);
+}
+
+.ledger-chip--whatsapp {
+  background: rgb(var(--rgb-accent) / 0.1);
+  border-color: rgb(var(--rgb-accent) / 0.26);
+  color: var(--text-on-accent-tint-4);
+}
+
+.ledger-chip--whatsapp > svg {
+  color: var(--accent);
+}
+
+a.ledger-chip:hover {
+  border-color: rgb(var(--rgb-info) / 0.4);
+  background: rgb(var(--rgb-info) / 0.14);
+}
+
+a.ledger-chip--whatsapp:hover {
+  border-color: rgb(var(--rgb-accent) / 0.5);
+  background: rgb(var(--rgb-accent) / 0.18);
+}
+
+a.ledger-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .ledger-card__address {
@@ -5522,14 +6134,14 @@ a.invoice-row {
   gap: 10px;
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(8, 16, 29, 0.56);
-  border: 1px solid rgba(148, 184, 255, 0.12);
+  background: rgb(var(--rgb-panel-well) / 0.56);
+  border: 1px solid rgb(var(--rgb-info) / 0.12);
 }
 
 .ledger-card__bank > svg {
   flex-shrink: 0;
   margin-top: 2px;
-  color: rgba(148, 184, 255, 0.55);
+  color: rgb(var(--rgb-info) / 0.55);
 }
 
 .ledger-card__bank-facts {
@@ -5551,14 +6163,14 @@ a.invoice-row {
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(156, 173, 207, 0.6);
+  color: rgb(var(--rgb-muted) / 0.6);
 }
 
 .ledger-card__bank-facts dd {
   margin: 0;
   font-size: 0.82rem;
   font-weight: 600;
-  color: #dce7fb;
+  color: var(--text-bank-facts);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
@@ -5582,7 +6194,7 @@ a.invoice-row {
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(156, 173, 207, 0.6);
+  color: rgb(var(--rgb-muted) / 0.85);
 }
 
 .ledger-card__balance-value {
@@ -5606,19 +6218,19 @@ a.invoice-row {
 /* Debit balances are owed to us, credit balances are owed by us — the two
    read as opposites, so they get opposite tints. */
 .ledger-card__balance--debit .ledger-card__balance-value {
-  color: #7ee2b8;
+  color: var(--text-balance-debit);
 }
 
 .ledger-card__balance--credit .ledger-card__balance-value {
-  color: #ffab8f;
+  color: var(--text-balance-credit);
 }
 
 .ledger-card__id {
   padding: 3px 9px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(148, 184, 255, 0.1);
-  color: rgba(156, 173, 207, 0.6);
+  background: rgb(var(--rgb-overlay) / 0.03);
+  border: 1px solid rgb(var(--rgb-info) / 0.1);
+  color: rgb(var(--rgb-muted) / 0.85);
   font-size: 0.7rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -5652,8 +6264,8 @@ a.invoice-row {
   gap: 16px;
   padding: 18px 20px;
   border-radius: 22px;
-  border: 1px solid rgba(148, 184, 255, 0.1);
-  background: rgba(10, 22, 40, 0.45);
+  border: 1px solid rgb(var(--rgb-info) / 0.1);
+  background: rgb(var(--rgb-panel-row) / 0.45);
 }
 
 .ledger-skeleton__lines {
@@ -5687,9 +6299,9 @@ a.invoice-row {
 .ledger-skeleton__line {
   background: linear-gradient(
     90deg,
-    rgba(148, 184, 255, 0.06) 0%,
-    rgba(148, 184, 255, 0.16) 50%,
-    rgba(148, 184, 255, 0.06) 100%
+    rgb(var(--rgb-info) / 0.06) 0%,
+    rgb(var(--rgb-info) / 0.16) 50%,
+    rgb(var(--rgb-info) / 0.06) 100%
   );
   background-size: 220% 100%;
   animation: ledger-shimmer 1.5s ease-in-out infinite;
@@ -5708,7 +6320,7 @@ a.invoice-row {
   justify-content: center;
   gap: 14px;
   padding-top: 16px;
-  border-top: 1px solid rgba(148, 184, 255, 0.1);
+  border-top: 1px solid rgb(var(--rgb-info) / 0.1);
 }
 
 .ledger-pagination__status {
@@ -5877,7 +6489,7 @@ a.invoice-row {
 .settings-nav__back:hover,
 .settings-nav__back--active {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgb(var(--rgb-overlay) / 0.04);
 }
 
 .settings-nav__group {
@@ -5917,7 +6529,7 @@ a.invoice-row {
 
 .settings-nav__link:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgb(var(--rgb-overlay) / 0.04);
 }
 
 .settings-nav__link--active {
@@ -6083,8 +6695,8 @@ a.invoice-row {
   gap: 10px;
   padding: 14px 16px;
   border-radius: 18px;
-  border: 1px solid rgba(87, 209, 201, 0.28);
-  background: linear-gradient(135deg, rgba(87, 209, 201, 0.08) 0%, rgba(148, 184, 255, 0.05) 100%);
+  border: 1px solid rgb(var(--rgb-accent) / 0.28);
+  background: linear-gradient(135deg, rgb(var(--rgb-accent) / 0.08) 0%, rgb(var(--rgb-info) / 0.05) 100%);
 }
 
 .scan-bar__row {
@@ -6148,8 +6760,8 @@ a.invoice-row {
 .scan-bar__pill {
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(87, 209, 201, 0.4);
-  background: rgba(87, 209, 201, 0.14);
+  border: 1px solid rgb(var(--rgb-accent) / 0.4);
+  background: rgb(var(--rgb-accent) / 0.14);
   color: var(--accent);
   font-size: 0.72rem;
   font-weight: 800;
@@ -6159,8 +6771,8 @@ a.invoice-row {
 }
 
 .scan-bar__pill--queue {
-  border-color: rgba(246, 214, 123, 0.4);
-  background: rgba(246, 214, 123, 0.14);
+  border-color: rgb(var(--rgb-warning) / 0.4);
+  background: rgb(var(--rgb-warning) / 0.14);
   color: var(--warning);
 }
 
@@ -6173,13 +6785,13 @@ a.invoice-row {
   padding: 0;
   border-radius: 10px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgb(var(--rgb-overlay) / 0.04);
   color: var(--muted);
   cursor: pointer;
 }
 
 .scan-bar__toggle[aria-pressed='true'] {
-  border-color: rgba(87, 209, 201, 0.4);
+  border-color: rgb(var(--rgb-accent) / 0.4);
   color: var(--accent);
 }
 
@@ -6250,7 +6862,7 @@ a.invoice-row {
   padding: 4px 8px;
   border-radius: 10px;
   font-size: 0.8rem;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--rgb-overlay) / 0.03);
 }
 
 .scan-feedback__item--ok {
@@ -6301,8 +6913,8 @@ a.invoice-row {
 }
 
 @keyframes line-flash {
-  0% { background: rgba(87, 209, 201, 0.28); border-color: rgba(87, 209, 201, 0.55); }
-  100% { background: rgba(255, 255, 255, 0.03); border-color: rgba(148, 184, 255, 0.08); }
+  0% { background: rgb(var(--rgb-accent) / 0.28); border-color: rgb(var(--rgb-accent) / 0.55); }
+  100% { background: rgb(var(--rgb-overlay) / 0.03); border-color: rgb(var(--rgb-info) / 0.08); }
 }
 
 .field__lock {
@@ -6334,8 +6946,8 @@ a.invoice-row {
   gap: 8px;
   padding: 12px;
   border-radius: 14px;
-  border: 1px dashed rgba(148, 184, 255, 0.22);
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgb(var(--rgb-info) / 0.22);
+  background: rgb(var(--rgb-overlay) / 0.02);
 }
 
 .serial-chips__count {
@@ -6361,8 +6973,8 @@ a.invoice-row {
   gap: 6px;
   padding: 4px 6px 4px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(87, 209, 201, 0.32);
-  background: rgba(87, 209, 201, 0.1);
+  border: 1px solid rgb(var(--rgb-accent) / 0.32);
+  background: rgb(var(--rgb-accent) / 0.1);
   font-family: 'Space Grotesk', ui-monospace, monospace;
   font-size: 0.78rem;
 }
@@ -6380,7 +6992,7 @@ a.invoice-row {
   padding: 0;
   border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgb(var(--rgb-overlay) / 0.08);
   color: var(--text);
   cursor: pointer;
 }
@@ -6462,12 +7074,12 @@ a.invoice-row {
 }
 
 .serial-picker__row.is-active {
-  border-color: rgba(87, 209, 201, 0.45);
-  background: rgba(87, 209, 201, 0.1);
+  border-color: rgb(var(--rgb-accent) / 0.45);
+  background: rgb(var(--rgb-accent) / 0.1);
 }
 
 .serial-picker__row.is-picked {
-  background: rgba(87, 209, 201, 0.16);
+  background: rgb(var(--rgb-accent) / 0.16);
 }
 
 .serial-picker__check {
@@ -6554,7 +7166,7 @@ a.invoice-row {
   padding: 12px 14px;
   border-radius: 14px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.02);
+  background: rgb(var(--rgb-overlay) / 0.02);
 }
 
 .serial-drawer__toolbar {
@@ -6582,7 +7194,7 @@ a.invoice-row {
   gap: 10px;
   padding: 6px 8px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--rgb-overlay) / 0.03);
   font-size: 0.8rem;
 }
 
@@ -6643,8 +7255,51 @@ a.invoice-row {
   }
 
   .line-item[data-flash='on'] {
-    border-color: rgba(87, 209, 201, 0.55);
+    border-color: rgb(var(--rgb-accent) / 0.55);
   }
+}
+
+/* ── Sign in with a provider ─────────────────────────────────────────────
+   Colours are the ones Google's branding rules set for each theme, so they are
+   literal values rather than tokens and do not follow the app's accent. The rules
+   also put the logo on white, hence the white tile on the dark button.
+   https://developers.google.com/identity/branding-guidelines */
+.oauth-button--google,
+:root[data-theme="dark"] .oauth-button--google {
+  background: #131314;
+  border: 1px solid #8e918f;
+  color: #e3e3e3;
+  font-weight: 500;
+  gap: 10px;
+}
+
+:root[data-theme="light"] .oauth-button--google {
+  background: #ffffff;
+  border-color: #747775;
+  color: #1f1f1f;
+}
+
+.oauth-button--google:hover,
+.oauth-button--google:focus-visible {
+  filter: brightness(1.15);
+}
+
+:root[data-theme="light"] .oauth-button--google:hover,
+:root[data-theme="light"] .oauth-button--google:focus-visible {
+  filter: none;
+  background: #f2f2f2;
+}
+
+.oauth-button__logo {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 3px;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.oauth-button__logo img {
+  display: block;
 }
 
 /* ── OAuth consent ──────────────────────────────────────────────────────────
@@ -6673,7 +7328,7 @@ a.invoice-row {
   padding: clamp(22px, 4vw, 34px);
   border-radius: 28px;
   border: 1px solid var(--line);
-  background: rgba(9, 17, 31, 0.94);
+  background: rgb(var(--rgb-panel) / 0.94);
   box-shadow: var(--shadow);
 }
 
@@ -6685,7 +7340,7 @@ a.invoice-row {
   padding: 14px 16px;
   border-radius: 18px;
   border: 1px solid var(--line-strong);
-  background: rgba(87, 209, 201, 0.07);
+  background: rgb(var(--rgb-accent) / 0.07);
 }
 
 .oauth-consent__host > svg {
@@ -6747,11 +7402,11 @@ a.invoice-row {
 
 @keyframes deep-link-flash {
   0%, 45% {
-    box-shadow: 0 0 0 2px rgba(87, 209, 201, 0.65);
-    background-color: rgba(87, 209, 201, 0.09);
+    box-shadow: 0 0 0 2px rgb(var(--rgb-accent) / 0.65);
+    background-color: rgb(var(--rgb-accent) / 0.09);
   }
   100% {
-    box-shadow: 0 0 0 2px rgba(87, 209, 201, 0);
+    box-shadow: 0 0 0 2px rgb(var(--rgb-accent) / 0);
     background-color: transparent;
   }
 }
@@ -6759,7 +7414,7 @@ a.invoice-row {
 @media (prefers-reduced-motion: reduce) {
   .deep-link-target {
     animation: none;
-    box-shadow: 0 0 0 2px rgba(87, 209, 201, 0.55);
+    box-shadow: 0 0 0 2px rgb(var(--rgb-accent) / 0.55);
   }
 }
 
@@ -6779,7 +7434,7 @@ a.invoice-row {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--rgb-overlay) / 0.03);
 }
 
 /* Takes the slack so the quantity pill keeps its size on a narrow panel. */
@@ -7009,7 +7664,7 @@ a.invoice-row {
 .catalogue-search__icon {
   position: absolute;
   left: 15px;
-  color: rgba(156, 173, 207, 0.75);
+  color: rgb(var(--rgb-muted) / 0.75);
   pointer-events: none;
 }
 
@@ -7017,6 +7672,13 @@ a.invoice-row {
   width: 100%;
   padding-left: 42px;
   padding-right: 40px;
+}
+
+/* As on the Ledgers search: WebKit draws its own cancel glyph on
+   type=search, and the shared SearchInput renders its own themed one,
+   so the two would overlap. */
+.catalogue-search__input::-webkit-search-cancel-button {
+  display: none;
 }
 
 .catalogue-search__clear {
@@ -7065,7 +7727,7 @@ a.invoice-row {
 /* An applied filter has to read as *applied* without opening it, since it is
    the reason rows are missing from the list below. */
 .catalogue-filter__select--on {
-  border-color: rgba(87, 209, 201, 0.55);
+  border-color: rgb(var(--rgb-accent) / 0.55);
   color: var(--accent);
 }
 
@@ -7102,7 +7764,7 @@ a.invoice-row {
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 20px;
-  background: rgba(8, 16, 29, 0.5);
+  background: rgb(var(--rgb-panel-well) / 0.5);
 }
 
 /* `separate`, not `collapse`: a collapsed table drops the borders of sticky
@@ -7182,11 +7844,11 @@ a.invoice-row {
 }
 
 .catalogue-row:hover td {
-  background: rgba(148, 184, 255, 0.05);
+  background: rgb(var(--rgb-info) / 0.05);
 }
 
 .catalogue-row:hover td:first-child {
-  background: #10203a;
+  background: var(--bg-pinned-hover-info);
 }
 
 /* An inactive product used to be indistinguishable from an active one — the
@@ -7196,11 +7858,11 @@ a.invoice-row {
 }
 
 .catalogue-row--editing td {
-  background: rgba(87, 209, 201, 0.06);
+  background: rgb(var(--rgb-accent) / 0.06);
 }
 
 .catalogue-row--editing td:first-child {
-  background: #0e2733;
+  background: var(--bg-pinned-editing);
 }
 
 .catalogue-row__actions {
@@ -7300,7 +7962,7 @@ a.invoice-row {
 
 .catalogue-stock:hover {
   border-color: var(--line-strong);
-  background: rgba(148, 184, 255, 0.12);
+  background: rgb(var(--rgb-info) / 0.12);
 }
 
 .catalogue-stock__value {
@@ -7313,8 +7975,8 @@ a.invoice-row {
 }
 
 .catalogue-stock--low {
-  border-color: rgba(246, 214, 123, 0.45);
-  background: rgba(246, 214, 123, 0.12);
+  border-color: rgb(var(--rgb-warning) / 0.45);
+  background: rgb(var(--rgb-warning) / 0.12);
 }
 
 .catalogue-stock--low .catalogue-stock__value {
@@ -7327,7 +7989,7 @@ a.invoice-row {
   padding: 1px 7px;
   border-radius: 999px;
   background: var(--warning);
-  color: #2c2103;
+  color: var(--on-warning);
   font-size: 0.65rem;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -7361,7 +8023,7 @@ a.invoice-row {
 .form-error {
   margin: 0;
   padding: 10px 14px;
-  border: 1px solid rgba(255, 139, 139, 0.35);
+  border: 1px solid rgb(var(--rgb-danger) / 0.35);
   border-radius: 14px;
   background: var(--color-error-bg);
   color: var(--danger);
@@ -7540,7 +8202,7 @@ a.invoice-row {
   display: grid;
   gap: 10px;
   padding: 14px;
-  border: 1px solid rgba(255, 139, 139, 0.32);
+  border: 1px solid rgb(var(--rgb-danger) / 0.32);
   border-radius: 18px;
   background: var(--color-error-bg);
 }
@@ -7607,11 +8269,11 @@ a.invoice-row {
 }
 
 .invoice-number-copy__button:hover {
-  background: var(--surface-hover, rgba(255, 255, 255, 0.08));
+  background: rgb(var(--rgb-overlay) / 0.08);
 }
 
 .invoice-number-copy__button:focus-visible {
-  outline: 2px solid var(--primary, #5585e8);
+  outline: 2px solid var(--outline-info);
   outline-offset: 2px;
 }
 
@@ -7695,7 +8357,7 @@ a.invoice-row {
 }
 
 .copies-stepper__step:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.09);
+  background: rgb(var(--rgb-overlay) / 0.09);
 }
 
 .copies-stepper__step:disabled {
@@ -7749,4 +8411,255 @@ a.invoice-row {
   .preview-toolbar .button:not(.button--icon) {
     flex: 1 1 calc(50% - 8px);
   }
+}
+
+/* --- Appearance settings page --- */
+.appearance-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.appearance-fieldset legend {
+  padding: 0;
+  margin-bottom: 14px;
+}
+
+.appearance-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+}
+
+.appearance-option {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgb(var(--rgb-overlay) / 0.02);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.appearance-option:hover {
+  border-color: var(--line-strong);
+}
+
+.appearance-option--selected {
+  border-color: var(--accent);
+  background: rgb(var(--rgb-accent) / 0.08);
+}
+
+.appearance-option:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.appearance-option__row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.appearance-option__row input {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+
+.appearance-option__label {
+  display: block;
+  color: var(--text);
+}
+
+.appearance-option__hint {
+  display: block;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+/* Fixed colours on purpose: each swatch shows what its theme looks like,
+   whichever theme is active. */
+.appearance-swatch {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  height: 72px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #f4f7fb;
+}
+
+.appearance-swatch--dark {
+  background: #08111f;
+}
+
+.appearance-swatch--system {
+  background: linear-gradient(135deg, #f4f7fb 0 50%, #08111f 50% 100%);
+}
+
+.appearance-swatch__bar {
+  height: 10px;
+  width: 45%;
+  border-radius: 999px;
+  background: #0b645d;
+}
+
+.appearance-swatch--dark .appearance-swatch__bar {
+  background: #57d1c9;
+}
+
+.appearance-swatch__line {
+  height: 6px;
+  width: 80%;
+  border-radius: 999px;
+  background: rgba(15, 29, 48, 0.18);
+}
+
+.appearance-swatch--dark .appearance-swatch__line {
+  background: rgba(230, 238, 251, 0.22);
+}
+
+.appearance-swatch--system .appearance-swatch__line {
+  background: rgba(120, 140, 170, 0.35);
+}
+
+.appearance-swatch__line--short {
+  width: 55%;
+}
+.dues-ageing-note {
+  font-size: 0.78rem;
+  margin-top: 10px;
+}
+/* ── GSTR-3B worksheet ──────────────────────────────────────────────────── */
+
+/* Stays above the figures, loaded or not. Solid enough to read as a statement
+   about the whole page and not as one more note. */
+.worksheet-notice {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgb(var(--rgb-warning) / 0.15);
+  border: 1px solid rgb(var(--rgb-warning) / 0.45);
+  color: var(--warning);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.worksheet-source {
+  display: inline-block;
+  white-space: nowrap;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.worksheet-source--from_books {
+  background: rgb(var(--rgb-accent) / 0.12);
+  color: var(--text-on-accent-tint);
+}
+
+.worksheet-source--not_tracked {
+  background: rgb(var(--rgb-overlay) / 0.06);
+  color: var(--muted);
+}
+
+.worksheet-warnings {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.worksheet-warning {
+  padding: 10px 14px;
+  border-left: 3px solid var(--warning);
+  border-radius: 6px;
+  background: rgb(var(--rgb-warning) / 0.08);
+}
+
+.worksheet-warning--info {
+  border-left-color: var(--muted);
+  background: rgb(var(--rgb-overlay) / 0.03);
+}
+
+.worksheet-warning__title {
+  margin: 0 0 2px;
+  font-weight: 700;
+}
+
+.worksheet-warning__count {
+  font-weight: 400;
+}
+
+.worksheet-warning__message {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.worksheet-warning__documents {
+  margin-top: 6px;
+  font-size: 0.84rem;
+}
+
+.worksheet-warning__documents summary {
+  cursor: pointer;
+}
+
+.worksheet-warning__documents ul {
+  display: grid;
+  gap: 2px;
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.worksheet-warning__detail {
+  color: var(--muted);
+}
+
+.worksheet-limits__title {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+}
+
+.worksheet-limits {
+  margin: 0;
+  padding-left: 18px;
+  list-style: disc;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+/* The feed table has a 760px minimum, so on a phone it scrolls inside its panel
+   and does not push the whole page sideways. */
+.worksheet-table-wrap {
+  overflow-x: auto;
+}
+
+.worksheet-row__table {
+  white-space: nowrap;
+}
+
+.worksheet-row__note {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.worksheet-row--component td {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.worksheet-row--untracked td {
+  color: var(--muted);
+}
+
+.worksheet-row--total td {
+  font-weight: 700;
 }
