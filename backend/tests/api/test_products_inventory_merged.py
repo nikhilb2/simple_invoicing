@@ -170,6 +170,29 @@ class TestProductsWithInventory:
         assert res.status_code == 200
         assert res.json()["status"] == "active"
 
+    @pytest.mark.parametrize("body", [{"unit": "   "}, {"status": "archived"}])
+    def test_update_rejects_blank_unit_and_unknown_status(self, client, body):
+        # Issue #667: the update route must reject a blank unit and an
+        # unknown status with 422 and leave the stored product untouched.
+        res = client.post("/api/products/", json={
+            "sku": "VAL1",
+            "name": "Validate Me",
+            "price": 99.0,
+            "gst_rate": 18.0,
+            "maintain_inventory": True,
+            "initial_quantity": 0,
+            "unit": "Pieces",
+        })
+        assert res.status_code == 200, res.text
+        p = res.json()
+
+        res = client.put(f"/api/products/{p['id']}/with-inventory", json=body)
+        assert res.status_code == 422
+
+        item = client.get("/api/products/with-inventory?search=Validate Me").json()["items"][0]
+        assert item["unit"] == "Pieces"
+        assert item["status"] == "active"
+
     def test_update_nonexistent_product(self, client):
         res = client.put("/api/products/99999/with-inventory", json={"name": "Ghost"})
         assert res.status_code == 404
