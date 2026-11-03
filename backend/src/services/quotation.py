@@ -12,7 +12,7 @@ invoice cancel and restore hooks take it before doing anything else.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -35,11 +35,12 @@ from src.models.quotation import (
     Quotation,
     QuotationItem,
 )
-from src.schemas.invoice import InvoiceCreate, InvoiceItemCreate
+from src.schemas.invoice import InvoiceItemCreate
 from src.schemas.ledger_address import ShippingAddressInline
 from src.schemas.quotation import (
     ConversionWarning,
     QuotationConversionDraft,
+    QuotationConvert,
     QuotationCreate,
     QuotationFields,
     QuotationItemCreate,
@@ -484,6 +485,30 @@ def _require_convertible(db: Session, quotation: Quotation) -> None:
         raise already_converted_error(quotation, existing)
 
 
+def _require_same_version(quotation: Quotation, seen: datetime | None) -> None:
+    """Refuse a draft read before the quotation last changed.
+
+    Without this an old tab closes the edited quotation as converted, with an invoice
+    for the old figures. What the user changes on the invoice itself is not looked at.
+    """
+    if seen is None:
+        return
+    # The column holds naive UTC; a caller may send the same instant with an offset.
+    if seen.tzinfo is not None:
+        seen = seen.astimezone(timezone.utc).replace(tzinfo=None)
+    if seen != quotation.updated_at:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "quotation_changed",
+                "message": (
+                    f"{quotation.quotation_number} was changed after this conversion was opened, "
+                    "so these figures may be out of date. Load the latest version and check it before saving."
+                ),
+            },
+        )
+
+
 def _fmt_rate(value: Decimal | float) -> str:
     return f"{float(value):.2f}".rstrip("0").rstrip(".")
 
@@ -625,7 +650,8 @@ def build_conversion_draft(db: Session, quotation: Quotation, *, company: Compan
     if quotation.reference_notes:
         reference = f"{quotation.reference_notes} ({reference})"
 
-    invoice = InvoiceCreate(
+    invoice = QuotationConvert(
+        quotation_updated_at=quotation.updated_at,
         ledger_id=quotation.ledger_id,
         voucher_type="sales",
         invoice_date=today,
@@ -660,7 +686,7 @@ def build_conversion_draft(db: Session, quotation: Quotation, *, company: Compan
 def convert_quotation(
     db: Session,
     quotation_id: int,
-    payload: InvoiceCreate,
+    payload: QuotationConvert,
     *,
     created_by: int,
     company: CompanyProfile,
@@ -678,6 +704,7 @@ def convert_quotation(
 
     quotation = require_quotation(db, company.id, quotation_id, lock=True)
     _require_convertible(db, quotation)
+    _require_same_version(quotation, payload.quotation_updated_at)
 
     invoice, warnings = create_invoice_record(
         db,

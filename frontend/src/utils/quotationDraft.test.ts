@@ -4,6 +4,7 @@ import {
   composerDocumentName,
   conversionDraftToFormItems,
   conversionLineShortfalls,
+  conversionPayload,
   defaultValidUntil,
   formItemToQuotationLine,
   isQuotationVoucher,
@@ -152,5 +153,16 @@ describe('form items', () => {
     });
     expect(payload).not.toHaveProperty('serial_numbers');
     expect(payload).not.toHaveProperty('gst_rate');
+  });
+
+  it('sends the version of the quotation the draft came from, digit for digit', () => {
+    const edited = { voucher_type: 'sales' as const, ledger_id: 3, items: [] };
+    const stamp = '2026-11-03T10:15:30.123456';
+    const payload = conversionPayload(edited, {
+      invoice: { voucher_type: 'sales', ledger_id: 9, items: [], quotation_updated_at: stamp },
+    });
+    expect(payload.quotation_updated_at).toBe(stamp);
+    // Only the stamp comes from the draft. What was changed on the form stays changed.
+    expect(payload.ledger_id).toBe(3);
   });
 });

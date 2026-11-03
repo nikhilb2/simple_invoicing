@@ -2,6 +2,8 @@ import type {
   InvoiceCreate,
   InvoiceItemInput,
   Quotation,
+  QuotationConversionDraft,
+  QuotationConvert,
   QuotationDocumentType,
   QuotationFields,
 } from '../types/api';
@@ -83,6 +85,15 @@ export function quotationToFormItems(quotation: Pick<Quotation, 'items'>): Invoi
 
 export function conversionDraftToFormItems(invoice: Pick<InvoiceCreate, 'items'>): InvoiceFormItem[] {
   return invoice.items.map(toFormItem);
+}
+
+/**
+ * The form as saved, stamped with the version of the quotation the draft came from.
+ * The stamp is passed along untouched: the server compares it to the microsecond, and
+ * going through a JavaScript Date would drop the last three digits.
+ */
+export function conversionPayload(payload: InvoiceCreate, draft: Pick<QuotationConversionDraft, 'invoice'>): QuotationConvert {
+  return { ...payload, quotation_updated_at: draft.invoice.quotation_updated_at };
 }
 
 /**

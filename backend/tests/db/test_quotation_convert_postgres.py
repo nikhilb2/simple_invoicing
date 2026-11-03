@@ -256,6 +256,8 @@ def test_a_lost_race_on_the_index_is_a_409_not_a_500(app_db, signed_in, monkeypa
     first = iso._ok(client.post(f"/api/quotations/{quote['id']}/convert", json=draft))
 
     monkeypatch.setattr(quotation_service, "_require_convertible", lambda db, quotation: None)
+    # Without the version, or the staleness check would answer before the index does.
+    draft.pop("quotation_updated_at")
     response = client.post(f"/api/quotations/{quote['id']}/convert", json=draft)
     assert response.status_code == 409
     assert response.json()["detail"]["invoice_id"] == first["id"]

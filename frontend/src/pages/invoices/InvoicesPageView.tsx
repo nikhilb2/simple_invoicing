@@ -24,6 +24,7 @@ import {
   composerDocumentName,
   conversionDraftToFormItems,
   conversionLineShortfalls,
+  conversionPayload,
   defaultValidUntil,
   formItemToQuotationLine,
   isQuotationVoucher,
@@ -93,6 +94,8 @@ export default function InvoicesPage() {
   const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
   const [conversion, setConversion] = useState<QuotationConversionDraft | null>(null);
   const [alreadyConverted, setAlreadyConverted] = useState<{ message: string; invoiceNumber: string | null } | null>(null);
+  /** The quotation changed after this conversion opened, and the save was refused. */
+  const [conversionOutOfDate, setConversionOutOfDate] = useState(false);
   const [validUntil, setValidUntil] = useState(() => defaultValidUntil(toIsoDate(new Date())));
   /** Follows the document date until someone sets it by hand. */
   const validUntilEditedRef = useRef(false);
@@ -629,6 +632,7 @@ export default function InvoicesPage() {
     setEditingInvoiceId(null);
     setEditingQuotation(null);
     setConversion(null);
+    setConversionOutOfDate(false);
     setValidUntil(defaultValidUntil(toIsoDate(new Date())));
     validUntilEditedRef.current = false;
     pendingShippingRef.current = null;
@@ -693,6 +697,7 @@ export default function InvoicesPage() {
     setSuccess('');
     setEditingInvoiceId(null);
     setConversion(null);
+    setConversionOutOfDate(false);
     setEditingQuotation(quotation);
     setVoucherType(quotation.document_type);
     setReferenceNotes(quotation.reference_notes ?? '');
@@ -723,6 +728,7 @@ export default function InvoicesPage() {
     setError('');
     setSuccess('');
     setAlreadyConverted(null);
+    setConversionOutOfDate(false);
     setEditingInvoiceId(null);
     setEditingQuotation(null);
     setConversion(draft);
@@ -743,6 +749,15 @@ export default function InvoicesPage() {
     setNextItemId(nextItems.length + 1);
     prefillShipping(invoice.ledger_id, invoice.shipping_address_id ?? null, '', '');
     setSelectedLedgerId(String(invoice.ledger_id));
+  }
+
+  /** Replaces the form with the quotation as it now stands. */
+  async function reloadConversion(quotationId: number) {
+    try {
+      startConverting(await fetchConversionDraft(quotationId));
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to load this document for conversion.'));
+    }
   }
 
   /** Leave a quotation edit or a conversion: the URL is what would bring it back. */
@@ -1009,7 +1024,7 @@ export default function InvoicesPage() {
           setSearchParams((prev) => { prev.delete('edit'); return prev; }, { replace: true });
         }
       } else if (conversion) {
-        const res = await api.post<Invoice>(`/quotations/${conversion.quotation_id}/convert`, payload);
+        const res = await api.post<Invoice>(`/quotations/${conversion.quotation_id}/convert`, conversionPayload(payload, conversion));
         setSuccess(`Invoice ${res.data.invoice_number} created from ${conversion.quotation_number}. Inventory has been reduced.`);
         setPreviewInvoice(res.data);
         clearQuotationParams();
@@ -1043,6 +1058,10 @@ export default function InvoicesPage() {
         clearQuotationParams();
         await queryClient.invalidateQueries({ queryKey: quotationQueryKeys.all });
         return;
+      }
+      if (conversion && getApiErrorCode(err) === 'quotation_changed') {
+        /* Keep the form: what is on it may be worth comparing before it is replaced. */
+        setConversionOutOfDate(true);
       }
       setError(getApiErrorMessage(err, editingInvoiceId ? 'Unable to update invoice' : 'Unable to create invoice'));
     } finally {
@@ -1175,6 +1194,16 @@ export default function InvoicesPage() {
               <p className="muted-text">
                 Review it, scan any serials and save. This takes stock out, uses the next invoice number and closes the {conversion.document_type === 'proforma' ? 'proforma' : 'quotation'}.
               </p>
+              {conversionOutOfDate ? (
+                <div data-testid="quotation-conversion-out-of-date">
+                  <p className="field-warning" data-warning="quotation_changed">
+                    ⚠️ {conversion.quotation_number} was changed after this was opened, so it cannot be saved from here. Loading the latest version replaces what is on this form.
+                  </p>
+                  <button type="button" className="button button--secondary" onClick={() => void reloadConversion(conversion.quotation_id)}>
+                    Load the latest version
+                  </button>
+                </div>
+              ) : null}
               {conversion.warnings.map((warning) => (
                 <p key={`${warning.code}-${warning.message}`} className="field-warning" data-warning={warning.code}>
                   ⚠️ {warning.message}

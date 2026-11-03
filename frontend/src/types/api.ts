@@ -500,11 +500,16 @@ export type PaginatedQuotations = {
 
 export type QuotationConversionWarning = { code: string; message: string };
 
+/** An invoice, and which version of the quotation it was drawn from. */
+export type QuotationConvert = InvoiceCreate & {
+  quotation_updated_at?: string | null;
+};
+
 export type QuotationConversionDraft = {
   quotation_id: number;
   quotation_number: string;
   document_type: QuotationDocumentType;
-  invoice: InvoiceCreate;
+  invoice: QuotationConvert;
   warnings: QuotationConversionWarning[];
 };
 

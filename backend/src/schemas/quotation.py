@@ -190,11 +190,22 @@ class ConversionWarning(BaseModel):
     message: str
 
 
+class QuotationConvert(InvoiceCreate):
+    """What /convert takes: the invoice, and which version of the quotation it came from.
+
+    The draft fills in the version, so posting a draft back is checked for staleness.
+    Left out, nothing is checked: that caller wrote the invoice itself, whatever the
+    quotation says by now, and it still has to be a quotation that can convert.
+    """
+
+    quotation_updated_at: datetime | None = None
+
+
 class QuotationConversionDraft(BaseModel):
     quotation_id: int
     quotation_number: str
     document_type: str
     # Ready to review in the composer, then post back to /convert. Leaves gst_rate
     # and hsn_sac unset, so both come from the product as it stands today.
-    invoice: InvoiceCreate
+    invoice: QuotationConvert
     warnings: list[ConversionWarning] = Field(default_factory=list)

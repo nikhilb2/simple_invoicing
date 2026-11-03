@@ -228,8 +228,9 @@ DESCRIPTION_OVERRIDES: dict[tuple[str, str], str] = {
     ("POST", "/api/quotations/{quotation_id}/convert"): (
         "Creates a real tax invoice and moves stock. Requires serial numbers for serial-tracked products. "
         "Keeps quoted prices when sent and uses current tax rates. Closes the quotation; a second attempt "
-        "returns 409 with the existing invoice. Not reversible except by cancelling the invoice, which "
-        "reopens the quotation."
+        "returns 409 with the existing invoice. Send quotation_updated_at from the draft: if the quotation "
+        "has changed since, this returns 409 quotation_changed, so read a new draft. Left out, it is not "
+        "checked. Not reversible except by cancelling the invoice, which reopens the quotation."
     ),
     ("GET", "/api/quotations/{quotation_id}/pdf"): (
         "Render a quotation or proforma invoice as a PDF. Marked as not a tax invoice."

@@ -774,7 +774,8 @@ def test_declined_must_be_reopened_first(setup):
     assert client.get(f"/api/quotations/{quote['id']}/conversion-draft").status_code == 400
 
     ok(client.post(f"/api/quotations/{quote['id']}/status", json={"status": "open"}))
-    ok(client.post(f"/api/quotations/{quote['id']}/convert", json=draft))
+    # The draft from before those two moves is stale now, so it takes a new one.
+    ok(convert(client, quote["id"]))
 
 
 def test_cancelled_cannot_convert(setup):

@@ -120,6 +120,96 @@ def test_answering_the_quote_is_not_an_edit_so_a_restore_still_closes_it(setup, 
 
 
 # ---------------------------------------------------------------------------
+# Converting from a draft that has gone stale
+# ---------------------------------------------------------------------------
+
+def test_the_draft_says_which_version_of_the_quote_it_was_built_from(setup):
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"])
+    assert _draft(client, quote)["quotation_updated_at"] == quote["updated_at"]
+
+
+def test_a_stale_draft_cannot_close_an_edited_quote(setup):
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"])
+    stale = _draft(client, quote)
+    edited = _edit(client, quote, ledger["id"], product["id"], quantity=25)
+
+    response = client.post(f"/api/quotations/{quote['id']}/convert", json=stale)
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "quotation_changed"
+    assert quote["quotation_number"] in detail["message"]
+    after = ok(client.get(f"/api/quotations/{quote['id']}"))
+    assert after["status"] == "open"
+    assert after["invoices"] == []
+    assert _stock(client, product["id"]) == 100
+
+    # A fresh draft carries the new figures and goes through.
+    invoice = ok(convert(client, quote["id"]))
+    assert invoice["total_amount"] == edited["total_amount"]
+
+
+def test_a_draft_from_before_a_status_change_is_stale_too(setup):
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"])
+    stale = _draft(client, quote)
+    ok(client.post(f"/api/quotations/{quote['id']}/status", json={"status": "accepted"}))
+    response = client.post(f"/api/quotations/{quote['id']}/convert", json=stale)
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "quotation_changed"
+
+
+def test_changing_the_invoice_in_the_composer_is_not_staleness(setup):
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"])
+    payload = _draft(client, quote)
+    payload["items"][0]["unit_price"] = 90
+    invoice = ok(client.post(f"/api/quotations/{quote['id']}/convert", json=payload))
+    assert invoice["items"][0]["unit_price"] == 90
+
+
+def test_a_caller_who_leaves_the_version_out_is_not_checked(setup):
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"])
+    payload = _draft(client, quote)
+    del payload["quotation_updated_at"]
+    _edit(client, quote, ledger["id"], product["id"], quantity=3)
+    ok(client.post(f"/api/quotations/{quote['id']}/convert", json=payload))
+
+
+@pytest.mark.parametrize("suffix", ["Z", "+00:00"])
+def test_the_version_can_be_sent_with_a_utc_marker(setup, suffix):
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"])
+    payload = _draft(client, quote)
+    payload["quotation_updated_at"] += suffix
+    ok(client.post(f"/api/quotations/{quote['id']}/convert", json=payload))
+
+
+def test_a_version_in_another_timezone_is_compared_as_the_same_instant(setup):
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"])
+    payload = _draft(client, quote)
+    seen = datetime.fromisoformat(payload["quotation_updated_at"])
+    payload["quotation_updated_at"] = (seen + timedelta(hours=5, minutes=30)).isoformat() + "+05:30"
+    ok(client.post(f"/api/quotations/{quote['id']}/convert", json=payload))
+
+
+def test_a_second_conversion_with_an_old_draft_still_names_the_invoice(setup):
+    """"Already converted" says more than "changed", so it is checked first."""
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"])
+    stale = _draft(client, quote)
+    invoice = ok(client.post(f"/api/quotations/{quote['id']}/convert", json=stale))
+
+    response = client.post(f"/api/quotations/{quote['id']}/convert", json=stale)
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "quotation_already_converted"
+    assert response.json()["detail"]["invoice_id"] == invoice["id"]
+
+
+# ---------------------------------------------------------------------------
 # The date in India, not on the server
 # ---------------------------------------------------------------------------
 

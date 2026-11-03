@@ -26,12 +26,13 @@ from src.models.quotation import (
     Quotation,
 )
 from src.models.user import User
-from src.schemas.invoice import InvoiceCreate, InvoiceOut
+from src.schemas.invoice import InvoiceOut
 from src.schemas.quotation import (
     DocumentType,
     LinkedInvoiceOut,
     PaginatedQuotationOut,
     QuotationConversionDraft,
+    QuotationConvert,
     QuotationCreate,
     QuotationOut,
     QuotationStatusUpdate,
@@ -339,7 +340,7 @@ def conversion_draft(
 @router.post("/{quotation_id}/convert", response_model=InvoiceOut)
 def convert(
     quotation_id: int,
-    payload: InvoiceCreate,
+    payload: QuotationConvert,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
