@@ -266,7 +266,7 @@ export default function DashboardPage() {
                 <div className="table-row skeleton" role="status" aria-label="Loading" style={{ height: '76px', borderColor: 'transparent' }}></div>
               </>
             ) : null}
-            {!loading && lowStock.length === 0 ? (
+            {!loading && !error && lowStock.length === 0 ? (
               <EmptyState
                 message="No inventory rows yet. Add products to track their stock."
                 action={<Link to="/products" className="button button--secondary button--small">Go to Products</Link>}
@@ -320,7 +320,7 @@ export default function DashboardPage() {
                 <div className="invoice-row skeleton" role="status" aria-label="Loading" style={{ height: '88px', borderColor: 'transparent' }}></div>
               </>
             ) : null}
-            {!loading && recentInvoices.length === 0 ? (
+            {!loading && !error && recentInvoices.length === 0 ? (
               <EmptyState
                 message="No invoices yet. Create your first invoice to get started."
                 action={<Link to="/invoices" className="button button--primary button--small">Create Invoice</Link>}
