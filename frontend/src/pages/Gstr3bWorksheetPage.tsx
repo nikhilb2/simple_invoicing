@@ -259,6 +259,9 @@ export default function Gstr3bWorksheetPage() {
     queryKey: gstr3bQueryKeys.worksheet(period.fromDate, period.toDate),
     queryFn: () => fetchWorksheet(period.fromDate, period.toDate),
     enabled: check.ok,
+    // Figures change when a document is fixed on another page, and this page
+    // has no mutation to invalidate from. Always refetch on mount.
+    staleTime: 0,
     // No keepPreviousData: last period's figures under this period's heading is
     // the one thing a return worksheet must never show.
   });
@@ -376,6 +379,10 @@ export default function Gstr3bWorksheetPage() {
       ) : null}
 
       {check.ok && query.isPending ? <div className="empty-state">Loading worksheet…</div> : null}
+
+      {worksheet && query.isFetching ? (
+        <p className="section-copy" role="status" data-testid="gstr3b-refreshing">Refreshing figures…</p>
+      ) : null}
 
       {worksheet ? (
         <>

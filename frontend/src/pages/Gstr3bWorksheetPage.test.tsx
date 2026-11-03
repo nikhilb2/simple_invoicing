@@ -187,7 +187,7 @@ describe('Gstr3bWorksheetView', () => {
   });
 
   it('links a warning to its invoice the way GSTR-1 does', () => {
-    expect(renderView()).toContain('href="/invoices-view?search=INV%2F26%20%237"');
+    expect(renderView()).toContain('href="/invoices-view?invoice_id=7"');
   });
 
   it('links a warning about a credit note to that note', () => {
@@ -240,7 +240,7 @@ describe('Gstr3bWorksheetView', () => {
 });
 
 describe('documentLink', () => {
-  it('escapes an invoice number for the query string', () => {
-    expect(documentLink({ kind: 'invoice', id: 1, number: 'A&B', detail: null })).toBe('/invoices-view?search=A%26B');
+  it('opens an invoice by id, which the invoices page fetches even if cancelled or in another year', () => {
+    expect(documentLink({ kind: 'invoice', id: 1, number: 'A&B', detail: null })).toBe('/invoices-view?invoice_id=1');
   });
 });

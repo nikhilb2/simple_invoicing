@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import api from '../api/client';
 import { identifyUser, resetAnalyticsUser } from '../lib/analytics';
 import { postToNative } from '../lib/nativeBridge';
+import { queryClient } from '../lib/queryClient';
 import type { AuthToken, UserProfile } from '../types/api';
 
 function decodeEmailFromToken(token: string | null) {
@@ -113,6 +114,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // The mobile app holds its own copy of the tokens; this is what sends it
     // back to its native login screen instead of reloading us signed in.
     postToNative({ type: 'logout' });
+    // Cached figures belong to the user who fetched them. The tab is not reloaded,
+    // so without this the next login would show them until they went stale.
+    queryClient.clear();
     set({ token: null, userEmail: null, userRole: null, companyRole: null, canManagePlatform: false });
   },
 }));

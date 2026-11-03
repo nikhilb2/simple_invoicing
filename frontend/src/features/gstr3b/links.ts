@@ -4,5 +4,5 @@ import type { Gstr3bWarningDocument } from './types';
 export function documentLink(document: Gstr3bWarningDocument): string {
   return document.kind === 'credit_note'
     ? `/credit-notes?cn_id=${document.id}`
-    : `/invoices-view?search=${encodeURIComponent(document.number)}`;
+    : `/invoices-view?invoice_id=${document.id}`;
 }
