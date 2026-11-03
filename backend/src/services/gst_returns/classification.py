@@ -70,6 +70,8 @@ class InvoiceDoc:
     invoice_discount: Decimal = ZERO
     # When the invoice was stored. Naive, and UTC unless the user chose a date.
     invoice_date: datetime | None = None
+    # Null on sales from before the column, whose tax the two GSTINs decided.
+    place_of_supply: str | None = None
 
 
 @dataclass(frozen=True)
@@ -97,8 +99,6 @@ class NoteDoc:
     igst_total: Decimal
     lines: tuple[NoteLine, ...]
     supplier_note_date: date | None = None
-    # Stored in UTC by the app.
-    created_at: datetime | None = None
 
 
 def classify_invoice(voucher_type: str | None, status: str | None) -> Side:

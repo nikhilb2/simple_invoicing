@@ -22,7 +22,7 @@ from src.core.config import settings
 from src.core.validation import GSTIN_ALPHABET, is_valid_gstin_checksum
 from src.db.session import get_db
 from src.models.company import CompanyProfile
-from src.models.credit_note import CreditNote
+from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.user import User, UserRole
 
@@ -149,9 +149,9 @@ def _note(client, db, ledger: int, invoice: dict, *, quantity=1, direction="outw
         payload["supplier_credit_note_number"] = f"SUP-CN-{invoice['id']}-{number_tag}"
         payload["supplier_credit_note_date"] = when.date().isoformat()
     note = _ok(client.post("/api/credit-notes/", headers=headers, json=payload), 201)
-    # A note is dated by the clock when it is created; set it so the test is
-    # about the rule and not about which month it runs in.
-    db.query(CreditNote).filter(CreditNote.id == note["id"]).update({"created_at": when})
+    # A note is dated today unless told otherwise; set it so the test is about
+    # the rule and not about which month it runs in.
+    db.query(CreditNote).filter(CreditNote.id == note["id"]).update({"created_at": when, "credit_note_date": when})
     db.commit()
     return note
 
@@ -304,10 +304,21 @@ def test_tax_inclusive_invoice_reports_the_ex_gst_value(client, books):
     assert (row["taxable_value"], row["cgst"], row["sgst"]) == (200.0, 18.0, 18.0)
 
 
-def test_return_on_a_tax_inclusive_invoice_is_flagged(client, db_session, books):
-    # Issue #572: the note stores the inclusive price as if it were taxable.
+def test_return_on_a_tax_inclusive_invoice_is_not_flagged(client, db_session, books):
+    sale = _invoice(client, books.intra, [_line(books.at18, 2, 118)], tax_inclusive=True)
+    _note(client, db_session, books.intra, sale)
+
+    sheet = _sheet(client)
+    assert _warning(sheet, "note_exceeds_source") is None
+    assert _row(sheet, "3.1a")["taxable_value"] == pytest.approx(200 - 100)
+
+
+def test_older_return_on_a_tax_inclusive_invoice_is_flagged(client, db_session, books):
+    # Issue #572: notes from before the fix stored the inclusive price as if it were taxable.
     sale = _invoice(client, books.intra, [_line(books.at18, 2, 118)], tax_inclusive=True)
     note = _note(client, db_session, books.intra, sale)
+    db_session.query(CreditNoteItem).filter(CreditNoteItem.credit_note_id == note["id"]).update({"taxable_amount": 118})
+    db_session.commit()
 
     sheet = _sheet(client)
     warning = _warning(sheet, "note_exceeds_source")
@@ -389,6 +400,12 @@ def test_warnings_identify_the_documents_to_open(client, db_session, books):
     db_session.commit()
 
     sheet = _sheet(client)
+    assert _warning(sheet, "unregistered_buyer") is None
+    # A sale from before place of supply was recorded.
+    db_session.query(Invoice).filter(Invoice.id == walk_in["id"]).update({"place_of_supply": None})
+    db_session.commit()
+
+    sheet = _sheet(client)
     buyer = _warning(sheet, "unregistered_buyer")
     assert buyer["documents"][0]["id"] == walk_in["id"]
     assert buyer["documents"][0]["number"] == walk_in["invoice_number"]
@@ -462,7 +479,7 @@ def reconciling_books(client, db_session, books):
     _invoice(client, books.intra, [_line(books.at18, 1, 100, discount_type="percentage", discount_value=10)])
     _invoice(client, books.inter, [_line(books.at18, 3, 100)], discount_type="net", discount_value=50)
     _invoice(client, books.intra, [_line(books.at18, 1, 99.5)], apply_round_off=True)
-    # A return on a tax-inclusive invoice: wrong in the same way on both sides.
+    # A return on a tax-inclusive invoice.
     inclusive = _invoice(client, books.intra, [_line(books.at18, 2, 118)], tax_inclusive=True)
     _note(client, db_session, books.intra, inclusive)
     # Notes in every shape the export has a section for.
@@ -524,6 +541,45 @@ def test_output_tax_in_6_1_matches_the_tax_ledger(client, reconciling_books):
         assert line["output_tax"] == pytest.approx(ledger[head]["output_tax"], abs=0.01)
         assert line["input_credit"] == pytest.approx(ledger[head]["input_credit"], abs=0.01)
         assert line["payable"] == pytest.approx(ledger[head]["payable"], abs=0.01)
+
+
+# --- which period a note belongs to -------------------------------------------
+
+def test_a_backdated_note_counts_in_the_month_of_its_credit_note_date(client, books):
+    sale = _invoice(client, books.intra, [_line(books.at18, 10, 100)])
+    item = {"invoice_id": sale["id"], "invoice_item_id": sale["items"][0]["id"], "quantity": 5}
+    # Entered today through the API, dated in June.
+    _ok(client.post("/api/credit-notes/", json={
+        "ledger_id": books.intra,
+        "invoice_ids": [sale["id"]],
+        "credit_note_type": "return",
+        "direction": "outward",
+        "credit_note_date": "2026-06-20",
+        "items": [item],
+    }), 201)
+
+    sheet = _sheet(client)
+    assert _row(sheet, "3.1a")["taxable_value"] == 500.0
+    assert _head(sheet, "cgst")["output_tax"] == 45.0
+    assert _head(sheet, "cgst")["output_tax"] == _ledger_head(client, "cgst")["output_tax"]
+    export = _ok(client.get("/api/ledgers/tax-ledger/gstr1/export-json", params=PERIOD))
+    assert Decimal(str(_row(sheet, "3.1a")["taxable_value"])) == _gstr1_totals(export)["taxed"]["txval"]
+
+
+def test_a_note_written_just_after_midnight_ist_counts_in_the_new_month(client, db_session, books):
+    sale = _invoice(client, books.intra, [_line(books.at18, 10, 100)])
+    note = _note(client, db_session, books.intra, sale)
+    # 00:30 IST on 1 July is still 30 June in the UTC created_at.
+    db_session.query(CreditNote).filter(CreditNote.id == note["id"]).update(
+        {"created_at": datetime(2026, 6, 30, 19, 0), "credit_note_date": datetime(2026, 7, 1)}
+    )
+    db_session.commit()
+
+    june = _sheet(client)
+    assert _row(june, "3.1a")["taxable_value"] == 1000.0
+    assert _warning(june, "utc_period_edge") is None
+    july = _sheet(client, from_date="2026-07-01", to_date="2026-07-31")
+    assert _row(july, "3.1a")["taxable_value"] == -100.0
 
 
 # --- notes on the other side from their direction -----------------------------
@@ -636,20 +692,18 @@ def test_an_inward_note_on_the_first_or_last_moment_of_the_period(client, db_ses
     assert _row(_sheet(client), "4a5")["cgst"] == (81.0 if counted else 90.0)
 
 
-def test_documents_stored_late_on_the_last_day_are_named_but_still_counted(client, db_session, books):
+def test_invoices_stored_late_on_the_last_day_are_named_but_still_counted(client, db_session, books):
     late = _invoice(client, books.intra, [_line(books.at18, 1, 100)])
     _stamp(db_session, late, datetime(2026, 6, 30, 19, 0))
     early = _invoice(client, books.intra, [_line(books.at18, 1, 100)])
     _stamp(db_session, early, datetime(2026, 6, 30, 18, 0))
     sale = _invoice(client, books.intra, [_line(books.at18, 10, 100)])
-    note = _note(client, db_session, books.intra, sale, when=datetime(2026, 6, 30, 23, 0))
+    _note(client, db_session, books.intra, sale, when=datetime(2026, 6, 30, 23, 0))
 
     sheet = _sheet(client)
     assert _row(sheet, "3.1a")["taxable_value"] == 100.0 + 100.0 + 1000.0 - 100.0
     warning = _warning(sheet, "utc_period_edge")
-    assert sorted((d["kind"], d["id"]) for d in warning["documents"]) == sorted(
-        [("invoice", late["id"]), ("credit_note", note["id"])]
-    )
+    assert [(d["kind"], d["id"]) for d in warning["documents"]] == [("invoice", late["id"])]
     assert "UTC" in warning["documents"][0]["detail"]
 
 
@@ -749,7 +803,7 @@ def test_csv_says_what_it_is_and_has_one_row_per_line(client, books):
 
 def test_csv_neutralises_formulas_in_free_text(client, db_session, books):
     invoice = _invoice(client, books.walk_in, [_line(books.at18, 1, 100)])
-    db_session.query(Invoice).filter(Invoice.id == invoice["id"]).update({"invoice_number": "=HYPERLINK(1)"})
+    db_session.query(Invoice).filter(Invoice.id == invoice["id"]).update({"invoice_number": "=HYPERLINK(1)", "place_of_supply": None})
     db_session.commit()
     text = client.get(EXPORT_CSV, params=PERIOD).content.decode("utf-8-sig")
     assert ",'=HYPERLINK(1)" in text
@@ -829,7 +883,7 @@ def test_viewing_captures_no_amounts_or_names(client, books, events):
     [(_, distinct_id, properties)] = _named(events, "gstr3b_worksheet_viewed")
     assert distinct_id == "owner@example.com"
     assert properties["period_type"] == "month"
-    assert properties["warning_count"] == 1
+    assert properties["warning_count"] == 0
     assert properties["has_net_payable"] is True
 
     flat = repr(properties)

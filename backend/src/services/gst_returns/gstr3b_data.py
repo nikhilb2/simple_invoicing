@@ -4,7 +4,7 @@ The only part of the worksheet that touches the database. Everything is scoped
 to one company, including the source invoices looked up for a credit note.
 
 The period filters repeat what the GSTR-1 routes in ``api/routes/ledgers.py`` do
-(``_gstr1_invoice_query`` and the ``created_at`` filter on notes), and a route
+(``_gstr1_invoice_query`` and the ``credit_note_date`` filter on notes), and a route
 module is not something to import from. They should become one helper when the
 GSTR-1 code moves out of that file.
 """
@@ -37,6 +37,7 @@ def _invoice_doc(invoice: Invoice) -> InvoiceDoc:
         voucher_type=invoice.voucher_type,
         status=invoice.status,
         ledger_gst=invoice.ledger_gst,
+        place_of_supply=invoice.place_of_supply,
         invoice_date=invoice.invoice_date,
         invoice_discount=invoice_discount_amount(invoice) if has_discount else to_decimal(0),
         lines=tuple(
@@ -75,11 +76,11 @@ def load_notes(db: Session, period: ReturnPeriod, company_id: int | None) -> lis
         .options(selectinload(CreditNote.items))
         .filter(
             CreditNote.status == "active",
-            CreditNote.created_at >= datetime.combine(period.from_date, time.min),
-            CreditNote.created_at <= datetime.combine(period.to_date, time.max),
+            CreditNote.credit_note_date >= datetime.combine(period.from_date, time.min),
+            CreditNote.credit_note_date <= datetime.combine(period.to_date, time.max),
             company_scope(CreditNote.company_id, company_id),
         )
-        .order_by(CreditNote.created_at.asc(), CreditNote.id.asc())
+        .order_by(CreditNote.credit_note_date.asc(), CreditNote.id.asc())
         .all()
     )
 
@@ -144,7 +145,6 @@ def load_notes(db: Session, period: ReturnPeriod, company_id: int | None) -> lis
                 note_type=note.credit_note_type,
                 igst_total=to_decimal(note.igst_amount),
                 supplier_note_date=note.supplier_credit_note_date,
-                created_at=note.created_at,
                 lines=tuple(lines),
             )
         )

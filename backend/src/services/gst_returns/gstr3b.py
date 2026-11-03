@@ -61,8 +61,8 @@ TABLE_5_1_NOTE = (
     "your filing date and the due date. It is not estimated here."
 )
 TABLE_3_2_NOTE = (
-    "Stays empty until place of supply is recorded on invoices. Inter-state supplies to "
-    "unregistered persons, composition dealers and UIN holders cannot be identified today."
+    "Not filled in yet. New invoices record place of supply, but this worksheet does not split "
+    "inter-state sales out of 3.1(a). Composition dealers and UIN holders cannot be identified today."
 )
 
 KNOWN_LIMITS: tuple[str, ...] = (
@@ -71,12 +71,12 @@ KNOWN_LIMITS: tuple[str, ...] = (
     "Table 4 on the portal follows GSTR-2B: what your suppliers filed, in the period they filed it. "
     "These figures follow your purchase entries, by the date you booked them.",
     "Reverse charge, imports, ISD credit, exports, SEZ supplies and cess are not recorded.",
-    "Place of supply is not recorded, so a sale to an unregistered buyer is always taxed as "
+    "Place of supply is not recorded on older sales, so one to an unregistered buyer was taxed as "
     "intra-state. If the buyer was in another state, the invoice itself has the wrong tax heads.",
-    "Credit notes are placed in a period by when they were created in the app, in UTC, not by a "
-    "date you chose. A note created between 00:00 and 05:30 IST can land on the previous day (#607). "
-    "Invoices saved without a date, and duplicated invoices, are also stored in UTC and can land "
-    "the same way. Documents in that window on the last day of the period are named in a warning.",
+    "Credit notes are placed in a period by their credit note date. Invoices saved without a date, "
+    "and duplicated invoices, are stored in UTC, so one saved between 00:00 and 05:30 IST can land "
+    "on the previous day (#607). Invoices in that window on the last day of the period are named "
+    "in a warning.",
     "Table 6.1 uses only this period's figures. It leaves out credit already in your electronic "
     "credit ledger, negative liability carried in from earlier periods, interest and late fee.",
 )
@@ -309,9 +309,9 @@ _WARNINGS: dict[str, _WarningSpec] = {
     "note_exceeds_source": _WarningSpec(
         "warning",
         "Credit notes larger than the invoice line they reverse",
-        "The stored value is more than the share of the invoice line being reversed. Known causes: "
-        "a return on a tax-inclusive invoice or a discounted line (#572), and a discount note "
-        "bigger than its line (#603). The worksheet uses the stored value, as the GSTR-1 export "
+        "The stored value is more than the share of the invoice line being reversed. Known causes, "
+        "on notes from before they were fixed: a return on a tax-inclusive invoice or a discounted "
+        "line (#572), and a discount note bigger than its line (#603). The worksheet uses the stored value, as the GSTR-1 export "
         "does, so the reduction may be overstated. Check these notes.",
     ),
     "unregistered_supplier_gst": _WarningSpec(
@@ -337,8 +337,8 @@ _WARNINGS: dict[str, _WarningSpec] = {
     "unregistered_buyer": _WarningSpec(
         "warning",
         "Sales to unregistered buyers who may be inter-state",
-        "Place of supply is not recorded, so these were taxed as intra-state (CGST and SGST). A "
-        "buyer in another state should have been charged IGST and belongs in Table 3.2.",
+        "Place of supply is not recorded on these sales, so they were taxed as intra-state (CGST and "
+        "SGST). A buyer in another state should have been charged IGST and belongs in Table 3.2.",
     ),
     "zero_rate_sales": _WarningSpec(
         "warning",
@@ -354,7 +354,7 @@ _WARNINGS: dict[str, _WarningSpec] = {
     ),
     "utc_period_edge": _WarningSpec(
         "warning",
-        "Documents near the end of the period, in UTC",
+        "Invoices near the end of the period, in UTC",
         "These were stored in the last 5.5 hours of the last day of the period, in UTC. If they "
         "were entered between 00:00 and 05:30 IST on the next day, they belong to the next period "
         "on the portal (#607). They are counted here to agree with the GSTR-1 export.",
@@ -368,7 +368,7 @@ _WARNINGS: dict[str, _WarningSpec] = {
     "inward_note_date_outside_period": _WarningSpec(
         "info",
         "Supplier credit notes dated outside this period",
-        "Each is counted here because of when it was recorded, but the supplier's own date is in "
+        "Each is counted here by its credit note date, but the supplier's own date is in "
         "another period. GSTR-2B will follow when the supplier filed it.",
     ),
     "unknown_voucher_type": _WarningSpec(
@@ -439,7 +439,7 @@ _IST_NEXT_DAY_FROM = time(18, 30)
 
 
 def _utc_edge_detail(stamp: datetime | None, period: ReturnPeriod) -> str | None:
-    """Why a document stored late on the period's last day may belong to the next one."""
+    """Why an invoice stored late on the period's last day may belong to the next one."""
     if stamp is None or stamp.date() != period.to_date or stamp.time() < _IST_NEXT_DAY_FROM:
         return None
     return f"Stored {stamp:%d %b %Y %H:%M} UTC, which is the next day in IST"
@@ -500,7 +500,8 @@ def _read_invoices(
             )
         if is_unregistered(invoice.ledger_gst):
             if side is Side.OUTWARD:
-                warnings.add("unregistered_buyer", **doc)
+                if not invoice.place_of_supply:
+                    warnings.add("unregistered_buyer", **doc)
             elif invoice_tax > 0:
                 warnings.add(
                     "unregistered_supplier_gst",
@@ -569,9 +570,6 @@ def _read_notes(notes: list[NoteDoc], period: ReturnPeriod, tally: _Tally, warni
 
         if exceeds_source:
             warnings.add("note_exceeds_source", **doc)
-        edge = _utc_edge_detail(note.created_at, period)
-        if edge:
-            warnings.add("utc_period_edge", **doc, detail=edge)
         if (
             note_side is Side.INWARD
             and note.supplier_note_date is not None

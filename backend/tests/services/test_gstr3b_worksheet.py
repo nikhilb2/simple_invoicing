@@ -43,7 +43,7 @@ def _line(taxable, rate=18, *, inter=False, tax=None) -> InvoiceLine:
     return InvoiceLine(gst_rate=rate, taxable=taxable, tax=tax, cgst=cgst, sgst=sgst, igst=igst)
 
 
-def _invoice(*lines, voucher="sales", status="active", gst=VALID_GSTIN, number="INV-1", doc_id=1, discount=0, when=None) -> InvoiceDoc:
+def _invoice(*lines, voucher="sales", status="active", gst=VALID_GSTIN, number="INV-1", doc_id=1, discount=0, when=None, place_of_supply=None) -> InvoiceDoc:
     return InvoiceDoc(
         id=doc_id,
         number=number,
@@ -53,10 +53,11 @@ def _invoice(*lines, voucher="sales", status="active", gst=VALID_GSTIN, number="
         lines=tuple(lines),
         invoice_discount=_d(discount),
         invoice_date=when,
+        place_of_supply=place_of_supply,
     )
 
 
-def _note(*lines, direction="outward", status="active", igst=0, note_type="return", number="CN-1", doc_id=10, supplier_date=None, created_at=None) -> NoteDoc:
+def _note(*lines, direction="outward", status="active", igst=0, note_type="return", number="CN-1", doc_id=10, supplier_date=None) -> NoteDoc:
     return NoteDoc(
         id=doc_id,
         number=number,
@@ -66,7 +67,6 @@ def _note(*lines, direction="outward", status="active", igst=0, note_type="retur
         igst_total=_d(igst),
         lines=tuple(lines),
         supplier_note_date=supplier_date,
-        created_at=created_at,
     )
 
 
@@ -282,12 +282,12 @@ def test_note_on_the_same_head_as_its_invoice_line_is_not_named():
         (None, False),
     ],
 )
-def test_documents_in_the_last_ist_morning_window_are_named(stamp, named):
-    sheet = _sheet([_invoice(_line(100), when=stamp)], [_note(_note_line(10), created_at=stamp, doc_id=11)])
+def test_invoices_in_the_last_ist_morning_window_are_named(stamp, named):
+    sheet = _sheet([_invoice(_line(100), when=stamp)], [_note(_note_line(10), doc_id=11)])
     warning = _warning(sheet, "utc_period_edge")
     assert (warning is not None) is named
     if named:
-        assert [(d.kind, d.number) for d in warning.documents] == [("invoice", "INV-1"), ("credit_note", "CN-1")]
+        assert [(d.kind, d.number) for d in warning.documents] == [("invoice", "INV-1")]
         assert "UTC" in warning.documents[0].detail
         # The figures are not moved: the worksheet keeps agreeing with GSTR-1.
         assert _row(sheet, "3.1a").taxable_value == _d("90.00")
@@ -555,6 +555,11 @@ def test_unregistered_buyer_is_reported_as_possibly_inter_state():
     assert warning.documents[0].kind == "invoice"
     # Not the supplier warning: the two sides are told apart.
     assert _warning(sheet, "unregistered_supplier_gst") is None
+
+
+def test_unregistered_buyer_with_a_place_of_supply_is_not_reported():
+    sheet = _sheet([_invoice(_line(100), gst=None, place_of_supply="27")])
+    assert _warning(sheet, "unregistered_buyer") is None
 
 
 def test_registered_documents_raise_no_gstin_warnings():
