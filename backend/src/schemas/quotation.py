@@ -13,6 +13,14 @@ StatusFilter = Literal["open", "accepted", "declined", "converted", "cancelled",
 # Converted and cancelled are reached through their own actions, not this route.
 SettableStatus = Literal["open", "accepted", "declined"]
 
+# Exclusive limits from the columns: money is NUMERIC(10, 2), quantity NUMERIC(12, 3).
+# Computed totals have to fit the same money columns; the service checks those.
+MONEY_LIMIT = 100_000_000
+QUANTITY_LIMIT = 1_000_000_000
+# Nobody means a date outside this, and a far one overflows date arithmetic.
+EARLIEST_DOCUMENT_DATE = date(2000, 1, 1)
+LATEST_DOCUMENT_DATE = date(2099, 12, 31)
+
 
 def _check_places(value: float | None, places: int) -> float | None:
     """Refuse a figure more precise than its column.
@@ -30,11 +38,11 @@ class QuotationItemCreate(BaseModel):
     and no gst_rate: serials are picked at conversion, and tax follows the product."""
 
     product_id: int
-    quantity: float = Field(allow_inf_nan=False)
-    unit_price: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    quantity: float = Field(lt=QUANTITY_LIMIT, allow_inf_nan=False)
+    unit_price: float | None = Field(default=None, ge=0, lt=MONEY_LIMIT, allow_inf_nan=False)
     description: str | None = None
     discount_type: Literal["percentage", "net"] | None = None
-    discount_value: float | None = Field(default=None, allow_inf_nan=False)
+    discount_value: float | None = Field(default=None, lt=MONEY_LIMIT, allow_inf_nan=False)
 
     @field_validator("discount_value", mode="after")
     @classmethod
@@ -54,15 +62,15 @@ class QuotationItemCreate(BaseModel):
 
 class QuotationFields(BaseModel):
     ledger_id: int
-    quotation_date: date | None = None
+    quotation_date: date | None = Field(default=None, ge=EARLIEST_DOCUMENT_DATE, le=LATEST_DOCUMENT_DATE)
     # Left out: 30 days from the quotation date on create, unchanged on edit.
     # Sent as null: never expires.
-    valid_until: date | None = None
+    valid_until: date | None = Field(default=None, ge=EARLIEST_DOCUMENT_DATE, le=LATEST_DOCUMENT_DATE)
     reference_notes: str | None = None
     tax_inclusive: bool = False
     apply_round_off: bool = False
     discount_type: Literal["percentage", "net"] | None = None
-    discount_value: float | None = Field(default=None, allow_inf_nan=False)
+    discount_value: float | None = Field(default=None, lt=MONEY_LIMIT, allow_inf_nan=False)
     shipping_address_same_as_billing: bool = True
     shipping_address_id: int | None = None
     new_shipping_address: ShippingAddressInline | None = None

@@ -38,6 +38,8 @@ from src.models.quotation import (
 from src.schemas.invoice import InvoiceItemCreate
 from src.schemas.ledger_address import ShippingAddressInline
 from src.schemas.quotation import (
+    LATEST_DOCUMENT_DATE,
+    MONEY_LIMIT,
     ConversionWarning,
     QuotationConversionDraft,
     QuotationConvert,
@@ -244,6 +246,12 @@ def _apply_payload(
     taxable_total = Decimal("0")
     items: list[QuotationItem] = []
     for result in processor.calculate_totals(validated, payload.tax_inclusive):
+        _require_fits(
+            f"The total for {result['product'].name}",
+            result["taxable_amount"],
+            result["tax_amount"],
+            result["line_total"],
+        )
         taxable_total += result["taxable_amount"]
         schema = result["item_schema"]
         items.append(
@@ -276,6 +284,21 @@ def _apply_payload(
         payload.discount_type,
         payload.discount_value,
     )
+    _require_fits(
+        "The total of this document",
+        taxable_total,
+        tax_total,
+        Decimal(str(quotation.total_amount)),
+    )
+
+
+def _require_fits(subject: str, *amounts: Decimal) -> None:
+    """Refuse a figure its NUMERIC(10, 2) column cannot hold, rather than fail on saving."""
+    if any(abs(amount) >= MONEY_LIMIT for amount in amounts):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{subject} is too large. Amounts must stay below {MONEY_LIMIT:,}.",
+        )
 
 
 def create_quotation(db: Session, payload: QuotationCreate, *, created_by: int, company: CompanyProfile) -> Quotation:
@@ -283,7 +306,7 @@ def create_quotation(db: Session, payload: QuotationCreate, *, created_by: int, 
     quotation_date = payload.quotation_date or india_today()
     valid_until = payload.valid_until
     if "valid_until" not in payload.model_fields_set:
-        valid_until = quotation_date + timedelta(days=DEFAULT_VALIDITY_DAYS)
+        valid_until = min(quotation_date + timedelta(days=DEFAULT_VALIDITY_DAYS), LATEST_DOCUMENT_DATE)
     elif valid_until is not None and valid_until < quotation_date:
         raise HTTPException(status_code=400, detail="valid_until must be on or after quotation_date")
 
@@ -359,7 +382,9 @@ def duplicate_quotation(db: Session, original: Quotation, *, created_by: int, co
     today = india_today()
     valid_until = None
     if original.valid_until is not None:
-        valid_until = today + (original.valid_until - original.quotation_date)
+        # The span moves with the date, so a very long one would land past the limit.
+        span = original.valid_until - original.quotation_date
+        valid_until = today + min(span, LATEST_DOCUMENT_DATE - today)
 
     # A snapshot whose saved row has gone is still where the goods were going.
     shipping_id = original.shipping_address_id
