@@ -14,6 +14,8 @@ from src.schemas.auth import (
 def _build(model, password):
     if model is ChangePasswordRequest:
         return model(current_password="OldPass@123", new_password=password)
+    if model is VerifyEmailRequest:
+        return model(token="t", full_name="Owner", new_password=password)
     return model(token="t", new_password=password)
 
 

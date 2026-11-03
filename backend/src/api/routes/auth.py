@@ -280,9 +280,8 @@ def register(
 ):
     """Create an unverified, password-less account and mail the verification link.
 
-    The owner chooses the password on the page that link opens, so nobody who merely
-    typed this address can ever hold a working password for it. Whoever registers an
-    address first, or last, gains nothing.
+    The owner chooses their name and password on the page that link opens, so
+    registering an address cannot decide its verified profile or password.
 
     The answer is the same 202 whether or not the address already has an account, and
     the mail goes out after the response, so this is no oracle for who is registered.
@@ -297,12 +296,10 @@ def register(
     existing = find_user_by_email(db, email)
     if existing is not None:
         # A verified account is left exactly as it is. An unverified one is still only
-        # a claim, so it just gets a fresh link, sent to the address on the account and
-        # never to the one just typed. Earlier links keep working: a stranger
+        # a claim, so its profile stays as it is and it gets a fresh link, sent to
+        # the address on the account, never the one just typed. Earlier links keep working: a stranger
         # registering this address must not be able to kill the owner's.
         if existing.is_active and not existing.email_verified:
-            existing.full_name = payload.full_name.strip() or existing.email
-            db.commit()
             background_tasks.add_task(platform_mail.send_verification_email, existing.email, _verify_token_for(existing))
         return accepted
 
@@ -346,6 +343,7 @@ def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)):
     ):
         raise _error(400, "invalid_token", "This link is invalid or has expired.")
 
+    user.full_name = payload.full_name
     user.hashed_password = get_password_hash(payload.new_password)
     user.email_verified_at = _now()
     user.sessions_valid_after = _now()

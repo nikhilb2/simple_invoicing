@@ -133,8 +133,10 @@ def _register(client, email="new@example.com", name="New Person", **kw):
     return client.post("/api/auth/register", json={"email": email, "full_name": name}, **kw)
 
 
-def _verify(client, token, password="Chosen@1234"):
-    return client.post("/api/auth/verify-email", json={"token": token, "new_password": password})
+def _verify(client, token, password="Chosen@1234", name="New Person"):
+    return client.post("/api/auth/verify-email", json={
+        "token": token, "new_password": password, "full_name": name,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +268,7 @@ def test_register_existing_verified_address_answers_the_same_and_changes_nothing
     assert db_session.query(User).count() == 2
 
 
-def test_register_existing_unverified_sends_a_fresh_link_and_sets_no_password(client, db_session, shared, outbox):
+def test_register_existing_unverified_sends_a_fresh_link_without_changing_the_account(client, db_session, shared, outbox):
     _register(client, email="pending@example.com", name="First")
 
     response = _register(client, email="PENDING@example.com", name="Second")
@@ -276,7 +278,42 @@ def test_register_existing_unverified_sends_a_fresh_link_and_sets_no_password(cl
     user = db_session.query(User).one()
     db_session.refresh(user)
     assert user.hashed_password is None
-    assert user.full_name == "Second"
+    assert user.full_name == "First"
+
+
+@pytest.mark.parametrize("first,second", [("Owner", "Stranger"), ("Stranger", "Owner")])
+def test_the_mailbox_owner_chooses_the_verified_name(client, db_session, shared, outbox, first, second):
+    _register(client, email="owner@example.com", name=first)
+    owners_link = _link_token(outbox[-1], "/verify-email")
+    _register(client, email="owner@example.com", name=second)
+
+    response = _verify(client, owners_link, name="  Mailbox Owner  ")
+
+    assert response.status_code == 200
+    user = db_session.query(User).one()
+    db_session.refresh(user)
+    assert user.full_name == "Mailbox Owner"
+    assert user.email_verified_at is not None
+    assert verify_password("Chosen@1234", user.hashed_password)
+
+
+@pytest.mark.parametrize("name_fields", [
+    {}, {"full_name": None}, {"full_name": ""}, {"full_name": "   "}, {"full_name": "x" * 121},
+])
+def test_verification_requires_a_valid_owner_supplied_name(client, db_session, shared, outbox, name_fields):
+    _register(client)
+    token = _link_token(outbox[-1], "/verify-email")
+
+    response = client.post("/api/auth/verify-email", json={
+        "token": token, "new_password": "Chosen@1234", **name_fields,
+    })
+
+    assert response.status_code == 422
+    user = db_session.query(User).one()
+    db_session.refresh(user)
+    assert user.email_verified_at is None
+    assert user.hashed_password is None
+    assert _verify(client, token, name="Owner").status_code == 200
 
 
 def test_a_stranger_registering_an_address_gains_nothing(client, db_session, shared, outbox):
@@ -314,12 +351,13 @@ def test_a_used_link_cannot_change_the_password(client, db_session, shared, outb
     assert _verify(client, first, "Owner@12345").status_code == 200
 
     for token in (first, second):
-        response = _verify(client, token, "Replayed@123")
+        response = _verify(client, token, "Replayed@123", name="Replayed Name")
         assert response.status_code == 400
         assert response.json()["detail"]["code"] == "invalid_token"
 
     assert client.post("/api/auth/login", json={"email": "owner@example.com", "password": "Owner@12345"}).status_code == 200
     assert client.post("/api/auth/login", json={"email": "owner@example.com", "password": "Replayed@123"}).status_code == 401
+    assert db_session.query(User).one().full_name == "New Person"
 
 
 def test_an_inactive_account_cannot_use_its_link(client, db_session, shared, outbox):
