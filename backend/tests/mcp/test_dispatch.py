@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import pytest
 from fastapi import Depends
@@ -16,6 +17,7 @@ from src.mcp_server import dispatch as dispatch_module
 from src.mcp_server.config import MCP_TOOL_HEADER
 from src.models.company import CompanyProfile
 from src.models.user import User, UserRole
+from src.services.company_access import add_membership
 from tests.mcp.conftest import make_principal, override_principal
 
 
@@ -82,6 +84,27 @@ def test_body_arguments_are_flattened_not_nested(mcp_call, company, writes_on):
     result = body["result"]
     assert result["isError"] is False, result
     assert result["structuredContent"]["name"] == "Flat Args Ltd"
+
+
+def test_company_creation_through_mcp_keeps_browser_selection(
+    mcp_call, db_session, db_user, company, writes_on, monkeypatch,
+):
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "shared_hosting")
+    monkeypatch.setattr(settings, "MAX_COMPANIES_PER_USER", 3)
+    monkeypatch.setattr(settings, "MCP_DEFAULT_PROFILE", "all")
+    db_user.email_verified_at = datetime.now(timezone.utc)
+    db_user.active_company_id = company.id
+    add_membership(db_session, db_user, company, UserRole.admin)
+    db_session.commit()
+    monkeypatch.delitem(app.dependency_overrides, get_current_user)
+
+    result = mcp_call.call_tool("companies_create", {"name": "Created via MCP", "address": ""})["result"]
+
+    assert result["isError"] is False, result
+    assert result["structuredContent"]["name"] == "Created via MCP"
+    assert result["structuredContent"]["id"] != company.id
+    db_session.refresh(db_user)
+    assert db_user.active_company_id == company.id
 
 
 def test_a_tool_bound_to_company_a_cannot_read_company_b(mcp_call, client, db_session, company):
