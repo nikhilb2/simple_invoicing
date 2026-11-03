@@ -582,6 +582,38 @@ def test_reset_proves_the_address(client, db_session, shared, outbox):
     assert user.email_verified_at is not None
 
 
+def test_reset_verification_discards_an_unconfirmed_registration_name(client, db_session, shared, outbox):
+    registered = _register(client, email="pending@example.com", name="Stranger")
+    assert registered.status_code == 202
+    requested = client.post("/api/auth/forgot-password", json={"email": "pending@example.com"})
+    assert requested.status_code == 202
+    token = _link_token(outbox[-1], "/reset-password")
+
+    response = client.post("/api/auth/reset-password", json={"token": token, "new_password": "NewPass@456"})
+
+    assert response.status_code == 200
+    user = db_session.query(User).one()
+    db_session.refresh(user)
+    assert user.email_verified_at is not None
+    assert user.full_name == user.email == "pending@example.com"
+
+
+@pytest.mark.parametrize("mode,verified", [
+    ("shared_hosting", True), ("single_tenant", False), ("single_tenant", True),
+])
+def test_reset_keeps_a_confirmed_or_provisioned_name(client, db_session, shared, outbox, monkeypatch, mode, verified):
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", mode)
+    user = _user(db_session, verified=verified)
+    client.post("/api/auth/forgot-password", json={"email": user.email})
+    token = _link_token(outbox[-1], "/reset-password")
+
+    response = client.post("/api/auth/reset-password", json={"token": token, "new_password": "NewPass@456"})
+
+    assert response.status_code == 200
+    db_session.refresh(user)
+    assert user.full_name == "Owner"
+
+
 def test_unicode_lookalike_address_does_not_reach_an_account(client, db_session, shared, outbox):
     _user(db_session, email="admin@example.com")
 

@@ -22,7 +22,7 @@ from src.core.security import get_password_hash, verify_password
 from src.models.oauth_login_code import OAuthLoginCode
 from src.models.user import User, UserRole
 from src.models.user_identity import UserIdentity
-from src.services import auth_providers
+from src.services import auth_providers, platform_mail
 
 APP = "https://app.si.test"
 
@@ -254,6 +254,7 @@ def test_existing_password_user_is_linked_by_verified_email(client, db_session, 
     identity = db_session.query(UserIdentity).one()
     assert identity.user_id == existing.id
     db_session.refresh(existing)
+    assert existing.full_name == "Existing"
     assert verify_password("GoodPass@123", existing.hashed_password)
     (_, _, props), = _find(events, "user_logged_in")
     assert props["method"] == "google"
@@ -287,6 +288,44 @@ def test_linking_an_unverified_account_verifies_it_and_drops_the_unproven_passwo
     assert squatter.hashed_password is None
     login = client.post("/api/auth/login", json={"email": "person@gmail.com", "password": "Squatter@123"})
     assert login.status_code == 401
+
+
+@pytest.mark.parametrize("provider_name,expected", [
+    ("  Verified Owner  ", "Verified Owner"),
+    (None, "person@gmail.com"),
+    ("   ", "person@gmail.com"),
+    (7, "person@gmail.com"),
+    ("x" * 121, "x" * 120),
+])
+def test_google_verification_replaces_an_unconfirmed_registration_name(
+    client, db_session, shared, google, monkeypatch, provider_name, expected,
+):
+    monkeypatch.setattr(settings, "PLATFORM_SMTP_HOST", "smtp.test")
+    monkeypatch.setattr(platform_mail, "send_verification_email", lambda *args: None)
+    registered = client.post("/api/auth/register", json={
+        "email": "person@gmail.com", "full_name": "Stranger",
+    })
+    assert registered.status_code == 202
+    google.userinfo["name"] = provider_name
+
+    location = _sign_in(client)
+
+    assert "code" in _query(location)[1]
+    user = db_session.query(User).one()
+    db_session.refresh(user)
+    assert user.email_verified_at is not None
+    assert user.full_name == expected
+
+
+def test_google_link_keeps_a_provisioned_single_tenant_name(client, db_session, single, google):
+    existing = _user(db_session, verified=False)
+
+    location = _sign_in(client)
+
+    assert "code" in _query(location)[1]
+    db_session.refresh(existing)
+    assert existing.email_verified_at is not None
+    assert existing.full_name == "Existing"
 
 
 def test_linked_identity_wins_over_email(client, db_session, shared, google):

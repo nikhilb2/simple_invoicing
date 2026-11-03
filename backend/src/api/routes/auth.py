@@ -404,6 +404,8 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     # The link arrived in that inbox, so the address is proven too.
     if not user.email_verified:
         user.email_verified_at = _now()
+        if settings.is_shared_hosting:
+            user.full_name = user.email
     # A reset is what someone does when they think their password is known to
     # somebody else, so every session signed in before it stops refreshing.
     user.sessions_valid_after = _now()
@@ -614,6 +616,11 @@ class _OAuthRejected(Exception):
         self.code = code
 
 
+def _oauth_full_name(userinfo: dict, email: str) -> str:
+    name = userinfo.get("name")
+    return name.strip()[:120] if isinstance(name, str) and name.strip() else email
+
+
 def _resolve_oauth_user(db: Session, provider: str, userinfo: dict) -> tuple[User, bool]:
     """Find or create the user for a verified provider identity.
 
@@ -668,6 +675,7 @@ def _resolve_oauth_user(db: Session, provider: str, userinfo: dict) -> tuple[Use
                 # keep a session they already started with it.
                 user.hashed_password = None
                 user.sessions_valid_after = _now()
+                user.full_name = _oauth_full_name(userinfo, email)
         db.add(UserIdentity(user_id=user.id, provider=provider, provider_subject=subject, email=email))
         db.commit()
         return user, False
@@ -676,10 +684,9 @@ def _resolve_oauth_user(db: Session, provider: str, userinfo: dict) -> tuple[Use
     spec = auth_providers.get_spec(provider)
     if spec is None or not spec.signup_allowed(settings):
         raise _OAuthRejected("signup_disabled")
-    name = userinfo.get("name")
     user = User(
         email=email,
-        full_name=(name.strip()[:120] if isinstance(name, str) and name.strip() else email),
+        full_name=_oauth_full_name(userinfo, email),
         hashed_password=None,
         role=UserRole.staff,
         email_verified_at=_now(),
