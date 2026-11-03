@@ -30,11 +30,11 @@ def _validate_discount_value(
 
 class InvoiceItemCreate(BaseModel):
     product_id: int
-    quantity: float
-    unit_price: float | None = Field(default=None, ge=0)
+    quantity: float = Field(allow_inf_nan=False)
+    unit_price: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     description: str | None = None
     discount_type: Literal["percentage", "net"] | None = None
-    discount_value: float | None = None
+    discount_value: float | None = Field(default=None, allow_inf_nan=False)
 
     @field_validator("discount_value", mode="after")
     @classmethod
@@ -67,7 +67,7 @@ class InvoiceCreate(BaseModel):
     tax_inclusive: bool = False
     apply_round_off: bool = False
     discount_type: Literal["percentage", "net"] | None = None
-    discount_value: float | None = None
+    discount_value: float | None = Field(default=None, allow_inf_nan=False)
     shipping_address_same_as_billing: bool = True
     shipping_address_id: int | None = None
     new_shipping_address: ShippingAddressInline | None = None
