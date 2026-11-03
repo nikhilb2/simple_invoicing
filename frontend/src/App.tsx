@@ -95,7 +95,7 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
 function AdminOnly({ platform = false, children }: { platform?: boolean; children: React.ReactNode }) {
   const { isAdmin, canManagePlatform } = useAuth();
 
-  if (!isAdmin || (platform && !canManagePlatform)) {
+  if (platform ? !canManagePlatform : !isAdmin) {
     return <Navigate to="/" replace />;
   }
 
@@ -146,19 +146,17 @@ function CompanyRequired({ children }: { children: React.ReactNode }) {
  * A settings page, framed by the settings sub-navigation.
  *
  * The guard combination is passed as props rather than nested by hand at each
- * call site: nine settings routes composing up to four guards each is where the
- * inline style stopped paying for itself. `requireCompany` is false for exactly
- * one page — /settings/company is where CompanyRequired *sends* people, so
- * guarding it with CompanyRequired would be a redirect loop.
+ * call site keeps the route list readable. Platform settings do not need a
+ * company; onboarding and personal preferences can also opt out of that guard.
  */
 function SettingsRoute({
   admin = false,
   platform = false,
-  requireCompany = true,
+  requireCompany = !platform,
   children,
 }: {
   admin?: boolean;
-  /** Needs platform-admin on top of admin: surfaces the backend gates with require_platform_admin. */
+  /** Uses the platform capability rather than the active company's admin role. */
   platform?: boolean;
   requireCompany?: boolean;
   children: React.ReactNode;

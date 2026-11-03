@@ -188,12 +188,19 @@ describe('visibleSettingsGroups', () => {
     expect(paths).not.toContain('/settings/backups');
   });
 
-  it('shows platform pages only to admins who can manage the platform', () => {
+  it.each([true, false])('shows platform pages with the platform capability (company admin: %s)', (isAdmin) => {
     const pathsFor = (isAdmin: boolean, platform: boolean) =>
       visibleSettingsGroups(isAdmin, platform).flatMap((g) => g.items.map((item) => item.to));
-    expect(pathsFor(true, true)).toEqual(expect.arrayContaining(['/settings/email', '/settings/backups']));
-    expect(pathsFor(false, true)).not.toContain('/settings/email');
-    expect(pathsFor(false, true)).not.toContain('/settings/backups');
+    expect(pathsFor(isAdmin, true)).toEqual(expect.arrayContaining(['/settings/email', '/settings/backups']));
+    expect(pathsFor(isAdmin, false)).not.toContain('/settings/email');
+    expect(pathsFor(isAdmin, false)).not.toContain('/settings/backups');
+  });
+
+  it('does not grant a platform operator company-admin pages', () => {
+    const paths = visibleSettingsGroups(false, true).flatMap((g) => g.items.map((item) => item.to));
+    expect(paths).not.toContain('/settings/api-keys');
+    expect(paths).not.toContain('/settings/marketplace');
+    expect(paths).not.toContain('/settings/email-history');
   });
 
   it('marks every platform-only item admin-only too', () => {

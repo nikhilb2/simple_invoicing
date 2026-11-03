@@ -70,9 +70,9 @@ export type NavLeaf = {
   /** Hide the link from non-admins. Visibility only; see file header. */
   adminOnly?: boolean;
   /**
-   * Hide the link unless the user also runs the platform (`canManagePlatform`).
+   * Hide the link unless the user runs the platform (`canManagePlatform`).
    * For surfaces the backend gates with require_platform_admin: in shared
-   * hosting a company admin is not one. Implies adminOnly.
+   * hosting this capability is independent of the active company's admin role.
    */
   platformOnly?: boolean;
   shortcutAction?: ActionKey;
@@ -341,7 +341,7 @@ export const NAV_ITEMS: NavLeaf[] = [
 
 /** Whether a nav item may be shown to a user with these capabilities. */
 export function isNavItemVisible(item: NavLeaf, isAdmin: boolean, canManagePlatform: boolean): boolean {
-  if (item.platformOnly) return isAdmin && canManagePlatform;
+  if (item.platformOnly) return canManagePlatform;
   return !item.adminOnly || isAdmin;
 }
 
