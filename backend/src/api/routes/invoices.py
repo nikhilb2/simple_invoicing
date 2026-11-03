@@ -16,6 +16,7 @@ import weasyprint
 from src.db.session import get_db
 from src.models.company_account import CompanyAccount
 from src.models.company import CompanyProfile
+from src.models.financial_year import FinancialYear
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
 from src.models.product_serial import ProductSerial
@@ -583,6 +584,29 @@ def update_invoice(
 
     try:
         active_fy = get_active_fy(db, company_id=active_company.id)
+
+        # The invoice's financial year and number series are fixed at
+        # creation and are not regenerated on edit, so a date change that
+        # would move the invoice into a different financial year is blocked
+        # instead of leaving it filed under the old year. A date that no
+        # financial year covers keeps the previous behaviour (allowed).
+        if payload.invoice_date is not None and invoice.financial_year_id is not None:
+            date_fy = get_fy_for_date(db, payload.invoice_date, company_id=active_company.id)
+            if date_fy is not None and date_fy.id != invoice.financial_year_id:
+                current_fy = (
+                    db.query(FinancialYear)
+                    .filter(FinancialYear.id == invoice.financial_year_id)
+                    .first()
+                )
+                current_label = current_fy.label if current_fy else f"id {invoice.financial_year_id}"
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"This date is in {date_fy.label}, but the invoice belongs to "
+                        f"{current_label}. Cancel it and create a new invoice in "
+                        f"{date_fy.label} instead."
+                    ),
+                )
 
         processor = InvoiceProcessor(db)
         # Validate before either delta touches stock. apply_payload validates
