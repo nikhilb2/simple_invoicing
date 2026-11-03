@@ -42,7 +42,7 @@ from src.services.pdf_templates.builders import _e
 from src.services.share_documents import get_ledger as get_shared_ledger, render_statement_pdf
 from src.services.gst_tax_service import b2cl_limit, gstr1_section, invoice_filing_pos, is_b2cl_invoice, is_interstate_pos, needs_place_of_supply
 from src.services.uqc import hsn_uqc
-from src.core.validation import GSTIN_REGEX, GSTR1_DOCUMENT_NUMBER_RULE, HSN_SAC_REGEX, is_gst_rate_slab, is_gstr1_document_number
+from src.core.validation import GSTIN_REGEX, GSTR1_DOCUMENT_NUMBER_RULE, HSN_SAC_REGEX, is_gst_rate_slab, is_gstr1_document_number, is_known_hsn_sac
 from src.services.company_access import company_scope, legacy_default_company
 
 router = APIRouter()
@@ -2235,6 +2235,18 @@ def _b2cs_rows(
     return rows
 
 
+def _hsn_off_gst_list(hsn: str | None) -> str | None:
+    """A well-formed code GSTN's master doesn't have, for the validate step only.
+
+    Our copy of the master can lag GSTN's, so this must not reach the export
+    checks: skipping validation is the way past a code that is newer than our copy.
+    """
+    code = (hsn or "").strip()
+    if _validate_hsn(code) or is_known_hsn_sac(code):
+        return None
+    return f"HSN {code} is not on GST's HSN/SAC list — the portal rejects it"
+
+
 def _hsn_section(
     db: Session,
     sales: list[Invoice],
@@ -2553,6 +2565,16 @@ def gstr1_validate(
                     severity="error",
                 ))
 
+            off_list = _hsn_off_gst_list(item.hsn_sac)
+            if off_list:
+                errors.append(Gstr1ValidationError(
+                    invoice_number=inv_num,
+                    field=f"HSN (item #{item.id})",
+                    # The line keeps its own copy of the code, so fixing the product isn't enough.
+                    message=f"{off_list}. Correct it on the product, then save this invoice again",
+                    severity="error",
+                ))
+
             # Table 12 takes the rate verbatim and accepts only the GST slabs,
             # so a rate like 17.99 gets the whole HSN summary rejected.
             if not is_gst_rate_slab(item.gst_rate):
@@ -2589,6 +2611,16 @@ def gstr1_validate(
         cn_num = cn.credit_note_number or f"CN-{cn.id}"
         for field, message in _note_filing_errors(cn, invoices_by_id, company_pos):
             errors.append(Gstr1ValidationError(invoice_number=cn_num, field=field, message=message, severity="error"))
+        if not _is_zero_value_note(cn):
+            for item in cn.items:
+                off_list = _hsn_off_gst_list(_note_item_hsn(item))
+                if off_list:
+                    errors.append(Gstr1ValidationError(
+                        invoice_number=cn_num,
+                        field=f"HSN (item #{item.id})",
+                        message=f"{off_list}. {_note_line_fix(cn_num, item, invoices_by_id, 'correct the HSN')}",
+                        severity="error",
+                    ))
 
     # Cancelled, so it cannot be fixed and files nothing, but Table 13 cannot take it.
     for number in _gstr1_cancelled_numbers(db, from_date, to_date, company_id):

@@ -280,7 +280,8 @@ export default function Gstr1FilingPage() {
               Set the period in the bar above, then validate. A return covers one whole month, or one
               whole quarter if you file quarterly. Validation checks every sales invoice
               and note in the period for the fields GSTR-1 requires — a missing or malformed GSTIN,
-              a place of supply that does not match the tax charged, an HSN code that is absent.
+              a place of supply that does not match the tax charged, an HSN code that is absent
+              or not on GST's list.
               Skipping it goes straight to the summary, which is fine for a dry run but will carry
               any of those problems into the export.
             </p>

@@ -5,6 +5,7 @@ import api, { getApiErrorMessage } from '../../../api/client';
 import { useEscapeClose } from '../../../hooks/useEscapeClose';
 import { invoiceQueryKeys } from '../../../features/invoices/queryKeys';
 import { useInvoiceComposerStore } from '../../../store/useInvoiceComposerStore';
+import type { Product } from '../../../types/api';
 import type { ProductFormState } from '../types';
 
 const UNIT_OPTIONS = ['Pieces', 'Kg', 'g', 'm', 'l', 'Ounce'];
@@ -51,10 +52,10 @@ export default function ProductQuickCreateModal() {
         track_serials: productForm.track_serials,
       };
 
-      await api.post('/products/', payload);
+      const created = await api.post<Product>('/products/', payload);
       setProductForm(createInitialProductForm());
       closeProductCreateModal();
-      setFeedbackSuccess('Product created successfully.');
+      setFeedbackSuccess(`Product created successfully.${created.data.hsn_warning ? ` ${created.data.hsn_warning}` : ''}`);
       await queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
       await queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.products });
     } catch (err) {

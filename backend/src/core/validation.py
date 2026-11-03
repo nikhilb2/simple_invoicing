@@ -1,4 +1,6 @@
 import re
+from functools import lru_cache
+from pathlib import Path
 
 GSTIN_REGEX = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[A-Z0-9]{1}Z[A-Z0-9]{1}$")
 GSTIN_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -77,6 +79,25 @@ def normalize_gstin(value: str | None) -> str | None:
         raise ValueError("Invalid GSTIN checksum. Check the 15th character")
 
     return normalized
+
+
+@lru_cache(maxsize=1)
+def _known_hsn_sac_codes() -> frozenset[str]:
+    lines = (Path(__file__).parent / "hsn_sac_codes.txt").read_text(encoding="ascii").splitlines()
+    return frozenset(line for line in lines if line and not line.startswith("#"))
+
+
+def is_known_hsn_sac(value: str) -> bool:
+    """Whether GSTN's master has this code. The right length doesn't make a code real."""
+    return value.strip() in _known_hsn_sac_codes()
+
+
+def hsn_sac_warning(value: str | None) -> str | None:
+    """Why the GST portal would refuse this code, for saving a product. Blank is fine here."""
+    code = (value or "").strip()
+    if not code or is_known_hsn_sac(code):
+        return None
+    return f"HSN/SAC {code} is not on GST's list, so the GST portal will reject it in GSTR-1."
 
 
 def normalize_hsn_sac(value: str | None) -> str | None:

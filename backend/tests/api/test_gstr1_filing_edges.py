@@ -465,3 +465,77 @@ def test_series_outside_gstr1_and_companies_with_no_gstin_are_not_flagged(client
     seller.gst = None
     db_session.commit()
     assert _sales_warning(client, fy_id) is None
+
+
+def _hsn_errors(result):
+    return [e for e in result["errors"] if e["field"].startswith("HSN (item")]
+
+
+def test_a_well_formed_hsn_gst_does_not_list_fails_validation(client, seller):
+    bad = _create_product(client, "S-1", "CPU", hsn_sac="84733000")
+    sold = _sale(client, _create_ledger(client, "Walk-in"), bad)
+
+    result = _validate(client)
+
+    assert result["status"] == "invalid"
+    [error] = _hsn_errors(result)
+    assert error["invoice_number"] == sold["invoice_number"]
+    assert error["severity"] == "error"
+    assert "84733000 is not on GST's HSN/SAC list" in error["message"]
+    assert "save this invoice again" in error["message"]
+
+
+def test_a_malformed_hsn_is_only_reported_once(client, seller, db_session):
+    widget = _create_product(client, "S-1", "Widget", hsn_sac="8471")
+    sold = _sale(client, _create_ledger(client, "Walk-in"), widget)
+    db_session.get(InvoiceItem, sold["items"][0]["id"]).hsn_sac = "99842"
+    db_session.commit()
+
+    [error] = _hsn_errors(_validate(client))
+
+    assert "has 5 digits" in error["message"]
+
+
+def test_an_hsn_gst_does_not_list_does_not_stop_the_export(client, seller):
+    """Our copy of the master can lag GSTN's, so skipping validation has to stay possible."""
+    bad = _create_product(client, "S-1", "CPU", hsn_sac="84733000")
+    _sale(client, _create_ledger(client, "Walk-in"), bad)
+
+    data = _export(client)
+
+    assert [row["hsn_sc"] for row in data["hsn"]["hsn_b2c"]] == ["84733000"]
+
+
+def test_fixing_the_product_and_saving_the_invoice_clears_the_error(client, seller):
+    bad = _create_product(client, "S-1", "CPU", hsn_sac="84733000")
+    ledger = _create_ledger(client, "Walk-in")
+    sold = _sale(client, ledger, bad)
+
+    product = client.get(f"/api/products/{bad}").json()
+    fixed = {key: product[key] for key in ("sku", "name", "price", "gst_rate", "unit")}
+    assert client.put(f"/api/products/{bad}", json={**fixed, "hsn_sac": "84733020"}).status_code == 200
+    assert _hsn_errors(_validate(client))
+
+    saved = client.put(f"/api/invoices/{sold['id']}", json={
+        "voucher_type": "sales",
+        "ledger_id": ledger,
+        "invoice_date": _in_period(),
+        "items": [_line(bad, 1, 1000)],
+    })
+
+    assert saved.status_code == 200, saved.text
+    assert _hsn_errors(_validate(client)) == []
+
+
+def test_a_note_on_a_line_gst_does_not_list_says_how_to_fix_it(client, seller, db_session):
+    widget = _create_product(client, "S-1", "Widget", hsn_sac="8471")
+    sold = _sale(client, _create_ledger(client, "Walk-in"), widget)
+    note = _note(client, [sold])
+    db_session.get(InvoiceItem, sold["items"][0]["id"]).hsn_sac = "84733000"
+    _move_out_of_period(db_session, sold)
+
+    [error] = [e for e in _hsn_errors(_validate(client)) if e["invoice_number"] == note["credit_note_number"]]
+
+    assert "84733000 is not on GST's HSN/SAC list" in error["message"]
+    assert f"edit {sold['invoice_number']} to correct the HSN" in error["message"]
+    assert client.get("/api/ledgers/tax-ledger/gstr1/export-json", params=_period()).status_code == 200

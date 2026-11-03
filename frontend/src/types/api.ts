@@ -10,6 +10,8 @@ export type Product = {
   name: string;
   description: string | null;
   hsn_sac: string | null;
+  /* Set when the code isn't on GST's HSN/SAC list. The product still saves. */
+  hsn_warning?: string | null;
   price: number;
   gst_rate: number;
   unit: string;
