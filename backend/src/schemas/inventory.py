@@ -21,6 +21,7 @@ class InventoryOut(BaseModel):
     allow_decimal: bool
     price: float
     maintain_inventory: bool
+    reorder_level: float = 0
     track_serials: bool = False
     quantity: float
     date_added: Optional[datetime] = None

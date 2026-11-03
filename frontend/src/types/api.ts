@@ -55,6 +55,7 @@ export type InventoryRow = {
   price: number;
   maintain_inventory: boolean;
   track_serials?: boolean;
+  reorder_level?: number;
   quantity: number;
   date_added: string | null;
   last_sold_at: string | null;

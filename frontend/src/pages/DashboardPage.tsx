@@ -8,6 +8,7 @@ import { MonthlyTrendChart, PaymentStatusDonut, TopProductsBars } from '../compo
 import type { DashboardMetrics, InventoryRow, Invoice, PaginatedInventoryOut } from '../types/api';
 import formatCurrency, { formatCompactCurrency } from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
+import { needsStockAttention } from '../utils/stockAttention';
 
 function normalizeInventoryRows(payload: PaginatedInventoryOut | InventoryRow[] | unknown): InventoryRow[] {
   if (Array.isArray(payload)) {
@@ -19,8 +20,6 @@ function normalizeInventoryRows(payload: PaginatedInventoryOut | InventoryRow[] 
   }
   return [];
 }
-
-const LOW_STOCK_THRESHOLD = 5;
 
 /* The API's raw values ("unpaid") read as a field name in a row of prose. */
 const PAYMENT_STATUS_LABEL: Record<Invoice['payment_status'], string> = {
@@ -49,7 +48,7 @@ export default function DashboardPage() {
         const [metricsRes, inventoryRes, invoicesRes] = await Promise.all([
           api.get<DashboardMetrics>('/dashboard/metrics'),
           api.get<PaginatedInventoryOut>('/inventory/', {
-            params: { sort_by: 'quantity', sort_order: 'asc', page_size: 5 },
+            params: { maintain_inventory: true, sort_by: 'quantity', sort_order: 'asc', page_size: 5 },
           }),
           api.get<{ items: Invoice[] }>('/invoices/', { params: { page_size: 6 } }),
         ]);
@@ -279,8 +278,8 @@ export default function DashboardPage() {
                       <strong>{row.product_name}</strong>
                       <span className="table-subtext">Product ID #{row.product_id}</span>
                     </div>
-                    <span className={`pill ${row.quantity <= LOW_STOCK_THRESHOLD ? 'pill--low' : 'pill--ok'}`}>{row.quantity} units</span>
-                    <span className="table-subtext text-right">{row.quantity <= LOW_STOCK_THRESHOLD ? 'Needs attention' : 'Stable'}</span>
+                    <span className={`pill ${needsStockAttention(row.quantity, row.reorder_level) ? 'pill--low' : 'pill--ok'}`}>{row.quantity} units</span>
+                    <span className="table-subtext text-right">{needsStockAttention(row.quantity, row.reorder_level) ? 'Needs attention' : 'Stable'}</span>
                   </div>
                 ))
               : null}
