@@ -322,3 +322,48 @@ def test_reject_fractional_initial_quantity_when_decimal_disabled(client):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Initial quantity must be a whole number for this product"
+
+UNKNOWN_HSN = {"sku": "HSN1", "name": "CPU", "price": 10, "gst_rate": 18, "hsn_sac": "84733000"}
+
+
+def test_saving_a_product_warns_about_an_hsn_gst_does_not_list_but_still_saves(client):
+    created = client.post("/api/products/", json=UNKNOWN_HSN)
+
+    assert created.status_code == 200
+    assert created.json()["hsn_sac"] == "84733000"
+    assert "84733000 is not on GST's list" in created.json()["hsn_warning"]
+
+    corrected = client.put(f"/api/products/{created.json()['id']}", json={**UNKNOWN_HSN, "hsn_sac": "84733020"})
+    assert corrected.status_code == 200
+    assert corrected.json()["hsn_warning"] is None
+
+
+def test_a_product_with_no_hsn_has_no_warning(client):
+    created = client.post("/api/products/", json={**UNKNOWN_HSN, "hsn_sac": None})
+
+    assert created.json()["hsn_warning"] is None
+
+
+def test_the_with_inventory_update_warns_too(client):
+    created = client.post("/api/products/", json={**UNKNOWN_HSN, "hsn_sac": "84733020"}).json()
+
+    updated = client.put(f"/api/products/{created['id']}/with-inventory", json={"hsn_sac": "84733000"})
+
+    assert updated.status_code == 200
+    assert "84733000" in updated.json()["hsn_warning"]
+
+
+def test_csv_import_saves_the_row_and_reports_an_hsn_gst_does_not_list(client):
+    csv_content = (
+        "Item Name,Item Code,Selling Price,Current Stock,Tax,HSN Code\n"
+        "Good,IMP1,10,1,18,84733020\n"
+        "Bad,IMP2,10,1,18,84733000\n"
+        "Blank,IMP3,10,1,18,\n"
+    )
+
+    res = client.post("/api/products/import-csv", files={"file": ("p.csv", csv_content.encode(), "text/csv")})
+
+    data = res.json()
+    assert data["created"] == 3
+    assert [e["row"] for e in data["errors"]] == [3]
+    assert "IMP2 was saved" in data["errors"][0]["message"]

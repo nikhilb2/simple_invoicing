@@ -288,8 +288,8 @@ export default function CataloguePage() {
       setRowError('');
       // current_stock is deliberately absent: stock moves only through the
       // audited adjustment flow, so a row edit can never overwrite it.
-      await api.put(`/products/${editingId}/with-inventory`, parsed.value);
-      setSuccess(`${editValues.name.trim()} saved.`);
+      const saved = await api.put<{ hsn_warning?: string | null }>(`/products/${editingId}/with-inventory`, parsed.value);
+      setSuccess(`${editValues.name.trim()} saved.${saved.data.hsn_warning ? ` ${saved.data.hsn_warning}` : ''}`);
       cancelEdit();
       await loadData();
     } catch (err) {

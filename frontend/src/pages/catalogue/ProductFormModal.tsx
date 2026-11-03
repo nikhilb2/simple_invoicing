@@ -195,6 +195,11 @@ export default function ProductFormModal({
     };
   }
 
+  /** A code GST doesn't list still saves, but the owner should hear it now, not at filing. */
+  function savedMessage(message: string, product: Product): string {
+    return product.hsn_warning ? `${message} ${product.hsn_warning}` : message;
+  }
+
   /** Everything the server would reject, said inline before a round trip. */
   function validate(): string {
     if (!form.sku.trim()) return 'SKU is required.';
@@ -241,14 +246,14 @@ export default function ProductFormModal({
       setError('');
 
       if (isEdit && row) {
-        await api.put<Product>(`/products/${row.id}`, payload);
+        const updated = await api.put<Product>(`/products/${row.id}`, payload);
         // The attribute endpoint does not carry these two, so they follow in the
         // catalogue update that owns them.
         await api.put(`/products/${row.id}/with-inventory`, {
           purchase_price: form.purchase_price === '' ? 0 : Number(form.purchase_price),
           reorder_level: form.reorder_level === '' ? 0 : Number(form.reorder_level),
         });
-        onSaved(`${payload.name} updated.`);
+        onSaved(savedMessage(`${payload.name} updated.`, updated.data));
       } else {
         const created = await api.post<Product>('/products/', payload);
         if (form.purchase_price !== '' || form.reorder_level !== '0') {
@@ -257,7 +262,7 @@ export default function ProductFormModal({
             reorder_level: form.reorder_level === '' ? 0 : Number(form.reorder_level),
           });
         }
-        onSaved(`${payload.name} created.`);
+        onSaved(savedMessage(`${payload.name} created.`, created.data));
       }
     } catch (err) {
       setError(

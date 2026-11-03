@@ -28,6 +28,7 @@ from src.schemas.product import (
 )
 from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.core.analytics import distinct_id_for, track
+from src.core.validation import hsn_sac_warning
 from src.services.serial_service import SerialManager
 
 router = APIRouter()
@@ -681,6 +682,7 @@ def update_product_with_inventory(
         "unit": product.unit,
         "gst_rate": float(product.gst_rate),
         "track_serials": bool(product.track_serials),
+        "hsn_warning": hsn_sac_warning(product.hsn_sac),
     }
 
 
@@ -870,6 +872,11 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
         except ValueError:
             errors.append({"row": row_num, "message": f"Invalid Reorder Level for {sku}"})
             continue
+
+        # Saved all the same, like the serial-tracked stock note below.
+        hsn_warning = hsn_sac_warning(values.get("hsn_code"))
+        if hsn_warning:
+            errors.append({"row": row_num, "message": f"{sku} was saved. {hsn_warning}"})
 
         existing = (
             db.query(Product)

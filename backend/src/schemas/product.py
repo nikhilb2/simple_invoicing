@@ -1,8 +1,8 @@
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, computed_field, field_validator
 from typing import Literal, Optional
 
-from src.core.validation import normalize_hsn_sac
+from src.core.validation import hsn_sac_warning, normalize_hsn_sac
 
 
 class ProductCreate(BaseModel):
@@ -64,6 +64,11 @@ class ProductOut(BaseModel):
     reorder_level: float = 0
     track_serials: bool = False
     created_at: Optional[datetime] = None
+
+    @computed_field
+    @property
+    def hsn_warning(self) -> Optional[str]:
+        return hsn_sac_warning(self.hsn_sac)
 
     class Config:
         from_attributes = True
