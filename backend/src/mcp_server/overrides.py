@@ -26,6 +26,9 @@ EXCLUDED_PATH_PREFIXES: tuple[str, ...] = (
     # escalation as an API-key minting tool.
     "/api/oauth",
     "/.well-known",
+    # Not exposed to AI assistants for now: the maintainer has not decided whether
+    # they should be. See PR #379.
+    "/api/eway-bill",
 )
 
 EXCLUDED_OPERATIONS: frozenset[tuple[str, str]] = frozenset(
@@ -36,6 +39,9 @@ EXCLUDED_OPERATIONS: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/auth/change-password"),
         # Persistently mutates which company the human sees in the web UI.
         ("POST", "/api/company/select/{company_id}"),
+        # See the /api/eway-bill note above: these two live under /api/invoices.
+        ("GET", "/api/invoices/{invoice_id}/eway-bill/precheck"),
+        ("POST", "/api/invoices/{invoice_id}/eway-bill/generate"),
     }
 )
 

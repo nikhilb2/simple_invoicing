@@ -82,6 +82,10 @@ def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> Compa
         account_number=payload.account_number.strip() if payload.account_number else None,
         ifsc_code=payload.ifsc_code.strip().upper() if payload.ifsc_code else None,
         show_sku_on_pdf=payload.show_sku_on_pdf,
+        eway_enabled=payload.eway_enabled,
+        eway_local_threshold=payload.eway_local_threshold,
+        eway_interstate_threshold=payload.eway_interstate_threshold,
+        eway_always_show_button=payload.eway_always_show_button,
         show_pay_qr_on_invoice=payload.show_pay_qr_on_invoice,
         show_upi_pay_button=payload.show_upi_pay_button,
     )
@@ -182,6 +186,10 @@ def _company_to_out(company: CompanyProfile) -> CompanyProfileOut:
         logo_mime_type=company.logo_mime_type,
         additional_company_info=company.additional_company_info,
         show_sku_on_pdf=company.show_sku_on_pdf,
+        eway_enabled=company.eway_enabled,
+        eway_local_threshold=company.eway_local_threshold,
+        eway_interstate_threshold=company.eway_interstate_threshold,
+        eway_always_show_button=company.eway_always_show_button,
         show_pay_qr_on_invoice=company.show_pay_qr_on_invoice,
         show_upi_pay_button=company.show_upi_pay_button,
         terms=[
@@ -378,6 +386,12 @@ def upsert_company_profile(
     profile.ifsc_code = payload.ifsc_code.strip().upper() if payload.ifsc_code else None
     profile.additional_company_info = payload.additional_company_info
     profile.show_sku_on_pdf = payload.show_sku_on_pdf
+    # Only what the client sent: an omitted eway_* field keeps its stored value
+    # instead of snapping back to the schema default (an API client or AI
+    # assistant sending a partial body must not silently change e-way settings).
+    for field in ("eway_enabled", "eway_local_threshold", "eway_interstate_threshold", "eway_always_show_button"):
+        if field in payload.model_fields_set:
+            setattr(profile, field, getattr(payload, field))
     profile.show_pay_qr_on_invoice = payload.show_pay_qr_on_invoice
     profile.show_upi_pay_button = payload.show_upi_pay_button
     db.commit()

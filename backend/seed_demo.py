@@ -357,6 +357,7 @@ _DEMO_TABLES = (
     "marketplace_connections",
     "share_links",
     "email_logs",
+    "eway_bill_transporters",
     "invoice_items",
     "invoices",
     "quotation_items",

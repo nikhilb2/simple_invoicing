@@ -40,6 +40,7 @@ from src.services.pdf_templates import _build_day_book_html, _build_statement_ht
 from src.services.pdf_templates.builders import _e
 from src.services.share_documents import get_ledger as get_shared_ledger, render_statement_pdf
 from src.services.gst_tax_service import b2cl_limit, gstr1_section, invoice_filing_pos, is_b2cl_invoice, is_interstate_pos
+from src.services.uqc import hsn_uqc
 from src.core.validation import GSTIN_REGEX, GSTR1_DOCUMENT_NUMBER_RULE, HSN_SAC_REGEX, is_gst_rate_slab, is_gstr1_document_number
 from src.services.company_access import company_scope, legacy_default_company
 
@@ -1857,17 +1858,6 @@ def _derive_place_of_supply(company_gst: str | None) -> str:
     return "00"
 
 
-# Table 12 takes UQC from a fixed GSTN list, so the product master's free-text
-# unit has to be mapped onto it. Anything unmapped falls back to NOS, which is
-# what every row carried before units were read at all.
-HSN_UQC_BY_UNIT = {
-    "pieces": "NOS", "piece": "NOS", "pcs": "PCS", "nos": "NOS", "unit": "UNT",
-    "kg": "KGS", "kgs": "KGS", "g": "GMS", "gm": "GMS", "gram": "GMS", "grams": "GMS",
-    "m": "MTR", "metre": "MTR", "meter": "MTR", "mtr": "MTR",
-    "l": "LTR", "litre": "LTR", "liter": "LTR", "ltr": "LTR", "ml": "MLT",
-    "box": "BOX", "set": "SET", "pair": "PRS", "dozen": "DOZ", "ton": "TON",
-}
-
 # GSTN caps the Table 12 description at 30 characters.
 HSN_DESC_LIMIT = 30
 
@@ -2090,14 +2080,6 @@ def _strip_empty(value):
     return None if value is None or value == "" else value
 
 
-def _hsn_uqc(hsn: str, unit: str | None) -> str:
-    """The UQC to declare for an HSN line."""
-    # Services carry no quantity, so the GSTN convention is UQC "NA" with qty 0.
-    if hsn.startswith("99"):
-        return "NA"
-    return HSN_UQC_BY_UNIT.get((unit or "").strip().lower(), "NOS")
-
-
 def _hsn_desc(value: str | None, hsn: str) -> str:
     """A Table 12 description: single line, at most 30 characters."""
     # Item descriptions are free text and routinely hold newlines and serial
@@ -2261,7 +2243,7 @@ def _hsn_section(
     b2c_map: dict[tuple[str, float, str], dict] = {}
 
     def row_for(target: dict, hsn: str, rate: float, product_id: int | None) -> dict:
-        uqc = _hsn_uqc(hsn, units_by_product.get(product_id))
+        uqc = hsn_uqc(hsn, units_by_product.get(product_id))
         return target.setdefault((hsn, rate, uqc), {"qty": 0.0, "txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0, "desc": ""})
 
     for inv in sales:

@@ -117,15 +117,84 @@ api.interceptors.response.use(
   }
 );
 
-export function getApiErrorMessage(error: unknown, fallback = 'Something went wrong') {
-  if (axios.isAxiosError(error)) {
-    const detail = error.response?.data?.detail;
-    if (typeof detail === 'string') {
-      return detail;
+export type ApiFieldError = { field: string; message: string };
+
+export type ApiErrorDetails = {
+  /** Readable on its own, for a toast or a banner. */
+  message: string;
+  /** The same problems by field, when the API named the fields. */
+  fieldErrors: ApiFieldError[];
+};
+
+// Pydantic's wording for the mistakes a form can make. Anything else keeps its own text.
+const PLAIN_VALIDATION_MESSAGES: Record<string, string> = {
+  missing: 'is required',
+  int_parsing: 'must be a whole number',
+  int_from_float: 'must be a whole number',
+  int_type: 'must be a whole number',
+  float_parsing: 'must be a number',
+  float_type: 'must be a number',
+  bool_parsing: 'must be yes or no',
+  string_type: 'must be text',
+  date_from_datetime_parsing: 'must be a valid date',
+};
+
+function fieldLabel(field: string) {
+  const words = field.replace(/_/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** FastAPI's own 422: `detail` is a list of {loc, msg, type}. */
+function readValidationList(detail: unknown[]): ApiFieldError[] {
+  return detail.flatMap((entry) => {
+    const item = entry as { loc?: unknown[]; msg?: unknown; type?: unknown };
+    if (typeof item?.msg !== 'string') return [];
+    // loc is ['body', 'distance_km']; the last string is the field, and ['body'] alone names none.
+    const path = (item.loc ?? []).filter((part): part is string => typeof part === 'string' && part !== 'body');
+    const field = path[path.length - 1] ?? '';
+    const text = item.msg.replace(/^Value error, /, '');
+    const plain = typeof item.type === 'string' ? PLAIN_VALIDATION_MESSAGES[item.type] : undefined;
+    if (!field) return [{ field: '', message: text }];
+    return [{ field, message: plain ? `${fieldLabel(field)} ${plain}.` : `${fieldLabel(field)}: ${text}` }];
+  });
+}
+
+/** What a response's `detail` says, in every shape the API sends it, or null if it says nothing. */
+function readDetail(detail: unknown): ApiErrorDetails | null {
+  if (typeof detail === 'string' && detail) {
+    return { message: detail, fieldErrors: [] };
+  }
+  if (Array.isArray(detail)) {
+    const fieldErrors = readValidationList(detail);
+    return fieldErrors.length ? { message: fieldErrors.map((e) => e.message).join(' '), fieldErrors } : null;
+  }
+  if (detail && typeof detail === 'object') {
+    const { message, errors } = detail as { message?: unknown; errors?: unknown };
+    // {message, errors: [{field, message}]}: the list is the useful part.
+    const fieldErrors = Array.isArray(errors)
+      ? errors.filter((e): e is ApiFieldError => typeof e?.field === 'string' && typeof e?.message === 'string')
+      : [];
+    if (fieldErrors.length) {
+      return { message: fieldErrors.map((e) => e.message).join(' '), fieldErrors };
     }
     // Coded errors carry {code, message}; show the message.
-    if (typeof detail?.message === 'string') {
-      return detail.message;
+    if (typeof message === 'string' && message) {
+      return { message, fieldErrors: [] };
+    }
+  }
+  return null;
+}
+
+export function getApiErrorMessage(error: unknown, fallback = 'Something went wrong') {
+  if (axios.isAxiosError(error)) {
+    const details = readDetail(error.response?.data?.detail);
+    if (details) {
+      return details.message;
+    }
+    // A response with nothing readable in it, like a proxy's HTML error page. Axios's
+    // own message would only tell the user a status code.
+    if (error.response) {
+      return fallback;
     }
   }
 
@@ -148,23 +217,32 @@ export function getApiErrorCode(error: unknown): string | null {
 }
 
 /**
- * Like getApiErrorMessage, but for requests made with responseType: 'blob'.
- * On error the server's JSON body arrives as a Blob, so the `detail` field is
- * not directly readable — we decode and parse it before falling back.
+ * The message and any per-field errors of a failed request, whatever its responseType.
+ * With responseType: 'blob' the server's JSON body arrives as a Blob on errors too, so
+ * `detail` is not directly readable and has to be decoded first.
  */
-export async function getBlobErrorMessage(error: unknown, fallback = 'Something went wrong') {
-  if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
-    try {
-      const text = await error.response.data.text();
-      const parsed = JSON.parse(text);
-      if (typeof parsed?.detail === 'string') {
-        return parsed.detail;
+export async function getApiErrorDetails(error: unknown, fallback = 'Something went wrong'): Promise<ApiErrorDetails> {
+  if (axios.isAxiosError(error)) {
+    let body: unknown = error.response?.data;
+    if (body instanceof Blob) {
+      try {
+        body = JSON.parse(await body.text());
+      } catch {
+        // Body was not JSON — fall through to the generic handler.
+        body = null;
       }
-    } catch {
-      // Body was not JSON — fall through to the generic handler.
+    }
+    const details = readDetail((body as { detail?: unknown } | null | undefined)?.detail);
+    if (details) {
+      return details;
     }
   }
-  return getApiErrorMessage(error, fallback);
+  return { message: getApiErrorMessage(error, fallback), fieldErrors: [] };
+}
+
+/** Like getApiErrorMessage, but for requests made with responseType: 'blob'. */
+export async function getBlobErrorMessage(error: unknown, fallback = 'Something went wrong') {
+  return (await getApiErrorDetails(error, fallback)).message;
 }
 
 export function cleanParams(params: Record<string, unknown>) {

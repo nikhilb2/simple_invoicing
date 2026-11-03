@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from src.core.validation import normalize_gstin
 
@@ -36,6 +36,11 @@ class CompanyProfileBase(BaseModel):
     ifsc_code: str | None = None
     additional_company_info: str | None = None
     show_sku_on_pdf: bool = False
+    eway_enabled: bool = True
+    # le= is what NUMERIC(12, 2) can hold, so an oversized value is a 422 and not a 500.
+    eway_local_threshold: float = Field(default=50000, ge=0, le=9999999999.99)
+    eway_interstate_threshold: float = Field(default=50000, ge=0, le=9999999999.99)
+    eway_always_show_button: bool = True
     show_pay_qr_on_invoice: bool = False
     show_upi_pay_button: bool = False
 

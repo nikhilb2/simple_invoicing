@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Copy, Download, Mail, Printer, Share2 } from 'lucide-react';
+import { Check, Copy, Download, FileJson, Mail, Printer, Share2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
-import type { Invoice } from '../types/api';
+import type { EwayBillSettings, Invoice } from '../types/api';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import { copyTextToClipboard } from '../utils/clipboard';
 import formatCurrency from '../utils/formatting';
 import SendEmailModal from './SendEmailModal';
+import EwayBillModal from './EwayBillModal';
 import ShareModal from './ShareModal';
 import PreviewToolbar from './PreviewToolbar';
 import CopiesStepper from './CopiesStepper';
@@ -20,6 +21,7 @@ type InvoicePreviewProps = {
 
 export default function InvoicePreview({ invoice, onClose, onError }: InvoicePreviewProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showEwayBillModal, setShowEwayBillModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copies, setCopies] = useState(1);
@@ -27,6 +29,7 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
   const [previewFailed, setPreviewFailed] = useState(false);
+  const [ewaySettings, setEwaySettings] = useState<EwayBillSettings | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<'idle' | 'copied' | 'error'>('idle');
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const copyFeedbackTimer = useRef<number | null>(null);
@@ -47,8 +50,25 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
     // Escape closes the open menu first, then the preview -- otherwise opening
     // the menu and hitting Escape would dismiss the whole dialog underneath it.
     if (menuOpen) { setMenuOpen(false); return; }
-    if (!showEmailModal && !showShareModal) onClose();
-  }, [menuOpen, showEmailModal, showShareModal, onClose]));
+    if (!showEmailModal && !showShareModal && !showEwayBillModal) onClose();
+  }, [menuOpen, showEmailModal, showShareModal, showEwayBillModal, onClose]));
+
+  // Only sales invoices get a bill, so nothing else needs these settings.
+  const ewayEligible = invoice.voucher_type === 'sales' && invoice.status === 'active';
+  useEffect(() => {
+    if (!ewayEligible) return;
+    let isMounted = true;
+    api.get<EwayBillSettings>('/eway-bill/settings')
+      .then((res) => { if (isMounted) setEwaySettings(res.data); })
+      .catch(() => {});
+    return () => { isMounted = false; };
+  }, [ewayEligible]);
+  const ewayThreshold = Number(invoice.igst_amount) > 0
+    ? ewaySettings?.eway_interstate_threshold
+    : ewaySettings?.eway_local_threshold;
+  const showEwayBill = ewayEligible && Boolean(ewaySettings?.eway_enabled) && (
+    Boolean(ewaySettings?.eway_always_show_button) || Number(invoice.total_amount) > (ewayThreshold ?? 0)
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -205,6 +225,14 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
               title: 'Download invoice PDF',
             },
           ]}
+          menu={showEwayBill ? [
+            {
+              label: 'Generate E-Way Bill',
+              icon: <FileJson size={16} aria-hidden="true" />,
+              onClick: () => setShowEwayBillModal(true),
+              title: 'Generate E-Way Bill JSON',
+            },
+          ] : []}
           menuExtra={<CopiesStepper value={copies} onChange={setCopies} />}
           menuOpen={menuOpen}
           onMenuOpenChange={setMenuOpen}
@@ -243,6 +271,13 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
           ) : null}
         </div>
       </div>
+
+      {showEwayBillModal && (
+        <EwayBillModal
+          invoice={invoice}
+          onClose={() => setShowEwayBillModal(false)}
+        />
+      )}
 
       {showEmailModal && (
         <SendEmailModal
