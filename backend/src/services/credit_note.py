@@ -244,6 +244,45 @@ def create_credit_note(
                     ),
                 )
 
+    # Discount notes are capped by amount instead of quantity: the total
+    # credited against a line -- existing active credit note items of any
+    # type, plus this request -- must not exceed the line's total. Without
+    # this, a discount note could credit more than the line was ever worth.
+    if payload.credit_note_type == "discount":
+        new_amounts: dict[int, Decimal] = {}
+        for cn_item in payload.items:
+            amount = Decimal(str(cn_item.discount_amount_inclusive or 0))
+            new_amounts[cn_item.invoice_item_id] = (
+                new_amounts.get(cn_item.invoice_item_id, Decimal("0")) + amount
+            )
+        for item_id, new_amount in new_amounts.items():
+            ii = invoice_item_map[item_id]
+            if ii.line_total is None:
+                continue
+            line_total = Decimal(str(ii.line_total))
+            already_query = (
+                db.query(func.sum(CreditNoteItem.line_total))
+                .join(CN, CN.id == CreditNoteItem.credit_note_id)
+                .filter(
+                    CreditNoteItem.invoice_item_id == item_id,
+                    CN.status == "active",
+                )
+            )
+            if company_id is not None:
+                already_query = already_query.filter(company_scope(CN.company_id, company_id))
+            already = already_query.scalar()
+            already_total = (
+                Decimal(str(already)) if isinstance(already, (int, float, Decimal)) else Decimal("0")
+            )
+            if already_total + new_amount > line_total:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Credit for item {item_id} would exceed its line total "
+                        f"of ₹{_money(line_total)}"
+                    ),
+                )
+
     # ── 4. Resolve financial year ────────────────────────────────────────────
     active_fy = get_active_fy(db, company_id=company_id)
     fy = active_fy
