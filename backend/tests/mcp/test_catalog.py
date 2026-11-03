@@ -28,10 +28,12 @@ from src.mcp_server.schema import (
 )
 
 # Measured against the real spec on 2026-09-08.
-EXPECTED_OPERATIONS = 168  # 166 tagged + GET /api/health
-EXPECTED_TOOLS = 146  # generated only; `search` and `fetch` are added on top
-# The /api/quotations routes added ten operations and ten tools.
+EXPECTED_OPERATIONS = 171  # 169 tagged + GET /api/health
+EXPECTED_TOOLS = 149  # generated only; `search` and `fetch` are added on top
+# The /api/quotations routes added ten operations and ten tools, and the GSTR-3B
+# worksheet three of each.
 # GET /api/invoices/dues/ageing added one operation and one tool.
+# The three GSTR-3B worksheet routes added three of each.
 # GET /api/analytics/product-performance added one operation and one tool, and
 # GET /api/analytics/product-performance/{product_id} one more of each.
 # GET /api/ledgers/{ledger_id}/statement/csv added one more of each.

@@ -282,7 +282,7 @@ All routes sit under `/api`. Full interactive docs are at `/docs` (Swagger UI) w
 | `/api/credit-notes` | Credit notes |
 | `/api/quotations` | Quotations and proforma invoices |
 | `/api/payments` | Payments and receipts |
-| `/api/ledgers` | Ledgers, statements, day book, tax ledger and GSTR-1 |
+| `/api/ledgers` | Ledgers, statements, day book, tax ledger, GSTR-1 and the GSTR-3B worksheet (an estimate, not a filing) |
 | `/api/invoice-series` | Invoice numbering series |
 | `/api/financial-years` | Financial year management |
 | `/api/dashboard` | Dashboard metrics and chart data |
