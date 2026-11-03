@@ -72,6 +72,9 @@ NAME_OVERRIDES: dict[tuple[str, str], str] = {
     ("GET", "/api/ledgers/tax-ledger/gstr1/export-pdf"): "gstr1_export_pdf",
     ("GET", "/api/ledgers/tax-ledger/gstr1/summary"): "gstr1_summary",
     ("GET", "/api/ledgers/tax-ledger/gstr1/validate"): "gstr1_validate",
+    ("GET", "/api/ledgers/tax-ledger/gstr3b/worksheet"): "gstr3b_worksheet",
+    ("GET", "/api/ledgers/tax-ledger/gstr3b/export-csv"): "gstr3b_export_csv",
+    ("GET", "/api/ledgers/tax-ledger/gstr3b/export-pdf"): "gstr3b_export_pdf",
     ("GET", "/api/ledgers/{ledger_id}/statement/pdf"): "ledgers_download_statement_pdf",
     ("GET", "/api/ledgers/{ledger_id}/statement/csv"): "ledgers_download_statement_csv",
     ("GET", "/api/ledgers/{ledger_id}/addresses/"): "ledgers_list_addresses",
@@ -174,6 +177,20 @@ DESCRIPTION_OVERRIDES: dict[tuple[str, str], str] = {
     ("GET", "/api/ledgers/tax-ledger/gstr1/summary"): "GSTR-1 summary totals for the selected return period.",
     ("GET", "/api/ledgers/tax-ledger/gstr1/validate"): "Validate invoices against GSTR-1 filing rules and list the problems found.",
     ("GET", "/api/ledgers/tax-ledger/gstr1/export-json"): "GSTR-1 return as the GST portal's JSON upload format.",
+    ("GET", "/api/ledgers/tax-ledger/gstr3b/worksheet"): (
+        "GSTR-3B worksheet for exactly one month or one GST quarter. An ESTIMATE from the user's "
+        "own books for cross-checking, not a filing: values auto-populated on the GST portal take "
+        "precedence. Rows marked not_tracked have no figures because the books do not record them. "
+        "Read the warnings and known limits, and pass them on, before quoting any figure."
+    ),
+    ("GET", "/api/ledgers/tax-ledger/gstr3b/export-csv"): (
+        "GSTR-3B worksheet as CSV, for one month or one GST quarter. An estimate from the user's "
+        "books for cross-checking, not a filing and not uploadable to the GST portal."
+    ),
+    ("GET", "/api/ledgers/tax-ledger/gstr3b/export-pdf"): (
+        "GSTR-3B worksheet as PDF, for one month or one GST quarter. An estimate from the user's "
+        "books for cross-checking, not a filing and not uploadable to the GST portal."
+    ),
     # products / inventory
     ("GET", "/api/products/"): "List products for the active company. Supports free-text `search` over name and SKU.",
     ("GET", "/api/products/with-inventory"): "List products joined with live stock levels, sortable and filterable by stock status.",
@@ -285,6 +302,7 @@ CORE_TOOLS: frozenset[str] = frozenset(
         "ledgers_day_book",
         "tax_ledger_get",
         "gstr1_summary",
+        "gstr3b_worksheet",
         # email
         "email_send_invoice",
     }

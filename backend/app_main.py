@@ -15,7 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import text
 
 from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes
-from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes, bom as bom_routes, email_logs as email_logs_routes, api_keys as api_keys_routes, dashboard as dashboard_routes, analytics as analytics_routes, marketplace as marketplace_routes, serials as serials_routes, oauth as oauth_routes, well_known as well_known_routes, share as share_routes, public_share as public_share_routes
+from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes, bom as bom_routes, email_logs as email_logs_routes, api_keys as api_keys_routes, dashboard as dashboard_routes, analytics as analytics_routes, marketplace as marketplace_routes, serials as serials_routes, oauth as oauth_routes, well_known as well_known_routes, share as share_routes, public_share as public_share_routes, gstr3b as gstr3b_routes
 from src.mcp_server import register_mcp
 from src.core.analytics import (
     bind_request,
@@ -306,6 +306,7 @@ app.include_router(inventory.router, prefix="/api/inventory", tags=["inventory"]
 app.include_router(bom_routes.router, prefix="/api/bom", tags=["bom"])
 app.include_router(invoices.router, prefix="/api/invoices", tags=["invoices"])
 app.include_router(ledgers.router, prefix="/api/ledgers", tags=["ledgers"])
+app.include_router(gstr3b_routes.router, prefix="/api/ledgers/tax-ledger/gstr3b", tags=["ledgers"])
 app.include_router(company.router, prefix="/api/company", tags=["company"])
 app.include_router(company_accounts_routes.router, prefix="/api/company-accounts", tags=["company-accounts"])
 app.include_router(payments.router, prefix="/api/payments", tags=["payments"])
