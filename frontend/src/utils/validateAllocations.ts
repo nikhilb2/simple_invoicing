@@ -4,6 +4,10 @@ export type PaymentInvoiceAllocationLike = {
   allocated_amount: number | string | null | undefined;
 };
 
+export function remainingAmount(paymentAmount: number, allocatedTotal: number): number {
+  return (Math.round(paymentAmount * 100) - Math.round(allocatedTotal * 100)) / 100;
+}
+
 export function validateAllocations(
   allocations: PaymentInvoiceAllocationLike[] | undefined,
   paymentAmount: number,

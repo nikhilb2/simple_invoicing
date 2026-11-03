@@ -611,6 +611,8 @@ def update_product_with_inventory(
 
     # Update inventory quantity if provided
     if payload.current_stock is not None:
+        if not product.allow_decimal and not _is_whole_number(payload.current_stock):
+            raise HTTPException(status_code=400, detail="Quantity must be a whole number for this product")
         inventory = (
             db.query(Inventory)
             .filter(

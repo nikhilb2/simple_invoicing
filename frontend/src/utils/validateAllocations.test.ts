@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { validateAllocations } from './validateAllocations';
+import { remainingAmount, validateAllocations } from './validateAllocations';
 
 test('returns null for valid allocations', () => {
   const result = validateAllocations(
@@ -47,6 +47,18 @@ test('accepts 50.1 + 50.2 against 100.3 (floating point)', () => {
     100.3,
   );
   expect(result).toBeNull();
+});
+
+test('remaining amount is zero for an exact allocation (floating point)', () => {
+  expect(remainingAmount(100.3, 50.1 + 50.2)).toBe(0);
+});
+
+test('remaining amount is positive when the allocation is short', () => {
+  expect(remainingAmount(100.3, 50.1 + 40.2)).toBe(10);
+});
+
+test('remaining amount is negative when the allocation overshoots', () => {
+  expect(remainingAmount(100, 120.5)).toBe(-20.5);
 });
 
 test('flags non-numeric allocation', () => {
