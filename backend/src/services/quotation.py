@@ -347,9 +347,10 @@ def update_quotation(db: Session, quotation: Quotation, payload: QuotationUpdate
             detail=f"A {quotation.status} {document_label(quotation.document_type).lower()} cannot be edited",
         )
 
-    # An invoice cancelled earlier was for the offer as it stood then. Once the offer
-    # changes, restoring that invoice must not mark this quotation as converted, so the
-    # link ends here and the invoice comes back on its own.
+    # An invoice cancelled earlier was for the offer as it stood then. After an edit,
+    # restoring that invoice must not mark this quotation as converted, so the link ends
+    # here and the invoice comes back on its own. Any save counts, even one that changes
+    # nothing: telling those apart would mean comparing every field and line.
     db.query(Invoice).filter(
         Invoice.source_quotation_id == quotation.id,
         Invoice.company_id == company.id,
