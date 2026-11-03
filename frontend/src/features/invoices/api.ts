@@ -1,4 +1,5 @@
 import api from '../../api/client';
+import type { InvoiceDueSort } from '../../utils/invoiceDuesSorting';
 import type { CompanyProfile, DuesAgeing, Invoice, Ledger, LedgerAddress, LedgerAddressCreate, LedgerAddressUpdate, OutstandingInvoice, PaginatedInvoices, Product } from '../../types/api';
 
 export type VoucherTypeFilter = 'all' | 'sales' | 'purchase';
@@ -25,6 +26,7 @@ export type DueInvoiceFilters = {
   ledgerId?: number;
   dueDateFrom?: string;
   dueDateTo?: string;
+  sort?: InvoiceDueSort;
 };
 
 function buildInvoiceParams(filters: InvoiceFilters) {
@@ -104,6 +106,9 @@ export async function fetchDueInvoicePage(filters: DueInvoiceFilters): Promise<P
   }
   if (filters.dueDateTo) {
     params.due_date_to = filters.dueDateTo;
+  }
+  if (filters.sort) {
+    params.sort = filters.sort;
   }
 
   const res = await api.get<PaginatedInvoices>('/invoices/dues', { params });
