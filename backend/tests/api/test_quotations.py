@@ -559,6 +559,65 @@ def test_duplicate_keeps_a_shipping_address_whose_saved_row_has_gone(setup, db_s
     assert copy["shipping_address_label"] == "Warehouse"
 
 
+def _quote_with_deleted_address(client, db_session, ledger, product):
+    address = _saved_address(client, ledger["id"])
+    quote = create_quotation(
+        client, ledger["id"], product["id"],
+        shipping_address_same_as_billing=False,
+        shipping_address_id=address["id"],
+    )
+    row = db_session.query(Quotation).filter(Quotation.id == quote["id"]).one()
+    row.shipping_address_id = None  # What ON DELETE SET NULL leaves on Postgres.
+    db_session.query(LedgerAddress).filter(LedgerAddress.id == address["id"]).delete()
+    db_session.commit()
+    return quote
+
+
+def _ledger_address_count(db_session, ledger_id):
+    db_session.expire_all()
+    return db_session.query(LedgerAddress).filter(LedgerAddress.ledger_id == ledger_id).count()
+
+
+def test_duplicate_does_not_bring_a_deleted_address_back_to_the_ledger(setup, db_session):
+    client, ledger, product = setup
+    quote = _quote_with_deleted_address(client, db_session, ledger, product)
+
+    copy = ok(client.post(f"/api/quotations/{quote['id']}/duplicate"))
+    assert copy["shipping_address"] == "9 Dock Road"
+    assert copy["shipping_address_id"] is None
+    assert _ledger_address_count(db_session, ledger["id"]) == 0
+
+
+def test_editing_a_quote_whose_address_was_deleted_keeps_it_off_the_ledger(setup, db_session):
+    """The form sends the snapshot back as new_shipping_address, unchanged."""
+    client, ledger, product = setup
+    quote = _quote_with_deleted_address(client, db_session, ledger, product)
+
+    saved = ok(client.put(f"/api/quotations/{quote['id']}", json={
+        **_update_body(ledger["id"], product["id"]),
+        "shipping_address_same_as_billing": False,
+        "new_shipping_address": {"label": "Warehouse", "address": "9 Dock Road"},
+    }))
+    assert saved["shipping_address"] == "9 Dock Road"
+    assert saved["shipping_address_label"] == "Warehouse"
+    assert saved["shipping_address_id"] is None
+    assert _ledger_address_count(db_session, ledger["id"]) == 0
+
+
+def test_editing_the_address_of_such_a_quote_still_adds_a_new_one(setup, db_session):
+    client, ledger, product = setup
+    quote = _quote_with_deleted_address(client, db_session, ledger, product)
+
+    saved = ok(client.put(f"/api/quotations/{quote['id']}", json={
+        **_update_body(ledger["id"], product["id"]),
+        "shipping_address_same_as_billing": False,
+        "new_shipping_address": {"label": "Warehouse", "address": "11 New Dock Road"},
+    }))
+    assert saved["shipping_address"] == "11 New Dock Road"
+    assert saved["shipping_address_id"] is not None
+    assert _ledger_address_count(db_session, ledger["id"]) == 1
+
+
 def test_duplicate_uses_todays_tax_rate(setup):
     client, ledger, product = setup
     quote = create_quotation(client, ledger["id"], product["id"])

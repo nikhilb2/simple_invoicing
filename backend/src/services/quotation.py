@@ -143,8 +143,15 @@ def _apply_shipping(
     quotation: Quotation,
     payload: QuotationFields,
     company_id: int,
+    *,
+    kept_snapshot: tuple[str, str] | None = None,
 ) -> None:
-    """Snapshot the shipping address and remember which saved row it came from."""
+    """Snapshot the shipping address and remember which saved row it came from.
+
+    kept_snapshot is a (label, address) already on the quote whose saved row has gone.
+    Sending it back unchanged keeps it on the quote alone: it must not return to the
+    ledger's list. Any other address typed in is genuinely new and gets a row.
+    """
     quotation.shipping_address = None
     quotation.shipping_address_label = None
     quotation.shipping_address_id = None
@@ -167,6 +174,14 @@ def _apply_shipping(
                 status_code=404,
                 detail=f"Shipping address {payload.shipping_address_id} not found for this ledger",
             )
+    elif (
+        payload.new_shipping_address is not None
+        and kept_snapshot is not None
+        and kept_snapshot == (payload.new_shipping_address.label.strip(), payload.new_shipping_address.address.strip())
+    ):
+        quotation.shipping_address = kept_snapshot[1]
+        quotation.shipping_address_label = kept_snapshot[0]
+        return
     elif payload.new_shipping_address is not None:
         # Re-saving a quotation sends its address again; only a new one gets a row.
         address = (
@@ -224,6 +239,8 @@ def _apply_payload(
     quotation: Quotation,
     payload: QuotationFields,
     company: CompanyProfile,
+    *,
+    kept_snapshot: tuple[str, str] | None = None,
 ) -> None:
     """Snapshot the parties and price the lines, with the arithmetic invoices use."""
     processor = InvoiceProcessor(db)
@@ -238,7 +255,7 @@ def _apply_payload(
     quotation.reference_notes = payload.reference_notes
     quotation.tax_inclusive = payload.tax_inclusive
     quotation.apply_round_off = payload.apply_round_off
-    _apply_shipping(db, quotation, payload, company.id)
+    _apply_shipping(db, quotation, payload, company.id, kept_snapshot=kept_snapshot)
 
     validated = processor.resolve_items(payload.items, company.id, document_label="Quotation")
     _reject_lines_conversion_would_refuse(validated)
@@ -301,7 +318,14 @@ def _require_fits(subject: str, *amounts: Decimal) -> None:
         )
 
 
-def create_quotation(db: Session, payload: QuotationCreate, *, created_by: int, company: CompanyProfile) -> Quotation:
+def create_quotation(
+    db: Session,
+    payload: QuotationCreate,
+    *,
+    created_by: int,
+    company: CompanyProfile,
+    kept_snapshot: tuple[str, str] | None = None,
+) -> Quotation:
     """A new open quotation on its own number series. Moves nothing else."""
     quotation_date = payload.quotation_date or india_today()
     valid_until = payload.valid_until
@@ -333,10 +357,18 @@ def create_quotation(db: Session, payload: QuotationCreate, *, created_by: int, 
     )
     # Added only once the required columns are filled: the lookups in _apply_payload
     # would otherwise autoflush a half-built row.
-    _apply_payload(db, quotation, payload, company)
+    _apply_payload(db, quotation, payload, company, kept_snapshot=kept_snapshot)
     db.add(quotation)
     db.flush()
     return quotation
+
+
+def _orphaned_snapshot(quotation: Quotation) -> tuple[str, str] | None:
+    """The (label, address) a quote carries after the saved row it came from was deleted."""
+    if quotation.shipping_address_id is not None or not quotation.shipping_address:
+        return None
+    # The form fills a blank label with "Shipping" before sending, so compare on that.
+    return ((quotation.shipping_address_label or "Shipping").strip(), quotation.shipping_address.strip())
 
 
 def update_quotation(db: Session, quotation: Quotation, payload: QuotationUpdate, *, company: CompanyProfile) -> Quotation:
@@ -372,7 +404,7 @@ def update_quotation(db: Session, quotation: Quotation, payload: QuotationUpdate
     # deletes in whichever order suits the unit of work.
     quotation.items = []
     db.flush()
-    _apply_payload(db, quotation, payload, company)
+    _apply_payload(db, quotation, payload, company, kept_snapshot=_orphaned_snapshot(quotation))
     quotation.updated_at = datetime.utcnow()
     db.flush()
     return quotation
@@ -420,7 +452,13 @@ def duplicate_quotation(db: Session, original: Quotation, *, created_by: int, co
             for item in original.items
         ],
     }
-    return create_quotation(db, QuotationCreate(**fields), created_by=created_by, company=company)
+    return create_quotation(
+        db,
+        QuotationCreate(**fields),
+        created_by=created_by,
+        company=company,
+        kept_snapshot=_orphaned_snapshot(original),
+    )
 
 
 # ---------------------------------------------------------------------------
