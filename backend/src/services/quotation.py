@@ -6,8 +6,8 @@ any other sale. See the note at the top of ``src/models/quotation.py``.
 
 These functions flush but never commit; the routes own the transaction. Every state
 change locks the quotation row first. Lock order is always the quotation, then the
-series and stock rows the invoice path touches, which is why the invoice cancel and
-restore hooks take it before doing anything else.
+invoice, then the series and stock rows the invoice path touches, which is why the
+invoice cancel and restore hooks take it before doing anything else.
 """
 
 from __future__ import annotations
@@ -688,13 +688,38 @@ def convert_quotation(
 # Hooks for the invoice routes
 # ---------------------------------------------------------------------------
 
-def lock_source_quotation(db: Session, invoice: Invoice) -> Quotation | None:
-    """Lock the quotation an invoice came from. Take this before moving any stock."""
-    if invoice.source_quotation_id is None:
-        return None
+def lock_invoice_for_status_change(db: Session, invoice: Invoice) -> tuple[Invoice, Quotation | None]:
+    """Lock an invoice and the quotation it came from, and read both as they now stand.
+
+    Take this before moving any stock, then check the invoice's status on what it
+    returns: the caller's copy was read before waiting, so a request queued behind
+    another cancel or restore still sees the old status on it. The quotation comes
+    first, as in conversion and every other quotation change, so no two of these can
+    wait on each other.
+    """
+    quotation = None
+    if invoice.source_quotation_id is not None:
+        quotation = (
+            db.query(Quotation)
+            .filter(Quotation.id == invoice.source_quotation_id, Quotation.company_id == invoice.company_id)
+            .populate_existing()
+            .with_for_update()
+            .first()
+        )
+    locked = lock_invoice(db, invoice.id, invoice.company_id)
+    if locked is None:
+        raise HTTPException(status_code=404, detail=f"Invoice {invoice.id} not found")
+    # An edit of the quotation can unlink this invoice while it waits for that lock.
+    if quotation is not None and locked.source_quotation_id != quotation.id:
+        quotation = None
+    return locked, quotation
+
+
+def lock_invoice(db: Session, invoice_id: int, company_id: int | None) -> Invoice | None:
+    """One invoice with its row locked, re-read. Never joinedload: see get_quotation."""
     return (
-        db.query(Quotation)
-        .filter(Quotation.id == invoice.source_quotation_id, Quotation.company_id == invoice.company_id)
+        db.query(Invoice)
+        .filter(Invoice.id == invoice_id, Invoice.company_id == company_id)
         .populate_existing()
         .with_for_update()
         .first()

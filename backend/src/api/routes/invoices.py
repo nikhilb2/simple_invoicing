@@ -39,7 +39,8 @@ from src.services.invoice_creation import create_invoice_record
 from src.services.invoice_processor import InvoiceProcessor
 from src.services.quotation import (
     close_after_invoice_restored,
-    lock_source_quotation,
+    lock_invoice,
+    lock_invoice_for_status_change,
     reopen_after_invoice_cancelled,
     require_restorable,
 )
@@ -692,6 +693,18 @@ def update_invoice(
         )
 
     try:
+        # Invoice before stock, the order cancel and restore use, so an edit and a
+        # cancel of one invoice wait for each other instead of deadlocking. The status
+        # is checked again because a cancel may have committed while this waited.
+        invoice = lock_invoice(db, invoice_id, active_company.id)
+        if invoice is None:
+            raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
+        if invoice.status == "cancelled":
+            raise HTTPException(
+                status_code=400,
+                detail="Cancelled invoices cannot be edited. Restore the invoice first.",
+            )
+
         active_fy = get_active_fy(db, company_id=active_company.id)
 
         processor = InvoiceProcessor(db)
@@ -853,12 +866,11 @@ def cancel_invoice(
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
 
-    if invoice.status == "cancelled":
-        raise HTTPException(status_code=400, detail="Invoice is already cancelled")
-
     try:
         # Before any stock moves: conversion takes the quotation row first as well.
-        source_quotation = lock_source_quotation(db, invoice)
+        invoice, source_quotation = lock_invoice_for_status_change(db, invoice)
+        if invoice.status == "cancelled":
+            raise HTTPException(status_code=400, detail="Invoice is already cancelled")
         processor = InvoiceProcessor(db)
         # Serials first: cancelling a purchase whose units are already sold is
         # refused, and that message is more useful than a stock shortfall.
@@ -904,11 +916,10 @@ def restore_invoice(
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
 
-    if invoice.status != "cancelled":
-        raise HTTPException(status_code=400, detail="Invoice is not cancelled")
-
     try:
-        source_quotation = lock_source_quotation(db, invoice)
+        invoice, source_quotation = lock_invoice_for_status_change(db, invoice)
+        if invoice.status != "cancelled":
+            raise HTTPException(status_code=400, detail="Invoice is not cancelled")
         require_restorable(db, source_quotation, invoice)
         processor = InvoiceProcessor(db)
         processor.restore_serials(invoice, company_id=active_company.id)
