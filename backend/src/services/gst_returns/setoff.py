@@ -4,19 +4,24 @@ Pure arithmetic: no database, no FastAPI. Callers pass the output tax and the
 input credit for the period per head (CGST, SGST, IGST) and get back what was
 spent where, what is still payable in cash and what credit carries forward.
 
-The rule (CGST Act ss.49(5), 49A, 49B; CGST Rules r.88A; the portal's GSTR-3B
-Table 6.1 guide):
+The rule (CGST Act ss.49(5), 49A, 49B; CGST Rules r.88A; CBIC Circular
+98/17/2019; the portal's GSTR-3B Table 6.1 guide):
 
 * IGST credit pays IGST first. What is left may pay CGST or SGST, in any order.
-* CGST credit pays CGST first. What is left may pay IGST, and only once the
-  IGST credit has been used up.
-* SGST credit pays SGST first, then IGST on the same terms.
+* The IGST credit must be completely exhausted before any CGST or SGST credit
+  is used, on any head. So IGST credit cannot be left to carry forward while
+  CGST or SGST credit is spent.
+* CGST credit then pays CGST first; what is left may pay IGST.
+* SGST credit likewise pays SGST first, then IGST.
 * CGST credit never pays SGST and SGST credit never pays CGST.
 
-Where the rule leaves a choice, the choice never changes the total cash due,
-so this module takes the one that minimises it and settles ties in a fixed
-order: IGST credit goes to CGST before SGST, and surplus CGST credit goes to
-IGST before surplus SGST credit. That keeps results deterministic.
+Where the rule leaves a choice, this module takes the one that minimises cash
+payable. The choice does change the cash due: with output CGST 100, SGST 100
+and credit IGST 100, CGST 100, putting the IGST credit on CGST leaves 100 in
+cash, putting it on SGST leaves none. IGST credit therefore goes first to the
+head whose own credit cannot cover it. Ties settle in a fixed order, IGST
+credit to CGST before SGST and surplus CGST credit to IGST before surplus SGST
+credit, so results are deterministic.
 """
 
 from __future__ import annotations
@@ -70,26 +75,27 @@ def compute_setoff(
     credit = {h: max(0.0, inp[h]) + max(0.0, -out[h]) for h in HEADS}
     used = dict.fromkeys(HEADS, 0.0)
 
-    def spend(source: str, target: str) -> None:
-        amount = min(credit[source], liability[target])
+    def spend(source: str, target: str, cap: float = float("inf")) -> None:
+        amount = min(credit[source], liability[target], cap)
         if amount <= 0:
             return
         credit[source] -= amount
         liability[target] -= amount
         used[target] += amount
 
-    # CGST and SGST credit clear their own head first.
-    spend("cgst", "cgst")
-    spend("sgst", "sgst")
-    # IGST credit clears IGST before anything else, so by the time CGST or SGST
-    # credit is allowed onto IGST, the IGST credit is already used up or the
-    # IGST liability is gone.
+    # IGST credit clears IGST first, then must be exhausted before any CGST or
+    # SGST credit is used (Circular 98/17/2019).
     spend("igst", "igst")
-    # What is left of IGST credit goes to whichever of CGST and SGST still owes.
-    # Order only moves the shortfall between the two, not its total.
+    # It goes first to the shortfall its head's own credit cannot cover; this
+    # is what keeps cash minimal, as own-head credit still pays the rest later.
+    spend("igst", "cgst", cap=max(0.0, liability["cgst"] - credit["cgst"]))
+    spend("igst", "sgst", cap=max(0.0, liability["sgst"] - credit["sgst"]))
+    # Any IGST credit still left pays CGST, then SGST (order is a tie-break).
     spend("igst", "cgst")
     spend("igst", "sgst")
-    # Surplus CGST and SGST credit may pay IGST that IGST credit could not.
+    # Only now may CGST and SGST credit pay their own head, then surplus IGST.
+    spend("cgst", "cgst")
+    spend("sgst", "sgst")
     spend("cgst", "igst")
     spend("sgst", "igst")
 
