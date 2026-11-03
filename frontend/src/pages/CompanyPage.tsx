@@ -416,7 +416,7 @@ function TermsAndConditionsCard({ companyId }: { companyId: number }) {
 type SeriesRowState = Required<InvoiceSeriesUpdate>;
 
 function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLElement> }) {
-  const { activeFY } = useFY();
+  const { activeFY, loading: fyLoading } = useFY();
   const [seriesList, setSeriesList] = useState<InvoiceSeries[]>([]);
   const [drafts, setDrafts] = useState<Record<number, SeriesRowState>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
@@ -426,12 +426,16 @@ function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLEl
   const saveInFlightRef = useRef<Record<number, boolean>>({});
 
   useEffect(() => {
+    if (fyLoading) return;
+
+    let cancelled = false;
     setLoading(true);
     void (async () => {
       try {
         const params: Record<string, string | number> = {};
         if (activeFY) params.financial_year_id = activeFY.id;
         const res = await api.get<InvoiceSeries[]>('/invoice-series/', { params });
+        if (cancelled) return;
         setSeriesList(res.data);
         const initial: Record<number, SeriesRowState> = {};
         for (const s of res.data) {
@@ -449,10 +453,14 @@ function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLEl
       } catch {
         // non-admin users won't see this card
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
-  }, [activeFY?.id]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeFY?.id, fyLoading]);
 
   function patchDraft(id: number, patch: Partial<SeriesRowState>) {
     setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
