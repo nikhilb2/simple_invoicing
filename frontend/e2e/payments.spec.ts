@@ -1,10 +1,8 @@
-import { test, expect, expectSuccess, uniqueGstin, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, uniqueGstin, clickNavLink, localToday, localStartOfMonth } from './fixtures';
 
 async function setStatementRangeToCurrentMonth(page: import('@playwright/test').Page) {
-  const today = new Date();
-  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  await page.locator('#statement-from').fill(startOfMonth.toISOString().split('T')[0]);
-  await page.locator('#statement-to').fill(today.toISOString().split('T')[0]);
+  await page.locator('#statement-from').fill(localStartOfMonth());
+  await page.locator('#statement-to').fill(localToday());
 }
 
 test.describe('Payments (Receipt / Payment)', () => {

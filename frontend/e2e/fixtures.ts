@@ -273,21 +273,42 @@ export async function searchAllFY(page: Page) {
  * for a few hours either side of midnight anywhere but UTC.
  */
 export function localToday() {
-  const d = new Date();
+  return localDateString(new Date());
+}
+
+/** A Date as YYYY-MM-DD from its local parts (never via toISOString, which is UTC). */
+export function localDateString(d: Date) {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** First day of the current month as YYYY-MM-DD, in the browser's local zone. */
+export function localStartOfMonth() {
+  const d = new Date();
+  return localDateString(new Date(d.getFullYear(), d.getMonth(), 1));
+}
+
+/** The same day one year ago as YYYY-MM-DD, in the browser's local zone. */
+export function localYearAgo() {
+  const d = new Date();
+  return localDateString(new Date(d.getFullYear() - 1, d.getMonth(), d.getDate()));
 }
 
 let salesDataSeeded = false;
 
 /**
  * Helper: make sure the database holds at least one product, one ledger and
- * one sales invoice dated today, creating them through the UI if not.
+ * one sales invoice dated today, by creating them through the UI.
+ *
+ * It does not check what already exists: the first call in each worker always
+ * seeds one product, one ledger and one invoice (names are unique, so this is
+ * safe on a populated database), and later calls in that worker are no-ops. The
+ * flag lives in module state, so a restarted worker (for example after a test
+ * failure) seeds again.
  *
  * Specs that pick "the first option" of a combobox or measure a populated
  * report table cannot assume another spec (or a demo seed) ran first: a
  * database seeded as CONTRIBUTING.md describes holds only the admin user.
- * Runs once per worker.
  */
 export async function ensureSalesData(page: Page) {
   if (salesDataSeeded) return;

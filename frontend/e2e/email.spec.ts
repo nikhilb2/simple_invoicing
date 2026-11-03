@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, searchAllFY } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, searchAllFY, localToday, localStartOfMonth } from './fixtures';
 
 const LEDGER_EMAIL = 'buyer@example.com';
 const EXPECT_TIMEOUT_MS = Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '2000');
@@ -275,10 +275,8 @@ test.describe('Send Email Modal', () => {
       await expect(page.locator('h1')).toContainText(ledgerName, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
       // Ensure the selected period definitely includes today and wait for rows.
-      const today = new Date();
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      await page.locator('#statement-from').fill(startOfMonth.toISOString().split('T')[0]);
-      await page.locator('#statement-to').fill(today.toISOString().split('T')[0]);
+      await page.locator('#statement-from').fill(localStartOfMonth());
+      await page.locator('#statement-to').fill(localToday());
       await expect(page.locator('.invoice-row').filter({ hasText: ledgerName }).first()).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
       // Open statement preview — button only shows when entries exist

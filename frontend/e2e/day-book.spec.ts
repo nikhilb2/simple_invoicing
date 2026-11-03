@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, createProduct, adjustInventory, clickNavLink, selectComboboxOption } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, createProduct, adjustInventory, clickNavLink, selectComboboxOption, localToday, localStartOfMonth, localYearAgo } from './fixtures';
 
 test.describe('Day Book', () => {
   test('displays day book heading', async ({ authedPage: page }) => {
@@ -21,15 +21,11 @@ test.describe('Day Book', () => {
     await clickNavLink(page, '/day-book');
 
     // Set a wide date range
-    const today = new Date();
-    const yearAgo = new Date(today);
-    yearAgo.setFullYear(yearAgo.getFullYear() - 1);
-
     await page.fill(
       '#day-book-from',
-      yearAgo.toISOString().split('T')[0],
+      localYearAgo(),
     );
-    await page.fill('#day-book-to', today.toISOString().split('T')[0]);
+    await page.fill('#day-book-to', localToday());
 
     // Wait for data to load – either voucher entries or empty state
     await page.waitForTimeout(1_000);
@@ -82,13 +78,11 @@ test.describe('Day Book', () => {
 
     // Now go to Day Book
     await clickNavLink(page, '/day-book');
-    const today = new Date();
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     await page.fill(
       '#day-book-from',
-      startOfMonth.toISOString().split('T')[0],
+      localStartOfMonth(),
     );
-    await page.fill('#day-book-to', today.toISOString().split('T')[0]);
+    await page.fill('#day-book-to', localToday());
     await page.waitForTimeout(1_000);
 
     // Debit and credit are now read off the scope bar's metric strip, which

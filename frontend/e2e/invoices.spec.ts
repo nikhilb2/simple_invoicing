@@ -698,7 +698,7 @@ test.describe('Invoices', () => {
     await expect(modal).toBeVisible();
 
     // Preview is PDF-based now; validate key controls and title rendering.
-    await expect(modal.locator('#invoice-preview-title')).toHaveText(/^(Purchase )?[Ii]nvoice \S+/);
+    await expect(modal.locator('#invoice-preview-title')).toHaveText(/^Purchase invoice \S+/);
     await expect(modal.getByRole('button', { name: 'Download invoice PDF' })).toBeVisible();
     await expect(modal.getByRole('button', { name: 'Email invoice' })).toBeVisible();
     await expect(modal.locator('iframe.invoice-pdf-viewer__frame')).toBeVisible();
@@ -808,7 +808,7 @@ test.describe('Invoices', () => {
     await expect(modal).toBeVisible();
 
     // Sales preview uses the same PDF modal controls.
-    await expect(modal.locator('#invoice-preview-title')).toHaveText(/^(Purchase )?[Ii]nvoice \S+/);
+    await expect(modal.locator('#invoice-preview-title')).toHaveText(/^Invoice \S+/);
     await expect(modal.getByRole('button', { name: 'Download invoice PDF' })).toBeVisible();
     await expect(modal.getByRole('button', { name: 'Email invoice' })).toBeVisible();
     await expect(modal.locator('iframe.invoice-pdf-viewer__frame')).toBeVisible();

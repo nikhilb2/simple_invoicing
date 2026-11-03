@@ -1,10 +1,8 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, createProduct, adjustInventory, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, createProduct, adjustInventory, clickNavLink, localToday, localStartOfMonth } from './fixtures';
 
 async function setStatementRangeToCurrentMonth(page: import('@playwright/test').Page) {
-  const today = new Date();
-  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  await page.locator('#statement-from').fill(startOfMonth.toISOString().split('T')[0]);
-  await page.locator('#statement-to').fill(today.toISOString().split('T')[0]);
+  await page.locator('#statement-from').fill(localStartOfMonth());
+  await page.locator('#statement-to').fill(localToday());
 }
 
 /**
@@ -106,7 +104,7 @@ test.describe('Create Invoice from Ledger View', () => {
 
     // The app closes the create dialog and opens the PDF preview for the new invoice.
     await expect(previewModal(page)).toBeVisible({ timeout: 10_000 });
-    await expect(previewModal(page).locator('#invoice-preview-title')).toHaveText(/^(Purchase )?[Ii]nvoice \S+/);
+    await expect(previewModal(page).locator('#invoice-preview-title')).toHaveText(/^Invoice \S+/);
     const invoiceNumber = await readPreviewInvoiceNumber(page);
 
     // Close the preview; the ledger view refreshes its statement in place.
@@ -146,7 +144,7 @@ test.describe('Create Invoice from Ledger View', () => {
 
     // The app closes the create dialog and opens the PDF preview for the new invoice.
     await expect(previewModal(page)).toBeVisible({ timeout: 10_000 });
-    await expect(previewModal(page).locator('#invoice-preview-title')).toHaveText(/^(Purchase )?[Ii]nvoice \S+/);
+    await expect(previewModal(page).locator('#invoice-preview-title')).toHaveText(/^Purchase invoice \S+/);
     const invoiceNumber = await readPreviewInvoiceNumber(page);
 
     // Close the preview; the ledger view refreshes its statement in place.
