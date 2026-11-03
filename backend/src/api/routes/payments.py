@@ -11,6 +11,7 @@ from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
 from src.models.company_account import CompanyAccount
 from src.models.company import CompanyProfile
+from src.models.financial_year import FinancialYear
 from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.user import User, UserRole
 from src.schemas.payment import PaymentCreate, PaymentOut, PaymentUpdate
@@ -307,6 +308,32 @@ def update_payment(
     selected_account = None
     if payload.account_id is not None:
         selected_account = _get_active_account(db, payload.account_id, company_id)
+
+    # The payment's financial year and number series are fixed at creation
+    # and are not regenerated on edit, so a date change that would move the
+    # payment into a different financial year is blocked instead of leaving
+    # it filed under the old year (same rule as invoice date edits). A date
+    # that no financial year covers keeps the previous behaviour (allowed).
+    if payload.date is not None and getattr(payment, "financial_year_id", None) is not None:
+        new_day = payload.date.date() if hasattr(payload.date, "date") else payload.date
+        current_day = payment.date.date() if payment.date else None
+        date_fy = get_fy_for_date(db, new_day, company_id=company_id) if new_day != current_day else None
+        if date_fy is not None and date_fy.id != payment.financial_year_id:
+            current_fy = (
+                db.query(FinancialYear)
+                .filter(FinancialYear.id == payment.financial_year_id)
+                .first()
+            )
+            current_label = current_fy.label if current_fy else f"id {payment.financial_year_id}"
+            kind = "receipt" if payment.voucher_type == "receipt" else "payment"
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"This date is in {date_fy.label}, but the {kind} belongs to "
+                    f"{current_label}. Cancel it and record a new one in "
+                    f"{date_fy.label} instead."
+                ),
+            )
 
     payment.voucher_type = payload.voucher_type
     payment.amount = payload.amount

@@ -12,6 +12,7 @@ from src.api.deps import get_current_user
 from src.api.routes.payments import _build_receipt_html, create_payment, update_payment
 from src.models.buyer import Buyer as Ledger
 from src.models.company import CompanyProfile
+from src.models.financial_year import FinancialYear
 from src.models.invoice import Invoice
 from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.user import User, UserRole
@@ -735,3 +736,123 @@ def test_create_payment_rejects_nan_allocated_amount(client):
     assert response.status_code == 422
     listing = client.get("/api/payments/")
     assert listing.status_code == 200
+
+
+@pytest.fixture
+def payment_in_old_fy(db_session):
+    """A receipt dated in FY 2025-26, with that year and its series number."""
+    company = CompanyProfile(id=1, name="FY Company", address="", currency_code="INR")
+    db_session.add(company)
+    db_session.flush()
+    user = User(
+        id=1,
+        email="test@example.com",
+        full_name="Test User",
+        hashed_password="hashed",
+        role=UserRole.admin,
+    )
+    ledger = Ledger(id=1, company_id=company.id, name="FY Ledger", address="", phone_number="")
+    fy_old = FinancialYear(
+        id=1,
+        company_id=company.id,
+        label="FY 2025-26",
+        start_date=date(2025, 4, 1),
+        end_date=date(2026, 3, 31),
+        is_active=True,
+    )
+    fy_new = FinancialYear(
+        id=2,
+        company_id=company.id,
+        label="FY 2026-27",
+        start_date=date(2026, 4, 1),
+        end_date=date(2027, 3, 31),
+        is_active=False,
+    )
+    payment = Payment(
+        id=1,
+        company_id=company.id,
+        ledger_id=ledger.id,
+        voucher_type="receipt",
+        amount=200,
+        date=datetime(2026, 3, 20, 10, 0),
+        mode="cash",
+        payment_number="REC-0001",
+        financial_year_id=fy_old.id,
+        created_by=user.id,
+        status="active",
+    )
+    db_session.add_all([user, ledger, fy_old, fy_new, payment])
+    db_session.commit()
+    return payment
+
+
+def test_update_payment_date_within_same_fy_works(client, db_session, payment_in_old_fy):
+    response = client.put(
+        f"/api/payments/{payment_in_old_fy.id}",
+        json={
+            "voucher_type": "receipt",
+            "amount": 200,
+            "date": "2026-03-25T10:00:00",
+            "mode": "cash",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["financial_year_id"] == 1
+    assert body["payment_number"] == "REC-0001"
+    assert body["date"].startswith("2026-03-25")
+
+
+def test_update_payment_date_into_other_fy_is_blocked(client, db_session, payment_in_old_fy):
+    response = client.put(
+        f"/api/payments/{payment_in_old_fy.id}",
+        json={
+            "voucher_type": "receipt",
+            "amount": 200,
+            "date": "2026-04-05T10:00:00",
+            "mode": "cash",
+        },
+    )
+
+    assert response.status_code == 400, response.text
+    detail = response.json()["detail"]
+    assert "FY 2026-27" in detail
+    assert "FY 2025-26" in detail
+
+    db_session.expire_all()
+    payment = db_session.get(Payment, payment_in_old_fy.id)
+    assert payment.date == datetime(2026, 3, 20, 10, 0)
+    assert payment.financial_year_id == 1
+    assert payment.payment_number == "REC-0001"
+
+
+def test_update_payment_without_date_still_works(client, db_session, payment_in_old_fy):
+    response = client.put(
+        f"/api/payments/{payment_in_old_fy.id}",
+        json={"voucher_type": "receipt", "amount": 250, "mode": "bank"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["amount"] == 250
+    assert response.json()["financial_year_id"] == 1
+
+
+def test_update_existing_mismatched_payment_keeps_same_day_and_edits_amount(client, db_session, payment_in_old_fy):
+    payment_in_old_fy.date = datetime(2026, 4, 5, 10, 0)
+    db_session.commit()
+
+    response = client.put(
+        f"/api/payments/{payment_in_old_fy.id}",
+        json={"voucher_type": "receipt", "amount": 250, "date": "2026-04-05T00:00:00", "mode": "cash"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["amount"] == 250
+    assert response.json()["financial_year_id"] == 1
+    assert response.json()["payment_number"] == "REC-0001"
+    db_session.expire_all()
+    payment = db_session.get(Payment, payment_in_old_fy.id)
+    assert payment.amount == 250
+    assert payment.financial_year_id == 1
+    assert payment.date.date() == date(2026, 4, 5)
