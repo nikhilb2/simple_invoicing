@@ -4,7 +4,22 @@ import { test, expect } from './fixtures';
 // which the seed makes an active sales invoice with an interstate buyer.
 test.describe('E-Way Bill form', () => {
   test.beforeEach(async ({ authedPage: page }) => {
+    // Other specs add invoices of their own (purchase ones, and sales ones for
+    // products with no HSN), which would otherwise be the newest in the feed and
+    // either have no e-way bill or be blocked. Find a seeded sales invoice that
+    // can generate one and search the feed for it.
+    const invoiceNumber = await page.evaluate(async () => {
+      const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
+      const list = await (await fetch('/api/invoices/?voucher_type=sales&page_size=50', { headers })).json();
+      for (const inv of list.items ?? list) {
+        const pre = await (await fetch(`/api/invoices/${inv.id}/eway-bill/precheck`, { headers })).json();
+        if (!pre.item_validation?.length) return inv.invoice_number as string;
+      }
+      return null;
+    });
+    expect(invoiceNumber).toBeTruthy();
     await page.goto('/invoices-view');
+    await page.getByPlaceholder(/Search invoice no/).fill(invoiceNumber!);
     await page.getByTitle('Preview').first().click();
     const preview = page.locator('.modal-panel--invoice-preview');
     await expect(preview).toBeVisible({ timeout: 10_000 });
