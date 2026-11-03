@@ -338,6 +338,23 @@ def conversion_draft(
     return build_conversion_draft(db, quotation, company=active_company)
 
 
+ONE_LIVE_INVOICE_INDEX = "ux_invoices_active_source_quotation"
+
+
+def _violates_one_live_invoice_index(exc: IntegrityError) -> bool:
+    """Whether the database refused a second live invoice for one quotation.
+
+    Matched on the constraint the driver reports, never on str(exc): that also holds
+    the INSERT's text, which names source_quotation_id whatever went wrong.
+    """
+    orig = exc.orig
+    name = getattr(getattr(orig, "diag", None), "constraint_name", None)
+    if name:
+        return name == ONE_LIVE_INVOICE_INDEX
+    # A driver that reports no constraint still puts it in its own message.
+    return ONE_LIVE_INVOICE_INDEX in str(orig)
+
+
 @router.post("/{quotation_id}/convert", response_model=InvoiceOut)
 def convert(
     quotation_id: int,
@@ -372,7 +389,7 @@ def convert(
     except IntegrityError as exc:
         db.rollback()
         # The partial unique index, reached by something the row lock did not catch.
-        if "source_quotation" not in str(exc):
+        if not _violates_one_live_invoice_index(exc):
             logger.exception("Error converting quotation")
             raise HTTPException(status_code=500, detail="Failed to convert quotation")
         quotation = get_quotation(db, active_company.id, quotation_id)

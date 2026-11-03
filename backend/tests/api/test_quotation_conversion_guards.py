@@ -296,3 +296,68 @@ def test_an_invoice_date_sent_with_the_conversion_is_the_one_used(setup):
     chosen = (date.today() + timedelta(days=2)).isoformat()
     invoice = ok(convert(client, quote["id"], invoice_date=chosen))
     assert invoice["invoice_date"].startswith(chosen)
+
+
+# ---------------------------------------------------------------------------
+# Which integrity failure is "already converted"
+# ---------------------------------------------------------------------------
+
+_INSERT = "INSERT INTO invoices (invoice_number, source_quotation_id) VALUES (%(n)s, %(q)s)"
+
+
+class _Diag:
+    def __init__(self, constraint_name):
+        self.constraint_name = constraint_name
+
+
+class _DriverError(Exception):
+    def __init__(self, message, constraint_name=None):
+        super().__init__(message)
+        self.diag = _Diag(constraint_name)
+
+
+def _fail_convert_with(monkeypatch, orig):
+    from sqlalchemy.exc import IntegrityError
+
+    from src.api.routes import quotations as routes
+
+    def boom(*args, **kwargs):
+        raise IntegrityError(_INSERT, {}, orig)
+
+    monkeypatch.setattr(routes, "convert_quotation", boom)
+
+
+def test_a_foreign_key_failure_on_the_insert_is_not_called_already_converted(setup, monkeypatch, caplog):
+    """The statement text lists source_quotation_id, so it must not be what is matched."""
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"])
+    draft = _draft(client, quote)
+    _fail_convert_with(monkeypatch, _DriverError(
+        'insert or update on table "invoices" violates foreign key constraint "invoices_ledger_id_fkey"',
+        "invoices_ledger_id_fkey",
+    ))
+
+    with caplog.at_level("ERROR"):
+        response = client.post(f"/api/quotations/{quote['id']}/convert", json=draft)
+    assert response.status_code == 500, response.text
+    assert response.json()["detail"] == "Failed to convert quotation"
+    assert "Error converting quotation" in caplog.text
+    assert ok(client.get(f"/api/quotations/{quote['id']}"))["status"] == "open"
+
+
+@pytest.mark.parametrize("constraint_name", ["ux_invoices_active_source_quotation", None])
+def test_the_source_quotation_index_by_name_is_already_converted(setup, monkeypatch, constraint_name):
+    """By the driver's constraint name, or by its message where it gives none."""
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"])
+    draft = _draft(client, quote)
+    first = ok(client.post(f"/api/quotations/{quote['id']}/convert", json=draft))
+    _fail_convert_with(monkeypatch, _DriverError(
+        'duplicate key value violates unique constraint "ux_invoices_active_source_quotation"',
+        constraint_name,
+    ))
+
+    response = client.post(f"/api/quotations/{quote['id']}/convert", json=draft)
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "quotation_already_converted"
+    assert response.json()["detail"]["invoice_id"] == first["id"]
