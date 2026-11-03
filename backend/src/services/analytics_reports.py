@@ -644,7 +644,7 @@ def _credit_note_lines(
     ledger_id: int | None,
     product_id: int | None,
 ):
-    """Active credit/debit note lines in the period, dated by ``created_at``.
+    """Active credit/debit note lines in the period, dated by ``credit_note_date``.
 
     Strict company equality on the note header: unlike
     :mod:`src.services.credit_note_reporting`, a NULL-company note must not
@@ -658,14 +658,14 @@ def _credit_note_lines(
             CreditNoteItem.product_id,
             CreditNoteItem.quantity,
             CreditNoteItem.taxable_amount,
-            CreditNote.created_at,
+            CreditNote.credit_note_date,
         )
         .join(CreditNote, CreditNoteItem.credit_note_id == CreditNote.id)
         .filter(
             CreditNote.company_id == company_id,
             CreditNote.status == "active",
-            CreditNote.created_at >= start,
-            CreditNote.created_at <= end,
+            CreditNote.credit_note_date >= start,
+            CreditNote.credit_note_date <= end,
             CreditNoteItem.product_id.isnot(None),
         )
     )
@@ -851,7 +851,7 @@ def build_product_performance_report(
         entry = bucket(pid)
         entry["units_bought"] += qty
         entry["purchase_value"] += taxable
-    for direction, note_type, pid, qty, taxable, _created_at in note_lines:
+    for direction, note_type, pid, qty, taxable, _note_date in note_lines:
         _add_note_line(bucket(pid), direction, note_type, qty, taxable)
 
     if not acc:
@@ -972,7 +972,7 @@ def build_product_performance_detail(
     twice, which is cheap next to the risk of two copies of the rules.
 
     The months bucket the same lines the period report uses — invoices by
-    ``invoice_date``, credit notes by ``created_at`` — through the same
+    ``invoice_date``, credit notes by ``credit_note_date`` — through the same
     :func:`_performance_figures`, and every month is costed at the *period's*
     unit cost, so units, revenue, spend, COGS and profit sum exactly to the
     summary. A month's ``average_buying_price`` is different on purpose: it is
@@ -1026,8 +1026,8 @@ def build_product_performance_detail(
     for _, qty, taxable, when in cost_lines:
         paid[(when.year, when.month)][0] += taxable
         paid[(when.year, when.month)][1] += qty
-    for direction, note_type, _, qty, taxable, created_at in note_lines:
-        _add_note_line(buckets[(created_at.year, created_at.month)], direction, note_type, qty, taxable)
+    for direction, note_type, _, qty, taxable, note_date in note_lines:
+        _add_note_line(buckets[(note_date.year, note_date.month)], direction, note_type, qty, taxable)
 
     # COGS is booked as the change in the rounded running total rather than
     # rounded month by month: per-month rounding of units x an unrounded cost

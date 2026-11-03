@@ -4,7 +4,8 @@ A supplier's note is found by their number, not the one we assigned it — that
 is what the user has in front of them when reconciling against GSTR-2B.
 """
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 from fastapi import Depends
@@ -13,8 +14,12 @@ from sqlalchemy.orm import Session
 from app_main import app
 from src.api.deps import get_current_user, get_db
 from src.models.buyer import Buyer
+from src.models.company import CompanyProfile
 from src.models.credit_note import CreditNote
+from src.models.invoice import InvoiceItem
 from src.models.user import User, UserRole
+from src.services.gst_tax_service import india_today
+from tests.api.test_product_performance import _create_ledger, _create_product
 
 
 @pytest.fixture
@@ -434,3 +439,197 @@ def test_a_number_already_in_the_registry_is_skipped(client, db_session):
     assert status == 201, number
     # CN-2026-001 and CN-2026-002 were taken; the counter walks past both.
     assert number == f"CN-{year}-003"
+
+
+# ── What a note credits (#572, #603) ───────────────────────────────────────────
+
+
+@pytest.fixture
+def gst_seller(client, db_session):
+    """A Karnataka seller, set directly because the check digit is not under test."""
+    assert client.get("/api/company/").status_code == 200
+    company = db_session.query(CompanyProfile).first()
+    company.gst = "29AAAAA0000A1Z5"
+    db_session.commit()
+    return company
+
+
+def _sale(client, line, *, place_of_supply=None, **extra):
+    """A sale of one line to an unregistered buyer, dated a few days ago."""
+    product = _create_product(client, f"SKU-{uuid4().hex[:8]}", "Widget", hsn_sac="8471")
+    payload = {
+        "voucher_type": "sales",
+        "ledger_id": _create_ledger(client, f"Walk-in {uuid4().hex[:8]}"),
+        "invoice_date": (india_today() - timedelta(days=3)).isoformat(),
+        "items": [{"product_id": product, **line}],
+        **extra,
+    }
+    if place_of_supply:
+        payload["place_of_supply"] = place_of_supply
+    response = client.post("/api/invoices/", json=payload)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _note(client, invoice, *, note_type="return", items=None, **line):
+    return client.post("/api/credit-notes/", json={
+        "ledger_id": invoice["ledger_id"],
+        "invoice_ids": [invoice["id"]],
+        "credit_note_type": note_type,
+        "direction": "outward",
+        "items": items or [{"invoice_id": invoice["id"], "invoice_item_id": invoice["items"][0]["id"], **line}],
+    })
+
+
+def _stored(db_session, note):
+    db_session.expire_all()
+    return db_session.get(CreditNote, note["id"])
+
+
+def test_return_on_a_tax_inclusive_invoice_credits_what_was_paid(client, gst_seller, db_session):
+    invoice = _sale(client, {"quantity": 1, "unit_price": 118, "gst_rate": 18}, tax_inclusive=True)
+
+    response = _note(client, invoice, quantity=1)
+
+    assert response.status_code == 201, response.text
+    note = response.json()
+    assert (note["taxable_amount"], note["cgst_amount"], note["sgst_amount"], note["total_amount"]) == (100, 9, 9, 118)
+    assert (note["items"][0]["unit_price"], note["items"][0]["taxable_amount"]) == (100, 100)
+    stored = _stored(db_session, note)
+    assert (float(stored.taxable_amount), float(stored.total_amount)) == (100, 118)
+
+
+def test_interstate_return_on_a_tax_inclusive_invoice_keeps_the_igst_head(client, gst_seller):
+    invoice = _sale(client, {"quantity": 1, "unit_price": 1180, "gst_rate": 18}, tax_inclusive=True, place_of_supply="10")
+
+    note = _note(client, invoice, quantity=1).json()
+
+    assert (note["taxable_amount"], note["igst_amount"], note["cgst_amount"], note["total_amount"]) == (1000, 180, 0, 1180)
+
+
+@pytest.mark.parametrize("tax_inclusive", [False, True])
+@pytest.mark.parametrize("discount", [10, 50])
+def test_return_of_a_discounted_line_credits_its_line_total(client, gst_seller, db_session, discount, tax_inclusive):
+    invoice = _sale(client, {
+        "quantity": 4, "unit_price": 118, "gst_rate": 18, "discount_type": "percentage", "discount_value": discount,
+    }, tax_inclusive=tax_inclusive)
+    line = invoice["items"][0]
+
+    note = _note(client, invoice, quantity=4).json()
+
+    assert note["total_amount"] == line["line_total"]
+    assert note["taxable_amount"] == line["taxable_amount"]
+    assert note["items"][0]["unit_price"] * 4 == pytest.approx(line["taxable_amount"])
+    assert float(_stored(db_session, note).total_amount) == line["line_total"]
+
+
+def test_partial_return_credits_its_share_of_the_line(client, gst_seller):
+    invoice = _sale(client, {"quantity": 10, "unit_price": 99.99, "gst_rate": 18})
+    line = invoice["items"][0]
+
+    note = _note(client, invoice, quantity=3).json()
+
+    assert note["taxable_amount"] == pytest.approx(line["taxable_amount"] * 3 / 10, abs=0.01)
+    assert note["total_amount"] == pytest.approx(line["line_total"] * 3 / 10, abs=0.02)
+
+
+def test_a_line_returned_in_parts_adds_back_to_exactly_what_it_charged(client, gst_seller):
+    # 100.01 over 3 units rounds to 33.34 every time, which would come to 100.02.
+    invoice = _sale(client, {"quantity": 3, "unit_price": 33.3366, "gst_rate": 18})
+    line = invoice["items"][0]
+
+    notes = [_note(client, invoice, quantity=1) for _ in range(3)]
+
+    assert [n.status_code for n in notes] == [201, 201, 201]
+    assert sum(n.json()["taxable_amount"] for n in notes) == pytest.approx(line["taxable_amount"])
+    assert sum(n.json()["total_amount"] for n in notes) == pytest.approx(line["line_total"])
+
+
+def test_tax_exclusive_return_is_unchanged(client, gst_seller):
+    invoice = _sale(client, {"quantity": 5, "unit_price": 100, "gst_rate": 18})
+
+    note = _note(client, invoice, quantity=2).json()
+
+    assert (note["taxable_amount"], note["cgst_amount"], note["sgst_amount"], note["total_amount"]) == (200, 18, 18, 236)
+    assert note["items"][0]["unit_price"] == 100
+
+
+def test_return_on_a_line_with_only_a_total_still_credits_it(client, gst_seller, db_session):
+    """Rows from before the tax columns have them at their default of 0."""
+    invoice = _sale(client, {"quantity": 2, "unit_price": 100, "gst_rate": 0})
+    item = db_session.get(InvoiceItem, invoice["items"][0]["id"])
+    item.taxable_amount = 0
+    item.tax_amount = 0
+    db_session.commit()
+
+    note = _note(client, invoice, quantity=1).json()
+
+    assert note["total_amount"] == 100
+
+
+def test_discount_note_larger_than_the_line_is_refused_and_creates_nothing(client, gst_seller, db_session):
+    invoice = _sale(client, {"quantity": 1, "unit_price": 100, "gst_rate": 18})
+
+    response = _note(client, invoice, note_type="discount", discount_amount_inclusive="5000")
+
+    assert response.status_code == 400
+    assert "118.00" in response.json()["detail"]
+    db_session.expire_all()
+    assert db_session.query(CreditNote).count() == 0
+
+
+def test_discount_note_equal_to_what_is_left_is_accepted(client, gst_seller):
+    invoice = _sale(client, {"quantity": 1, "unit_price": 100, "gst_rate": 18})
+
+    assert _note(client, invoice, note_type="discount", discount_amount_inclusive="59").status_code == 201
+    assert _note(client, invoice, note_type="discount", discount_amount_inclusive="59").status_code == 201
+
+
+def test_second_discount_note_past_the_line_total_is_refused(client, gst_seller):
+    invoice = _sale(client, {"quantity": 1, "unit_price": 100, "gst_rate": 18})
+
+    assert _note(client, invoice, note_type="discount", discount_amount_inclusive="100").status_code == 201
+    assert _note(client, invoice, note_type="discount", discount_amount_inclusive="18.01").status_code == 400
+
+
+def test_discount_after_a_partial_return_is_capped_at_what_is_left(client, gst_seller):
+    invoice = _sale(client, {"quantity": 10, "unit_price": 100, "gst_rate": 18})
+    assert _note(client, invoice, quantity=4).status_code == 201  # 472 of 1180
+
+    assert _note(client, invoice, note_type="discount", discount_amount_inclusive="708.01").status_code == 400
+    assert _note(client, invoice, note_type="discount", discount_amount_inclusive="708").status_code == 201
+
+
+def test_return_after_a_discount_cannot_credit_more_than_the_line(client, gst_seller):
+    invoice = _sale(client, {"quantity": 10, "unit_price": 100, "gst_rate": 18})
+    assert _note(client, invoice, note_type="discount", discount_amount_inclusive="118").status_code == 201
+
+    # The discount's placeholder quantity of 1 did not use up a unit, so all ten
+    # can come back, for what is left of the line's 1,180.
+    returned = _note(client, invoice, quantity=10)
+    assert returned.status_code == 201
+    assert returned.json()["total_amount"] == 1062
+
+
+def test_same_line_twice_in_one_note_is_held_to_the_limits(client, gst_seller):
+    invoice = _sale(client, {"quantity": 2, "unit_price": 100, "gst_rate": 18})
+    twice = {"invoice_id": invoice["id"], "invoice_item_id": invoice["items"][0]["id"]}
+
+    returned = _note(client, invoice, items=[{**twice, "quantity": 2}, {**twice, "quantity": 2}])
+    discounted = _note(client, invoice, note_type="discount", items=[
+        {**twice, "discount_amount_inclusive": "200"}, {**twice, "discount_amount_inclusive": "200"},
+    ])
+
+    assert (returned.status_code, discounted.status_code) == (400, 400)
+
+
+def test_note_without_a_date_can_follow_a_future_dated_invoice(client, gst_seller):
+    invoice = _sale(
+        client, {"quantity": 1, "unit_price": 100, "gst_rate": 18},
+        invoice_date=(india_today() + timedelta(days=10)).isoformat(),
+    )
+
+    response = _note(client, invoice, quantity=1)
+
+    assert response.status_code == 201, response.text
+    assert response.json()["credit_note_date"].startswith(india_today().isoformat())

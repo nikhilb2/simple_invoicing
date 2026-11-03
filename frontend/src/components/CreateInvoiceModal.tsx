@@ -10,6 +10,8 @@ import formatCurrency from '../utils/formatting';
 import { toIsoDate } from '../utils/dateRanges';
 import { formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../utils/invoiceDueDate.ts';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../utils/invoiceTax';
+import { isInterstatePlaceOfSupply, resolvePlaceOfSupply, type PlaceOfSupplyChoice } from '../utils/gstStates';
+import PlaceOfSupplyField from './PlaceOfSupplyField';
 import { invoiceDraftSnapshot } from '../utils/invoiceDraft';
 import ProductCombobox from './ProductCombobox';
 import LedgerCombobox from './LedgerCombobox';
@@ -60,6 +62,7 @@ export default function CreateInvoiceModal({
   const [dueDate, setDueDate] = useState('');
   const [dueDateDays, setDueDateDays] = useState('');
   const [referenceNotes, setReferenceNotes] = useState('');
+  const [placeOfSupplyChoice, setPlaceOfSupplyChoice] = useState<PlaceOfSupplyChoice | null>(null);
   const [items, setItems] = useState<ModalInvoiceFormItem[]>([createItem(1)]);
   const [nextItemId, setNextItemId] = useState(2);
   const [loading, setLoading] = useState(true);
@@ -168,7 +171,10 @@ export default function CreateInvoiceModal({
     invoiceDate !== '' &&
     (invoiceDate < activeFY.start_date || invoiceDate > activeFY.end_date);
   const selectedLedger = ledgers.find((ledger) => ledger.id === Number(selectedLedgerId));
-  const composerInterstateSupply = isInterstateSupply(companyGst, selectedLedger?.gst);
+  const placeOfSupply = resolvePlaceOfSupply(placeOfSupplyChoice, selectedLedgerId, companyGst, selectedLedger?.gst);
+  const composerInterstateSupply = voucherType === 'sales' && placeOfSupply
+    ? isInterstatePlaceOfSupply(placeOfSupply, companyGst)
+    : isInterstateSupply(companyGst, selectedLedger?.gst);
   const resolvedDueDate = resolveDueDate({
     mode: dueDateMode,
     invoiceDate,
@@ -187,6 +193,7 @@ export default function CreateInvoiceModal({
         due_date: resolvedDueDate ?? invoiceDate,
         reference_notes: voucherType === 'sales' ? (referenceNotes.trim() || null) : null,
         tax_inclusive: taxInclusive,
+        place_of_supply: voucherType === 'sales' ? (placeOfSupply || null) : null,
         items: items.map((item) => {
           const product = products.find((p) => p.id === Number(item.productId));
           return {
@@ -225,6 +232,7 @@ export default function CreateInvoiceModal({
     dueDate,
     dueDateDays,
     referenceNotes,
+    placeOfSupplyChoice: placeOfSupplyChoice?.code ?? '',
     items,
   });
 
@@ -294,6 +302,14 @@ export default function CreateInvoiceModal({
                     disabled={!!preselectedLedgerId}
                   />
                 </div>
+
+                {voucherType === 'sales' && companyGst?.trim() ? (
+                  <PlaceOfSupplyField
+                    id="modal-inv-place-of-supply"
+                    value={placeOfSupply}
+                    onChange={(code) => setPlaceOfSupplyChoice({ ledgerId: selectedLedgerId, code })}
+                  />
+                ) : null}
 
                 <div className="field">
                   <label htmlFor="modal-inv-date">Invoice date</label>

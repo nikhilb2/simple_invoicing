@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, time
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -14,7 +14,14 @@ from src.schemas.credit_note import CreditNoteCreate, CreditNoteOut
 from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.serial_service import SerialManager
 from src.services.series import generate_next_number
-from src.services.gst_tax_service import money as _money, is_interstate_supply as _is_interstate
+from src.services.gst_tax_service import (
+    company_state_code,
+    default_place_of_supply,
+    gstr1_section,
+    india_today,
+    invoice_is_interstate,
+    money as _money,
+)
 from src.services.inventory_service import InventoryManager
 from src.services.company_access import company_scope
 
@@ -39,6 +46,15 @@ def _supplier_return_note(credit_note_number: str) -> str:
     return f"Returned to supplier on credit note {credit_note_number}"
 
 
+def _pro_rata(amount: Decimal, before: Decimal, quantity: int, whole: Decimal) -> Decimal:
+    """A return's share of a line amount, given how many units earlier returns took.
+
+    The difference of two running totals, so a line returned in parts adds back
+    to exactly what it charged, however each part rounds.
+    """
+    return _money(amount * (before + quantity) / whole) - _money(amount * before / whole)
+
+
 def _change_inventory_quantity(
     db: Session,
     product_id: int,
@@ -59,6 +75,18 @@ def _change_inventory_quantity(
     inventory.quantity += quantity_delta
     if inventory.quantity < 0:
         raise HTTPException(status_code=400, detail=f"Insufficient inventory while {context}")
+
+
+def _credited_on_line(db: Session, invoice_item_id: int, company_id: int | None) -> Decimal:
+    """What active notes of every type have already credited against an invoice line."""
+    query = (
+        db.query(func.sum(CreditNoteItem.line_total))
+        .join(CreditNote, CreditNote.id == CreditNoteItem.credit_note_id)
+        .filter(CreditNoteItem.invoice_item_id == invoice_item_id, CreditNote.status == "active")
+    )
+    if company_id is not None:
+        query = query.filter(company_scope(CreditNote.company_id, company_id))
+    return Decimal(str(query.scalar() or 0))
 
 
 def _recompute_credit_status(invoice_id: int, db: Session, company_id: int | None = None) -> None:
@@ -186,6 +214,47 @@ def create_credit_note(
                 ),
             )
 
+    # One note carries one tax treatment, and GSTR-1 files it under one place of
+    # supply, so it cannot span sales made to different states.
+    places_of_supply = {
+        inv.place_of_supply or default_place_of_supply(inv.company_gst, inv.ledger_gst)
+        for inv in invoices
+    }
+    if len(places_of_supply) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="A credit note cannot cover invoices with different places of supply",
+        )
+
+    # GSTR-1 files a note whole, under the table its invoices were filed in. A
+    # company with no GSTIN files no GSTR-1, so it has no tables to keep apart.
+    if direction == "outward" and any((inv.company_gst or "").strip() for inv in invoices):
+        sections = {gstr1_section(inv, company_state_code(inv.company_gst)) for inv in invoices}
+        if len(sections) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "A credit note cannot cover invoices filed in different GSTR-1 tables "
+                    f"({', '.join(sorted(sections))}). Raise one note for each."
+                ),
+            )
+
+    # A date somebody chose has to make sense; the default needs no such check,
+    # and a future-dated invoice can still take a note issued today.
+    if payload.credit_note_date is not None:
+        if payload.credit_note_date > india_today():
+            raise HTTPException(status_code=400, detail="The credit note date cannot be in the future")
+        too_late = [
+            inv.invoice_number or f"#{inv.id}"
+            for inv in invoices
+            if inv.invoice_date and payload.credit_note_date < inv.invoice_date.date()
+        ]
+        if too_late:
+            raise HTTPException(
+                status_code=400,
+                detail=f"The credit note date cannot be before the date of invoice {too_late[0]}",
+            )
+
     invoice_map = {inv.id: inv for inv in invoices}
 
     # ── 3. Load invoice items and validate quantity limits ───────────────────
@@ -220,73 +289,43 @@ def create_credit_note(
     # Check cumulative credited quantities per invoice_item_id
     from src.models.credit_note import CreditNote as CN
 
+    # Units earlier notes took back from each line. A discount note's quantity is
+    # a placeholder, not units. A line can be listed twice in one request.
+    returned_before: dict[int, Decimal] = {}
     if payload.credit_note_type != "discount":
+        requested_qty: dict[int, int] = {}
         for cn_item in payload.items:
-            already_credited_query = (
-                db.query(func.sum(CreditNoteItem.quantity))
-                .join(CN, CN.id == CreditNoteItem.credit_note_id)
-                .filter(
-                    CreditNoteItem.invoice_item_id == cn_item.invoice_item_id,
-                    CN.status == "active",
+            item_id = cn_item.invoice_item_id
+            if item_id not in returned_before:
+                already_credited_query = (
+                    db.query(func.sum(CreditNoteItem.quantity))
+                    .join(CN, CN.id == CreditNoteItem.credit_note_id)
+                    .filter(
+                        CreditNoteItem.invoice_item_id == item_id,
+                        CN.status == "active",
+                        CN.credit_note_type != "discount",
+                    )
                 )
-            )
-            if company_id is not None:
-                already_credited_query = already_credited_query.filter(company_scope(CN.company_id, company_id))
-            already_credited = already_credited_query.scalar() or 0
+                if company_id is not None:
+                    already_credited_query = already_credited_query.filter(company_scope(CN.company_id, company_id))
+                returned_before[item_id] = Decimal(str(already_credited_query.scalar() or 0))
 
-            original_qty = invoice_item_map[cn_item.invoice_item_id].quantity
-            if already_credited + cn_item.quantity > original_qty:
+            requested_qty[item_id] = requested_qty.get(item_id, 0) + cn_item.quantity
+            credited_after = returned_before[item_id] + requested_qty[item_id]
+            original_qty = invoice_item_map[item_id].quantity
+            if credited_after > Decimal(str(original_qty)):
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Total credited quantity ({already_credited + cn_item.quantity}) "
-                        f"exceeds original quantity ({original_qty}) for item {cn_item.invoice_item_id}"
-                    ),
-                )
-
-    # Discount notes are capped by amount instead of quantity: the total
-    # credited against a line -- existing active credit note items of any
-    # type, plus this request -- must not exceed the line's total. Without
-    # this, a discount note could credit more than the line was ever worth.
-    if payload.credit_note_type == "discount":
-        new_amounts: dict[int, Decimal] = {}
-        for cn_item in payload.items:
-            amount = Decimal(str(cn_item.discount_amount_inclusive or 0))
-            new_amounts[cn_item.invoice_item_id] = (
-                new_amounts.get(cn_item.invoice_item_id, Decimal("0")) + amount
-            )
-        for item_id, new_amount in new_amounts.items():
-            ii = invoice_item_map[item_id]
-            if ii.line_total is None:
-                continue
-            line_total = Decimal(str(ii.line_total))
-            already_query = (
-                db.query(func.sum(CreditNoteItem.line_total))
-                .join(CN, CN.id == CreditNoteItem.credit_note_id)
-                .filter(
-                    CreditNoteItem.invoice_item_id == item_id,
-                    CN.status == "active",
-                )
-            )
-            if company_id is not None:
-                already_query = already_query.filter(company_scope(CN.company_id, company_id))
-            already = already_query.scalar()
-            already_total = (
-                Decimal(str(already)) if isinstance(already, (int, float, Decimal)) else Decimal("0")
-            )
-            if already_total + new_amount > line_total:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"Credit for item {item_id} would exceed its line total "
-                        f"of ₹{_money(line_total)}"
+                        f"Total credited quantity ({credited_after}) "
+                        f"exceeds original quantity ({original_qty}) for item {item_id}"
                     ),
                 )
 
     # ── 4. Resolve financial year ────────────────────────────────────────────
     active_fy = get_active_fy(db, company_id=company_id)
     fy = active_fy
-    cn_date = datetime.utcnow().date()
+    cn_date = payload.credit_note_date or india_today()
     dated_fy = get_fy_for_date(db, cn_date, company_id=company_id)
     if dated_fy:
         fy = dated_fy
@@ -306,21 +345,24 @@ def create_credit_note(
     )
 
     # ── 6. Calculate totals ──────────────────────────────────────────────────
-    # Determine interstate supply from first invoice's company/ledger GST
+    # A note reverses the tax its invoice charged, so it follows that invoice.
     first_invoice = invoice_map[payload.invoice_ids[0]]
-    interstate = _is_interstate(first_invoice.company_gst, ledger.gst)
+    interstate = invoice_is_interstate(first_invoice)
 
     taxable_total = Decimal("0")
     cgst_total = Decimal("0")
     sgst_total = Decimal("0")
     igst_total = Decimal("0")
     built_items = []
+    new_credit: dict[int, Decimal] = {}
 
     for cn_item in payload.items:
         ii = invoice_item_map[cn_item.invoice_item_id]
         gst_rate = Decimal(str(ii.gst_rate or 0))
         if payload.credit_note_type == "discount":
             line_total = _money(Decimal(str(cn_item.discount_amount_inclusive or 0)))
+            # Held to the amount asked for, which the even split below can pass by a paisa.
+            new_credit[ii.id] = new_credit.get(ii.id, Decimal("0")) + line_total
             if gst_rate > 0:
                 taxable = _money(line_total / (Decimal("1") + (gst_rate / Decimal("100"))))
                 tax = _money(line_total - taxable)
@@ -329,11 +371,37 @@ def create_credit_note(
                 tax = Decimal("0")
             unit_price = taxable
             quantity = 1
+            half = _money(tax / Decimal("2"))
         else:
+            # What the line charged, not its stored unit_price: on a tax-inclusive
+            # invoice that price holds the tax, and it is always before discount.
             quantity = int(cn_item.quantity or 0)
-            unit_price = Decimal(str(ii.unit_price))
-            taxable = _money(unit_price * quantity)
-            tax = _money(taxable * gst_rate / Decimal("100"))
+            line_taxable = Decimal(str(ii.taxable_amount or 0))
+            line_tax = Decimal(str(ii.tax_amount or 0))
+            if not line_taxable and not line_tax:
+                # Rows from before the tax columns carry only their total.
+                line_taxable = Decimal(str(ii.line_total or 0))
+            whole = Decimal(str(ii.quantity))
+            before = returned_before[ii.id]
+            taxable = _pro_rata(line_taxable, before, quantity, whole)
+            tax = _pro_rata(line_tax, before, quantity, whole)
+            half = _pro_rata(line_tax / Decimal("2"), before, quantity, whole)
+            returned_before[ii.id] = before + quantity
+            # The goods can still come back when earlier notes have used up part of
+            # the line's value, as a discount note does. They bring back only what
+            # is left of it, and the note carries nothing once none is.
+            remaining = max(
+                _money(Decimal(str(ii.line_total or 0)))
+                - _credited_on_line(db, ii.id, company_id)
+                - new_credit.get(ii.id, Decimal("0")),
+                Decimal("0"),
+            )
+            share = taxable + tax
+            if share > remaining + Decimal("0.01"):
+                taxable = _money(taxable * remaining / share)
+                tax = remaining - taxable
+                half = _money(tax / Decimal("2"))
+            unit_price = _money(taxable / quantity)
             line_total = _money(taxable + tax)
 
         if interstate:
@@ -341,12 +409,14 @@ def create_credit_note(
             cgst = Decimal("0")
             sgst = Decimal("0")
         else:
-            half = _money(tax / Decimal("2"))
             cgst = half
             sgst = half
             igst = Decimal("0")
             tax = _money(cgst + sgst)
             line_total = _money(taxable + tax)
+
+        if payload.credit_note_type != "discount":
+            new_credit[ii.id] = new_credit.get(ii.id, Decimal("0")) + line_total
 
         taxable_total += taxable
         cgst_total += cgst
@@ -367,6 +437,22 @@ def create_credit_note(
 
     total = _money(taxable_total + cgst_total + sgst_total + igst_total)
 
+    # A line can't be credited for more than it charged, across all its notes of
+    # every type. A return can land a paisa over on an old line whose tax doesn't
+    # halve evenly, which is rounding rather than an over-credit.
+    tolerance = Decimal("0") if payload.credit_note_type == "discount" else Decimal("0.01")
+    for item_id, credit in new_credit.items():
+        credited = _credited_on_line(db, item_id, company_id)
+        limit = _money(Decimal(str(invoice_item_map[item_id].line_total or 0)))
+        if credited + credit > limit + tolerance:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Credit for item {item_id} would exceed its line total of {limit:.2f}: "
+                    f"{credited:.2f} is already credited and this note adds {credit:.2f}."
+                ),
+            )
+
     # ── 7. Persist CreditNote ────────────────────────────────────────────────
     cn = CreditNote(
         credit_note_number=cn_number,
@@ -378,6 +464,7 @@ def create_credit_note(
         direction=direction,
         supplier_credit_note_number=payload.supplier_credit_note_number,
         supplier_credit_note_date=payload.supplier_credit_note_date,
+        credit_note_date=datetime.combine(cn_date, time.min),
         reason=payload.reason,
         status="active",
         taxable_amount=taxable_total,

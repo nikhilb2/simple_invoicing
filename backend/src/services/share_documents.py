@@ -782,7 +782,7 @@ def build_share_summary(db: Session, link: ShareLink) -> ShareSummary | None:
             party_name=credit_note.ledger.name if credit_note.ledger else "",
             company_name=company_name,
             amount_label=_fmt_currency(float(credit_note.total_amount or 0), currency),
-            date_label=_fmt_date(credit_note.created_at),
+            date_label=_fmt_date(getattr(credit_note, "credit_note_date", None) or credit_note.created_at),
             pdf_filename=f"credit_note_{_safe_ledger_slug(credit_note.credit_note_number)}.pdf",
             available=credit_note.status == "active",
             logo_data=logo_data,

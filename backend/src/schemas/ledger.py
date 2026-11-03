@@ -279,6 +279,10 @@ class Gstr1Summary(BaseModel):
     nil_rated: Gstr1CategorySummary = Gstr1CategorySummary()
     exempt: Gstr1CategorySummary = Gstr1CategorySummary()
     non_gst: Gstr1CategorySummary = Gstr1CategorySummary()
+    # Invoices with lines at 0% and those lines' value. They are in the B2B, B2CL
+    # or B2CS figures above; the export files them at rate 0.
+    zero_rate_invoices: int = 0
+    zero_rate_value: float = 0.0
     hsn_summary: list[Gstr1HsnSummaryItem] = []
     doc_summary: Gstr1DocSummary = Gstr1DocSummary()
 

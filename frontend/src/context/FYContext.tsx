@@ -9,7 +9,7 @@ type FYContextType = {
   fyList: FinancialYear[];
   loading: boolean;
   switchFY: (id: number) => Promise<void>;
-  createFY: (label: string, startDate: string, endDate: string) => Promise<void>;
+  createFY: (label: string, startDate: string, endDate: string) => Promise<string[]>;
   refreshFYList: () => Promise<void>;
 };
 

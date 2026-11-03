@@ -26,7 +26,8 @@ from src.services.document_totals import apply_discount_and_round_off, snapshot_
 from src.services.gst_tax_service import (
     assign_invoice_tax_totals,
     assign_item_tax_split,
-    is_interstate_supply,
+    default_place_of_supply,
+    invoice_is_interstate,
     money as _money,
 )
 from src.services.inventory_service import InventoryManager
@@ -430,6 +431,7 @@ class InvoiceProcessor:
             company = legacy_default_company(self.db)
         company_id = company.id if company else None
         ledger = self.require_ledger(payload.ledger_id, company_id)
+        same_ledger = invoice.ledger_id == ledger.id
 
         # Snapshot company / ledger fields onto the invoice record
         invoice.company_id = company_id
@@ -464,6 +466,16 @@ class InvoiceProcessor:
                     ),
                 )
         invoice.voucher_type = payload.voucher_type
+        if payload.voucher_type != "sales" or not (invoice.company_gst or "").strip():
+            # The supplier's state decides a purchase, and it is on their GSTIN.
+            # A seller with no GSTIN charges no IGST, so has no state to compare.
+            invoice.place_of_supply = None
+        elif payload.place_of_supply:
+            invoice.place_of_supply = payload.place_of_supply
+        elif not (same_ledger and invoice.place_of_supply):
+            # An edit that does not mention it keeps what the invoice says, so
+            # it cannot quietly turn an interstate sale into an intrastate one.
+            invoice.place_of_supply = default_place_of_supply(invoice.company_gst, invoice.ledger_gst)
         invoice.supplier_invoice_number = payload.supplier_invoice_number
         invoice.reference_notes = payload.reference_notes
 
@@ -508,9 +520,7 @@ class InvoiceProcessor:
             invoice_id=invoice.id,
         )
 
-        interstate_supply = is_interstate_supply(
-            invoice.company_gst, invoice.ledger_gst
-        )
+        interstate_supply = invoice_is_interstate(invoice)
 
         # Apply inventory changes for new items
         if apply_inventory_changes:

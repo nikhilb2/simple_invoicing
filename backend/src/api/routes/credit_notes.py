@@ -114,16 +114,16 @@ def list_credit_notes(
         raise HTTPException(status_code=400, detail="date_from must be before or equal to date_to")
 
     if date_from:
-        q = q.filter(CreditNote.created_at >= date_from)
+        q = q.filter(CreditNote.credit_note_date >= date_from)
 
     if date_to:
-        # Whole-day semantics: created_at is a timestamp, so the end of the
+        # Whole-day semantics: credit_note_date is a timestamp, so the end of the
         # selected day is midnight of the day after date_to, as email_logs does.
-        q = q.filter(CreditNote.created_at < date_to + timedelta(days=1))
+        q = q.filter(CreditNote.credit_note_date < date_to + timedelta(days=1))
 
     total = q.count()
     total_pages = math.ceil(total / page_size) if total else 1
-    cns = q.order_by(CreditNote.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    cns = q.order_by(CreditNote.credit_note_date.desc(), CreditNote.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
     return PaginatedCreditNoteOut(
         items=[_to_out(cn) for cn in cns],

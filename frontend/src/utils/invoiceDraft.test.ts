@@ -25,6 +25,7 @@ function draft(overrides: Partial<InvoiceDraft> = {}): InvoiceDraft {
     dueDate: '',
     dueDateDays: '',
     referenceNotes: '',
+    placeOfSupplyChoice: '',
     items: [item()],
     ...overrides,
   };

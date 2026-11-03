@@ -988,6 +988,8 @@ def duplicate_invoice(
             company_account_number=original.company_account_number,
             company_ifsc_code=original.company_ifsc_code,
             voucher_type=original.voucher_type,
+            # The tax amounts are copied below, so the state they were charged for must be too.
+            place_of_supply=original.place_of_supply,
             supplier_invoice_number=original.supplier_invoice_number,
             reference_notes=original.reference_notes,
             tax_inclusive=original.tax_inclusive,
