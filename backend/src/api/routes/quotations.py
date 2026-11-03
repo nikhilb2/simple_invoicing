@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 from src.api.deps import get_active_company, get_current_user
 from src.api.routes.invoices import build_invoice_out, track_invoice_created
 from src.core.analytics import distinct_id_for, track
+from src.core.http_headers import content_disposition
 from src.db.session import get_db
 from src.models.company import CompanyProfile
 from src.models.product import Product
@@ -426,5 +427,5 @@ def download_pdf(
     return StreamingResponse(
         pdf_buffer,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{quotation.document_type}_{number}.pdf"'},
+        headers={"Content-Disposition": content_disposition("attachment", f"{quotation.document_type}_{number}.pdf")},
     )

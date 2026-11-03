@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from src.core.analytics import track_anonymous
 from src.core.config import settings
+from src.core.http_headers import content_disposition
 from src.core.rate_limit import TokenBucket, client_ip
 from src.db.session import get_db
 from src.models.share_link import ShareLink
@@ -558,7 +559,7 @@ def public_share_pdf(
     disposition = "attachment" if download else "inline"
     headers = {
         **_PUBLIC_HEADERS,
-        "Content-Disposition": f'{disposition}; filename="{summary.pdf_filename}"',
+        "Content-Disposition": content_disposition(disposition, summary.pdf_filename),
     }
     # NOTE: no view counting here. See public_share_page. The event is a
     # different question from the view count, though: `disposition` separates the

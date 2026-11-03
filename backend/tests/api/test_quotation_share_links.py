@@ -1,6 +1,7 @@
 """Sharing a quotation by public link: the same document, the same note, no way to pay."""
 
 from datetime import date, timedelta
+from urllib.parse import unquote
 
 import pytest
 from quotation_helpers import (
@@ -180,3 +181,56 @@ def test_page_says_when_it_became_an_invoice(setup):
     token = _link(client, quote)["token"]
     ok(convert(client, quote["id"]))
     assert "has been converted to an invoice" in client.get(f"/s/{token}").text
+
+
+# ---------------------------------------------------------------------------
+# Series prefixes a plain filename cannot carry
+# ---------------------------------------------------------------------------
+
+def _with_prefix(client, ledger, product, prefix: str) -> dict:
+    series = next(row for row in ok(client.get("/api/invoice-series/")) if row["voucher_type"] == "quotation")
+    kept = {key: series[key] for key in ("suffix", "include_year", "year_format", "separator", "pad_digits")}
+    ok(client.put(f"/api/invoice-series/{series['id']}", json={**kept, "prefix": prefix}))
+    return create_quotation(client, ledger["id"], product["id"])
+
+
+def _encoded_filename(header: str) -> str:
+    return unquote(header.split("filename*=UTF-8''", 1)[1])
+
+
+def _plain_filename(header: str) -> str:
+    return header.split('filename="', 1)[1].split('"', 1)[0]
+
+
+@pytest.mark.parametrize("prefix", ["कोट", 'Q"T'])
+def test_owner_pdf_survives_any_series_prefix(setup, prefix):
+    client, ledger, product = setup
+    quote = _with_prefix(client, ledger, product, prefix)
+
+    response = client.get(f"/api/quotations/{quote['id']}/pdf")
+    assert response.status_code == 200
+    header = response.headers["content-disposition"]
+    assert header.startswith("attachment; ")
+    assert prefix in _encoded_filename(header)
+    assert _plain_filename(header).isascii()
+
+
+@pytest.mark.parametrize("prefix", ["कोट", 'Q"T'])
+def test_share_link_pdf_survives_any_series_prefix(setup, prefix):
+    client, ledger, product = setup
+    quote = _with_prefix(client, ledger, product, prefix)
+    token = _link(client, quote)["token"]
+
+    response = client.get(f"/s/{token}/pdf?download=1")
+    assert response.status_code == 200
+    header = response.headers["content-disposition"]
+    assert header.startswith("attachment; ")
+    assert prefix in _encoded_filename(header)
+    assert _plain_filename(header).isascii()
+
+
+def test_a_plain_number_keeps_a_plain_filename(setup):
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"])
+    header = client.get(f"/api/quotations/{quote['id']}/pdf").headers["content-disposition"]
+    assert header == f'attachment; filename="quotation_{quote["quotation_number"]}.pdf"'
