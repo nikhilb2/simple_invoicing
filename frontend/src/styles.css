@@ -676,6 +676,33 @@ textarea {
   color: var(--text);
 }
 
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  margin-left: 12px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  background: rgb(var(--rgb-overlay) / 0.08);
+}
+
+@media (max-width: 767px) {
+  .theme-toggle {
+    width: 40px;
+    height: 40px;
+  }
+}
+
 .page-header__shortcut-hint kbd,
 .shortcut-cheat-sheet kbd {
   background: rgb(var(--rgb-overlay) / 0.08);

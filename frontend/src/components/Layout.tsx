@@ -10,6 +10,7 @@ import { useSidebarStore } from '../store/useSidebarStore';
 import Sidebar from './Sidebar';
 import InvoiceCancelDialog from './InvoiceCancelDialog';
 import ShortcutCheatSheet from './ShortcutCheatSheet';
+import ThemeToggle from './ThemeToggle';
 import UpdateAvailableToast from './UpdateAvailableToast';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -87,6 +88,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           >
             Press <kbd>?</kbd> for shortcuts
           </button>
+          <ThemeToggle />
         </header>
 
         <motion.main
