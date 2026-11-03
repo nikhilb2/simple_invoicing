@@ -167,12 +167,16 @@ export default function EwayBillModal({ invoice, onClose }: Props) {
 
   // ── Load precheck data on mount ──
   useEffect(() => {
+    // Under StrictMode the effect runs twice on mount. The first run's answer must
+    // not land after the form is showing, or it replaces what the user has typed.
+    let cancelled = false;
     (async () => {
       try {
         const [preRes, transRes] = await Promise.all([
           api.get<EwayBillPreCheckResult>(`/invoices/${invoice.id}/eway-bill/precheck`),
           api.get<TransporterProfile[]>('/eway-bill/transporters').catch(() => null),
         ]);
+        if (cancelled) return;
         const transporterList: TransporterProfile[] = transRes?.data ?? [];
         setTransporters(transporterList);
         const result = preRes.data;
@@ -189,10 +193,12 @@ export default function EwayBillModal({ invoice, onClose }: Props) {
 
         setStep('form');
       } catch (err) {
+        if (cancelled) return;
         setLoadError(getApiErrorMessage(err, 'Could not load the E-Way Bill details for this invoice.'));
         setStep('error');
       }
     })();
+    return () => { cancelled = true; };
   }, [invoice.id]);
 
   // ── Handlers ──

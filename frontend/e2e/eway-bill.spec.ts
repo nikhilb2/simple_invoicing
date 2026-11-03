@@ -124,6 +124,12 @@ test.describe('E-Way Bill file and rules', () => {
     return modal;
   }
 
+  /** Other specs rename and replace the active company, which can leave it without a PIN code. */
+  async function fillSellerPin(modal: ReturnType<Page['locator']>) {
+    const pin = modal.locator('[name=seller_pincode]');
+    if ((await pin.inputValue()) === '') await pin.fill('560029');
+  }
+
   async function menuLabels(page: Page, preview: ReturnType<Page['locator']>) {
     await preview.getByLabel('More actions').click();
     return page.getByRole('menuitem').allInnerTexts();
@@ -136,13 +142,14 @@ test.describe('E-Way Bill file and rules', () => {
     const modal = await openForm(page, invoice.invoice_number);
 
     const transporterName = `Fast Cargo ${uniqueSku()}`;
+    await fillSellerPin(modal);
     await modal.locator('[name=vehicle_number]').fill('KA01AB1234');
     await modal.locator('[name=distance_km]').fill('120');
     await modal.locator('[name=transporter_name]').fill(transporterName);
     await modal.locator('[name=transporter_gstin]').fill(uniqueGstin('29'));
     await modal.getByLabel(/Save as default transporter/).check();
 
-    const downloading = page.waitForEvent('download');
+    const downloading = page.waitForEvent('download', (file) => file.suggestedFilename().endsWith('.json'));
     await modal.getByRole('button', { name: 'Generate JSON' }).click();
     const download = await downloading;
     expect(download.suggestedFilename()).toBe(`EWB_${invoice.invoice_number}.json`);
@@ -282,8 +289,9 @@ test.describe('E-Way Bill file and rules', () => {
     expect((await call(page, 'PUT', `/eway-bill/transporters/${transporter.id}`, { transporter_name: 'Renamed' }, token)).status).toBe(403);
     expect((await call(page, 'DELETE', `/eway-bill/transporters/${transporter.id}`, undefined, token)).status).toBe(403);
     const form = (await call(page, 'GET', `/invoices/${invoice.id}/eway-bill/precheck`, undefined, token)).json.form_data;
-    const valid = { ...form, buyer_pincode: '400001', vehicle_number: 'KA01AB1234', distance_km: 50 };
-    expect((await call(page, 'POST', `/invoices/${invoice.id}/eway-bill/generate`, valid, token)).status).toBe(200);
+    const valid = { ...form, seller_pincode: form.seller_pincode || '560029', buyer_pincode: '400001', vehicle_number: 'KA01AB1234', distance_km: 50 };
+    const generated = await call(page, 'POST', `/invoices/${invoice.id}/eway-bill/generate`, valid, token);
+    expect(generated.status, generated.text).toBe(200);
     const saving = await call(page, 'POST', `/invoices/${invoice.id}/eway-bill/generate`, { ...valid, transporter_name: 'Sneaky', save_transporter: true }, token);
     expect(saving.status).toBe(403);
     expect(saving.json.detail).toBe('Only an admin or manager can save a transporter.');
@@ -317,9 +325,10 @@ test.describe('E-Way Bill file and rules', () => {
     const invoice = await must(page, 'POST', `/quotations/${quote.id}/convert`, draft.invoice);
 
     const modal = await openForm(page, invoice.invoice_number);
+    await fillSellerPin(modal);
     await modal.locator('[name=vehicle_number]').fill('KA01AB1234');
     await modal.locator('[name=distance_km]').fill('80');
-    const downloading = page.waitForEvent('download');
+    const downloading = page.waitForEvent('download', (file) => file.suggestedFilename().endsWith('.json'));
     await modal.getByRole('button', { name: 'Generate JSON' }).click();
     const file = JSON.parse(readFileSync((await (await downloading).path())!, 'utf8'));
     expect(file.billLists[0].docNo).toBe(invoice.invoice_number);
