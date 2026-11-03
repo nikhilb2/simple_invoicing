@@ -27,7 +27,6 @@ import EmptyState from '../components/EmptyState';
 import LoadingState from '../components/LoadingState';
 import {
   parseInvoiceDueSort,
-  sortDueInvoices,
   type InvoiceDueSort,
 } from '../utils/invoiceDuesSorting';
 
@@ -64,6 +63,7 @@ export default function InvoiceDuesPage() {
       nextParams.set('sort', value);
     }
 
+    setPage(1);
     setSearchParams(nextParams, { replace: true });
   }
   const [company, setCompany] = useState<CompanyProfile | null>(null);
@@ -88,10 +88,6 @@ export default function InvoiceDuesPage() {
   const [remindersSuccess, setRemindersSuccess] = useState('');
 
   const currencyCode = company?.currency_code || 'INR';
-  const sortedItems = useMemo(
-    () => sortDueInvoices(items, sortOrder),
-    [items, sortOrder],
-  );
   const dueWindow = useMemo(() => buildDueWindow(mode, customDays, exactDate), [mode, customDays, exactDate]);
 
   useEffect(() => {
@@ -129,6 +125,7 @@ export default function InvoiceDuesPage() {
           ledgerId,
           dueDateFrom: dueWindow.dueDateFrom,
           dueDateTo: dueWindow.dueDateTo,
+          sort: sortOrder,
         };
         const response = await fetchDueInvoicePage(filters);
         if (cancelled) return;
@@ -152,7 +149,7 @@ export default function InvoiceDuesPage() {
     return () => {
       cancelled = true;
     };
-  }, [dueWindow.dueDateFrom, dueWindow.dueDateTo, ledgerId, page, pageSize, search]);
+  }, [dueWindow.dueDateFrom, dueWindow.dueDateTo, ledgerId, page, pageSize, search, sortOrder]);
 
   async function handlePreviewInvoice(invoiceId: number) {
     try {
@@ -170,7 +167,7 @@ export default function InvoiceDuesPage() {
     downloadCsv(
       `invoice_dues_${toIsoDate(new Date())}.csv`,
       ['Customer', 'Invoice number', 'Invoice date', 'Due date', 'Total', 'Amount due'],
-      sortedItems.map((invoice) => [
+      items.map((invoice) => [
         invoice.ledger_name ?? '',
         invoice.invoice_number ?? `#${invoice.id}`,
         invoice.invoice_date,
@@ -286,7 +283,7 @@ export default function InvoiceDuesPage() {
         )}
       >
         <div className="field">
-          <label htmlFor="dues-sort">Sort this page</label>
+          <label htmlFor="dues-sort">Sort invoices</label>
           <select
             id="dues-sort"
             className="input"
@@ -424,7 +421,7 @@ export default function InvoiceDuesPage() {
               <EmptyState message="No invoices match your due filters. Try adjusting the due window or search." />
             ) : null}
             {!loading
-              ? sortedItems.map((invoice) => {
+              ? items.map((invoice) => {
                   const whatsappNumber = toWhatsAppNumber(invoice.ledger_phone);
                   const whatsappUrl = whatsappNumber
                     ? buildWhatsAppUrl(

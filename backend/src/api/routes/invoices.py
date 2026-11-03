@@ -2,6 +2,7 @@ import csv
 import logging
 from io import BytesIO, StringIO
 from datetime import date, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -580,6 +581,25 @@ def dues_ageing_summary(
         raise HTTPException(status_code=500, detail="Failed to load dues ageing summary")
 
 
+_InvoiceDueSort = Literal["default", "amount-desc", "due-date-asc", "customer-asc"]
+
+
+def _sort_due_invoices(invoices: list[Invoice], payment_summaries, sort: _InvoiceDueSort) -> list[Invoice]:
+    """Order the complete dues list before pagination."""
+    if sort == "default":
+        return invoices
+    if sort == "amount-desc":
+        return sorted(invoices, key=lambda invoice: (-payment_summaries[invoice.id].remaining_amount, invoice.id))
+    if sort == "due-date-asc":
+        return sorted(invoices, key=lambda invoice: (invoice.due_date is None, invoice.due_date, invoice.id))
+
+    def customer_key(invoice):
+        name = (invoice.ledger_name or "").strip().casefold()
+        return (not name, name, invoice.id)
+
+    return sorted(invoices, key=customer_key)
+
+
 @router.get("/dues", response_model=PaginatedInvoiceOut)
 def list_due_invoices(
     page: int = Query(1, ge=1),
@@ -588,6 +608,7 @@ def list_due_invoices(
     ledger_id: int | None = Query(None),
     due_date_from: date | None = Query(None),
     due_date_to: date | None = Query(None),
+    sort: _InvoiceDueSort = Query("default"),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     active_company: CompanyProfile = Depends(get_active_company),
@@ -602,6 +623,7 @@ def list_due_invoices(
             due_date_to=due_date_to,
         )
 
+        outstanding_invoices = _sort_due_invoices(outstanding_invoices, payment_summaries, sort)
         total = len(outstanding_invoices)
         page_start = (page - 1) * page_size
         page_end = page_start + page_size
