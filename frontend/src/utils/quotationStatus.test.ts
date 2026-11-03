@@ -3,7 +3,23 @@ import {
   QUOTATION_STATUS_FILTERS,
   allowedQuotationActions,
   quotationStatusBadgeClass,
+  showQuotationsEmptyState,
 } from './quotationStatus';
+
+describe('showQuotationsEmptyState', () => {
+  it('shows only once a load has succeeded with no rows', () => {
+    expect(showQuotationsEmptyState({ isLoading: false, isError: false, rowCount: 0 })).toBe(true);
+  });
+
+  it('does not claim there are no quotations when the load failed', () => {
+    expect(showQuotationsEmptyState({ isLoading: false, isError: true, rowCount: 0 })).toBe(false);
+  });
+
+  it('stays out of the way while loading or when there are rows', () => {
+    expect(showQuotationsEmptyState({ isLoading: true, isError: false, rowCount: 0 })).toBe(false);
+    expect(showQuotationsEmptyState({ isLoading: false, isError: false, rowCount: 2 })).toBe(false);
+  });
+});
 
 describe('allowedQuotationActions', () => {
   it('offers everything on an open document', () => {

@@ -31,6 +31,7 @@ import {
   QUOTATION_STATUS_FILTERS,
   QUOTATION_STATUS_LABELS,
   allowedQuotationActions,
+  showQuotationsEmptyState,
 } from '../utils/quotationStatus';
 
 const PAGE_SIZE = 20;
@@ -270,7 +271,7 @@ export default function QuotationsPage() {
 
           {listQuery.isLoading ? <LoadingState message="Loading quotations…" /> : null}
 
-          {!listQuery.isLoading && rows.length === 0 ? (
+          {showQuotationsEmptyState({ isLoading: listQuery.isLoading, isError: listQuery.isError, rowCount: rows.length }) ? (
             <EmptyState
               message={noFilters
                 ? 'No quotations yet. A quotation or proforma invoice is an offer: it moves no stock and reaches no report until you convert it to an invoice.'

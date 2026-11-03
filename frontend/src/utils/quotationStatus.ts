@@ -24,6 +24,15 @@ export const QUOTATION_DOCUMENT_LABELS: Record<QuotationDocumentType, string> = 
   proforma: 'Proforma invoice',
 };
 
+/**
+ * Whether the list can say there is nothing to show. A list that failed to load does
+ * not know that, and telling someone with quotations that they have none is worse
+ * than showing nothing beside the error.
+ */
+export function showQuotationsEmptyState(list: { isLoading: boolean; isError: boolean; rowCount: number }): boolean {
+  return !list.isLoading && !list.isError && list.rowCount === 0;
+}
+
 /** The status chip colours the rest of the app already uses. */
 export function quotationStatusBadgeClass(status: QuotationDisplayStatus): string {
   switch (status) {
