@@ -528,13 +528,6 @@ def _build_tax_ledger_totals(entries: list[TaxLedgerEntry]) -> TaxLedgerTotals:
     )
 
 
-# GSTR-1 reports outward supplies. A note against a purchase is the supplier's
-# own credit note, which they declare in their GSTR-1 and which reaches us
-# through GSTR-2B as a reduction of input credit — filing it here would lower
-# our output liability instead and declare a document we never issued. Rows
-# predating the direction column are all outward.
-_OUTWARD_ONLY = or_(CreditNote.direction == "outward", CreditNote.direction.is_(None))
-
 
 def _build_tax_liability(entries: list[TaxLedgerEntry]) -> TaxLiability:
     """What actually has to be paid, after input credit is set off.
@@ -1889,18 +1882,37 @@ def _gstr1_period_error(from_date: date, to_date: date) -> str | None:
 
 
 def _gstr1_credit_notes(db: Session, from_date: date, to_date: date, company_id: int | None) -> list[CreditNote]:
-    """Active outward credit notes dated in the range, with items eagerly loaded."""
+    """Active credit notes on our sales dated in the range, with items eagerly loaded."""
     query = (
         db.query(CreditNote)
         .options(joinedload(CreditNote.items).joinedload(CreditNoteItem.invoice_item))
         .filter(CreditNote.status == "active")
-        .filter(_OUTWARD_ONLY)
         .filter(CreditNote.credit_note_date >= datetime.combine(from_date, time.min))
         .filter(CreditNote.credit_note_date <= datetime.combine(to_date, time.max))
     )
     if company_id is not None:
         query = query.filter(company_scope(CreditNote.company_id, company_id))
-    return query.all()
+    notes = query.all()
+
+    invoice_ids = {item.invoice_id for cn in notes for item in cn.items if item.invoice_id}
+    voucher_types: dict[int, str] = {}
+    if invoice_ids:
+        types_query = db.query(Invoice.id, Invoice.voucher_type).filter(Invoice.id.in_(invoice_ids))
+        if company_id is not None:
+            types_query = types_query.filter(company_scope(Invoice.company_id, company_id))
+        voucher_types = dict(types_query.all())
+
+    def _is_on_a_sale(cn: CreditNote) -> bool:
+        # GSTR-1 reports outward supplies. A note against a purchase is the
+        # supplier's own, which they file and which reaches us through GSTR-2B, so
+        # filing it here would lower our output tax. The invoice decides, as it does
+        # on the Tax Ledger: migration 20260904000001 stamped every older note
+        # outward, including those against purchases. With no known invoice, the
+        # note's direction is all there is to go by.
+        sources = {voucher_types[item.invoice_id] for item in cn.items if item.invoice_id in voucher_types}
+        return "sales" in sources if sources else (cn.direction or "outward") == "outward"
+
+    return [cn for cn in notes if _is_on_a_sale(cn)]
 
 
 def _note_invoices(db: Session, credit_notes: list[CreditNote]) -> dict[int, Invoice]:

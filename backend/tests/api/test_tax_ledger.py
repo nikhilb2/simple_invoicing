@@ -2484,3 +2484,34 @@ def test_tax_ledger_lists_a_note_after_the_invoice_it_reverses_on_the_same_day(d
     )
 
     assert [entry.reference_number for entry in result.entries] == ["A-1", "CN-1"]
+
+
+def test_gstr1_leaves_out_an_older_note_stamped_outward_against_a_purchase(db_session):
+    # Migration 20260904000001 marked every older note outward, including these.
+    user, ledger = _seed_basics(db_session)
+    company = _make_company(gst="29TESTT1234X1ZE")
+    purchase = _add_invoice_with_item(
+        db_session, ledger, user, voucher_type="purchase", invoice_number="P-1", when=datetime(2026, 10, 5),
+        gst_rate=18, taxable_amount=1000, cgst_amount=90, sgst_amount=90, igst_amount=0,
+    )
+    _add_credit_note_item(
+        db_session, user, ledger, purchase, number="CN-1", when=datetime(2026, 10, 6),
+        gst_rate=18, taxable_amount=100, cgst_amount=9, sgst_amount=9, igst_amount=0, direction="outward",
+    )
+    db_session.commit()
+
+    data = _export_json_data(db_session, user, company, *OCT_2026)
+
+    assert "cdnr" not in data
+    assert "hsn" not in data
+    assert "CN-1" not in str(data.get("doc_issue"))
+
+
+def test_gstr1_files_a_note_on_a_sale_whatever_its_direction_says(db_session):
+    user, ledger, company = _unregistered(db_session)
+    invoice = _b2c_sale(db_session, ledger, user, "A-1", 50000)
+    _b2c_note(db_session, ledger, user, invoice, "CN-1", 10000, direction="inward")
+
+    row = _export_json_data(db_session, user, company, *OCT_2026)["b2cs"][0]
+
+    assert row["txval"] == 40000.0
