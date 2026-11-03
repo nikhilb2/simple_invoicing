@@ -202,6 +202,7 @@ async def send_email(
     """
     Asynchronously sends an email by running the blocking SMTP operations
     in a thread executor. Logs the attempt to the email_logs table.
+    Delivery failures raise RuntimeError with a safe message after logging.
 
     Shared hosting sends through the platform relay and never reads SMTPConfig, unless
     the caller is the platform's own job and asks for use_smtp_config: the backup mail
@@ -258,4 +259,9 @@ async def send_email(
         db.rollback()
 
     if exc_to_raise is not None:
-        raise exc_to_raise
+        message = (
+            "The email could not be sent. Please try again later."
+            if reserved
+            else "Could not send the email. Check the SMTP settings."
+        )
+        raise RuntimeError(message) from exc_to_raise
