@@ -14,7 +14,7 @@ import SendEmailModal from '../components/SendEmailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ModalCloseButton from '../components/ModalCloseButton';
 import formatCurrency, { formatDate } from '../utils/formatting';
-import { validateAllocations } from '../utils/validateAllocations';
+import { remainingAmount, validateAllocations } from '../utils/validateAllocations';
 import { useFY } from '../context/FYContext';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { fetchOutstandingInvoices, fetchLedgerAddresses, createLedgerAddress, updateLedgerAddress, deleteLedgerAddress } from '../features/invoices/api';
@@ -384,7 +384,7 @@ export default function LedgerViewPage() {
     }
 
     const allocatedTotal = sumAllocatedAmount(input.allocations);
-    const remainingUnallocated = input.amount - allocatedTotal;
+    const remainingUnallocated = remainingAmount(input.amount, allocatedTotal);
     const filteredInvoices = input.searchQuery.trim()
       ? input.outstanding.filter((inv) =>
           (inv.invoice_number ?? '').toLowerCase().includes(input.searchQuery.trim().toLowerCase())
