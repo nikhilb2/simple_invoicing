@@ -2,7 +2,7 @@ export const ACTION_KEYS = [
   'create_invoice', 'save_invoice', 'open_search', 'open_reports',
   'new_customer', 'go_invoices', 'go_ledgers', 'go_products',
   'go_day_book', 'go_tax_ledger', 'focus_scan',
-  'go_invoice_dues', 'go_credit_notes', 'go_gstr1', 'go_gstr3b', 'go_dashboard',
+  'go_invoice_dues', 'go_credit_notes', 'go_gstr1', 'go_gstr3b', 'go_dashboard', 'go_quotations',
 ] as const;
 
 export type ActionKey = typeof ACTION_KEYS[number];
@@ -24,6 +24,7 @@ export const DEFAULT_SHORTCUTS: Record<ActionKey, string> = {
   go_gstr1:        'Alt+G',
   go_gstr3b:       'Alt+B',
   go_dashboard:    'Alt+O',
+  go_quotations:   'Alt+Q',
 };
 
 export const ACTION_LABELS: Record<ActionKey, string> = {
@@ -43,4 +44,5 @@ export const ACTION_LABELS: Record<ActionKey, string> = {
   go_gstr1:        'Go to GSTR-1 Filing',
   go_gstr3b:       'Go to GSTR-3B Worksheet',
   go_dashboard:    'Go to Dashboard',
+  go_quotations:   'Go to Quotations',
 };

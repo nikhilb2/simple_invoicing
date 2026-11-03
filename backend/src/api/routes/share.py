@@ -23,10 +23,12 @@ from src.models.company import CompanyProfile
 from src.models.share_link import ShareLink
 from src.models.user import User
 from src.schemas.share import ShareLinkCreate, ShareLinkOut
+from src.models.quotation import STATUS_CANCELLED
 from src.services.share_documents import (
     RESOURCE_CREDIT_NOTE,
     RESOURCE_INVOICE,
     RESOURCE_PAYMENT,
+    RESOURCE_QUOTATION,
     RESOURCE_STATEMENT,
     # build_share_url and ensure_live_share_link live in share_documents rather than
     # here because the invoice PDF renderer needs to mint and address a link too, and
@@ -39,6 +41,7 @@ from src.services.share_documents import (
     get_invoice,
     get_ledger,
     get_payment,
+    get_quotation,
     is_outward_credit_note,
 )
 
@@ -98,6 +101,12 @@ def _validate_resource(db: Session, company_id: int, payload: ShareLinkCreate) -
             raise HTTPException(status_code=404, detail="Credit note not found")
         if not is_outward_credit_note(credit_note):
             raise HTTPException(status_code=400, detail="Only a credit note you issued can be shared")
+        return
+
+    if payload.resource_type == RESOURCE_QUOTATION:
+        quotation = get_quotation(db, company_id, payload.resource_id)
+        if quotation is None or quotation.status == STATUS_CANCELLED:
+            raise HTTPException(status_code=404, detail="Quotation not found")
         return
 
     raise HTTPException(status_code=400, detail="Unsupported resource_type")

@@ -16,6 +16,7 @@ from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
 from src.models.product_serial import ProductSerial
+from src.models.quotation import Quotation, QuotationItem
 from src.models.user import User, UserRole
 from src.schemas.product import (
     ImportCSVResult,
@@ -340,6 +341,15 @@ def delete_product(
     if has_invoice_items:
         raise HTTPException(status_code=400, detail="Cannot delete product linked to invoices")
 
+    has_quotation_items = (
+        db.query(QuotationItem.id)
+        .join(Quotation, QuotationItem.quotation_id == Quotation.id)
+        .filter(QuotationItem.product_id == product_id, Quotation.company_id == active_company.id)
+        .first()
+    )
+    if has_quotation_items:
+        raise HTTPException(status_code=400, detail="Cannot delete product linked to quotations")
+
     inventory = db.query(Inventory).filter(
         Inventory.product_id == product_id,
         Inventory.company_id == active_company.id,
@@ -611,6 +621,8 @@ def update_product_with_inventory(
 
     # Update inventory quantity if provided
     if payload.current_stock is not None:
+        if not product.allow_decimal and not _is_whole_number(payload.current_stock):
+            raise HTTPException(status_code=400, detail="Quantity must be a whole number for this product")
         inventory = (
             db.query(Inventory)
             .filter(

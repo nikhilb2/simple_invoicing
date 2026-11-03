@@ -269,6 +269,8 @@ def _ensure_series_for_financial_year(db, fy: FinancialYear, company_id: int) ->
         "payment": "PAY",
         "credit_note": "CN",
         "debit_note": "DN",
+        "quotation": "QT",
+        "proforma": "PI",
     }
 
     for voucher_type, default_prefix in defaults.items():
@@ -355,8 +357,11 @@ _DEMO_TABLES = (
     "marketplace_connections",
     "share_links",
     "email_logs",
+    "eway_bill_transporters",
     "invoice_items",
     "invoices",
+    "quotation_items",
+    "quotations",
     "production_transactions",
     "bill_of_materials",
     "product_serials",

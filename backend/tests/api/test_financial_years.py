@@ -103,6 +103,8 @@ def test_create_returns_201_and_seeds_series_for_the_new_year(
         "payment",
         "credit_note",
         "debit_note",
+        "quotation",
+        "proforma",
     }
     assert all(row.next_sequence == 1 for row in seeded)
     assert all(row.company_id == 1 for row in seeded)

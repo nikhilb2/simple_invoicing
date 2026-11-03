@@ -1,10 +1,8 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, createProduct, adjustInventory, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, createProduct, adjustInventory, clickNavLink, localToday, localStartOfMonth } from './fixtures';
 
 async function setStatementRangeToCurrentMonth(page: import('@playwright/test').Page) {
-  const today = new Date();
-  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  await page.locator('#statement-from').fill(startOfMonth.toISOString().split('T')[0]);
-  await page.locator('#statement-to').fill(today.toISOString().split('T')[0]);
+  await page.locator('#statement-from').fill(localStartOfMonth());
+  await page.locator('#statement-to').fill(localToday());
 }
 
 /**
@@ -17,18 +15,19 @@ function previewModal(page: import('@playwright/test').Page) {
 }
 
 async function closePreview(page: import('@playwright/test').Page) {
-  await previewModal(page).locator('button:has-text("Close")').click();
+  await previewModal(page).getByRole('button', { name: 'Close invoice preview' }).click();
   await expect(previewModal(page)).not.toBeVisible({ timeout: 5_000 });
 }
 
 /**
- * The preview title reads "PDF invoice <number>". The statement rows are keyed by
+ * The preview title reads "Invoice <number>" ("Purchase invoice <number>" for a
+ * purchase). The statement rows are keyed by
  * that same reference number (the row never prints the words "sales"/"purchase"),
  * so we carry the number over to identify the entry we just created.
  */
 async function readPreviewInvoiceNumber(page: import('@playwright/test').Page) {
   const title = (await previewModal(page).locator('#invoice-preview-title').innerText()).trim();
-  const invoiceNumber = title.replace(/^PDF invoice\s*/i, '').trim();
+  const invoiceNumber = title.replace(/^(Purchase )?invoice\s*/i, '').trim();
   expect(invoiceNumber, 'created invoice should have a reference number').not.toBe('');
   return invoiceNumber;
 }
@@ -105,7 +104,7 @@ test.describe('Create Invoice from Ledger View', () => {
 
     // The app closes the create dialog and opens the PDF preview for the new invoice.
     await expect(previewModal(page)).toBeVisible({ timeout: 10_000 });
-    await expect(previewModal(page).locator('#invoice-preview-title')).toContainText('PDF invoice');
+    await expect(previewModal(page).locator('#invoice-preview-title')).toHaveText(/^Invoice \S+/);
     const invoiceNumber = await readPreviewInvoiceNumber(page);
 
     // Close the preview; the ledger view refreshes its statement in place.
@@ -145,7 +144,7 @@ test.describe('Create Invoice from Ledger View', () => {
 
     // The app closes the create dialog and opens the PDF preview for the new invoice.
     await expect(previewModal(page)).toBeVisible({ timeout: 10_000 });
-    await expect(previewModal(page).locator('#invoice-preview-title')).toContainText('PDF invoice');
+    await expect(previewModal(page).locator('#invoice-preview-title')).toHaveText(/^Purchase invoice \S+/);
     const invoiceNumber = await readPreviewInvoiceNumber(page);
 
     // Close the preview; the ledger view refreshes its statement in place.

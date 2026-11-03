@@ -1,10 +1,8 @@
-import { test, expect, expectSuccess, uniqueGstin, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, uniqueGstin, clickNavLink, localToday, localStartOfMonth } from './fixtures';
 
 async function setStatementRangeToCurrentMonth(page: import('@playwright/test').Page) {
-  const today = new Date();
-  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  await page.locator('#statement-from').fill(startOfMonth.toISOString().split('T')[0]);
-  await page.locator('#statement-to').fill(today.toISOString().split('T')[0]);
+  await page.locator('#statement-from').fill(localStartOfMonth());
+  await page.locator('#statement-to').fill(localToday());
 }
 
 test.describe('Payments (Receipt / Payment)', () => {
@@ -138,7 +136,9 @@ test.describe('Payments (Receipt / Payment)', () => {
     await page.click('button:has-text("Record Receipt / Payment")');
     await expect(modal).toBeVisible({ timeout: 5_000 });
     await expect(modal.locator('#pay-type')).toHaveValue('receipt');
-    await expect(modal.locator('#pay-amount')).toHaveValue('0');
+    // The amount input renders an empty string for 0 (value={amount || ''}), so a
+    // cleared 4200 reads back as empty, never as "0".
+    await expect(modal.locator('#pay-amount')).toHaveValue('');
   });
 
   test('payment form validates amount greater than zero', async ({ authedPage: page }) => {

@@ -15,7 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import text
 
 from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes
-from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes, bom as bom_routes, email_logs as email_logs_routes, api_keys as api_keys_routes, dashboard as dashboard_routes, analytics as analytics_routes, marketplace as marketplace_routes, serials as serials_routes, oauth as oauth_routes, well_known as well_known_routes, share as share_routes, public_share as public_share_routes, gstr3b as gstr3b_routes
+from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes, bom as bom_routes, email_logs as email_logs_routes, api_keys as api_keys_routes, dashboard as dashboard_routes, analytics as analytics_routes, marketplace as marketplace_routes, serials as serials_routes, oauth as oauth_routes, well_known as well_known_routes, share as share_routes, public_share as public_share_routes, eway_bill as eway_bill_routes, quotations as quotations_routes, gstr3b as gstr3b_routes
 from src.mcp_server import register_mcp
 from src.core.analytics import (
     bind_request,
@@ -316,6 +316,7 @@ app.include_router(shortcuts.router, prefix="/api/shortcuts", tags=["shortcuts"]
 app.include_router(invoice_series_routes.router, prefix="/api/invoice-series", tags=["invoice-series"])
 app.include_router(financial_years_routes.router, prefix="/api/financial-years", tags=["financial-years"])
 app.include_router(credit_notes_routes.router, prefix="/api/credit-notes", tags=["credit-notes"])
+app.include_router(quotations_routes.router, prefix="/api/quotations", tags=["quotations"])
 app.include_router(backups_routes.router, prefix="/api/backups", tags=["backups"])
 app.include_router(email_logs_routes.router, prefix="/api/email-logs", tags=["email-logs"])
 app.include_router(api_keys_routes.router, prefix="/api/api-keys", tags=["api-keys"])
@@ -324,6 +325,7 @@ app.include_router(analytics_routes.router, prefix="/api/analytics", tags=["anal
 app.include_router(marketplace_routes.router, prefix="/api/marketplace", tags=["marketplace"])
 app.include_router(serials_routes.router, prefix="/api/serials", tags=["serials"])
 app.include_router(share_routes.router, prefix="/api/share", tags=["share"])
+app.include_router(eway_bill_routes.router, prefix="/api", tags=["eway-bill"])
 
 # Public share pages. No prefix: the URL that goes into a WhatsApp message is
 # https://<tenant-host>/s/<token>, and it has to be short and typo-proof.

@@ -4,6 +4,7 @@ import type { CompanyAccount, OutstandingInvoice, Payment, PaymentCreate, Paymen
 import { fetchOutstandingInvoices } from '../features/invoices/api';
 import formatCurrency from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate';
+import { remainingAmount } from '../utils/validateAllocations';
 import EmptyState from './EmptyState';
 import ModalCloseButton from './ModalCloseButton';
 import { useFY } from '../context/FYContext';
@@ -153,7 +154,7 @@ export default function ReceiptModal({
   }
 
   const allocatedTotal = sumAllocatedAmount(form.invoice_allocations);
-  const remainingUnallocated = form.amount - allocatedTotal;
+  const remainingUnallocated = remainingAmount(form.amount, allocatedTotal);
   const filteredInvoices = searchQuery.trim()
     ? outstandingInvoices.filter((inv) =>
         (inv.invoice_number ?? '').toLowerCase().includes(searchQuery.trim().toLowerCase())

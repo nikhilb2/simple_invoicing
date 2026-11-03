@@ -53,3 +53,16 @@ def test_change_password_rejects_same_password(client, db_session):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "New password must be different from current password"
+
+
+def test_change_password_rejects_more_than_72_bytes(client, db_session):
+    seeded = _seed_user(db_session)
+
+    response = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "OldPass@123", "new_password": "é" * 37},
+    )
+
+    assert response.status_code == 422
+    db_session.refresh(seeded)
+    assert verify_password("OldPass@123", str(seeded.hashed_password))

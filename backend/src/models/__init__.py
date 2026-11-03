@@ -6,6 +6,7 @@ from src.models.product import Product
 from src.models.inventory import Inventory
 from src.models.product_serial import ProductSerial
 from src.models.invoice import Invoice, InvoiceItem
+from src.models.quotation import Quotation, QuotationItem
 from src.models.buyer import Buyer
 from src.models.ledger_address import LedgerAddress
 from src.models.company import CompanyProfile
@@ -18,6 +19,7 @@ from src.models.bom import BillOfMaterial
 from src.models.production_transaction import ProductionTransaction
 from src.models.email_log import EmailLog
 from src.models.company_term import CompanyTerm
+from src.models.eway_bill import EwayBillTransporter
 from src.models.api_key import ApiKey
 from src.models.share_link import ShareLink
 from src.models.oauth import (

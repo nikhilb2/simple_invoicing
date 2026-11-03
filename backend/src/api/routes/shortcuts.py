@@ -28,6 +28,7 @@ DEFAULTS: dict[str, str] = {
     "go_gstr1":        "Alt+G",
     "go_gstr3b":       "Alt+B",
     "go_dashboard":    "Alt+O",
+    "go_quotations":   "Alt+Q",
 }
 
 router = APIRouter()

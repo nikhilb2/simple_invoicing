@@ -565,3 +565,173 @@ def test_all_roles_can_read_payments(client, payment_with_allocation, role, suff
         assert [row["id"] for row in response.json()] == [payment_id]
     else:
         assert response.json()["id"] == payment_id
+
+
+def _payment_ledger(client, name: str = "Pay NaN Ledger"):
+    response = client.post(
+        "/api/ledgers/",
+        json={
+            "name": name,
+            "address": "123 Finance Street",
+            "gst": "27ABCDE1234F1Z0",
+            "opening_balance": None,
+            "phone_number": "+91 9999999999",
+            "email": "ledger@example.com",
+            "website": "",
+            "bank_name": "",
+            "branch_name": "",
+            "account_name": "",
+            "account_number": "",
+            "ifsc_code": "",
+        },
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["id"]
+
+
+def test_create_payment_rejects_nan_amount(client):
+    ledger_id = _payment_ledger(client, "Pay NaN Create")
+    response = client.post(
+        "/api/payments/",
+        content=(
+            f'{{"ledger_id": {ledger_id}, "voucher_type": "receipt",'
+            f' "amount": NaN, "mode": "cash"}}'
+        ),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    listing = client.get("/api/payments/")
+    assert listing.status_code == 200
+    assert all(row.get("ledger_id") != ledger_id for row in listing.json())
+
+
+def test_create_payment_rejects_infinity_amount(client):
+    ledger_id = _payment_ledger(client, "Pay Inf Create")
+    response = client.post(
+        "/api/payments/",
+        content=(
+            f'{{"ledger_id": {ledger_id}, "voucher_type": "receipt",'
+            f' "amount": Infinity, "mode": "cash"}}'
+        ),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    listing = client.get("/api/payments/")
+    assert listing.status_code == 200
+
+
+def test_create_payment_rejects_overflow_amount(client):
+    ledger_id = _payment_ledger(client, "Pay Overflow Create")
+    response = client.post(
+        "/api/payments/",
+        json={
+            "ledger_id": ledger_id,
+            "voucher_type": "receipt",
+            "amount": 100_000_000,
+            "mode": "cash",
+        },
+    )
+    assert response.status_code == 422
+    listing = client.get("/api/payments/")
+    assert listing.status_code == 200
+
+
+def test_create_payment_accepts_max_numeric_amount(client):
+    ledger_id = _payment_ledger(client, "Pay Max Amount")
+    response = client.post(
+        "/api/payments/",
+        json={
+            "ledger_id": ledger_id,
+            "voucher_type": "receipt",
+            "amount": 99_999_999.99,
+            "mode": "cash",
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["amount"] == 99_999_999.99
+
+
+def test_create_opening_balance_accepts_negative_amount(client):
+    ledger_id = _payment_ledger(client, "Pay Neg OB")
+    response = client.post(
+        "/api/payments/",
+        json={
+            "ledger_id": ledger_id,
+            "voucher_type": "opening_balance",
+            "amount": -250.5,
+            "mode": "cash",
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["amount"] == -250.5
+
+
+def test_update_payment_rejects_nan_amount(client):
+    ledger_id = _payment_ledger(client, "Pay NaN Update")
+    created = client.post(
+        "/api/payments/",
+        json={
+            "ledger_id": ledger_id,
+            "voucher_type": "receipt",
+            "amount": 100,
+            "mode": "cash",
+        },
+    )
+    assert created.status_code == 200, created.text
+    payment_id = created.json()["id"]
+
+    response = client.put(
+        f"/api/payments/{payment_id}",
+        content='{"voucher_type": "receipt", "amount": NaN, "mode": "cash"}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    listing = client.get("/api/payments/")
+    assert listing.status_code == 200
+    row = next(r for r in listing.json() if r["id"] == payment_id)
+    assert row["amount"] == 100
+
+
+def test_create_payment_rejects_nan_allocated_amount(client):
+    ledger_id = _payment_ledger(client, "Pay NaN Alloc")
+    # Minimal sales invoice so allocation references a real invoice_id.
+    product = client.post(
+        "/api/products/",
+        json={
+            "sku": "PAYNAN1",
+            "name": "Widget",
+            "price": 100,
+            "gst_rate": 0,
+            "initial_quantity": 5,
+        },
+    )
+    assert product.status_code == 200, product.text
+    product_id = product.json()["id"]
+    invoice = client.post(
+        "/api/invoices/",
+        json={
+            "ledger_id": ledger_id,
+            "voucher_type": "sales",
+            "tax_inclusive": False,
+            "apply_round_off": False,
+            "items": [
+                {"product_id": product_id, "quantity": 1, "unit_price": 100}
+            ],
+        },
+    )
+    assert invoice.status_code == 200, invoice.text
+    invoice_id = invoice.json()["id"]
+
+    response = client.post(
+        "/api/payments/",
+        content=(
+            f'{{"ledger_id": {ledger_id}, "voucher_type": "receipt",'
+            f' "amount": 50, "mode": "cash",'
+            f' "invoice_allocations": [{{"invoice_id": {invoice_id},'
+            f' "allocated_amount": NaN}}]}}'
+        ),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    listing = client.get("/api/payments/")
+    assert listing.status_code == 200

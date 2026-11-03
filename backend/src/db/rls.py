@@ -68,6 +68,7 @@ DIRECT_TABLES: tuple[str, ...] = (
     "credit_note_items",
     "credit_notes",
     "email_logs",
+    "eway_bill_transporters",
     "financial_years",
     "inventory",
     "invoice_series",
@@ -83,6 +84,7 @@ DIRECT_TABLES: tuple[str, ...] = (
     "product_serials",
     "production_transactions",
     "products",
+    "quotations",
 )
 
 # table -> (foreign key column, parent table). The parent's own company_id
@@ -92,6 +94,7 @@ DIRECT_TABLES: tuple[str, ...] = (
 # duplicated column would be one more thing every write path has to keep right.
 CHILD_TABLES: dict[str, tuple[str, str]] = {
     "invoice_items": ("invoice_id", "invoices"),
+    "quotation_items": ("quotation_id", "quotations"),
     "credit_note_invoice_refs": ("credit_note_id", "credit_notes"),
     "payment_invoice_allocations": ("payment_id", "payments"),
     "marketplace_order_items": ("order_id", "marketplace_orders"),

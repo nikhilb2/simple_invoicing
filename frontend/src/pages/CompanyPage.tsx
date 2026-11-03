@@ -23,6 +23,8 @@ const VOUCHER_LABELS: Record<string, string> = {
   // Our own number for a credit note a supplier sent us. Kept out of the
   // credit note series so GSTR-1 Table 13 declares an unbroken range.
   debit_note: 'Debit Note (purchase returns)',
+  quotation: 'Quotation',
+  proforma: 'Proforma Invoice',
 };
 
 function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number, fyLabel?: string | null): string {
@@ -416,7 +418,7 @@ function TermsAndConditionsCard({ companyId }: { companyId: number }) {
 type SeriesRowState = Required<InvoiceSeriesUpdate>;
 
 function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLElement> }) {
-  const { activeFY } = useFY();
+  const { activeFY, loading: fyLoading } = useFY();
   const [seriesList, setSeriesList] = useState<InvoiceSeries[]>([]);
   const [drafts, setDrafts] = useState<Record<number, SeriesRowState>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
@@ -426,12 +428,16 @@ function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLEl
   const saveInFlightRef = useRef<Record<number, boolean>>({});
 
   useEffect(() => {
+    if (fyLoading) return;
+
+    let cancelled = false;
     setLoading(true);
     void (async () => {
       try {
         const params: Record<string, string | number> = {};
         if (activeFY) params.financial_year_id = activeFY.id;
         const res = await api.get<InvoiceSeries[]>('/invoice-series/', { params });
+        if (cancelled) return;
         setSeriesList(res.data);
         const initial: Record<number, SeriesRowState> = {};
         for (const s of res.data) {
@@ -449,10 +455,14 @@ function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLEl
       } catch {
         // non-admin users won't see this card
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
-  }, [activeFY?.id]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeFY?.id, fyLoading]);
 
   function patchDraft(id: number, patch: Partial<SeriesRowState>) {
     setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
@@ -622,6 +632,99 @@ function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLEl
 }
 
 // ---------------------------------------------------------------------------
+// EWayBillSettingsCard
+// ---------------------------------------------------------------------------
+
+function EWayBillSettingsCard({
+  form,
+  onChange,
+}: {
+  form: CompanyProfileUpdate;
+  onChange: (patch: Partial<CompanyProfileUpdate>) => void;
+}) {
+  return (
+    <div className="panel">
+      <div className="panel__header">
+        <div>
+          <p className="eyebrow">GST &amp; E-Way Bill</p>
+          <h3 className="nav-panel__title">E-Way Bill Configuration</h3>
+        </div>
+      </div>
+      <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '12px' }}>
+        Configure thresholds and visibility rules for the E-Way Bill feature. Thresholds serve as guidance only and do not block generation.
+      </p>
+
+      <div className="field-grid">
+        <div className="field field--full">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600 }}>
+            <input
+              type="checkbox"
+              checked={form.eway_enabled}
+              onChange={(e) => onChange({ eway_enabled: e.target.checked })}
+            />
+            Enable E-Way Bill Generation
+          </label>
+          <small className="field-hint" style={{ marginLeft: '24px' }}>
+            When disabled, the Generate E-Way Bill button will be hidden across the app.
+          </small>
+        </div>
+
+        <div className="field">
+          <label htmlFor="eway-local-threshold">Local E-Way Threshold Amount</label>
+          <input
+            id="eway-local-threshold"
+            className="input"
+            type="number"
+            min={0}
+            step={1}
+            value={form.eway_local_threshold}
+            onChange={(e) => onChange({ eway_local_threshold: parseFloat(e.target.value) || 0 })}
+            disabled={!form.eway_enabled}
+          />
+          <small className="field-hint">
+            Applied when seller and buyer are in the same state. ₹50,000 is the central rule (Rule 138), but your state may
+            notify a different limit for movement within it, so check and set yours here.
+          </small>
+        </div>
+
+        <div className="field">
+          <label htmlFor="eway-interstate-threshold">Interstate E-Way Threshold Amount</label>
+          <input
+            id="eway-interstate-threshold"
+            className="input"
+            type="number"
+            min={0}
+            step={1}
+            value={form.eway_interstate_threshold}
+            onChange={(e) => onChange({ eway_interstate_threshold: parseFloat(e.target.value) || 0 })}
+            disabled={!form.eway_enabled}
+          />
+          <small className="field-hint">
+            Applied when seller and buyer are in different states. Default: ₹50,000 (Rule 138).
+          </small>
+        </div>
+
+        <div className="field field--full">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600 }}>
+            <input
+              type="checkbox"
+              checked={form.eway_always_show_button}
+              onChange={(e) => onChange({ eway_always_show_button: e.target.checked })}
+              disabled={!form.eway_enabled}
+            />
+            Always Show E-Way Button
+          </label>
+          <small className="field-hint" style={{ marginLeft: '24px' }}>
+            When enabled, the Generate E-Way Bill button is always visible (with threshold warnings).
+            When disabled, the button is hidden for invoices below the threshold.
+          </small>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // CompanyPage
 // ---------------------------------------------------------------------------
 
@@ -641,6 +744,10 @@ export default function CompanyPage() {
     email: '',
     website: '',
     show_sku_on_pdf: false,
+    eway_enabled: true,
+    eway_local_threshold: 50000,
+    eway_interstate_threshold: 50000,
+    eway_always_show_button: true,
     show_pay_qr_on_invoice: false,
     show_upi_pay_button: false,
   });
@@ -687,6 +794,10 @@ export default function CompanyPage() {
         email: data.email || '',
         website: data.website || '',
         show_sku_on_pdf: data.show_sku_on_pdf || false,
+        eway_enabled: data.eway_enabled ?? true,
+        eway_local_threshold: data.eway_local_threshold ?? 50000,
+        eway_interstate_threshold: data.eway_interstate_threshold ?? 50000,
+        eway_always_show_button: data.eway_always_show_button ?? true,
         show_pay_qr_on_invoice: data.show_pay_qr_on_invoice || false,
         show_upi_pay_button: data.show_upi_pay_button || false,
       });
@@ -732,6 +843,10 @@ export default function CompanyPage() {
         email: form.email.trim(),
         website: form.website.trim(),
         show_sku_on_pdf: form.show_sku_on_pdf,
+        eway_enabled: form.eway_enabled,
+        eway_local_threshold: form.eway_local_threshold,
+        eway_interstate_threshold: form.eway_interstate_threshold,
+        eway_always_show_button: form.eway_always_show_button,
         show_pay_qr_on_invoice: form.show_pay_qr_on_invoice,
         show_upi_pay_button: form.show_upi_pay_button,
       };
@@ -1097,6 +1212,14 @@ export default function CompanyPage() {
         {/* Terms & Conditions */}
         {!loading && companyId > 0 && (
           <TermsAndConditionsCard companyId={companyId} />
+        )}
+
+        {/* E-Way Bill Settings */}
+        {!loading && !noCompany && (
+          <EWayBillSettingsCard
+            form={form}
+            onChange={(patch) => setForm((current) => ({ ...current, ...patch }))}
+          />
         )}
 
         {!noCompany && <InvoiceSeriesCard sectionRef={seriesSectionRef} />}

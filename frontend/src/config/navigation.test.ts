@@ -326,10 +326,27 @@ describe('LEGACY_REDIRECTS', () => {
   });
 });
 
+describe('quotations in the navigation', () => {
+  it('sits under Sales, after the two invoice pages', () => {
+    const sales = PRIMARY_NAV.find((entry) => entry.kind === 'section' && entry.id === 'sales');
+    expect(sales?.kind).toBe('section');
+    const paths = sales?.kind === 'section' ? sales.children.map((child) => child.to) : [];
+    expect(paths.indexOf('/quotations')).toBe(paths.indexOf('/invoices-view') + 1);
+  });
+
+  it('is titled, and open to everyone who can use invoices', () => {
+    expect(resolveDocumentTitle('/quotations')).toBe('Quotations');
+    expect(pathsOf(false)).toContain('/quotations');
+    expect(pathsOf(true)).toContain('/quotations');
+    expect(sectionIdForPath('/quotations')).toBe('sales');
+  });
+});
+
 describe('NAV_SHORTCUTS', () => {
   it.each([
     ['go_invoice_dues', '/invoice-dues'],
     ['go_credit_notes', '/credit-notes'],
+    ['go_quotations', '/quotations'],
     ['go_gstr1', '/gstr1'],
     ['go_gstr3b', '/gstr3b'],
     ['go_dashboard', '/'],

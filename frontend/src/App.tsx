@@ -23,6 +23,7 @@ import InvoicesPage from './pages/InvoicesPage';
 import InvoiceDuesPage from './pages/InvoiceDuesPage';
 import InvoicesAdvancedView from './pages/InvoicesAdvancedView';
 import CreditNotesPage from './pages/CreditNotesPage';
+import QuotationsPage from './pages/QuotationsPage';
 import LedgersPage from './pages/LedgersPage';
 import LedgerCreatePage from './pages/LedgerCreatePage';
 import LedgerViewPage from './pages/LedgerViewPage';
@@ -254,6 +255,7 @@ function AppRoutes() {
       <Route path="/cash-bank" element={<Protected><CompanyRequired><Layout><CashBankPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/cash-bank/accounts" element={<Protected><CompanyRequired><Layout><CashBankAccountsPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/invoices" element={<Protected><CompanyRequired><Layout><InvoicesPage /></Layout></CompanyRequired></Protected>} />
+      <Route path="/quotations" element={<Protected><CompanyRequired><Layout><QuotationsPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/invoice-dues" element={<Protected><CompanyRequired><Layout><InvoiceDuesPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/invoices-view" element={<Protected><CompanyRequired><Layout><InvoicesAdvancedView /></Layout></CompanyRequired></Protected>} />
       <Route path="/credit-notes" element={<Protected><CompanyRequired><Layout><CreditNotesPage /></Layout></CompanyRequired></Protected>} />

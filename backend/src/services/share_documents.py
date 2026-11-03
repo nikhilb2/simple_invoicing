@@ -40,9 +40,12 @@ from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.invoice import Invoice
 from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.product import Product
+from src.models.quotation import DOCUMENT_PROFORMA, STATUS_CANCELLED, STATUS_CONVERTED, STATUS_DECLINED, Quotation
 from src.models.share_link import ShareLink
+from src.services.gst_tax_service import india_today
 from src.services.invoice_payments import build_invoice_payment_summaries
-from src.services.pdf_templates import _build_credit_note_html, _build_multi_copy_invoice_html, _build_statement_html, _fmt_currency
+from src.services.pdf_templates import _build_credit_note_html, _build_multi_copy_invoice_html, _build_quotation_html, _build_statement_html, _fmt_currency
+from src.services.pdf_templates.quotation_template import NOT_A_TAX_INVOICE_NOTE
 from src.services.serial_service import SerialManager
 from src.services.upi import (
     UpiPaymentRequest,
@@ -57,7 +60,8 @@ RESOURCE_INVOICE = "invoice"
 RESOURCE_STATEMENT = "ledger_statement"
 RESOURCE_PAYMENT = "payment"
 RESOURCE_CREDIT_NOTE = "credit_note"
-SHARE_RESOURCE_TYPES = (RESOURCE_INVOICE, RESOURCE_STATEMENT, RESOURCE_PAYMENT, RESOURCE_CREDIT_NOTE)
+RESOURCE_QUOTATION = "quotation"
+SHARE_RESOURCE_TYPES = (RESOURCE_INVOICE, RESOURCE_STATEMENT, RESOURCE_PAYMENT, RESOURCE_CREDIT_NOTE, RESOURCE_QUOTATION)
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +257,15 @@ def get_credit_note(db: Session, company_id: int, credit_note_id: int) -> Credit
         )
         .filter(CreditNote.id == credit_note_id)
         .filter(company_scope(CreditNote.company_id, company_id))
+        .first()
+    )
+
+
+def get_quotation(db: Session, company_id: int, quotation_id: int) -> Quotation | None:
+    return (
+        db.query(Quotation)
+        .options(joinedload(Quotation.items))
+        .filter(Quotation.id == quotation_id, Quotation.company_id == company_id)
         .first()
     )
 
@@ -563,6 +576,29 @@ def render_credit_note_pdf(db: Session, company_id: int, credit_note_id: int) ->
     return _to_pdf(build_credit_note_html(db, company_id, credit_note_id))
 
 
+def build_quotation_html(db: Session, company_id: int, quotation_id: int) -> str:
+    quotation = get_quotation(db, company_id, quotation_id)
+    if quotation is None:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+
+    product_ids = {item.product_id for item in quotation.items}
+    products = db.query(Product).filter(Product.id.in_(product_ids)).all() if product_ids else []
+    company = _company(db, company_id)
+    # Bank details print on a proforma only, and no UPI or pay QR on either. The
+    # template takes neither, so there is nothing here to get wrong.
+    accounts = invoice_bank_accounts(db, company_id) if quotation.document_type == DOCUMENT_PROFORMA else []
+    return _build_quotation_html(
+        quotation,
+        products,
+        accounts,
+        show_sku=company.show_sku_on_pdf if company else True,
+    )
+
+
+def render_quotation_pdf(db: Session, company_id: int, quotation_id: int) -> BytesIO:
+    return _to_pdf(build_quotation_html(db, company_id, quotation_id))
+
+
 # ---------------------------------------------------------------------------
 # The public summary
 # ---------------------------------------------------------------------------
@@ -597,6 +633,10 @@ class ShareSummary:
     # in to the button. `upi_uri` is also the switch the template reads.
     upi_uri: str | None = None
     upi_app_links: tuple[tuple[str, str, str], ...] = ()
+    # A quotation's fixed "not a tax invoice" note, and how it stands right now
+    # (valid until, expired, converted). Printed on the page, not just in the PDF.
+    document_note: str | None = None
+    status_notice: str | None = None
 
 
 def _upi_fields(payment: UpiPaymentRequest | None, currency: str, *, with_button: bool = False) -> dict:
@@ -749,7 +789,47 @@ def build_share_summary(db: Session, link: ShareLink) -> ShareSummary | None:
             logo_mime_type=logo_mime_type,
         )
 
+    if link.resource_type == RESOURCE_QUOTATION:
+        quotation = get_quotation(db, link.company_id, link.resource_id)
+        if quotation is None:
+            return None
+        return _quotation_summary(quotation, company_name, currency, logo_data, logo_mime_type)
+
     return None
+
+
+def _quotation_summary(
+    quotation: Quotation,
+    company_name: str,
+    currency: str,
+    logo_data: str | None,
+    logo_mime_type: str | None,
+) -> ShareSummary:
+    """An offer, not a bill: never any UPI fields, whatever the company has switched on."""
+    label = "Proforma Invoice" if quotation.document_type == DOCUMENT_PROFORMA else "Quotation"
+    notice = None
+    if quotation.status == STATUS_CONVERTED:
+        notice = f"This {label.lower()} has been converted to an invoice."
+    elif quotation.status == STATUS_DECLINED:
+        notice = f"This {label.lower()} was declined."
+    elif quotation.is_expired_on(india_today()):
+        notice = f"This {label.lower()} expired on {_fmt_date(quotation.valid_until)}."
+    elif quotation.valid_until:
+        notice = f"Valid until {_fmt_date(quotation.valid_until)}."
+    number = _safe_ledger_slug(quotation.quotation_number)
+    return ShareSummary(
+        title=f"{label} {quotation.quotation_number}",
+        party_name=quotation.ledger_name or "",
+        company_name=quotation.company_name or company_name,
+        amount_label=_fmt_currency(float(quotation.total_amount or 0), quotation.company_currency_code or currency),
+        date_label=_fmt_date(quotation.quotation_date),
+        pdf_filename=f"{quotation.document_type}_{number}.pdf",
+        available=quotation.status != STATUS_CANCELLED,
+        logo_data=quotation.company_logo_data or logo_data,
+        logo_mime_type=quotation.company_logo_mime_type or logo_mime_type,
+        document_note=NOT_A_TAX_INVOICE_NOTE,
+        status_notice=notice,
+    )
 
 
 def _link_share_url(db: Session, link: ShareLink, request: Request | None) -> str | None:
@@ -788,6 +868,8 @@ def render_share_pdf(db: Session, link: ShareLink, *, request: Request | None = 
         return render_receipt_pdf(db, link.company_id, link.resource_id)
     if link.resource_type == RESOURCE_CREDIT_NOTE:
         return render_credit_note_pdf(db, link.company_id, link.resource_id)
+    if link.resource_type == RESOURCE_QUOTATION:
+        return render_quotation_pdf(db, link.company_id, link.resource_id)
     raise HTTPException(status_code=404, detail="Not found")
 
 
@@ -809,4 +891,6 @@ def render_share_document_html(db: Session, link: ShareLink, *, request: Request
         return build_receipt_html(db, link.company_id, link.resource_id)
     if link.resource_type == RESOURCE_CREDIT_NOTE:
         return build_credit_note_html(db, link.company_id, link.resource_id)
+    if link.resource_type == RESOURCE_QUOTATION:
+        return build_quotation_html(db, link.company_id, link.resource_id)
     raise HTTPException(status_code=404, detail="Not found")
