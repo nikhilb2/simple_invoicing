@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Download, ExternalLink, Printer, Share2 } from 'lucide-react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
-import api, { getApiErrorMessage } from '../api/client';
+import { fetchQuotationPdf } from '../api/quotationPdf';
 import ShareModal from './ShareModal';
 import PreviewToolbar, { type PreviewAction } from './PreviewToolbar';
 import type { Quotation } from '../types/api';
@@ -44,8 +44,8 @@ export default function QuotationPreview({ quotation, menuActions = [], meta, on
       setPdfUrl(null);
       setPreviewFailed(false);
       try {
-        const response = await api.get(`/quotations/${quotation.id}/pdf`, { responseType: 'blob' });
-        const nextUrl = window.URL.createObjectURL(response.data as Blob);
+        const blob = await fetchQuotationPdf(quotation.id, 'Unable to load PDF preview');
+        const nextUrl = window.URL.createObjectURL(blob);
         objectUrlToRevoke = nextUrl;
         if (!isMounted) {
           window.URL.revokeObjectURL(nextUrl);
@@ -54,7 +54,7 @@ export default function QuotationPreview({ quotation, menuActions = [], meta, on
         setPdfUrl(nextUrl);
       } catch (err) {
         if (!isMounted) return;
-        const message = getApiErrorMessage(err, 'Unable to load PDF preview');
+        const message = err instanceof Error ? err.message : 'Unable to load PDF preview';
         setPdfError(message);
         onError?.(message);
       } finally {
@@ -72,15 +72,15 @@ export default function QuotationPreview({ quotation, menuActions = [], meta, on
 
   const handleDownload = async () => {
     try {
-      const response = await api.get(`/quotations/${quotation.id}/pdf`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(response.data as Blob);
+      const blob = await fetchQuotationPdf(quotation.id, 'Unable to download PDF');
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = `${quotation.document_type}_${quotation.quotation_number.replace(/\//g, '_')}.pdf`;
       link.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      onError?.(getApiErrorMessage(err, 'Unable to download PDF'));
+      onError?.(err instanceof Error ? err.message : 'Unable to download PDF');
     }
   };
 
