@@ -22,6 +22,34 @@ def _create_product(client: TestClient, sku: str, name: str, price: float = 99.0
 
 
 class TestProductsWithInventory:
+    @pytest.mark.parametrize(
+        "allow_decimal, quantity, status, expected_stock",
+        [(False, 2.5, 400, 10), (False, 3, 200, 3), (True, 2.5, 200, 2.5)],
+    )
+    def test_update_inventory_respects_whole_number_products(
+        self, client, allow_decimal, quantity, status, expected_stock
+    ):
+        response = client.post("/api/products/", json={
+            "sku": "WHOLE-STOCK",
+            "name": "Whole Stock",
+            "price": 99,
+            "initial_quantity": 10,
+            "allow_decimal": allow_decimal,
+        })
+        assert response.status_code == 200, response.text
+        product = response.json()
+
+        response = client.put(f"/api/products/{product['id']}/with-inventory", json={
+            "current_stock": quantity,
+        })
+        assert response.status_code == status, response.text
+        if status == 400:
+            assert response.json()["detail"] == "Quantity must be a whole number for this product"
+
+        listing = client.get("/api/products/with-inventory?search=Whole Stock")
+        assert listing.status_code == 200
+        assert listing.json()["items"][0]["current_stock"] == expected_stock
+
     def test_list_products_with_inventory(self, client):
         _create_product(client, "PI001", "Widget A", price=50, initial_quantity=10)
         _create_product(client, "PI002", "Widget B", price=75, initial_quantity=5)
