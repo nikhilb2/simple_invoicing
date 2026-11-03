@@ -38,6 +38,7 @@ from src.services.invoice_payments import auto_allocate_outstanding_invoices, bu
 from src.services.pdf_templates import _build_day_book_html, _build_statement_html  # noqa: F401
 from src.services.pdf_templates.builders import _e
 from src.services.share_documents import get_ledger as get_shared_ledger, render_statement_pdf
+from src.services.uqc import hsn_uqc
 from src.core.validation import GSTIN_REGEX, HSN_SAC_REGEX, is_gst_rate_slab
 from src.services.company_access import company_scope, legacy_default_company
 
@@ -1859,27 +1860,8 @@ def _derive_place_of_supply(company_gst: str | None) -> str:
     return "00"
 
 
-# Table 12 takes UQC from a fixed GSTN list, so the product master's free-text
-# unit has to be mapped onto it. Anything unmapped falls back to NOS, which is
-# what every row carried before units were read at all.
-HSN_UQC_BY_UNIT = {
-    "pieces": "NOS", "piece": "NOS", "pcs": "PCS", "nos": "NOS", "unit": "UNT",
-    "kg": "KGS", "kgs": "KGS", "g": "GMS", "gm": "GMS", "gram": "GMS", "grams": "GMS",
-    "m": "MTR", "metre": "MTR", "meter": "MTR", "mtr": "MTR",
-    "l": "LTR", "litre": "LTR", "liter": "LTR", "ltr": "LTR", "ml": "MLT",
-    "box": "BOX", "set": "SET", "pair": "PRS", "dozen": "DOZ", "ton": "TON",
-}
-
 # GSTN caps the Table 12 description at 30 characters.
 HSN_DESC_LIMIT = 30
-
-
-def _hsn_uqc(hsn: str, unit: str | None) -> str:
-    """The UQC to declare for an HSN line."""
-    # Services carry no quantity, so the GSTN convention is UQC "NA" with qty 0.
-    if hsn.startswith("99"):
-        return "NA"
-    return HSN_UQC_BY_UNIT.get((unit or "").strip().lower(), "NOS")
 
 
 def _hsn_desc(value: str | None, hsn: str) -> str:
@@ -2504,7 +2486,7 @@ def gstr1_export_json(
         for item in inv.items:
             hsn = (item.hsn_sac or "").strip()
             rate = float(item.gst_rate or 0)
-            uqc = _hsn_uqc(hsn, units_by_product.get(item.product_id))
+            uqc = hsn_uqc(hsn, units_by_product.get(item.product_id))
             agg = target.setdefault((hsn, rate, uqc), {"qty": 0.0, "txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0, "desc": ""})
             agg["qty"] += float(item.quantity or 0)
             agg["txval"] += float(item.taxable_amount or 0)

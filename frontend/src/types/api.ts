@@ -214,8 +214,19 @@ export type CompanyProfile = {
   additional_company_info: string | null;
   terms: CompanyTermOut[];
   show_sku_on_pdf: boolean;
+  eway_enabled: boolean;
+  eway_local_threshold: number;
+  eway_interstate_threshold: number;
+  eway_always_show_button: boolean;
   show_pay_qr_on_invoice: boolean;
   show_upi_pay_button: boolean;
+};
+
+export type EwayBillSettings = {
+  eway_enabled: boolean;
+  eway_local_threshold: number;
+  eway_interstate_threshold: number;
+  eway_always_show_button: boolean;
 };
 
 export type CompanyListItem = {
@@ -251,6 +262,10 @@ export type CompanyProfileUpdate = {
   ifsc_code?: string;
   additional_company_info?: string | null;
   show_sku_on_pdf?: boolean;
+  eway_enabled?: boolean;
+  eway_local_threshold?: number;
+  eway_interstate_threshold?: number;
+  eway_always_show_button?: boolean;
   show_pay_qr_on_invoice?: boolean;
   show_upi_pay_button?: boolean;
 };
