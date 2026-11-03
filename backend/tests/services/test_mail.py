@@ -1,6 +1,8 @@
 import pytest
 from unittest.mock import MagicMock, patch
 import asyncio
+import smtplib
+from src.core.config import settings
 from src.services.mail import send_email, _get_active_smtp_config, _build_message, _send_sync
 from src.models.smtp_config import SMTPConfig
 
@@ -67,6 +69,36 @@ async def test_send_email_orchestration(mock_db, active_config):
         # Verify the first argument to _send_sync was indeed our config
         args, _ = mock_send_sync.call_args
         assert args[0] == active_config
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("mode", ["single_tenant", "shared_hosting"])
+@pytest.mark.parametrize("error", [
+    smtplib.SMTPException("relay rejected the message"),
+    smtplib.SMTPAuthenticationError(535, b"authentication details"),
+    ConnectionRefusedError("private relay address"),
+    TimeoutError("private relay address"),
+])
+async def test_smtp_failure_is_logged_and_raised_as_a_safe_runtime_error(
+    mock_db, active_config, monkeypatch, mode, error,
+):
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", mode)
+    mock_db.query().filter().first.return_value = active_config
+
+    with patch("src.services.mail._send_sync", side_effect=error):
+        with pytest.raises(RuntimeError) as caught:
+            await send_email(
+                mock_db, "to@example.com", "Sub", "<html></html>",
+                use_smtp_config=True,
+            )
+
+    assert str(caught.value) == "Could not send the email. Check the SMTP settings."
+    assert isinstance(caught.value.__cause__, type(error))
+    assert str(caught.value.__cause__) == str(error)
+    log = mock_db.add.call_args.args[0]
+    assert log.status == "failed"
+    assert log.error_message == str(error)
+    mock_db.commit.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
