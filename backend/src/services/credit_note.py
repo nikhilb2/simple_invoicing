@@ -214,8 +214,9 @@ def create_credit_note(
             detail="A credit note cannot cover invoices with different places of supply",
         )
 
-    # GSTR-1 files a note whole, under the table its invoices were filed in.
-    if direction == "outward":
+    # GSTR-1 files a note whole, under the table its invoices were filed in. A
+    # company with no GSTIN files no GSTR-1, so it has no tables to keep apart.
+    if direction == "outward" and any((inv.company_gst or "").strip() for inv in invoices):
         sections = {gstr1_section(inv, company_state_code(inv.company_gst)) for inv in invoices}
         if len(sections) > 1:
             raise HTTPException(
