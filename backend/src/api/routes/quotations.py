@@ -39,6 +39,7 @@ from src.schemas.quotation import (
     StatusFilter,
 )
 from src.services.company_access import company_scope
+from src.services.gst_tax_service import india_today
 from src.services.quotation import (
     already_converted_error,
     build_conversion_draft,
@@ -352,7 +353,9 @@ def convert(
             company=active_company,
         )
         # Read before commit: expire_on_commit would make these look like fresh queries.
-        today = date.today()
+        # India's date, because the quotation was dated by it: the server's could make
+        # days_since_quote -1 just after midnight there.
+        today = india_today()
         was_expired = bool(quotation.valid_until and quotation.valid_until < today)
         quoted_total = float(quotation.total_amount or 0)
         quoted_rates = {item.product_id: float(item.gst_rate or 0) for item in quotation.items}

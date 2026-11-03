@@ -21,6 +21,7 @@ from src.models.invoice import Invoice
 from src.models.ledger_address import LedgerAddress
 from src.models.quotation import Quotation
 from src.services import series as series_service
+from src.services.gst_tax_service import india_today
 
 
 @pytest.fixture
@@ -45,7 +46,7 @@ def test_create_uses_its_own_series_and_defaults(setup, document_type, prefix):
     assert created["display_status"] == "open"
     assert created["is_expired"] is False
     assert created["quotation_date"] == iso_today()
-    assert created["valid_until"] == (date.today() + timedelta(days=30)).isoformat()
+    assert created["valid_until"] == (india_today() + timedelta(days=30)).isoformat()
     assert created["ledger_name"] == ledger["name"]
     assert created["company_name"] == "Acme Traders"
     assert created["items"][0]["product_name"] == product["name"]
@@ -534,7 +535,7 @@ def test_duplicate_is_fresh_and_open(setup):
     assert copy["document_type"] == "proforma"
     assert copy["status"] == "open"
     assert copy["quotation_date"] == iso_today()
-    assert copy["valid_until"] == (date.today() + timedelta(days=14)).isoformat()
+    assert copy["valid_until"] == (india_today() + timedelta(days=14)).isoformat()
     assert copy["reference_notes"] == "Tender 9"
     assert copy["total_amount"] == quote["total_amount"]
     assert copy["invoices"] == []

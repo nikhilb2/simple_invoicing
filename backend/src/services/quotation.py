@@ -52,6 +52,7 @@ from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.gst_tax_service import (
     assign_invoice_tax_totals,
     assign_item_tax_split,
+    india_today,
     is_interstate_supply,
     money as _money,
 )
@@ -278,7 +279,7 @@ def _apply_payload(
 
 def create_quotation(db: Session, payload: QuotationCreate, *, created_by: int, company: CompanyProfile) -> Quotation:
     """A new open quotation on its own number series. Moves nothing else."""
-    quotation_date = payload.quotation_date or date.today()
+    quotation_date = payload.quotation_date or india_today()
     valid_until = payload.valid_until
     if "valid_until" not in payload.model_fields_set:
         valid_until = quotation_date + timedelta(days=DEFAULT_VALIDITY_DAYS)
@@ -345,7 +346,7 @@ def update_quotation(db: Session, quotation: Quotation, payload: QuotationUpdate
 
 def duplicate_quotation(db: Session, original: Quotation, *, created_by: int, company: CompanyProfile) -> Quotation:
     """A fresh open copy dated today, on the same validity span, at today's tax rates."""
-    today = date.today()
+    today = india_today()
     valid_until = None
     if original.valid_until is not None:
         valid_until = today + (original.valid_until - original.quotation_date)
@@ -595,9 +596,11 @@ def _usable_shipping_address_id(db: Session, quotation: Quotation, company_id: i
 def build_conversion_draft(db: Session, quotation: Quotation, *, company: CompanyProfile) -> QuotationConversionDraft:
     """What the composer opens with, and what to look at before saving. Reads only."""
     _require_convertible(db, quotation)
-    today = date.today()
+    # The date a caller gets if it posts this straight back. The composer sends the
+    # browser's date instead, as it does for any other invoice.
+    today = india_today()
 
-    product_ids = {item.product_id for item in quotation.items}
+    product_ids ={item.product_id for item in quotation.items}
     products = {
         product.id: product
         for product in db.query(Product).filter(

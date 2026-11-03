@@ -2,6 +2,8 @@
 
 from datetime import date
 
+from src.services.gst_tax_service import india_today
+
 GST_MH = "27AADCB2230M1ZT"
 GST_KA = "29AADCB2230M1ZP"
 
@@ -99,4 +101,4 @@ def series_counters(client) -> dict[str, int]:
 
 
 def iso_today() -> str:
-    return date.today().isoformat()
+    return india_today().isoformat()
