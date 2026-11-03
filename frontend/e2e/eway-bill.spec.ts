@@ -25,8 +25,7 @@ test.describe('E-Way Bill form', () => {
     await page.getByTitle('Preview').first().click();
     const preview = page.locator('.modal-panel--invoice-preview');
     await expect(preview).toBeVisible({ timeout: 10_000 });
-    await preview.getByLabel('More actions').click();
-    await page.getByRole('menuitem', { name: /e-way bill/i }).click();
+    await preview.getByRole('button', { name: /e-way bill/i }).click();
     await expect(page.locator('[aria-labelledby="eway-bill-title"]')).toBeVisible({ timeout: 10_000 });
   });
 
@@ -116,8 +115,7 @@ test.describe('E-Way Bill file and rules', () => {
 
   async function openForm(page: Page, invoiceNumber: string) {
     const preview = await openPreview(page, invoiceNumber);
-    await preview.getByLabel('More actions').click();
-    await page.getByRole('menuitem', { name: /e-way bill/i }).click();
+    await preview.getByRole('button', { name: /e-way bill/i }).click();
     const modal = page.locator(MODAL);
     await expect(modal).toBeVisible({ timeout: 10_000 });
     await expect(modal.locator('[name=seller_gstin]')).not.toHaveValue('');
@@ -128,11 +126,6 @@ test.describe('E-Way Bill file and rules', () => {
   async function fillSellerPin(modal: ReturnType<Page['locator']>) {
     const pin = modal.locator('[name=seller_pincode]');
     if ((await pin.inputValue()) === '') await pin.fill('560029');
-  }
-
-  async function menuLabels(page: Page, preview: ReturnType<Page['locator']>) {
-    await preview.getByLabel('More actions').click();
-    return page.getByRole('menuitem').allInnerTexts();
   }
 
   test('a valid form downloads a file the portal takes, and the saved transporter fills in next time', async ({ authedPage: page }) => {
@@ -205,7 +198,7 @@ test.describe('E-Way Bill file and rules', () => {
       items: [{ product_id: w.product.id, quantity: 1, unit_price: 50 }],
     });
     const preview = await openPreview(page, purchase.invoice_number);
-    expect((await menuLabels(page, preview)).join('|')).not.toMatch(/e-way/i);
+    await expect(preview.getByRole('button', { name: /e-way/i })).toHaveCount(0);
     for (const route of ['precheck', 'generate']) {
       const reply = route === 'precheck'
         ? await call(page, 'GET', `/invoices/${purchase.id}/eway-bill/precheck`)
@@ -222,9 +215,8 @@ test.describe('E-Way Bill file and rules', () => {
       await page.goto('/quotations');
       await page.locator('tr', { hasText: quote.quotation_number }).getByRole('button', { name: quote.quotation_number }).click();
       const dialog = page.getByRole('dialog', { name: /Quotation|Proforma/ });
-      await dialog.getByRole('button', { name: 'More actions' }).click();
-      expect((await page.getByRole('menuitem').allInnerTexts()).join('|')).not.toMatch(/e-way/i);
-      await page.keyboard.press('Escape');
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole('button', { name: /e-way/i })).toHaveCount(0);
       expect((await call(page, 'GET', `/quotations/${quote.id}/eway-bill/precheck`)).status).toBe(404);
     }
 
@@ -251,10 +243,12 @@ test.describe('E-Way Bill file and rules', () => {
       });
       expect(await must(page, 'GET', '/company/')).toMatchObject({ eway_local_threshold: 12345, eway_interstate_threshold: 23456 });
 
-      // Turned off: no menu entry, and the server says why in words.
+      // Turned off: no button, and the server says why in words.
       await must(page, 'PUT', '/company/', { ...editable, eway_enabled: false });
+      const settings = page.waitForResponse((res) => res.url().endsWith('/eway-bill/settings'));
       const preview = await openPreview(page, invoice.invoice_number);
-      expect((await menuLabels(page, preview)).join('|')).not.toMatch(/e-way/i);
+      expect((await (await settings).json()).eway_enabled).toBe(false);
+      await expect(preview.getByRole('button', { name: /e-way/i })).toHaveCount(0);
       for (const reply of [
         await call(page, 'GET', `/invoices/${invoice.id}/eway-bill/precheck`),
         await call(page, 'POST', `/invoices/${invoice.id}/eway-bill/generate`, {}),

@@ -224,15 +224,15 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
               onClick: handleDownloadPdf,
               title: 'Download invoice PDF',
             },
-          ]}
-          menu={showEwayBill ? [
-            {
-              label: 'Generate E-Way Bill',
+            // A fourth button, past PreviewToolbar's usual three: people open the
+            // preview to do this, and nobody found it behind the "…".
+            ...(showEwayBill ? [{
+              label: 'E-Way Bill',
               icon: <FileJson size={16} aria-hidden="true" />,
               onClick: () => setShowEwayBillModal(true),
               title: 'Generate E-Way Bill JSON',
-            },
-          ] : []}
+            }] : []),
+          ]}
           menuExtra={<CopiesStepper value={copies} onChange={setCopies} />}
           menuOpen={menuOpen}
           onMenuOpenChange={setMenuOpen}
