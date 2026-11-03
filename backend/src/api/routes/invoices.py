@@ -17,6 +17,7 @@ from src.services.pdf_render import safe_url_fetcher
 from src.db.session import get_db
 from src.models.company_account import CompanyAccount
 from src.models.company import CompanyProfile
+from src.models.financial_year import FinancialYear
 from src.models.invoice import Invoice, InvoiceItem
 from src.models.product import Product
 from src.models.product_serial import ProductSerial
@@ -24,7 +25,7 @@ from src.models.user import User
 from src.schemas.invoice import DuesAgeingOut, InvoiceCreate, InvoiceOut, PaginatedInvoiceOut
 from src.api.deps import get_active_company, get_current_user
 from src.core.analytics import distinct_id_for, track
-from src.services.financial_year import get_active_fy
+from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.invoice_payments import (
     build_invoice_payment_summaries,
     is_offset_by_payables,
@@ -706,6 +707,34 @@ def update_invoice(
             )
 
         active_fy = get_active_fy(db, company_id=active_company.id)
+
+        # The invoice's financial year and number series are fixed at
+        # creation and are not regenerated on edit, so a date change that
+        # would move the invoice into a different financial year is blocked
+        # instead of leaving it filed under the old year. A date that no
+        # financial year covers keeps the previous behaviour (allowed).
+        current_day = invoice.invoice_date.date() if invoice.invoice_date else None
+        if (
+            payload.invoice_date is not None
+            and payload.invoice_date != current_day
+            and invoice.financial_year_id is not None
+        ):
+            date_fy = get_fy_for_date(db, payload.invoice_date, company_id=active_company.id)
+            if date_fy is not None and date_fy.id != invoice.financial_year_id:
+                current_fy = (
+                    db.query(FinancialYear)
+                    .filter(FinancialYear.id == invoice.financial_year_id)
+                    .first()
+                )
+                current_label = current_fy.label if current_fy else f"id {invoice.financial_year_id}"
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"This date is in {date_fy.label}, but the invoice belongs to "
+                        f"{current_label}. Cancel it and create a new invoice in "
+                        f"{date_fy.label} instead."
+                    ),
+                )
 
         processor = InvoiceProcessor(db)
         # Validate before either delta touches stock. apply_payload validates
