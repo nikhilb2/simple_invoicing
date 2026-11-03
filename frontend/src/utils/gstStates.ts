@@ -43,6 +43,19 @@ export const GST_STATES: { code: string; name: string }[] = [
 
 const STATE_CODES = new Set(GST_STATES.map((state) => state.code));
 
+/**
+ * Codes that only old data should carry. 28 is Andhra Pradesh before its 2014
+ * division, now 37, and 25 is Daman and Diu, merged into 26 in 2020. Offered to
+ * a seller in 37, 28 looks like home but is another state, so it charges IGST
+ * on a local sale.
+ */
+const RETIRED_STATE_CODES = new Set(['25', '28']);
+
+/** The states to offer, plus a retired one when that is what the document already says. */
+export function placeOfSupplyOptions(current: string): { code: string; name: string }[] {
+  return GST_STATES.filter((state) => !RETIRED_STATE_CODES.has(state.code) || state.code === current);
+}
+
 function stateCode(gstin?: string | null): string {
   const state = gstin?.trim().slice(0, 2) ?? '';
   return /^\d{2}$/.test(state) ? state : '';
@@ -76,4 +89,23 @@ export function resolvePlaceOfSupply(
 export function isInterstatePlaceOfSupply(placeOfSupply: string, companyGst?: string | null): boolean {
   const companyState = stateCode(companyGst);
   return Boolean(placeOfSupply && companyState) && placeOfSupply !== companyState;
+}
+
+/**
+ * A warning when the place of supply an invoice was saved with no longer matches
+ * the state on its buyer's GSTIN. It stays as saved, because a registered buyer can
+ * take delivery elsewhere, and its tax was charged for that state.
+ */
+export function stalePlaceOfSupplyWarning(
+  saved: string | null | undefined,
+  current: string,
+  ledgerGst?: string | null,
+): string | null {
+  const buyerState = stateCode(ledgerGst);
+  if (!saved || current !== saved || !STATE_CODES.has(buyerState) || buyerState === saved) return null;
+  const name = (code: string) => GST_STATES.find((state) => state.code === code)?.name ?? code;
+  return (
+    `This invoice was saved with ${saved} – ${name(saved)} as its place of supply, but the buyer's GSTIN `
+    + `is now in ${buyerState} – ${name(buyerState)}. It won't change on its own, so check it before saving.`
+  );
 }
