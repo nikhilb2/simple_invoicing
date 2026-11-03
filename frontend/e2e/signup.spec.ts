@@ -40,6 +40,7 @@ test.describe('Public signup', () => {
     // Follow the link on this app's origin regardless of the host in the mail.
     const { search } = new URL(link);
     await page.goto(`/verify-email${search}`);
+    await page.fill('#full-name', 'Signup Tester');
     await page.fill('#password', password);
     await page.click('button:has-text("Confirm email and set password")');
     await expect(page.getByText('Email verified')).toBeVisible();

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, EmailStr, Field
+from pydantic import AfterValidator, BaseModel, EmailStr, Field, StringConstraints
 
 BCRYPT_MAX_BYTES = 72
 
@@ -64,6 +64,7 @@ class EmailRequest(BaseModel):
 
 class VerifyEmailRequest(BaseModel):
     token: str = Field(min_length=1, max_length=4096)
+    full_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
     new_password: NewPassword
 
 

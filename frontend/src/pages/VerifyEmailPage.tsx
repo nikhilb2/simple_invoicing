@@ -20,6 +20,7 @@ export default function VerifyEmailPage() {
   const [status, setStatus] = useState<Status>(token ? 'ready' : 'failed');
   const [message, setMessage] = useState(token ? '' : 'This verification link is missing its token.');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [email, setEmail] = useState('');
@@ -32,6 +33,10 @@ export default function VerifyEmailPage() {
   async function onConfirm(event: FormEvent) {
     event.preventDefault();
     if (!token) return;
+    if (!fullName.trim()) {
+      setFormError('Enter your name');
+      return;
+    }
     const clientError = passwordClientError(password);
     if (clientError) {
       setFormError(clientError);
@@ -40,7 +45,7 @@ export default function VerifyEmailPage() {
     try {
       setSubmitting(true);
       setFormError('');
-      const res = await verifyEmail(token, password);
+      const res = await verifyEmail(token, password, fullName.trim());
       setStatus('verified');
       setMessage(res.detail || 'Your email address is verified.');
     } catch (err) {
@@ -75,13 +80,26 @@ export default function VerifyEmailPage() {
       <div>
         <p className="eyebrow">Verify email</p>
         <h2 className="page-title">
-          {status === 'ready' ? 'Choose your password' : status === 'verified' ? 'Email verified' : 'Could not verify email'}
+          {status === 'ready' ? 'Choose your name and password' : status === 'verified' ? 'Email verified' : 'Could not verify email'}
         </h2>
         {message ? <p className="section-copy" role={status === 'failed' ? 'alert' : 'status'}>{message}</p> : null}
       </div>
 
       {status === 'ready' ? (
         <form className="stack" onSubmit={onConfirm}>
+          <div className="field--full">
+            <label htmlFor="full-name">Your name</label>
+            <input
+              id="full-name"
+              className="input"
+              type="text"
+              value={fullName}
+              onChange={(event) => setFullName(event.target.value)}
+              autoComplete="name"
+              maxLength={120}
+              required
+            />
+          </div>
           <div className="field--full">
             <label htmlFor="password">Password</label>
             <PasswordInput

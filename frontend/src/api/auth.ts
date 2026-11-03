@@ -11,8 +11,10 @@ export async function registerAccount(payload: RegisterRequest): Promise<DetailR
   return res.data;
 }
 
-export async function verifyEmail(token: string, newPassword: string): Promise<DetailResponse> {
-  const res = await api.post<DetailResponse>('/auth/verify-email', { token, new_password: newPassword });
+export async function verifyEmail(token: string, newPassword: string, fullName: string): Promise<DetailResponse> {
+  const res = await api.post<DetailResponse>('/auth/verify-email', {
+    token, new_password: newPassword, full_name: fullName,
+  });
   return res.data;
 }
 

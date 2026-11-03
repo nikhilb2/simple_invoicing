@@ -280,9 +280,8 @@ def register(
 ):
     """Create an unverified, password-less account and mail the verification link.
 
-    The owner chooses the password on the page that link opens, so nobody who merely
-    typed this address can ever hold a working password for it. Whoever registers an
-    address first, or last, gains nothing.
+    The owner chooses their name and password on the page that link opens, so
+    registering an address cannot decide its verified profile or password.
 
     The answer is the same 202 whether or not the address already has an account, and
     the mail goes out after the response, so this is no oracle for who is registered.
@@ -297,12 +296,10 @@ def register(
     existing = find_user_by_email(db, email)
     if existing is not None:
         # A verified account is left exactly as it is. An unverified one is still only
-        # a claim, so it just gets a fresh link, sent to the address on the account and
-        # never to the one just typed. Earlier links keep working: a stranger
+        # a claim, so its profile stays as it is and it gets a fresh link, sent to
+        # the address on the account, never the one just typed. Earlier links keep working: a stranger
         # registering this address must not be able to kill the owner's.
         if existing.is_active and not existing.email_verified:
-            existing.full_name = payload.full_name.strip() or existing.email
-            db.commit()
             background_tasks.add_task(platform_mail.send_verification_email, existing.email, _verify_token_for(existing))
         return accepted
 
@@ -346,6 +343,7 @@ def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)):
     ):
         raise _error(400, "invalid_token", "This link is invalid or has expired.")
 
+    user.full_name = payload.full_name
     user.hashed_password = get_password_hash(payload.new_password)
     user.email_verified_at = _now()
     user.sessions_valid_after = _now()
@@ -406,6 +404,8 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     # The link arrived in that inbox, so the address is proven too.
     if not user.email_verified:
         user.email_verified_at = _now()
+        if settings.is_shared_hosting:
+            user.full_name = user.email
     # A reset is what someone does when they think their password is known to
     # somebody else, so every session signed in before it stops refreshing.
     user.sessions_valid_after = _now()
@@ -616,6 +616,11 @@ class _OAuthRejected(Exception):
         self.code = code
 
 
+def _oauth_full_name(userinfo: dict, email: str) -> str:
+    name = userinfo.get("name")
+    return name.strip()[:120] if isinstance(name, str) and name.strip() else email
+
+
 def _resolve_oauth_user(db: Session, provider: str, userinfo: dict) -> tuple[User, bool]:
     """Find or create the user for a verified provider identity.
 
@@ -670,6 +675,7 @@ def _resolve_oauth_user(db: Session, provider: str, userinfo: dict) -> tuple[Use
                 # keep a session they already started with it.
                 user.hashed_password = None
                 user.sessions_valid_after = _now()
+                user.full_name = _oauth_full_name(userinfo, email)
         db.add(UserIdentity(user_id=user.id, provider=provider, provider_subject=subject, email=email))
         db.commit()
         return user, False
@@ -678,10 +684,9 @@ def _resolve_oauth_user(db: Session, provider: str, userinfo: dict) -> tuple[Use
     spec = auth_providers.get_spec(provider)
     if spec is None or not spec.signup_allowed(settings):
         raise _OAuthRejected("signup_disabled")
-    name = userinfo.get("name")
     user = User(
         email=email,
-        full_name=(name.strip()[:120] if isinstance(name, str) and name.strip() else email),
+        full_name=_oauth_full_name(userinfo, email),
         hashed_password=None,
         role=UserRole.staff,
         email_verified_at=_now(),
