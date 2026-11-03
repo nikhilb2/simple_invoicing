@@ -1995,6 +1995,17 @@ def _invoice_filing_errors(inv: Invoice, company_gstin: str | None, company_pos:
     return errors
 
 
+def _note_line_fix(cn_num: str, item: CreditNoteItem, invoices_by_id: dict[int, Invoice], change: str) -> str:
+    """How to repair the invoice line behind a note, which the note itself stops being edited."""
+    original = invoices_by_id.get(item.invoice_id)
+    inv_num = (original.invoice_number or f"INV-{original.id}") if original else "the original invoice"
+    return (
+        f"The line is on {inv_num}, which can't be edited while this note is against it. "
+        f"Cancel credit note {cn_num}, edit {inv_num} to {change}, "
+        "then raise the note again with the same date (it takes a new number)"
+    )
+
+
 def _note_filing_errors(cn: CreditNote, invoices_by_id: dict[int, Invoice], company_pos: str) -> list[tuple[str, str]]:
     """What stops an outward credit note being filed, as (field, message)."""
     errors: list[tuple[str, str]] = []
@@ -2005,9 +2016,16 @@ def _note_filing_errors(cn: CreditNote, invoices_by_id: dict[int, Invoice], comp
     for item in cn.items:
         hsn_error = _validate_hsn(_note_item_hsn(item))
         if hsn_error:
-            errors.append((f"HSN (item #{item.id})", f"{hsn_error}, which Table 12 needs"))
+            errors.append((
+                f"HSN (item #{item.id})",
+                f"{hsn_error}, which Table 12 needs. {_note_line_fix(cn_num, item, invoices_by_id, 'correct the HSN')}",
+            ))
         if not is_gst_rate_slab(item.gst_rate):
-            errors.append((f"GST Rate (item #{item.id})", f"{float(item.gst_rate or 0):g}% is not a GST rate"))
+            errors.append((
+                f"GST Rate (item #{item.id})",
+                f"{float(item.gst_rate or 0):g}% is not a GST rate. "
+                f"{_note_line_fix(cn_num, item, invoices_by_id, 'correct the rate')}",
+            ))
 
     originals = {item.invoice_id: invoices_by_id.get(item.invoice_id) for item in cn.items if item.invoice_id}
     for original in originals.values():
