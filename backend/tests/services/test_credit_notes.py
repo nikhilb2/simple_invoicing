@@ -62,6 +62,9 @@ def make_invoice_item(id, invoice_id, product_id=1, quantity=10, unit_price=100,
     ii.quantity = quantity
     ii.unit_price = unit_price
     ii.gst_rate = gst_rate
+    ii.taxable_amount = Decimal(str(quantity * unit_price))
+    ii.tax_amount = ii.taxable_amount * Decimal(str(gst_rate)) / Decimal("100")
+    ii.line_total = ii.taxable_amount + ii.tax_amount
     return ii
 
 
@@ -345,6 +348,7 @@ class TestCreateCreditNoteValidation:
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = ledger
         db.query.return_value.filter.return_value.all.side_effect = [[inv], [ii]]
+        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = 0
 
         with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
              patch("src.services.credit_note.get_fy_for_date", return_value=None), \
@@ -396,6 +400,7 @@ class TestCreateCreditNoteValidation:
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = ledger
         db.query.return_value.filter.return_value.all.side_effect = [[inv], [ii]]
+        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = 0
 
         with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
              patch("src.services.credit_note.get_fy_for_date", return_value=None), \

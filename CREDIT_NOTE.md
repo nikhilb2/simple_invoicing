@@ -78,7 +78,7 @@ No `applied_amount` column — amounts are derived from item-level data.
 | `invoice_item_id` | FK → invoice_items NOT NULL | Required for both return and discount CNs |
 | `product_id` | FK → products | Snapshot reference |
 | `quantity` | numeric | |
-| `unit_price`, `gst_rate` | Decimal | |
+| `unit_price`, `gst_rate` | Decimal | `unit_price` is per-unit taxable value, so printed lines add up on a tax-inclusive or discounted invoice |
 | `taxable_amount`, `tax_amount`, `line_total` | Decimal(10,2) | |
 | `created_at` | timestamp | |
 
@@ -169,7 +169,8 @@ An inward note carries the supplier's document instead of a reason alone:
 **Validation rules:**
 - All `invoice_ids` must belong to `ledger_id` → 400 if mismatch
 - Each item's `invoice_id` must be in `invoice_ids` → 400 if mismatch
-- Sum of existing active CN items + new quantity ≤ original item quantity per `invoice_item_id`
+- Units returned or adjusted by active CNs + new quantity ≤ original item quantity per `invoice_item_id`
+- `line_total` of an item's active CNs of every type + the new credit ≤ that item's `line_total` → 400
 - All referenced invoices must share one `voucher_type` → 400 on a mix
 - All referenced invoices must share one place of supply → 400 on a mix
 - Outward: all referenced invoices must sit in one GSTR-1 table (B2B, B2CL or B2CS) → 400 on a mix

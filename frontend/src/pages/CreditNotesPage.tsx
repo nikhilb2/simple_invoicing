@@ -795,7 +795,7 @@ export default function CreditNotesPage() {
                             className="input"
                             type="number"
                             min={0}
-                            max={creditNoteType === 'discount' ? undefined : line.item.quantity}
+                            max={creditNoteType === 'discount' ? line.item.line_total : line.item.quantity}
                             step={creditNoteType === 'discount' ? '0.01' : '1'}
                             value={creditNoteType === 'discount' ? (discountAmounts[line.quantityKey] || '') : (quantities[line.quantityKey] || '')}
                             onChange={(event) => {

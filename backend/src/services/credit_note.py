@@ -46,6 +46,15 @@ def _supplier_return_note(credit_note_number: str) -> str:
     return f"Returned to supplier on credit note {credit_note_number}"
 
 
+def _pro_rata(amount: Decimal, before: Decimal, quantity: int, whole: Decimal) -> Decimal:
+    """A return's share of a line amount, given how many units earlier returns took.
+
+    The difference of two running totals, so a line returned in parts adds back
+    to exactly what it charged, however each part rounds.
+    """
+    return _money(amount * (before + quantity) / whole) - _money(amount * before / whole)
+
+
 def _change_inventory_quantity(
     db: Session,
     product_id: int,
@@ -267,27 +276,36 @@ def create_credit_note(
     # Check cumulative credited quantities per invoice_item_id
     from src.models.credit_note import CreditNote as CN
 
+    # Units earlier notes took back from each line. A discount note's quantity is
+    # a placeholder, not units. A line can be listed twice in one request.
+    returned_before: dict[int, Decimal] = {}
     if payload.credit_note_type != "discount":
+        requested_qty: dict[int, int] = {}
         for cn_item in payload.items:
-            already_credited_query = (
-                db.query(func.sum(CreditNoteItem.quantity))
-                .join(CN, CN.id == CreditNoteItem.credit_note_id)
-                .filter(
-                    CreditNoteItem.invoice_item_id == cn_item.invoice_item_id,
-                    CN.status == "active",
+            item_id = cn_item.invoice_item_id
+            if item_id not in returned_before:
+                already_credited_query = (
+                    db.query(func.sum(CreditNoteItem.quantity))
+                    .join(CN, CN.id == CreditNoteItem.credit_note_id)
+                    .filter(
+                        CreditNoteItem.invoice_item_id == item_id,
+                        CN.status == "active",
+                        CN.credit_note_type != "discount",
+                    )
                 )
-            )
-            if company_id is not None:
-                already_credited_query = already_credited_query.filter(company_scope(CN.company_id, company_id))
-            already_credited = already_credited_query.scalar() or 0
+                if company_id is not None:
+                    already_credited_query = already_credited_query.filter(company_scope(CN.company_id, company_id))
+                returned_before[item_id] = Decimal(str(already_credited_query.scalar() or 0))
 
-            original_qty = invoice_item_map[cn_item.invoice_item_id].quantity
-            if already_credited + cn_item.quantity > original_qty:
+            requested_qty[item_id] = requested_qty.get(item_id, 0) + cn_item.quantity
+            credited_after = returned_before[item_id] + requested_qty[item_id]
+            original_qty = invoice_item_map[item_id].quantity
+            if credited_after > Decimal(str(original_qty)):
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Total credited quantity ({already_credited + cn_item.quantity}) "
-                        f"exceeds original quantity ({original_qty}) for item {cn_item.invoice_item_id}"
+                        f"Total credited quantity ({credited_after}) "
+                        f"exceeds original quantity ({original_qty}) for item {item_id}"
                     ),
                 )
 
@@ -323,12 +341,15 @@ def create_credit_note(
     sgst_total = Decimal("0")
     igst_total = Decimal("0")
     built_items = []
+    new_credit: dict[int, Decimal] = {}
 
     for cn_item in payload.items:
         ii = invoice_item_map[cn_item.invoice_item_id]
         gst_rate = Decimal(str(ii.gst_rate or 0))
         if payload.credit_note_type == "discount":
             line_total = _money(Decimal(str(cn_item.discount_amount_inclusive or 0)))
+            # Held to the amount asked for, which the even split below can pass by a paisa.
+            new_credit[ii.id] = new_credit.get(ii.id, Decimal("0")) + line_total
             if gst_rate > 0:
                 taxable = _money(line_total / (Decimal("1") + (gst_rate / Decimal("100"))))
                 tax = _money(line_total - taxable)
@@ -337,11 +358,23 @@ def create_credit_note(
                 tax = Decimal("0")
             unit_price = taxable
             quantity = 1
+            half = _money(tax / Decimal("2"))
         else:
+            # What the line charged, not its stored unit_price: on a tax-inclusive
+            # invoice that price holds the tax, and it is always before discount.
             quantity = int(cn_item.quantity or 0)
-            unit_price = Decimal(str(ii.unit_price))
-            taxable = _money(unit_price * quantity)
-            tax = _money(taxable * gst_rate / Decimal("100"))
+            line_taxable = Decimal(str(ii.taxable_amount or 0))
+            line_tax = Decimal(str(ii.tax_amount or 0))
+            if not line_taxable and not line_tax:
+                # Rows from before the tax columns carry only their total.
+                line_taxable = Decimal(str(ii.line_total or 0))
+            whole = Decimal(str(ii.quantity))
+            before = returned_before[ii.id]
+            taxable = _pro_rata(line_taxable, before, quantity, whole)
+            tax = _pro_rata(line_tax, before, quantity, whole)
+            half = _pro_rata(line_tax / Decimal("2"), before, quantity, whole)
+            returned_before[ii.id] = before + quantity
+            unit_price = _money(taxable / quantity)
             line_total = _money(taxable + tax)
 
         if interstate:
@@ -349,12 +382,14 @@ def create_credit_note(
             cgst = Decimal("0")
             sgst = Decimal("0")
         else:
-            half = _money(tax / Decimal("2"))
             cgst = half
             sgst = half
             igst = Decimal("0")
             tax = _money(cgst + sgst)
             line_total = _money(taxable + tax)
+
+        if payload.credit_note_type != "discount":
+            new_credit[ii.id] = new_credit.get(ii.id, Decimal("0")) + line_total
 
         taxable_total += taxable
         cgst_total += cgst
@@ -374,6 +409,29 @@ def create_credit_note(
         })
 
     total = _money(taxable_total + cgst_total + sgst_total + igst_total)
+
+    # A line can't be credited for more than it charged, across all its notes of
+    # every type. A return can land a paisa over on an old line whose tax doesn't
+    # halve evenly, which is rounding rather than an over-credit.
+    tolerance = Decimal("0") if payload.credit_note_type == "discount" else Decimal("0.01")
+    for item_id, credit in new_credit.items():
+        credited_query = (
+            db.query(func.sum(CreditNoteItem.line_total))
+            .join(CN, CN.id == CreditNoteItem.credit_note_id)
+            .filter(CreditNoteItem.invoice_item_id == item_id, CN.status == "active")
+        )
+        if company_id is not None:
+            credited_query = credited_query.filter(company_scope(CN.company_id, company_id))
+        credited = Decimal(str(credited_query.scalar() or 0))
+        limit = _money(Decimal(str(invoice_item_map[item_id].line_total or 0)))
+        if credited + credit > limit + tolerance:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Credit for item {item_id} would exceed its line total of {limit:.2f}: "
+                    f"{credited:.2f} is already credited and this note adds {credit:.2f}."
+                ),
+            )
 
     # ── 7. Persist CreditNote ────────────────────────────────────────────────
     cn = CreditNote(
