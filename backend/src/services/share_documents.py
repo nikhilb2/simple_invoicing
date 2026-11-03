@@ -42,6 +42,7 @@ from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.product import Product
 from src.models.quotation import DOCUMENT_PROFORMA, STATUS_CANCELLED, STATUS_CONVERTED, STATUS_DECLINED, Quotation
 from src.models.share_link import ShareLink
+from src.services.gst_tax_service import india_today
 from src.services.invoice_payments import build_invoice_payment_summaries
 from src.services.pdf_templates import _build_credit_note_html, _build_multi_copy_invoice_html, _build_quotation_html, _build_statement_html, _fmt_currency
 from src.services.pdf_templates.quotation_template import NOT_A_TAX_INVOICE_NOTE
@@ -811,7 +812,7 @@ def _quotation_summary(
         notice = f"This {label.lower()} has been converted to an invoice."
     elif quotation.status == STATUS_DECLINED:
         notice = f"This {label.lower()} was declined."
-    elif quotation.is_expired_on(date.today()):
+    elif quotation.is_expired_on(india_today()):
         notice = f"This {label.lower()} expired on {_fmt_date(quotation.valid_until)}."
     elif quotation.valid_until:
         notice = f"Valid until {_fmt_date(quotation.valid_until)}."

@@ -361,3 +361,52 @@ def test_the_source_quotation_index_by_name_is_already_converted(setup, monkeypa
     assert response.status_code == 409, response.text
     assert response.json()["detail"]["code"] == "quotation_already_converted"
     assert response.json()["detail"]["invoice_id"] == first["id"]
+
+
+# ---------------------------------------------------------------------------
+# Expiry is judged by India's date too
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def after_midnight_in_india(monkeypatch):
+    """01:00 in India on the day after the server's date: 19:30 UTC the evening before."""
+    next_day = date.today() + timedelta(days=1)
+    instant = datetime(next_day.year, next_day.month, next_day.day, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+    instant = instant.replace(hour=1)
+
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant.astimezone(tz) if tz else instant.replace(tzinfo=None)
+
+    monkeypatch.setattr(gst_tax_service, "datetime", Frozen)
+    assert gst_tax_service.india_today() == next_day
+    return next_day
+
+
+def _quote_valid_through_the_servers_today(client, ledger, product):
+    start = (date.today() - timedelta(days=5)).isoformat()
+    return create_quotation(
+        client, ledger["id"], product["id"],
+        quotation_date=start,
+        valid_until=date.today().isoformat(),
+    )
+
+
+def test_the_list_calls_a_quote_expired_once_its_last_day_has_passed_in_india(setup, after_midnight_in_india):
+    client, ledger, product = setup
+    quote = _quote_valid_through_the_servers_today(client, ledger, product)
+
+    listed = ok(client.get("/api/quotations/"))
+    row = next(item for item in listed["items"] if item["id"] == quote["id"])
+    assert row["is_expired"] is True
+    assert row["display_status"] == "expired"
+    assert ok(client.get("/api/quotations/", params={"status": "expired"}))["total"] == 1
+    assert ok(client.get("/api/quotations/", params={"status": "open"}))["total"] == 0
+
+
+def test_the_share_page_agrees(setup, after_midnight_in_india):
+    client, ledger, product = setup
+    quote = _quote_valid_through_the_servers_today(client, ledger, product)
+    token = ok(client.post("/api/share/", json={"resource_type": "quotation", "resource_id": quote["id"]}))["token"]
+    assert "This quotation expired on" in client.get(f"/s/{token}").text

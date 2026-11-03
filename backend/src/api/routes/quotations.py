@@ -75,7 +75,7 @@ def _to_out_many(db: Session, quotations: list[Quotation], company_id: int) -> l
             )
         }
     invoices = linked_invoices(db, [quotation.id for quotation in quotations])
-    today = date.today()
+    today = india_today()
 
     results = []
     for quotation in quotations:
@@ -175,7 +175,7 @@ def list_quotations(
         term = f"%{search.strip()}%"
         query = query.filter(or_(Quotation.quotation_number.ilike(term), Quotation.ledger_name.ilike(term)))
 
-    today = date.today()
+    today = india_today()
     expired = and_(
         Quotation.valid_until.isnot(None),
         Quotation.valid_until < today,

@@ -17,6 +17,7 @@ from datetime import date
 from src.models.company_account import CompanyAccount
 from src.models.product import Product
 from src.models.quotation import DOCUMENT_PROFORMA, STATUS_CANCELLED, Quotation
+from src.services.gst_tax_service import india_today
 
 from .builders import (
     _amount_in_words_indian,
@@ -109,7 +110,7 @@ def _build_quotation_html(
     today: date | None = None,
 ) -> str:
     """Generate HTML for a quotation or a proforma invoice."""
-    today = today or date.today()
+    today = today or india_today()
     is_proforma = quotation.document_type == DOCUMENT_PROFORMA
     title = "Proforma Invoice" if is_proforma else "Quotation"
     party_eyebrow = "Proforma for" if is_proforma else "Quotation for"
