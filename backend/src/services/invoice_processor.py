@@ -11,7 +11,7 @@ call-sites (including tests) continue to work without changes.
 """
 
 from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -22,6 +22,7 @@ from src.models.invoice import Invoice, InvoiceItem
 from src.models.ledger_address import LedgerAddress
 from src.models.product import Product
 from src.schemas.invoice import InvoiceCreate
+from src.services.document_totals import apply_discount_and_round_off, snapshot_company_fields
 from src.services.gst_tax_service import (
     assign_invoice_tax_totals,
     assign_item_tax_split,
@@ -183,21 +184,21 @@ class InvoiceProcessor:
     # Item validation
     # ------------------------------------------------------------------
 
-    def validate_items(
+    def resolve_items(
         self,
         items: list,
         company_id: int | None,
-        voucher_type: str,
-        apply_inventory_changes: bool = True,
-        invoice_id: int | None = None,
+        document_label: str = "Invoice",
     ) -> list[tuple]:
-        """Validate each line item and return a list of (item_schema, product, quantity_decimal)
-        tuples, raising 400/404 errors for invalid data.
+        """Check each line's quantity and product, with no serial or stock checks.
+
+        Returns a list of (item_schema, product, quantity_decimal) tuples, raising
+        400/404 errors for invalid data. A quotation stops here.
         """
         if not items:
             raise HTTPException(
                 status_code=400,
-                detail="Invoice must have at least one line item",
+                detail=f"{document_label} must have at least one line item",
             )
 
         validated: list[tuple] = []
@@ -230,6 +231,20 @@ class InvoiceProcessor:
                 )
 
             validated.append((item, product, quantity_value))
+        return validated
+
+    def validate_items(
+        self,
+        items: list,
+        company_id: int | None,
+        voucher_type: str,
+        apply_inventory_changes: bool = True,
+        invoice_id: int | None = None,
+    ) -> list[tuple]:
+        """Validate each line item and return a list of (item_schema, product, quantity_decimal)
+        tuples, raising 400/404 errors for invalid data.
+        """
+        validated = self.resolve_items(items, company_id)
 
         # Runs once the products are resolved but before any stock is touched, so a
         # mistyped IMEI produces a clean error rather than a rolled-back half-write.
@@ -425,25 +440,7 @@ class InvoiceProcessor:
         invoice.ledger_address = ledger.address
         invoice.ledger_gst = ledger.gst
         invoice.ledger_phone = ledger.phone_number
-        invoice.company_name = company.name if company else None
-        invoice.company_address = company.address if company else None
-        invoice.company_gst = company.gst if company else None
-        invoice.company_phone = company.phone_number if company else None
-        invoice.company_email = company.email if company else None
-        invoice.company_website = company.website if company else None
-        invoice.company_currency_code = company.currency_code if company else None
-        invoice.company_bank_name = company.bank_name if company else None
-        invoice.company_branch_name = company.branch_name if company else None
-        invoice.company_account_name = company.account_name if company else None
-        invoice.company_account_number = company.account_number if company else None
-        invoice.company_ifsc_code = company.ifsc_code if company else None
-        # Company branding fields
-        invoice.company_logo_data = company.logo_data if company else None
-        invoice.company_logo_mime_type = company.logo_mime_type if company else None
-        invoice.company_additional_info = company.additional_company_info if company else None
-        # Snapshot terms & conditions as formatted text
-        terms = (company.terms or []) if company else []
-        invoice.company_terms_text = "\n".join(f"{t.serial_number}. {t.content}" for t in terms) if terms else None
+        snapshot_company_fields(invoice, company)
         if payload.voucher_type != invoice.voucher_type:
             # A credit note's direction is settled from the invoices it covers
             # and drives its numbering, its stock effect and whether it is
@@ -584,30 +581,8 @@ class InvoiceProcessor:
         )
         raw_total = _money(taxable_total + tax_total)
 
-        # Apply invoice-level discount
-        invoice.discount_type = payload.discount_type
-        invoice.discount_value = payload.discount_value
-        invoice_discount_amount = Decimal("0")
-        if payload.discount_type and payload.discount_value is not None and payload.discount_value > 0:
-            if payload.discount_type == "percentage":
-                invoice_discount_amount = _money(
-                    raw_total * Decimal(str(payload.discount_value)) / Decimal("100")
-                )
-            else:
-                invoice_discount_amount = _money(Decimal(str(payload.discount_value)))
-            invoice_discount_amount = min(invoice_discount_amount, raw_total)
-            raw_total = _money(raw_total - invoice_discount_amount)
-
-        if invoice.apply_round_off:
-            rounded_total = raw_total.quantize(
-                Decimal("1"), rounding=ROUND_HALF_UP
-            )
-            round_off_amount = _money(rounded_total - raw_total)
-            invoice.round_off_amount = float(round_off_amount)
-            invoice.total_amount = float(_money(rounded_total))
-        else:
-            invoice.round_off_amount = 0
-            invoice.total_amount = float(raw_total)
+        # Apply invoice-level discount and round off
+        apply_discount_and_round_off(invoice, raw_total, payload.discount_type, payload.discount_value)
 
     # ------------------------------------------------------------------
     # Shipping address helpers

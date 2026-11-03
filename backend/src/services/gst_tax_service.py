@@ -17,6 +17,11 @@ def money(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def india_today() -> date:
+    """Today's date in India, which is what a GST document is dated by."""
+    return datetime.now(timezone(timedelta(hours=5, minutes=30))).date()
+
+
 def is_interstate_supply(company_gst: str | None, ledger_gst: str | None) -> bool:
     """
     Check if the invoice is for an interstate supply based on GST state codes.
@@ -34,11 +39,6 @@ def is_interstate_supply(company_gst: str | None, ledger_gst: str | None) -> boo
     if not company_gst or not ledger_gst or len(company_gst) < 2 or len(ledger_gst) < 2:
         return False
     return company_gst[:2] != ledger_gst[:2]
-
-
-def india_today() -> date:
-    """Today's date in India, which is what a GST document is dated by."""
-    return datetime.now(timezone(timedelta(hours=5, minutes=30))).date()
 
 
 def _state_code(gstin: str | None) -> str | None:

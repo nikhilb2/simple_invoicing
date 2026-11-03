@@ -78,6 +78,12 @@ def gstr1_series_warning(series: InvoiceSeries, fy: Optional[FinancialYear]) -> 
     )
 
 
+# What a document is numbered with when its company has no series row at all.
+# Everything else keeps the historical INV- fallback; a quotation must not, or it
+# would print an invoice-style number.
+FALLBACK_PREFIXES = {"quotation": "QT", "proforma": "PI"}
+
+
 def _number_taken(db: Session, voucher_type: str, number: str, company_id: Optional[int]) -> bool:
     """Whether ``number`` is already used by a document of this voucher type.
 
@@ -90,8 +96,11 @@ def _number_taken(db: Session, voucher_type: str, number: str, company_id: Optio
     from src.models.credit_note import CreditNote  # noqa: PLC0415
     from src.models.invoice import Invoice  # noqa: PLC0415
     from src.models.payment import Payment  # noqa: PLC0415
+    from src.models.quotation import DOCUMENT_TYPES, Quotation  # noqa: PLC0415
 
-    if voucher_type == "payment":
+    if voucher_type in DOCUMENT_TYPES:
+        model, column = Quotation, Quotation.quotation_number
+    elif voucher_type == "payment":
         model, column = Payment, Payment.payment_number
     elif voucher_type in ("credit_note", "debit_note"):
         model, column = CreditNote, CreditNote.credit_note_number
@@ -161,11 +170,12 @@ def generate_next_number(
         # No series configured — fall back to a simple INV-NNNNNN sequence,
         # skipping any numbers this company already used so repeats (e.g.
         # duplicating an invoice) don't collide on the unique number constraint.
+        prefix = FALLBACK_PREFIXES.get(voucher_type, "INV")
         for seq in range(1_000_000):
-            number = f"INV-{seq:06d}"
+            number = f"{prefix}-{seq:06d}"
             if not _number_taken(db, voucher_type, number, company_id):
                 return number
-        return f"INV-{int(datetime.utcnow().timestamp())}"
+        return f"{prefix}-{int(datetime.utcnow().timestamp())}"
 
     # When the invoice is for a different FY than the active one, borrow the
     # active FY's series for format settings (prefix, year_format, separator,

@@ -369,6 +369,11 @@
     margin: 10px 2px 0; font-size: 12px; text-align: center;
     color: rgba(192,188,175,.7); word-break: break-all;
   }
+  /* Sentences, unlike the filename above: they wrap between words. */
+  .recap-note {
+    margin: 10px 2px 0; font-size: 12px; line-height: 1.5;
+    color: rgba(192,188,175,.85);
+  }
 
   .promo-foot {
     margin: 16px 0 0; font-size: 12.5px; color: rgba(192,188,175,.75);
@@ -444,6 +449,8 @@
         {% endif %}
         <div><dt>{{ amount_caption }}</dt><dd class="figure">{{ summary.amount_label }}</dd></div>
       </dl>
+      {% if summary.status_notice %}<p class="recap-note">{{ summary.status_notice }}</p>{% endif %}
+      {% if summary.document_note %}<p class="recap-note">{{ summary.document_note }}</p>{% endif %}
       {% if summary.upi_qr_data_uri %}
       {# The QR is always offered; a tappable button above it is the company's call.
 

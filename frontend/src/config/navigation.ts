@@ -10,6 +10,7 @@ import {
   Factory,
   FileCheck2,
   FileMinus2,
+  FileSignature,
   FileText,
   KeyRound,
   Keyboard,
@@ -125,6 +126,7 @@ export const PRIMARY_NAV: NavEntry[] = [
         title: 'Advanced Invoice View',
         icon: LayoutList,
       },
+      { to: '/quotations', label: 'Quotations', icon: FileSignature, shortcutAction: 'go_quotations' },
       { to: '/invoice-dues', label: 'Invoice Dues', icon: AlarmClock, shortcutAction: 'go_invoice_dues' },
       // One page, both directions — the same shape as Invoices, which hosts
       // purchases behind its own voucher toggle.

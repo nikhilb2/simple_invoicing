@@ -168,6 +168,8 @@ class InvoiceOut(BaseModel):
     financial_year_id: Optional[int] = None
     shipping_address: str | None = None
     shipping_address_label: str | None = None
+    source_quotation_id: int | None = None
+    source_quotation_number: str | None = None
     warnings: List[str] = Field(default_factory=list)
     created_at: datetime
     items: list[InvoiceItemOut] = Field(default_factory=list)

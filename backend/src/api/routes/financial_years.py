@@ -24,6 +24,10 @@ DEFAULT_SERIES_CONFIGS = {
     # Notes received from suppliers number separately so the outward credit
     # note series stays contiguous for GSTR-1 Table 13.
     "debit_note": {"prefix": "DN", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
+    # Offers, not tax documents: separate counters so a quotation can never use up
+    # an invoice number or leave a gap in the sales series.
+    "quotation": {"prefix": "QT", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
+    "proforma": {"prefix": "PI", "suffix": "", "include_year": True, "year_format": "YYYY", "separator": "-", "pad_digits": 3},
 }
 
 

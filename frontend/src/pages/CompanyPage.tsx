@@ -23,6 +23,8 @@ const VOUCHER_LABELS: Record<string, string> = {
   // Our own number for a credit note a supplier sent us. Kept out of the
   // credit note series so GSTR-1 Table 13 declares an unbroken range.
   debit_note: 'Debit Note (purchase returns)',
+  quotation: 'Quotation',
+  proforma: 'Proforma Invoice',
 };
 
 function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number, fyLabel?: string | null): string {
