@@ -19,7 +19,7 @@ tax into the value, and summing it is how a return ends up overstated.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 
@@ -68,6 +68,8 @@ class InvoiceDoc:
     # stored line or tax head (see services/invoice_discounts.py), so it is held
     # here only so the worksheet can say so.
     invoice_discount: Decimal = ZERO
+    # When the invoice was stored. Naive, and UTC unless the user chose a date.
+    invoice_date: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -81,6 +83,8 @@ class NoteLine:
     source_status: str | None = None
     source_line_taxable: Decimal | None = None
     source_line_quantity: Decimal | None = None
+    # Whether the source line was taxed as IGST. None when the line is unknown.
+    source_line_is_igst: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +97,8 @@ class NoteDoc:
     igst_total: Decimal
     lines: tuple[NoteLine, ...]
     supplier_note_date: date | None = None
+    # Stored in UTC by the app.
+    created_at: datetime | None = None
 
 
 def classify_invoice(voucher_type: str | None, status: str | None) -> Side:
@@ -126,16 +132,41 @@ def classify_note_line(note_side: Side, line: NoteLine) -> Side:
 
     A line whose source invoice is unknown keeps the note's side: the note's own
     direction is the only evidence left, and that is what GSTR-1 goes by.
+
+    When the source invoice is known its voucher type decides the side, as it does
+    on the Tax Ledger: a note against a purchase reduces input credit and a note
+    against a sale reduces output tax, whatever the note's own direction says.
+    Migration 20260904000001 stamped every older note ``outward``, including those
+    written against purchases. See :func:`note_line_overrides_direction`.
     """
     if note_side is Side.EXCLUDED:
         return Side.EXCLUDED
     if line.source_status is not None and line.source_status != "active":
         return Side.EXCLUDED
     if line.source_voucher_type is not None:
-        expected = {"sales": Side.OUTWARD, "purchase": Side.INWARD}.get(line.source_voucher_type)
-        if expected is not note_side:
-            return Side.EXCLUDED
+        return {"sales": Side.OUTWARD, "purchase": Side.INWARD}.get(line.source_voucher_type, Side.EXCLUDED)
     return note_side
+
+
+def note_line_overrides_direction(note_side: Side, line: NoteLine) -> bool:
+    """Whether the source invoice put this line on the other side from the note's direction."""
+    if line.source_voucher_type is None:
+        return False
+    expected = {"sales": Side.OUTWARD, "purchase": Side.INWARD}.get(line.source_voucher_type)
+    return expected is not None and expected is not note_side
+
+
+def note_line_head_differs(note_igst_total: Decimal, line: NoteLine) -> bool:
+    """Whether the note puts this line's tax on a different head from its invoice line.
+
+    The note's heads follow its own header (see :func:`split_note_tax`); the Tax
+    Ledger follows the source line. They differ only if the parties' states
+    changed in between, for example a corrected GSTIN. A line with no tax has no
+    head to differ on.
+    """
+    if line.source_line_is_igst is None or line.tax == 0:
+        return False
+    return (note_igst_total > 0) != line.source_line_is_igst
 
 
 def classify_rate(gst_rate: Decimal) -> RateClass:

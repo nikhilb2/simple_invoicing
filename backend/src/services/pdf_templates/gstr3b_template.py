@@ -69,9 +69,12 @@ def _warnings_html(worksheet: Gstr3bWorksheetOut) -> str:
     blocks = []
     for warning in worksheet.warnings:
         documents = warning.documents
-        listed = ", ".join(_e(document.number) for document in documents[:_MAX_DOCUMENTS_PER_WARNING])
+        listed = "<br>".join(
+            _e(document.number) + (f": {_e(document.detail)}" if document.detail else "")
+            for document in documents[:_MAX_DOCUMENTS_PER_WARNING]
+        )
         more = len(documents) - _MAX_DOCUMENTS_PER_WARNING
-        suffix = f" and {more} more" if more > 0 else ""
+        suffix = f"<br>and {more} more, listed in the CSV export" if more > 0 else ""
         count = f" ({len(documents)})" if documents else ""
         docs = f'<div class="docs">{listed}{suffix}</div>' if documents else ""
         blocks.append(

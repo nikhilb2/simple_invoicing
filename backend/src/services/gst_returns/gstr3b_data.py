@@ -37,6 +37,7 @@ def _invoice_doc(invoice: Invoice) -> InvoiceDoc:
         voucher_type=invoice.voucher_type,
         status=invoice.status,
         ledger_gst=invoice.ledger_gst,
+        invoice_date=invoice.invoice_date,
         invoice_discount=invoice_discount_amount(invoice) if has_discount else to_decimal(0),
         lines=tuple(
             InvoiceLine(
@@ -100,7 +101,7 @@ def load_notes(db: Session, period: ReturnPeriod, company_id: int | None) -> lis
     if item_ids:
         source_lines = {
             row.id: row
-            for row in db.query(InvoiceItem.id, InvoiceItem.taxable_amount, InvoiceItem.quantity)
+            for row in db.query(InvoiceItem.id, InvoiceItem.taxable_amount, InvoiceItem.quantity, InvoiceItem.igst_amount)
             .join(Invoice, Invoice.id == InvoiceItem.invoice_id)
             .filter(InvoiceItem.id.in_(item_ids), company_scope(Invoice.company_id, company_id))
             .all()
@@ -129,6 +130,9 @@ def load_notes(db: Session, period: ReturnPeriod, company_id: int | None) -> lis
                     source_line_quantity=(
                         to_decimal(source_line.quantity) if source_line is not None else None
                     ),
+                    source_line_is_igst=(
+                        to_decimal(source_line.igst_amount) > 0 if source_line is not None else None
+                    ),
                 )
             )
         docs.append(
@@ -140,6 +144,7 @@ def load_notes(db: Session, period: ReturnPeriod, company_id: int | None) -> lis
                 note_type=note.credit_note_type,
                 igst_total=to_decimal(note.igst_amount),
                 supplier_note_date=note.supplier_credit_note_date,
+                created_at=note.created_at,
                 lines=tuple(lines),
             )
         )

@@ -526,6 +526,204 @@ def test_output_tax_in_6_1_matches_the_tax_ledger(client, reconciling_books):
         assert line["payable"] == pytest.approx(ledger[head]["payable"], abs=0.01)
 
 
+# --- notes on the other side from their direction -----------------------------
+
+def _redirect(db, note: dict, direction: str) -> None:
+    """What migration 20260904000001 did: stamp a direction the write path would refuse."""
+    db.query(CreditNote).filter(CreditNote.id == note["id"]).update({"direction": direction})
+    db.commit()
+
+
+def _ledger_head(client, head: str) -> dict:
+    return _ok(client.get("/api/ledgers/tax-ledger/", params=PERIOD))["liability"][head]
+
+
+def test_older_outward_note_against_a_purchase_agrees_with_the_tax_ledger(client, db_session, books):
+    _invoice(client, books.intra, [_line(books.at18, 10, 100)])
+    purchase = _invoice(client, books.intra, [_line(books.at18, 10, 100)], voucher="purchase")
+    note = _note(client, db_session, books.intra, purchase, quantity=5, direction="inward")
+    _redirect(db_session, note, "outward")
+
+    sheet = _sheet(client)
+    assert (_row(sheet, "4a5")["cgst"], _row(sheet, "4a5")["sgst"]) == (45.0, 45.0)
+    assert _row(sheet, "3.1a")["cgst"] == 90.0
+    for head in ("igst", "cgst", "sgst"):
+        ledger = _ledger_head(client, head)
+        assert _head(sheet, head)["input_credit"] == pytest.approx(ledger["input_credit"], abs=0.01)
+        assert _head(sheet, head)["output_tax"] == pytest.approx(ledger["output_tax"], abs=0.01)
+        assert _head(sheet, head)["payable"] == pytest.approx(ledger["payable"], abs=0.01)
+    assert sum(_head(sheet, h)["payable"] for h in ("igst", "cgst", "sgst")) == pytest.approx(90.0)
+
+    warning = _warning(sheet, "note_direction_overridden")
+    assert warning["documents"][0]["id"] == note["id"]
+    assert "GSTR-1" in warning["message"]
+
+
+def test_older_inward_note_against_a_sale_agrees_with_the_tax_ledger(client, db_session, books):
+    sale = _invoice(client, books.intra, [_line(books.at18, 10, 100)])
+    _invoice(client, books.intra, [_line(books.at18, 10, 100)], voucher="purchase")
+    note = _note(client, db_session, books.intra, sale, quantity=5)
+    _redirect(db_session, note, "inward")
+
+    sheet = _sheet(client)
+    assert _row(sheet, "3.1a")["taxable_value"] == 500.0
+    assert _row(sheet, "4a5")["cgst"] == 90.0
+    for head in ("igst", "cgst", "sgst"):
+        ledger = _ledger_head(client, head)
+        assert _head(sheet, head)["output_tax"] == pytest.approx(ledger["output_tax"], abs=0.01)
+        assert _head(sheet, head)["input_credit"] == pytest.approx(ledger["input_credit"], abs=0.01)
+    assert _warning(sheet, "note_direction_overridden") is not None
+
+
+def test_a_note_on_a_different_head_from_its_invoice_is_named(client, db_session, books):
+    sale = _invoice(client, books.intra, [_line(books.at18, 10, 100)])
+    note = _note(client, db_session, books.intra, sale, quantity=5)
+    # A corrected GSTIN: the note header now says IGST, the invoice line was CGST/SGST.
+    db_session.query(CreditNote).filter(CreditNote.id == note["id"]).update({"igst_amount": 90})
+    db_session.commit()
+
+    sheet = _sheet(client)
+    assert _row(sheet, "3.1a")["igst"] == -90.0
+    warning = _warning(sheet, "note_head_mismatch")
+    assert warning["documents"][0]["id"] == note["id"]
+    assert "Tax Ledger" in warning["message"]
+
+
+def test_a_note_on_the_same_head_as_its_invoice_is_not_named(client, db_session, books):
+    _note(client, db_session, books.intra, _invoice(client, books.intra, [_line(books.at18, 10, 100)]), quantity=5)
+    assert _warning(_sheet(client), "note_head_mismatch") is None
+
+
+# --- the edges of a period ----------------------------------------------------
+
+def _stamp(db, invoice: dict, when: datetime) -> None:
+    db.query(Invoice).filter(Invoice.id == invoice["id"]).update({"invoice_date": when})
+    db.commit()
+
+
+EDGES = [
+    (datetime(2026, 5, 31, 23, 59, 59, 999999), False),
+    (datetime(2026, 6, 1, 0, 0, 0), True),
+    (datetime(2026, 6, 30, 23, 59, 59, 999999), True),
+    (datetime(2026, 7, 1, 0, 0, 0), False),
+]
+
+
+@pytest.mark.parametrize("when,counted", EDGES)
+def test_an_invoice_on_the_first_or_last_moment_of_the_period(client, db_session, books, when, counted):
+    _stamp(db_session, _invoice(client, books.intra, [_line(books.at18, 1, 100)]), when)
+    row = _row(_sheet(client), "3.1a")
+    assert row["taxable_value"] == (100.0 if counted else 0.0)
+
+
+@pytest.mark.parametrize("when,counted", EDGES)
+def test_a_purchase_on_the_first_or_last_moment_of_the_period(client, db_session, books, when, counted):
+    _stamp(db_session, _invoice(client, books.intra, [_line(books.at18, 1, 100)], voucher="purchase"), when)
+    assert _row(_sheet(client), "4a5")["cgst"] == (9.0 if counted else 0.0)
+
+
+@pytest.mark.parametrize("when,counted", EDGES)
+def test_a_note_on_the_first_or_last_moment_of_the_period(client, db_session, books, when, counted):
+    sale = _invoice(client, books.intra, [_line(books.at18, 10, 100)])
+    _note(client, db_session, books.intra, sale, quantity=1, when=when)
+    assert _row(_sheet(client), "3.1a")["taxable_value"] == (900.0 if counted else 1000.0)
+
+
+@pytest.mark.parametrize("when,counted", EDGES)
+def test_an_inward_note_on_the_first_or_last_moment_of_the_period(client, db_session, books, when, counted):
+    purchase = _invoice(client, books.intra, [_line(books.at18, 10, 100)], voucher="purchase")
+    _note(client, db_session, books.intra, purchase, quantity=1, direction="inward", when=when)
+    assert _row(_sheet(client), "4a5")["cgst"] == (81.0 if counted else 90.0)
+
+
+def test_documents_stored_late_on_the_last_day_are_named_but_still_counted(client, db_session, books):
+    late = _invoice(client, books.intra, [_line(books.at18, 1, 100)])
+    _stamp(db_session, late, datetime(2026, 6, 30, 19, 0))
+    early = _invoice(client, books.intra, [_line(books.at18, 1, 100)])
+    _stamp(db_session, early, datetime(2026, 6, 30, 18, 0))
+    sale = _invoice(client, books.intra, [_line(books.at18, 10, 100)])
+    note = _note(client, db_session, books.intra, sale, when=datetime(2026, 6, 30, 23, 0))
+
+    sheet = _sheet(client)
+    assert _row(sheet, "3.1a")["taxable_value"] == 100.0 + 100.0 + 1000.0 - 100.0
+    warning = _warning(sheet, "utc_period_edge")
+    assert sorted((d["kind"], d["id"]) for d in warning["documents"]) == sorted(
+        [("invoice", late["id"]), ("credit_note", note["id"])]
+    )
+    assert "UTC" in warning["documents"][0]["detail"]
+
+
+# --- warnings, links and the CSV -----------------------------------------------
+
+def test_csv_carries_the_section_notes(client, books):
+    text = client.get(EXPORT_CSV, params=PERIOD).content.decode("utf-8-sig")
+    rows = list(csv.reader(StringIO(text)))
+    notes = [row[9] for row in rows if len(row) == 10 and row[2] == "Section note"]
+    sheet = _sheet(client)
+    expected = [section["note"] for section in sheet["sections"] if section["note"]]
+    assert expected and notes == expected
+
+
+@pytest.mark.parametrize("lead", ["=", "+", "-", "@"])
+def test_csv_neutralises_every_formula_lead_in_free_text(client, db_session, books, lead):
+    invoice = _invoice(client, books.intra, [_line(books.at18, 1, 100)])
+    db_session.query(Invoice).filter(Invoice.id == invoice["id"]).update(
+        {"invoice_number": f"{lead}NUM", "ledger_gst": f"{lead}BADGSTIN"}
+    )
+    db_session.query(CompanyProfile).update({"name": f"{lead}Company"})
+    db_session.commit()
+
+    rows = list(csv.reader(StringIO(client.get(EXPORT_CSV, params=PERIOD).content.decode("utf-8-sig"))))
+    cells = {cell for row in rows for cell in row}
+    # The number, the detail built from the stored GSTIN, and the company name.
+    assert f"'{lead}NUM" in cells
+    assert f"'{lead}BADGSTIN: not a valid 15-character GSTIN" in cells
+    assert f"'{lead}Company" in cells
+    assert not {f"{lead}NUM", f"{lead}BADGSTIN: not a valid 15-character GSTIN", f"{lead}Company"} & cells
+
+
+def test_csv_neutralises_the_company_gstin(client, db_session, books):
+    db_session.query(CompanyProfile).update({"gst": "=1+1"})
+    db_session.commit()
+    rows = list(csv.reader(StringIO(client.get(EXPORT_CSV, params=PERIOD).content.decode("utf-8-sig"))))
+    company_row = next(row for row in rows if row and row[0] == "Company")
+    assert company_row[3] == "'=1+1"
+
+
+def test_pdf_template_shows_amounts_next_to_documents_and_points_to_the_csv(client, books):
+    from src.schemas.gstr3b import Gstr3bWorksheetOut
+    from src.services.pdf_templates.gstr3b_template import build_gstr3b_worksheet_html
+
+    sheet = _sheet(client)
+    sheet["warnings"] = [{
+        "code": "invalid_gstin", "severity": "warning", "title": "Bad GSTIN", "message": "Fix them.",
+        "documents": [
+            {"kind": "invoice", "id": i, "number": f"INV-{i}", "detail": "<b>GST</b> \u20b9%d.00" % i}
+            for i in range(1, 21)
+        ],
+    }]
+    html = build_gstr3b_worksheet_html(
+        Gstr3bWorksheetOut.model_validate(sheet), company_name="Co", company_gstin=None, generated_at=datetime(2026, 7, 1),
+    )
+    assert "INV-1: &lt;b&gt;GST&lt;/b&gt;" in html
+    assert "<b>GST</b>" not in html
+    assert "INV-15:" in html and "INV-16" not in html
+    assert "and 5 more, listed in the CSV export" in html
+
+
+def test_pdf_label_is_repeated_on_every_page(client, books):
+    from src.schemas.gstr3b import Gstr3bWorksheetOut
+    from src.services.pdf_templates.gstr3b_template import build_gstr3b_worksheet_html
+
+    html = build_gstr3b_worksheet_html(
+        Gstr3bWorksheetOut.model_validate(_sheet(client)), company_name="Co", company_gstin=None, generated_at=datetime(2026, 7, 1),
+    )
+    margin_box = html[html.index("@top-center"):]
+    margin_box = margin_box[: margin_box.index("}")]
+    assert "Worksheet, not a return" in margin_box
+    assert "not a filing" in margin_box
+
+
 # --- exports and labelling --------------------------------------------------
 
 def test_csv_says_what_it_is_and_has_one_row_per_line(client, books):
@@ -715,7 +913,14 @@ def test_shared_hosting_null_company_rows_belong_to_nobody(client, db_session, t
 
 def test_shared_hosting_note_cannot_read_another_tenants_invoice(client, db_session, tenants, act_as):
     # A note whose item ids point at A's invoice, sitting in B's company. The
-    # source lookup is scoped, so it reads as unknown and leaks nothing.
+    # source lookups are scoped, so they read as unknown and leak nothing.
+    #
+    # A's invoice is cancelled, so a leaked invoice lookup would print its number
+    # under "note on a cancelled invoice". The note's value is far above the
+    # invoice line's share, so a leaked line lookup would raise "note exceeds
+    # source", which names the note. Either one fails the empty-warnings check.
+    db_session.query(Invoice).filter(Invoice.id == tenants.sale["id"]).update({"status": "cancelled"})
+    db_session.commit()
     note = CreditNote(
         credit_note_number="CN-B-1", company_id=tenants.company_b, ledger_id=1, created_by=tenants.user_b.id,
         credit_note_type="return", direction="outward", status="active",
@@ -729,13 +934,14 @@ def test_shared_hosting_note_cannot_read_another_tenants_invoice(client, db_sess
     db_session.add(CreditNoteItem(
         credit_note_id=note.id, company_id=tenants.company_b, invoice_id=tenants.sale["id"],
         invoice_item_id=tenants.sale["items"][0]["id"], product_id=None, quantity=1, unit_price=1,
-        gst_rate=18, taxable_amount=1, tax_amount=0, line_total=1,
+        gst_rate=18, taxable_amount=100000, tax_amount=0, line_total=1,
     ))
     db_session.commit()
 
     act_as(tenants.user_b)
-    text = client.get(WORKSHEET, params=PERIOD).text
-    assert tenants.sale["invoice_number"] not in text
+    response = client.get(WORKSHEET, params=PERIOD)
+    assert tenants.sale["invoice_number"] not in response.text
+    assert _sheet(client)["warnings"] == []
 
 
 def _legacy_row(db, user_id: int) -> None:

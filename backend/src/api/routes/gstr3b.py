@@ -83,6 +83,8 @@ def _worksheet_csv(worksheet: Gstr3bWorksheetOut, company: CompanyProfile) -> by
 
     writer.writerow(["Section", "Table", "Line", "Source", "Taxable value", "IGST", "CGST", "SGST", "Cess", "Note"])
     for section in worksheet.sections:
+        if section.note:
+            writer.writerow([section.key, "", "Section note", "", "", "", "", "", "", _csv_text(section.note)])
         for row in section.rows:
             writer.writerow([
                 section.key, row.table, row.label, row.source,

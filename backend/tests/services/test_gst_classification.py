@@ -15,6 +15,8 @@ from src.services.gst_returns.classification import (
     gstin_problem,
     is_unregistered,
     note_line_exceeds_source,
+    note_line_head_differs,
+    note_line_overrides_direction,
     split_note_tax,
     to_decimal,
 )
@@ -74,13 +76,52 @@ def test_note_line_on_an_active_invoice_keeps_the_note_side():
 
 
 @pytest.mark.parametrize(
-    "side,source",
-    [(Side.OUTWARD, "purchase"), (Side.INWARD, "sales"), (Side.OUTWARD, "quotation")],
+    "side,source,expected",
+    [
+        # Migration 20260904000001 stamped every older note outward, purchases included.
+        (Side.OUTWARD, "purchase", Side.INWARD),
+        (Side.INWARD, "sales", Side.OUTWARD),
+        (Side.OUTWARD, "sales", Side.OUTWARD),
+        (Side.INWARD, "purchase", Side.INWARD),
+        (Side.OUTWARD, "quotation", Side.EXCLUDED),
+        (Side.INWARD, "quotation", Side.EXCLUDED),
+    ],
 )
-def test_note_line_whose_invoice_contradicts_the_direction_is_excluded(side, source):
-    # Otherwise a purchase could reach 3.1 through a mislabelled note.
+def test_note_line_side_follows_its_invoice_not_the_direction(side, source, expected):
     line = _note_line(source_voucher_type=source, source_status="active")
-    assert classify_note_line(side, line) is Side.EXCLUDED
+    assert classify_note_line(side, line) is expected
+
+
+@pytest.mark.parametrize(
+    "side,source,expected",
+    [
+        (Side.OUTWARD, "purchase", True),
+        (Side.INWARD, "sales", True),
+        (Side.OUTWARD, "sales", False),
+        (Side.INWARD, "purchase", False),
+        (Side.OUTWARD, "quotation", False),
+        (Side.OUTWARD, None, False),
+    ],
+)
+def test_direction_override_is_named_only_when_the_invoice_disagrees(side, source, expected):
+    line = _note_line(source_voucher_type=source, source_status="active")
+    assert note_line_overrides_direction(side, line) is expected
+
+
+@pytest.mark.parametrize(
+    "note_igst,source_is_igst,tax,expected",
+    [
+        (Decimal("18"), False, Decimal("18"), True),
+        (Decimal("0"), True, Decimal("18"), True),
+        (Decimal("18"), True, Decimal("18"), False),
+        (Decimal("0"), False, Decimal("18"), False),
+        (Decimal("0"), None, Decimal("18"), False),
+        (Decimal("18"), False, Decimal("0"), False),
+    ],
+)
+def test_note_head_differs_from_the_source_line(note_igst, source_is_igst, tax, expected):
+    line = _note_line(tax=tax, source_line_is_igst=source_is_igst)
+    assert note_line_head_differs(note_igst, line) is expected
 
 
 def test_note_line_with_no_source_invoice_goes_by_direction():

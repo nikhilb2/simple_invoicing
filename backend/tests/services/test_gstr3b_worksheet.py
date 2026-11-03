@@ -6,7 +6,7 @@ phase those rows are not_tracked with nowhere to put a figure. It should become 
 when manual rows arrive; see test_table_4_rows_the_circular_needs_are_not_inputs.
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
@@ -43,7 +43,7 @@ def _line(taxable, rate=18, *, inter=False, tax=None) -> InvoiceLine:
     return InvoiceLine(gst_rate=rate, taxable=taxable, tax=tax, cgst=cgst, sgst=sgst, igst=igst)
 
 
-def _invoice(*lines, voucher="sales", status="active", gst=VALID_GSTIN, number="INV-1", doc_id=1, discount=0) -> InvoiceDoc:
+def _invoice(*lines, voucher="sales", status="active", gst=VALID_GSTIN, number="INV-1", doc_id=1, discount=0, when=None) -> InvoiceDoc:
     return InvoiceDoc(
         id=doc_id,
         number=number,
@@ -52,10 +52,11 @@ def _invoice(*lines, voucher="sales", status="active", gst=VALID_GSTIN, number="
         ledger_gst=gst,
         lines=tuple(lines),
         invoice_discount=_d(discount),
+        invoice_date=when,
     )
 
 
-def _note(*lines, direction="outward", status="active", igst=0, note_type="return", number="CN-1", doc_id=10, supplier_date=None) -> NoteDoc:
+def _note(*lines, direction="outward", status="active", igst=0, note_type="return", number="CN-1", doc_id=10, supplier_date=None, created_at=None) -> NoteDoc:
     return NoteDoc(
         id=doc_id,
         number=number,
@@ -65,6 +66,7 @@ def _note(*lines, direction="outward", status="active", igst=0, note_type="retur
         igst_total=_d(igst),
         lines=tuple(lines),
         supplier_note_date=supplier_date,
+        created_at=created_at,
     )
 
 
@@ -195,11 +197,105 @@ def test_supplier_notes_do_not_go_to_4b2():
 
 def test_outward_note_against_a_purchase_cannot_reach_3_1():
     sheet = _sheet(
+        [_invoice(_line(1000)), _invoice(_line(1000), voucher="purchase", doc_id=2)],
+        [_note(_note_line(500, source_voucher="purchase", source_status="active"), direction="outward")],
+    )
+    assert _row(sheet, "3.1a").taxable_value == _d("1000.00")
+    assert _row(sheet, "3.1a").cgst == _d("90.00")
+
+
+def test_outward_note_against_a_purchase_reduces_input_credit_and_says_so():
+    # What migration 20260904000001 left behind: a note on a purchase marked outward.
+    sheet = _sheet(
+        [_invoice(_line(1000)), _invoice(_line(1000), voucher="purchase", doc_id=2)],
+        [_note(_note_line(500, source_voucher="purchase", source_status="active", source_invoice_number="PUR-2"), direction="outward")],
+    )
+    assert (_row(sheet, "4a5").cgst, _row(sheet, "4a5").sgst) == (_d("45.00"), _d("45.00"))
+    assert _head(sheet, "cgst").payable == _d("45.00")
+    warning = _warning(sheet, "note_direction_overridden")
+    assert warning is not None
+    assert "GSTR-1" in warning.message
+    assert "PUR-2" in warning.documents[0].detail
+    assert "inward" in warning.documents[0].detail
+    assert _warning(sheet, "note_direction_conflict") is None
+
+
+def test_inward_note_against_a_sale_reduces_output_tax_and_says_so():
+    sheet = _sheet(
+        [_invoice(_line(1000)), _invoice(_line(1000), voucher="purchase", doc_id=2)],
+        [_note(_note_line(500, source_voucher="sales", source_status="active"), direction="inward")],
+    )
+    assert _row(sheet, "3.1a").taxable_value == _d("500.00")
+    assert (_row(sheet, "4a5").cgst, _row(sheet, "4a5").sgst) == (_d("90.00"), _d("90.00"))
+    assert _warning(sheet, "note_direction_overridden") is not None
+
+
+def test_agreeing_notes_raise_no_override_warning():
+    sheet = _sheet(
         [_invoice(_line(1000))],
-        [_note(_note_line(100, source_voucher="purchase", source_status="active"), direction="outward")],
+        [_note(_note_line(100, source_voucher="sales", source_status="active"))],
+    )
+    assert _warning(sheet, "note_direction_overridden") is None
+
+
+def test_note_with_a_voucher_type_nobody_knows_is_left_out_and_named():
+    sheet = _sheet(
+        [_invoice(_line(1000))],
+        [_note(_note_line(100, source_voucher="quotation", source_status="active"))],
     )
     assert _row(sheet, "3.1a").taxable_value == _d("1000.00")
     assert _warning(sheet, "note_direction_conflict") is not None
+
+
+def test_note_tax_on_a_different_head_from_its_invoice_line_is_named():
+    # The note says IGST; the invoice line was CGST/SGST. Figures follow the note.
+    sheet = _sheet(
+        [_invoice(_line(1000))],
+        [_note(_note_line(100, source_voucher="sales", source_status="active", source_invoice_number="INV-1", source_line_is_igst=False), igst=18)],
+    )
+    assert _row(sheet, "3.1a").igst == _d("-18.00")
+    warning = _warning(sheet, "note_head_mismatch")
+    assert warning is not None
+    assert "Tax Ledger" in warning.message
+    assert "IGST" in warning.documents[0].detail
+
+
+def test_note_on_the_same_head_as_its_invoice_line_is_not_named():
+    sheet = _sheet(
+        [_invoice(_line(1000, inter=True))],
+        [_note(_note_line(100, source_voucher="sales", source_status="active", source_line_is_igst=True), igst=18)],
+    )
+    assert _warning(sheet, "note_head_mismatch") is None
+
+
+# --- documents stored in the last 5.5 hours of the period (#607) ---------------
+
+@pytest.mark.parametrize(
+    "stamp,named",
+    [
+        (datetime(2026, 6, 30, 18, 29, 59), False),
+        (datetime(2026, 6, 30, 18, 30), True),
+        (datetime(2026, 6, 30, 23, 59, 59), True),
+        (datetime(2026, 6, 30, 0, 0), False),
+        (datetime(2026, 6, 29, 20, 0), False),
+        (datetime(2026, 6, 1, 20, 0), False),
+        (None, False),
+    ],
+)
+def test_documents_in_the_last_ist_morning_window_are_named(stamp, named):
+    sheet = _sheet([_invoice(_line(100), when=stamp)], [_note(_note_line(10), created_at=stamp, doc_id=11)])
+    warning = _warning(sheet, "utc_period_edge")
+    assert (warning is not None) is named
+    if named:
+        assert [(d.kind, d.number) for d in warning.documents] == [("invoice", "INV-1"), ("credit_note", "CN-1")]
+        assert "UTC" in warning.documents[0].detail
+        # The figures are not moved: the worksheet keeps agreeing with GSTR-1.
+        assert _row(sheet, "3.1a").taxable_value == _d("90.00")
+
+
+def test_known_limits_cover_invoices_stored_in_utc():
+    limits = " ".join(_sheet().known_limits)
+    assert "duplicated invoices" in limits and "UTC" in limits
 
 
 def test_unknown_voucher_type_reaches_neither_side_and_is_reported():

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import calendar
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
 
 from src.services.gst_returns.classification import (
@@ -40,6 +40,8 @@ from src.services.gst_returns.classification import (
     gstin_problem,
     is_unregistered,
     note_line_exceeds_source,
+    note_line_head_differs,
+    note_line_overrides_direction,
     split_note_tax,
 )
 from src.services.gst_returns.setoff import HEADS, compute_setoff
@@ -72,7 +74,9 @@ KNOWN_LIMITS: tuple[str, ...] = (
     "Place of supply is not recorded, so a sale to an unregistered buyer is always taxed as "
     "intra-state. If the buyer was in another state, the invoice itself has the wrong tax heads.",
     "Credit notes are placed in a period by when they were created in the app, in UTC, not by a "
-    "date you chose. A note created between 00:00 and 05:30 IST can land on the previous day (#607).",
+    "date you chose. A note created between 00:00 and 05:30 IST can land on the previous day (#607). "
+    "Invoices saved without a date, and duplicated invoices, are also stored in UTC and can land "
+    "the same way. Documents in that window on the last day of the period are named in a warning.",
     "Table 6.1 uses only this period's figures. It leaves out credit already in your electronic "
     "credit ledger, negative liability carried in from earlier periods, interest and late fee.",
 )
@@ -278,10 +282,29 @@ _WARNINGS: dict[str, _WarningSpec] = {
     ),
     "note_direction_conflict": _WarningSpec(
         "warning",
-        "Credit notes pointing the wrong way",
-        "The note's direction does not match its invoice, for example an outward note against a "
-        "purchase. These lines are left out here. The GSTR-1 export goes by direction alone and "
-        "may still include them.",
+        "Credit notes this worksheet cannot place",
+        "The note has a direction or an invoice type this worksheet does not recognise. These "
+        "lines are left out here. The GSTR-1 export goes by direction alone and may still "
+        "include them.",
+    ),
+    "note_direction_overridden": _WarningSpec(
+        "warning",
+        "Credit notes whose direction disagrees with their invoice",
+        "The note says one direction but the invoice it reverses is on the other side, for "
+        "example an outward note against a purchase (older notes were all marked outward). This "
+        "worksheet and the Tax Ledger follow the invoice, so these lines reduce input credit or "
+        "output tax according to the invoice. The GSTR-1 export goes by the note's direction and "
+        "subtracts an outward note from output tax even when its invoice is a purchase, and "
+        "leaves an inward note out even when its invoice is a sale, so 3.1(a) there differs "
+        "from here.",
+    ),
+    "note_head_mismatch": _WarningSpec(
+        "warning",
+        "Credit notes whose tax heads differ from their invoice line",
+        "The note's tax heads (IGST or CGST/SGST) differ from the invoice line it reverses, "
+        "usually because a party's GSTIN changed after the invoice. This worksheet follows the "
+        "note's own heads, as the GSTR-1 export does. The Tax Ledger follows the invoice line, "
+        "so its figures will differ from these.",
     ),
     "note_exceeds_source": _WarningSpec(
         "warning",
@@ -328,6 +351,13 @@ _WARNINGS: dict[str, _WarningSpec] = {
         "Purchase lines at 0%",
         "These add no input credit. If they are exempt, nil rated or non-GST inward supplies they "
         "belong in Table 5, which is not tracked here.",
+    ),
+    "utc_period_edge": _WarningSpec(
+        "warning",
+        "Documents near the end of the period, in UTC",
+        "These were stored in the last 5.5 hours of the last day of the period, in UTC. If they "
+        "were entered between 00:00 and 05:30 IST on the next day, they belong to the next period "
+        "on the portal (#607). They are counted here to agree with the GSTR-1 export.",
     ),
     "tax_head_mismatch": _WarningSpec(
         "warning",
@@ -404,7 +434,20 @@ class _Tally:
     inward_notes: _Amounts = field(default_factory=_Amounts)
 
 
-def _read_invoices(invoices: list[InvoiceDoc], tally: _Tally, warnings: _Warnings) -> None:
+# 05:30 ahead of UTC: a stamp at or after 18:30 UTC is already the next day in IST.
+_IST_NEXT_DAY_FROM = time(18, 30)
+
+
+def _utc_edge_detail(stamp: datetime | None, period: ReturnPeriod) -> str | None:
+    """Why a document stored late on the period's last day may belong to the next one."""
+    if stamp is None or stamp.date() != period.to_date or stamp.time() < _IST_NEXT_DAY_FROM:
+        return None
+    return f"Stored {stamp:%d %b %Y %H:%M} UTC, which is the next day in IST"
+
+
+def _read_invoices(
+    invoices: list[InvoiceDoc], period: ReturnPeriod, tally: _Tally, warnings: _Warnings
+) -> None:
     for invoice in invoices:
         side = classify_invoice(invoice.voucher_type, invoice.status)
         if side is Side.EXCLUDED:
@@ -435,6 +478,9 @@ def _read_invoices(invoices: list[InvoiceDoc], tally: _Tally, warnings: _Warning
             bucket.add(taxable=line.taxable, cgst=line.cgst, sgst=line.sgst, igst=line.igst)
 
         doc = {"kind": "invoice", "doc_id": invoice.id, "number": invoice.number}
+        edge = _utc_edge_detail(invoice.invoice_date, period)
+        if edge:
+            warnings.add("utc_period_edge", **doc, detail=edge)
         problem = gstin_problem(invoice.ledger_gst)
         if problem:
             warnings.add(
@@ -490,6 +536,28 @@ def _read_notes(notes: list[NoteDoc], period: ReturnPeriod, tally: _Tally, warni
                     warnings.add("note_direction_conflict", **doc, detail=detail)
                 continue
 
+            if note_line_overrides_direction(note_side, line):
+                source = line.source_invoice_number or "its invoice"
+                warnings.add(
+                    "note_direction_overridden",
+                    **doc,
+                    detail=(
+                        f"{_rupees(line.taxable)} taxable, {_rupees(line.tax)} GST against "
+                        f"{source}, counted as {line_side.value} (note says {note_side.value})"
+                    ),
+                )
+
+            if note_line_head_differs(note.igst_total, line):
+                source = line.source_invoice_number or "its invoice"
+                warnings.add(
+                    "note_head_mismatch",
+                    **doc,
+                    detail=(
+                        f"{_rupees(line.tax)} GST on "
+                        f"{'IGST' if note.igst_total > 0 else 'CGST/SGST'}, "
+                        f"{source} has {'CGST/SGST' if note.igst_total > 0 else 'IGST'}"
+                    ),
+                )
             exceeds_source = exceeds_source or note_line_exceeds_source(note.note_type, line)
             cgst, sgst, igst = split_note_tax(line.tax, note.igst_total)
             if line_side is Side.OUTWARD:
@@ -501,6 +569,9 @@ def _read_notes(notes: list[NoteDoc], period: ReturnPeriod, tally: _Tally, warni
 
         if exceeds_source:
             warnings.add("note_exceeds_source", **doc)
+        edge = _utc_edge_detail(note.created_at, period)
+        if edge:
+            warnings.add("utc_period_edge", **doc, detail=edge)
         if (
             note_side is Side.INWARD
             and note.supplier_note_date is not None
@@ -719,7 +790,7 @@ def build_worksheet(
         warnings.raise_("company_gstin")
 
     tally = _Tally()
-    _read_invoices(invoices, tally, warnings)
+    _read_invoices(invoices, period, tally, warnings)
     _read_notes(notes, period, tally, warnings)
 
     net_taxed = tally.sales.minus(tally.outward_notes)
