@@ -379,6 +379,77 @@ class TestCreateCreditNoteValidation:
         assert Decimal(str(added_credit_note.cgst_amount + added_credit_note.sgst_amount)) == Decimal("18.00")
         mock_change_inventory.assert_not_called()
 
+    def _discount_setup(self, *, line_total, already_credited):
+        ledger = make_ledger(id=1)
+        inv = make_invoice(id=1, ledger_id=1)
+        ii = make_invoice_item(id=10, invoice_id=1, product_id=22, quantity=1, unit_price=100, gst_rate=18)
+        ii.line_total = Decimal(line_total)
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = ledger
+        db.query.return_value.filter.return_value.all.side_effect = [[inv], [ii]]
+        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = Decimal(
+            already_credited
+        )
+        return db
+
+    def _discount_payload(self, amount):
+        return CreditNoteCreate(
+            ledger_id=1,
+            invoice_ids=[1],
+            credit_note_type="discount",
+            items=[
+                CreditNoteItemCreate(
+                    invoice_id=1,
+                    invoice_item_id=10,
+                    discount_amount_inclusive=Decimal(amount),
+                )
+            ],
+        )
+
+    def test_discount_credit_note_larger_than_line_total_raises_400(self):
+        from fastapi import HTTPException
+
+        db = self._discount_setup(line_total="118", already_credited="0")
+        with pytest.raises(HTTPException) as exc:
+            create_credit_note(self._discount_payload("5000"), db, current_user_id=1)
+        assert exc.value.status_code == 400
+        assert "would exceed its line total of ₹118.00" in exc.value.detail
+
+    def test_discount_credit_note_stacked_past_line_total_raises_400(self):
+        from fastapi import HTTPException
+
+        # ₹100 already credited against the same line; ₹19 more passes ₹118.
+        db = self._discount_setup(line_total="118", already_credited="100")
+        with pytest.raises(HTTPException) as exc:
+            create_credit_note(self._discount_payload("19"), db, current_user_id=1)
+        assert exc.value.status_code == 400
+
+    def test_discount_after_partial_return_is_capped_at_what_is_left(self):
+        from fastapi import HTTPException
+
+        # A return already credited ₹59 of the ₹118 line; ₹60 more is too much.
+        db = self._discount_setup(line_total="118", already_credited="59")
+        with pytest.raises(HTTPException) as exc:
+            create_credit_note(self._discount_payload("60"), db, current_user_id=1)
+        assert exc.value.status_code == 400
+
+    def test_discount_equal_to_remaining_amount_is_accepted(self):
+        # ₹59 already credited; the remaining ₹59 of the ₹118 line is allowed.
+        db = self._discount_setup(line_total="118", already_credited="59")
+
+        with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
+             patch("src.services.credit_note.get_fy_for_date", return_value=None), \
+             patch("src.services.credit_note.generate_next_number", return_value="CN-001"), \
+             patch("src.services.credit_note._recompute_credit_status"), \
+             patch("src.services.credit_note._change_inventory_quantity"):
+            create_credit_note(self._discount_payload("59"), db, current_user_id=1)
+
+        added_items = [
+            c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], CreditNoteItem)
+        ]
+        assert len(added_items) == 1
+        assert Decimal(str(added_items[0].line_total)) == Decimal("59.00")
+
     def test_discount_credit_note_intrastate_keeps_item_split_equal_for_odd_paise_tax(self):
         ledger = make_ledger(id=1)
         inv = make_invoice(id=1, ledger_id=1)
