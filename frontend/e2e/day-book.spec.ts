@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, createProduct, adjustInventory, clickNavLink } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, createProduct, adjustInventory, clickNavLink, selectComboboxOption, localToday, localStartOfMonth, localYearAgo } from './fixtures';
 
 test.describe('Day Book', () => {
   test('displays day book heading', async ({ authedPage: page }) => {
@@ -21,15 +21,11 @@ test.describe('Day Book', () => {
     await clickNavLink(page, '/day-book');
 
     // Set a wide date range
-    const today = new Date();
-    const yearAgo = new Date(today);
-    yearAgo.setFullYear(yearAgo.getFullYear() - 1);
-
     await page.fill(
       '#day-book-from',
-      yearAgo.toISOString().split('T')[0],
+      localYearAgo(),
     );
-    await page.fill('#day-book-to', today.toISOString().split('T')[0]);
+    await page.fill('#day-book-to', localToday());
 
     // Wait for data to load – either voucher entries or empty state
     await page.waitForTimeout(1_000);
@@ -67,28 +63,8 @@ test.describe('Day Book', () => {
     await page.waitForTimeout(500);
     await page.selectOption('#invoice-voucher-type', 'sales');
 
-    const ledgerSelect = page.locator('#invoice-ledger');
-    const ledgerOptions = ledgerSelect.locator('option');
-    const ledgerCount = await ledgerOptions.count();
-    for (let i = 0; i < ledgerCount; i++) {
-      const text = await ledgerOptions.nth(i).textContent();
-      if (text?.includes(ledgerName)) {
-        const val = (await ledgerOptions.nth(i).getAttribute('value')) || '';
-        await ledgerSelect.selectOption(val);
-        break;
-      }
-    }
-    const prodSelect = page.locator('[id^="invoice-product-"]').first();
-    const prodOptions = prodSelect.locator('option');
-    const prodCount = await prodOptions.count();
-    for (let i = 0; i < prodCount; i++) {
-      const text = await prodOptions.nth(i).textContent();
-      if (text?.includes(sku)) {
-        const val = (await prodOptions.nth(i).getAttribute('value')) || '';
-        await prodSelect.selectOption(val);
-        break;
-      }
-    }
+    await selectComboboxOption(page, 'invoice-ledger', ledgerName);
+    await selectComboboxOption(page, 'invoice-product-1', sku);
     await page.locator('[id^="invoice-quantity-"]').first().fill('2');
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'invoice created');
@@ -97,18 +73,16 @@ test.describe('Day Book', () => {
     // overlay covers the sidebar — dismiss it before navigating by rail click.
     const previewModal = page.locator('.modal-panel--invoice-preview');
     await expect(previewModal).toBeVisible({ timeout: 10_000 });
-    await previewModal.locator('button:has-text("Close")').click();
+    await previewModal.getByRole('button', { name: 'Close invoice preview' }).click();
     await expect(previewModal).not.toBeVisible();
 
     // Now go to Day Book
     await clickNavLink(page, '/day-book');
-    const today = new Date();
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     await page.fill(
       '#day-book-from',
-      startOfMonth.toISOString().split('T')[0],
+      localStartOfMonth(),
     );
-    await page.fill('#day-book-to', today.toISOString().split('T')[0]);
+    await page.fill('#day-book-to', localToday());
     await page.waitForTimeout(1_000);
 
     // Debit and credit are now read off the scope bar's metric strip, which

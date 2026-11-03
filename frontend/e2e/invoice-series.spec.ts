@@ -8,9 +8,9 @@ test.describe('Invoice Series', () => {
     await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // All three series rows should be visible
-    await expect(page.locator('strong:has-text("Sales")')).toBeVisible();
-    await expect(page.locator('strong:has-text("Purchase")')).toBeVisible();
-    await expect(page.locator('strong:has-text("Payment")')).toBeVisible();
+    await expect(page.locator('strong', { hasText: /^Sales$/ })).toBeVisible();
+    await expect(page.locator('strong', { hasText: /^Purchase$/ })).toBeVisible();
+    await expect(page.locator('strong', { hasText: /^Payment$/ })).toBeVisible();
   });
 
   test('shows live preview that updates with prefix changes', async ({ authedPage: page }) => {
