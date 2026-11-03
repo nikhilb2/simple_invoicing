@@ -24,10 +24,24 @@ def up(conn) -> None:
         ALTER TABLE credit_notes
         ADD COLUMN IF NOT EXISTS credit_note_date TIMESTAMP
     """))
-    conn.execute(text("""
+    # created_at is TIMESTAMPTZ NOT NULL where the migrations built the table, and
+    # a nullable naive UTC TIMESTAMP where the models did. Pin it to an instant
+    # first, so the day doesn't depend on the session's time zone.
+    created_at_type = conn.execute(text("""
+        SELECT data_type FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'credit_notes' AND column_name = 'created_at'
+    """)).scalar()
+    created_at = "created_at" if created_at_type == "timestamp with time zone" else "created_at AT TIME ZONE 'UTC'"
+    conn.execute(text(f"""
         UPDATE credit_notes
-        SET credit_note_date = date_trunc('day', created_at + INTERVAL '5 hours 30 minutes')
+        SET credit_note_date = date_trunc('day', COALESCE({created_at}, now()) AT TIME ZONE 'Asia/Kolkata')
         WHERE credit_note_date IS NULL
+    """))
+    # The previous image inserts without this column, so a rolling deploy or a
+    # rollback must still be able to write a note.
+    conn.execute(text("""
+        ALTER TABLE credit_notes
+        ALTER COLUMN credit_note_date SET DEFAULT date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata')
     """))
     conn.execute(text("""
         ALTER TABLE credit_notes
