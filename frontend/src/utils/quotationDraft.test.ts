@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addDaysToIsoDate,
   composerDocumentName,
+  conversionDateDefaults,
   conversionDraftToFormItems,
   conversionLineShortfalls,
   conversionPayload,
@@ -153,6 +154,23 @@ describe('form items', () => {
     });
     expect(payload).not.toHaveProperty('serial_numbers');
     expect(payload).not.toHaveProperty('gst_rate');
+  });
+
+  it('opens a conversion on the local date, whatever the server thought', () => {
+    const justAfterMidnight = new Date(2027, 3, 1, 0, 10);
+    expect(conversionDateDefaults({ dueDateMode: 'none', dueDateDays: '' }, justAfterMidnight).invoiceDate).toBe('2027-04-01');
+  });
+
+  it('opens a conversion on the due-date preference, as a new invoice does', () => {
+    expect(conversionDateDefaults({ dueDateMode: 'days', dueDateDays: '30' })).toMatchObject({
+      dueDateMode: 'days',
+      dueDateDays: '30',
+      dueDate: '',
+    });
+    expect(conversionDateDefaults({ dueDateMode: 'none', dueDateDays: '' })).toMatchObject({
+      dueDateMode: 'none',
+      dueDateDays: '',
+    });
   });
 
   it('sends the version of the quotation the draft came from, digit for digit', () => {

@@ -22,6 +22,7 @@ import { createQuotation, fetchConversionDraft, fetchQuotationById, updateQuotat
 import { quotationQueryKeys } from '../../features/quotations/queryKeys';
 import {
   composerDocumentName,
+  conversionDateDefaults,
   conversionDraftToFormItems,
   conversionLineShortfalls,
   conversionPayload,
@@ -739,10 +740,11 @@ export default function InvoicesPage() {
     setApplyRoundOff(invoice.apply_round_off ?? false);
     setInvoiceDiscountType(invoice.discount_type || 'percentage');
     setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
-    setInvoiceDate(invoice.invoice_date ?? toIsoDate(new Date()));
-    setDueDateMode('none');
-    setDueDate('');
-    setDueDateDays('');
+    const dates = conversionDateDefaults(readInvoiceComposerPrefs());
+    setInvoiceDate(dates.invoiceDate);
+    setDueDateMode(dates.dueDateMode);
+    setDueDate(dates.dueDate);
+    setDueDateDays(dates.dueDateDays);
     const nextItems = conversionDraftToFormItems(invoice);
     itemsRef.current = nextItems;
     setItems(nextItems);

@@ -8,6 +8,9 @@ import type {
   QuotationFields,
 } from '../types/api';
 import type { InvoiceFormItem } from '../pages/invoices/types';
+import { toIsoDate } from './dateRanges';
+import type { InvoiceComposerPrefs } from './invoiceComposerPrefs';
+import type { DueDateMode } from './invoiceDueDate';
 
 /** Everything the composer's voucher select can hold. */
 export type ComposerVoucherType = 'sales' | 'purchase' | 'payment' | 'receipt' | QuotationDocumentType;
@@ -85,6 +88,23 @@ export function quotationToFormItems(quotation: Pick<Quotation, 'items'>): Invoi
 
 export function conversionDraftToFormItems(invoice: Pick<InvoiceCreate, 'items'>): InvoiceFormItem[] {
   return invoice.items.map(toFormItem);
+}
+
+/**
+ * The dates a conversion opens with, the same as a new invoice's: the browser's date,
+ * so it cannot land in yesterday's financial year, and the user's standing due-date
+ * preference, since a quotation carries no due date of its own.
+ */
+export function conversionDateDefaults(
+  prefs: Pick<InvoiceComposerPrefs, 'dueDateMode' | 'dueDateDays'>,
+  now: Date = new Date(),
+): { invoiceDate: string; dueDateMode: DueDateMode; dueDate: string; dueDateDays: string } {
+  return {
+    invoiceDate: toIsoDate(now),
+    dueDateMode: prefs.dueDateMode,
+    dueDate: '',
+    dueDateDays: prefs.dueDateDays,
+  };
 }
 
 /**
