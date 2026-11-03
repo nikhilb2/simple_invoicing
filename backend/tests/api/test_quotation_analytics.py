@@ -1,11 +1,12 @@
 """Quotation events fire from the backend, after commit, with no names or GSTINs."""
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
 from quotation_helpers import convert, create_ledger, create_product, create_quotation, ok, seed_company
 
 from src.core import analytics
+from src.services.gst_tax_service import india_today
 
 
 class RecordingClient:
@@ -83,7 +84,7 @@ def test_updated_status_cancelled_and_pdf(setup, events):
 
 def test_converted_fires_both_events(setup, events):
     client, ledger, product = setup
-    past = date.today() - timedelta(days=40)
+    past = india_today() - timedelta(days=40)
     quote = create_quotation(
         client, ledger["id"], product["id"],
         quotation_date=past.isoformat(),
