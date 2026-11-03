@@ -2,14 +2,18 @@ import { FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { readUrlSecret } from '../lib/urlSecrets';
 import { resendVerification, verifyEmail } from '../api/auth';
+import { getApiErrorCode } from '../api/client';
 import { authErrorMessage } from '../utils/authFlow';
+import {
+  isDeadVerificationLink,
+  MIN_PASSWORD_LENGTH,
+  passwordClientError,
+} from '../utils/verifyEmailForm';
 import AuthLayout from '../components/AuthLayout';
 import PasswordInput from '../components/PasswordInput';
 import StatusToasts from '../components/StatusToasts';
 
 type Status = 'ready' | 'verified' | 'failed';
-
-const MIN_PASSWORD_LENGTH = 8;
 
 export default function VerifyEmailPage() {
   const [token] = useState(() => readUrlSecret('token'));
@@ -28,8 +32,9 @@ export default function VerifyEmailPage() {
   async function onConfirm(event: FormEvent) {
     event.preventDefault();
     if (!token) return;
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      setFormError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long`);
+    const clientError = passwordClientError(password);
+    if (clientError) {
+      setFormError(clientError);
       return;
     }
     try {
@@ -39,8 +44,13 @@ export default function VerifyEmailPage() {
       setStatus('verified');
       setMessage(res.detail || 'Your email address is verified.');
     } catch (err) {
-      setStatus('failed');
-      setMessage(authErrorMessage(err, 'This verification link is invalid or has expired.'));
+      if (isDeadVerificationLink(getApiErrorCode(err))) {
+        setStatus('failed');
+        setMessage(authErrorMessage(err, 'This verification link is invalid or has expired.'));
+      } else {
+        // Keep the form so the user can retry (network, 422 validation, etc.).
+        setFormError(authErrorMessage(err, 'Unable to verify email. Please try again.'));
+      }
     } finally {
       setSubmitting(false);
     }

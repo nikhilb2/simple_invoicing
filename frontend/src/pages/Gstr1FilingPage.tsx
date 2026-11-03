@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api, { getApiErrorMessage, getBlobErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
@@ -7,7 +7,8 @@ import DateRangePresets from '../components/DateRangePresets';
 import { useFY } from '../context/FYContext';
 import type { CompanyProfile, Gstr1Summary, Gstr1ValidationResult } from '../types/api';
 import formatCurrency from '../utils/formatting';
-import { toIsoDate } from '../utils/dateRanges';
+import { defaultFilingPeriod } from '../utils/dateRanges';
+import { zeroRateSalesNote } from '../utils/gstr1Notes';
 
 type Gstr1Step = 'select-period' | 'validate' | 'summary';
 
@@ -17,19 +18,11 @@ const STEPS: { key: Gstr1Step; label: string }[] = [
   { key: 'summary', label: 'Summary' },
 ];
 
-function defaultDateRange() {
-  const today = new Date();
-  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-  return { fromDate: toIsoDate(firstDay), toDate: toIsoDate(today) };
-}
-
 export default function Gstr1FilingPage() {
   const { activeFY } = useFY();
 
-  const [period, setPeriod] = useState(() => ({
-    fromDate: activeFY?.start_date ?? defaultDateRange().fromDate,
-    toDate: activeFY?.end_date ?? defaultDateRange().toDate,
-  }));
+  const [period, setPeriod] = useState(() => defaultFilingPeriod(activeFY));
+  const periodEdited = useRef(false);
   const [step, setStep] = useState<Gstr1Step>('select-period');
   const [validation, setValidation] = useState<Gstr1ValidationResult | null>(null);
   const [summary, setSummary] = useState<Gstr1Summary | null>(null);
@@ -48,10 +41,8 @@ export default function Gstr1FilingPage() {
   }, []);
 
   useEffect(() => {
-    setPeriod({
-      fromDate: activeFY?.start_date ?? defaultDateRange().fromDate,
-      toDate: activeFY?.end_date ?? defaultDateRange().toDate,
-    });
+    // Financial years can load after someone has already set the dates.
+    if (!periodEdited.current) setPeriod(defaultFilingPeriod(activeFY));
   }, [activeFY]);
 
   function reset() {
@@ -65,6 +56,7 @@ export default function Gstr1FilingPage() {
   // rather than leave last period's figures on screen under this period's
   // heading.
   function changePeriod(next: { fromDate: string; toDate: string }) {
+    periodEdited.current = true;
     setPeriod(next);
     reset();
   }
@@ -89,9 +81,11 @@ export default function Gstr1FilingPage() {
       if (response.data.status === 'valid') {
         setSuccess('Validation passed. You can now view the filing summary.');
       } else {
+        const periodError = response.data.errors.find((issue) => issue.field === 'Period');
         setError(
-          `Validation found ${response.data.invalid_invoices} invoice(s) with errors. ` +
-          'Resolve the issues below before generating GSTR-1.',
+          periodError
+            ? periodError.message
+            : 'Validation found problems in this period. Resolve the issues below before generating GSTR-1.',
         );
       }
     } catch (err) {
@@ -283,7 +277,8 @@ export default function Gstr1FilingPage() {
               </div>
             </div>
             <p className="section-copy">
-              Set the period in the bar above, then validate. Validation checks every sales invoice
+              Set the period in the bar above, then validate. A return covers one whole month, or one
+              whole quarter if you file quarterly. Validation checks every sales invoice
               and note in the period for the fields GSTR-1 requires — a missing or malformed GSTIN,
               a place of supply that does not match the tax charged, an HSN code that is absent.
               Skipping it goes straight to the summary, which is fine for a dry run but will carry
@@ -326,12 +321,15 @@ export default function Gstr1FilingPage() {
                     {validation.errors.map((err, i) => (
                       <tr key={i}>
                         <td className="text-xs">
-                          <Link
-                            className="button button--ghost button--small"
-                            to={`/invoices-view?search=${encodeURIComponent(err.invoice_number)}`}
-                          >
-                            {err.invoice_number}
-                          </Link>
+                          {/* A period problem is about no one document. */}
+                          {err.invoice_number ? (
+                            <Link
+                              className="button button--ghost button--small"
+                              to={`/invoices-view?search=${encodeURIComponent(err.invoice_number)}`}
+                            >
+                              {err.invoice_number}
+                            </Link>
+                          ) : '—'}
                         </td>
                         <td className="text-xs">{err.field}</td>
                         <td className="text-xs">{err.message}</td>
@@ -411,9 +409,9 @@ function StepRail({ step }: { step: Gstr1Step }) {
    one wrapped "0 invoice(s)" onto two lines at .summary-box's 2rem. */
 const CATEGORIES: { key: keyof Pick<Gstr1Summary, 'b2b' | 'b2cl' | 'b2cs' | 'nil_rated' | 'credit_notes' | 'debit_notes'>; label: string }[] = [
   { key: 'b2b', label: 'B2B (with GSTIN)' },
-  { key: 'b2cl', label: 'B2CL (>2.5L)' },
-  { key: 'b2cs', label: 'B2CS (≤2.5L)' },
-  { key: 'nil_rated', label: 'Nil rated / exempt' },
+  { key: 'b2cl', label: 'B2CL (large interstate)' },
+  { key: 'b2cs', label: 'B2CS (before credit notes)' },
+  { key: 'nil_rated', label: 'B2C sales with no tax (in B2CS at rate 0)' },
   { key: 'credit_notes', label: 'Credit notes' },
   { key: 'debit_notes', label: 'Debit notes' },
 ];
@@ -426,6 +424,10 @@ function Gstr1SummaryView({
   activeCurrencyCode: string;
 }) {
   const docs = summary.doc_summary;
+  const zeroRateNote = zeroRateSalesNote(
+    summary.zero_rate_invoices ?? 0,
+    formatCurrency(summary.zero_rate_value ?? 0, activeCurrencyCode),
+  );
 
   return (
     <>
@@ -438,6 +440,7 @@ function Gstr1SummaryView({
             </div>
             <div className="metric-strip">
               <Metric label="Invoices" value={docs.total_invoices} />
+              <Metric label="Cancelled" value={docs.cancelled_invoices} />
               <Metric label="Credit notes" value={docs.total_credit_notes} />
               <Metric label="Debit notes" value={docs.total_debit_notes} />
             </div>
@@ -453,6 +456,7 @@ function Gstr1SummaryView({
               />
             ))}
           </div>
+          {zeroRateNote ? <p className="field-warning">{zeroRateNote}</p> : null}
         </article>
       </section>
 

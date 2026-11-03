@@ -5,6 +5,7 @@ import {
   Boxes,
   Building2,
   ChartColumn,
+  ClipboardList,
   Compass,
   DatabaseBackup,
   Factory,
@@ -165,6 +166,8 @@ export const PRIMARY_NAV: NavEntry[] = [
       // destination, not a view of the ledger beside it — and buried in a tab
       // it was unreachable from the rail, unlinkable, and lost on reload.
       { to: '/gstr1', label: 'GSTR-1 Filing', icon: FileCheck2, shortcutAction: 'go_gstr1' },
+      // "Worksheet", not "Filing": it estimates from the books and files nothing.
+      { to: '/gstr3b', label: 'GSTR-3B Worksheet', icon: ClipboardList, shortcutAction: 'go_gstr3b' },
     ],
   },
   {

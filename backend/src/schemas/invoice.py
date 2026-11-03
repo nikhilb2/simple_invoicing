@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator
 from typing import List, Literal, Optional
 from src.schemas.ledger import LedgerOut
 from src.schemas.ledger_address import ShippingAddressInline
-from src.core.validation import normalize_hsn_sac
+from src.core.validation import normalize_hsn_sac, normalize_place_of_supply
 
 
 def _validate_discount_value(
@@ -71,7 +71,15 @@ class InvoiceCreate(BaseModel):
     shipping_address_same_as_billing: bool = True
     shipping_address_id: int | None = None
     new_shipping_address: ShippingAddressInline | None = None
+    # Two-digit GST state code of a sale. None takes the buyer's GSTIN state, or
+    # the seller's own state for a buyer with no GSTIN.
+    place_of_supply: str | None = None
     items: List[InvoiceItemCreate]
+
+    @field_validator("place_of_supply")
+    @classmethod
+    def _check_place_of_supply(cls, value: str | None) -> str | None:
+        return normalize_place_of_supply(value)
 
     @field_validator("discount_value", mode="after")
     @classmethod
@@ -129,6 +137,7 @@ class InvoiceOut(BaseModel):
     company_additional_info: str | None = None
     company_terms_text: str | None = None
     voucher_type: str
+    place_of_supply: str | None = None
     supplier_invoice_number: str | None = None
     reference_notes: str | None = None
     status: str = "active"

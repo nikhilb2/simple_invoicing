@@ -84,7 +84,14 @@ def _build_credit_note_html(
     party_gst = (first_invoice.ledger_gst if first_invoice else None) or (ledger.gst if ledger else None)
     party_phone = (first_invoice.ledger_phone if first_invoice else None) or (ledger.phone_number if ledger else None)
 
-    interstate_supply = _is_interstate_supply(seller_gst, ledger.gst if ledger else party_gst)
+    # The note's own tax heads say which columns it needs: the GSTINs cannot, since
+    # a sale's place of supply can differ from the state on the buyer's GSTIN.
+    if float(credit_note.igst_amount or 0) > 0:
+        interstate_supply = True
+    elif float(credit_note.cgst_amount or 0) + float(credit_note.sgst_amount or 0) > 0:
+        interstate_supply = False
+    else:
+        interstate_supply = _is_interstate_supply(seller_gst, ledger.gst if ledger else party_gst)
     is_discount = credit_note.credit_note_type == "discount"
 
     item_rows = ""
@@ -358,7 +365,7 @@ def _build_credit_note_html(
     <div class="sheet__meta">
       <span class="sheet__badge">{_e(type_label)}</span>
       <h2>Credit Note {_e(credit_note.credit_note_number)}</h2>
-      <p>Date: {_fmt_date(credit_note.created_at)}</p>
+      <p>Date: {_fmt_date(getattr(credit_note, "credit_note_date", None) or credit_note.created_at)}</p>
       <p>Against invoice: {original_invoices_html}</p>
     </div>
   </header>

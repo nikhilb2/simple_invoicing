@@ -197,6 +197,7 @@ const NAV_SECTION_BY_HREF: Record<string, string> = {
   '/analytics': 'reports',
   '/day-book': 'reports',
   '/tax-ledger': 'reports',
+  '/gstr3b': 'reports',
   '/marketplace': 'marketplace',
   '/marketplace/listings': 'marketplace',
   '/marketplace/orders': 'marketplace',

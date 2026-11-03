@@ -6,6 +6,7 @@ from datetime import date, timedelta
 import pytest
 from quotation_helpers import (
     GST_KA,
+    GST_MH,
     convert,
     create_ledger,
     create_product,
@@ -1139,3 +1140,31 @@ def test_pdf_downloads(setup, document_type):
     assert response.headers["content-type"] == "application/pdf"
     assert response.content.startswith(b"%PDF")
     assert f'{document_type}_{quote["quotation_number"]}.pdf' in response.headers["content-disposition"]
+
+
+@pytest.mark.parametrize(
+    ("buyer_gst", "state", "igst_charged"),
+    [("same", GST_MH[:2], False), (GST_KA, GST_KA[:2], True)],
+)
+def test_a_converted_invoice_takes_the_usual_place_of_supply(setup, buyer_gst, state, igst_charged):
+    client, ledger, product = setup
+    buyer = ledger if buyer_gst == "same" else create_ledger(client, "Buyer", gst=buyer_gst)
+    quote = create_quotation(client, buyer["id"], product["id"])
+
+    invoice = ok(convert(client, quote["id"]))
+
+    assert invoice["place_of_supply"] == state
+    assert (invoice["igst_amount"] > 0) is igst_charged
+
+
+def test_a_conversion_can_choose_another_place_of_supply(setup):
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"])
+    draft = ok(client.get(f"/api/quotations/{quote['id']}/conversion-draft"))["invoice"]
+    draft["place_of_supply"] = "10"
+
+    invoice = ok(client.post(f"/api/quotations/{quote['id']}/convert", json=draft))
+
+    assert invoice["place_of_supply"] == "10"
+    assert invoice["igst_amount"] > 0
+    assert invoice["cgst_amount"] == 0

@@ -14,11 +14,13 @@ import csv
 import io
 import json
 import re
+import calendar
 from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
 import weasyprint
+from src.services.gst_tax_service import india_today
 from quotation_helpers import (
     convert,
     create_ledger,
@@ -38,6 +40,12 @@ from src.models.product_serial import ProductSerial
 from src.models.share_link import ShareLink
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _this_month() -> dict:
+    today = india_today()
+    last_day = calendar.monthrange(today.year, today.month)[1]
+    return {"from_date": today.replace(day=1).isoformat(), "to_date": today.replace(day=last_day).isoformat()}
 
 
 def _period() -> dict:
@@ -77,7 +85,8 @@ def _report_urls(world: dict) -> dict[str, tuple[str, dict]]:
         "tax_ledger_pdf": ("/api/ledgers/tax-ledger/pdf", period),
         "gstr1_validate": ("/api/ledgers/tax-ledger/gstr1/validate", period),
         "gstr1_summary": ("/api/ledgers/tax-ledger/gstr1/summary", period),
-        "gstr1_json": ("/api/ledgers/tax-ledger/gstr1/export-json", period),
+        # The file covers one whole return period, unlike the review reports around it.
+        "gstr1_json": ("/api/ledgers/tax-ledger/gstr1/export-json", _this_month()),
         "gstr1_csv": ("/api/ledgers/tax-ledger/gstr1/export-csv", period),
         "gstr1_pdf": ("/api/ledgers/tax-ledger/gstr1/export-pdf", period),
         "inventory": ("/api/inventory/", {"page_size": 100}),
@@ -155,7 +164,7 @@ def _assert_same(before: dict, after: dict) -> None:
 @pytest.fixture
 def world(client):
     """A company with books already: a purchase, a sale, a receipt and a credit note."""
-    seed_company(client)
+    seed_company(client, gst="27AAPFU0939F1ZV")  # same state as the buyer, not the buyer's GSTIN
     ledger = create_ledger(client)
     product = create_product(client, "WID-1", purchase_price=60)
     tracked = create_product(client, "PHONE-1", track_serials=True, initial_quantity=0, price=500, purchase_price=300)

@@ -4,6 +4,9 @@ from src.models.company_account import CompanyAccount
 from src.models.invoice import Invoice
 from src.models.product import Product
 
+from src.core.validation import GST_STATE_NAMES
+from src.services.gst_tax_service import invoice_is_interstate
+
 from .builders import (
     _build_invoice_discount_html,
     _build_item_discount_html,
@@ -48,7 +51,17 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     voucher_label = "Sales" if invoice.voucher_type == "sales" else "Purchase"
     inv_number = invoice.invoice_number or f"#{invoice.id}"
     inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else (invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A")
-    interstate_supply = _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
+    place_of_supply = getattr(invoice, "place_of_supply", None)
+    # A buyer with no GSTIN gives nothing to compare, so the place of supply decides.
+    interstate_supply = (
+        invoice_is_interstate(invoice) if place_of_supply
+        else _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
+    )
+    place_of_supply_line = (
+        f"<p>Place of supply: {_e(GST_STATE_NAMES.get(place_of_supply, place_of_supply))} ({_e(place_of_supply)})</p>"
+        if place_of_supply
+        else ""
+    )
     tax_header_cells = _build_pdf_tax_header_cells(interstate_supply)
     table_colgroup = _build_pdf_table_colgroup(interstate_supply, show_sku=show_sku)
 
@@ -544,6 +557,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
       <span class="invoice-badge">{voucher_label}</span>
       <h2>Invoice {_e(inv_number)}</h2>
       <p>Date: {inv_date}</p>
+      {place_of_supply_line}
       <p>Currency: {_e(currency)}</p>
     </div>
   </header>

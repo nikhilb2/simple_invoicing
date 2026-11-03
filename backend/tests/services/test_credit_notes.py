@@ -17,12 +17,12 @@ from unittest.mock import ANY, MagicMock, call, patch
 import pytest
 
 from src.services.credit_note import (
-    _is_interstate,
     _money,
     _recompute_credit_status,
     cancel_credit_note,
     create_credit_note,
 )
+from src.services.gst_tax_service import is_interstate_supply as _is_interstate
 from src.schemas.credit_note import CreditNoteCreate, CreditNoteItemCreate
 from src.models.buyer import Buyer as Ledger
 from src.models.invoice import Invoice, InvoiceItem
@@ -62,6 +62,9 @@ def make_invoice_item(id, invoice_id, product_id=1, quantity=10, unit_price=100,
     ii.quantity = quantity
     ii.unit_price = unit_price
     ii.gst_rate = gst_rate
+    ii.taxable_amount = Decimal(str(quantity * unit_price))
+    ii.tax_amount = ii.taxable_amount * Decimal(str(gst_rate)) / Decimal("100")
+    ii.line_total = ii.taxable_amount + ii.tax_amount
     return ii
 
 
@@ -345,6 +348,7 @@ class TestCreateCreditNoteValidation:
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = ledger
         db.query.return_value.filter.return_value.all.side_effect = [[inv], [ii]]
+        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = 0
 
         with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
              patch("src.services.credit_note.get_fy_for_date", return_value=None), \
@@ -409,7 +413,7 @@ class TestCreateCreditNoteValidation:
         with pytest.raises(HTTPException) as exc:
             create_credit_note(self._discount_payload("5000"), db, current_user_id=1)
         assert exc.value.status_code == 400
-        assert "would exceed its line total of ₹118.00" in exc.value.detail
+        assert "would exceed its line total of 118.00" in exc.value.detail
 
     def test_discount_credit_note_stacked_past_line_total_raises_400(self):
         from fastapi import HTTPException
@@ -467,6 +471,7 @@ class TestCreateCreditNoteValidation:
         db = MagicMock()
         db.query.return_value.filter.return_value.first.return_value = ledger
         db.query.return_value.filter.return_value.all.side_effect = [[inv], [ii]]
+        db.query.return_value.join.return_value.filter.return_value.scalar.return_value = 0
 
         with patch("src.services.credit_note.get_active_fy", return_value=SimpleNamespace(id=1)), \
              patch("src.services.credit_note.get_fy_for_date", return_value=None), \
