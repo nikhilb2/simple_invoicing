@@ -237,6 +237,7 @@ def list_companies(
 @router.post("/companies", response_model=CompanyProfileOut)
 def create_company_profile(
     payload: CompanyProfileUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_session_user),
 ):
@@ -276,9 +277,9 @@ def create_company_profile(
     db.commit()
     db.refresh(profile)
 
-    # Single tenant keeps its old rule of only filling an empty selection;
-    # shared hosting moves the creator straight into the company they made.
-    if shared or current_user.active_company_id is None:
+    # Tool calls use the new company only for this request. Browser creation keeps
+    # its existing rule: switch in shared hosting, or fill an empty single-tenant selection.
+    if "X-MCP-Tool" not in request.headers and (shared or current_user.active_company_id is None):
         _set_active_company(db, current_user, profile.id)
 
     track(

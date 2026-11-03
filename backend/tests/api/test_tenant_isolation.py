@@ -26,6 +26,7 @@ from src.db.session import get_db
 from src.models.company import CompanyProfile
 from src.models.company_membership import CompanyMembership
 from src.models.financial_year import FinancialYear
+from src.models.global_settings import GlobalSettings
 from src.models.invoice_series import InvoiceSeries
 from src.models.user import User, UserRole
 from src.services.company_access import add_membership
@@ -697,6 +698,35 @@ def test_creator_becomes_admin_with_a_seeded_financial_year(db_session, tenants)
     assert sorted(s.voucher_type for s in series) == [
         "credit_note", "debit_note", "payment", "proforma", "purchase", "quotation", "sales",
     ]
+
+
+@pytest.mark.parametrize("mode", ["shared_hosting", "single_tenant"])
+@pytest.mark.parametrize("tool_header", [None, "companies_create", ""])
+@pytest.mark.parametrize("has_selection", [False, True])
+def test_company_creation_only_changes_browser_selection(
+    client, db_session, act_as, monkeypatch, mode, tool_header, has_selection,
+):
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", mode)
+    monkeypatch.setattr(settings, "PLATFORM_ADMIN_EMAILS", "")
+    monkeypatch.setattr(settings, "MAX_COMPANIES_PER_USER", 3)
+    db_session.add(GlobalSettings(id=1, max_companies=3))
+    db_session.commit()
+    user = _user(db_session, "creator@example.com", role=UserRole.admin)
+    act_as(user)
+    original_id = _create_company(client, "Existing Company") if has_selection else None
+    headers = {} if tool_header is None else {"X-MCP-Tool": tool_header}
+
+    created = _ok(client.post("/api/company/companies", headers=headers, json=_company_payload("New Company")))
+
+    db_session.refresh(user)
+    expected_id = original_id
+    if tool_header is None and (mode == "shared_hosting" or original_id is None):
+        expected_id = created["id"]
+    assert user.active_company_id == expected_id
+    membership = db_session.query(CompanyMembership).filter_by(user_id=user.id, company_id=created["id"]).one()
+    assert membership.role == UserRole.admin
+    if mode == "shared_hosting":
+        assert db_session.query(FinancialYear).filter_by(company_id=created["id"]).one().is_active is True
 
 
 def test_company_creation_is_capped_per_user(client, db_session, shared_hosting, act_as, monkeypatch):
