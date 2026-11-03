@@ -5,6 +5,7 @@ Handles extraction of GST state codes, tax splitting logic for CGST/SGST/IGST,
 and invoice-level tax aggregation.
 """
 
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from src.models.invoice import Invoice, InvoiceItem
@@ -13,6 +14,11 @@ from src.models.invoice import Invoice, InvoiceItem
 def money(value: Decimal) -> Decimal:
     """Round a Decimal value to 2 decimal places using ROUND_HALF_UP."""
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def india_today() -> date:
+    """Today's date in India, which is what a GST document is dated by."""
+    return datetime.now(timezone(timedelta(hours=5, minutes=30))).date()
 
 
 def is_interstate_supply(company_gst: str | None, ledger_gst: str | None) -> bool:
