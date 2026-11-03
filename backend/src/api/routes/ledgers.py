@@ -1942,9 +1942,12 @@ def _note_section(cn: CreditNote, invoices_by_id: dict[int, Invoice], company_po
     if ctin and GSTIN_REGEX.fullmatch(ctin):
         return "CDNR", ctin, pos
     # An unregistered note goes in CDNUR only when it belongs with a B2CL invoice.
-    # The rest reduce their B2CS row, because CDNUR takes no B2CS type.
-    large = float(cn.total_amount or 0) > b2cl_limit(cn.credit_note_date) or any(
-        is_b2cl_invoice(inv, company_pos) for inv in originals
+    # The rest reduce their B2CS row, because CDNUR takes no B2CS type. Its invoices
+    # decide: several small ones in B2CS can add up to a note over the limit.
+    large = (
+        any(is_b2cl_invoice(inv, company_pos) for inv in originals)
+        if originals
+        else float(cn.total_amount or 0) > b2cl_limit(cn.credit_note_date)
     )
     return ("CDNUR" if is_interstate_pos(pos, company_pos) and large else "B2CS"), "", pos
 
