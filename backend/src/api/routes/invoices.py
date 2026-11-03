@@ -590,7 +590,12 @@ def update_invoice(
         # would move the invoice into a different financial year is blocked
         # instead of leaving it filed under the old year. A date that no
         # financial year covers keeps the previous behaviour (allowed).
-        if payload.invoice_date is not None and invoice.financial_year_id is not None:
+        current_day = invoice.invoice_date.date() if invoice.invoice_date else None
+        if (
+            payload.invoice_date is not None
+            and payload.invoice_date != current_day
+            and invoice.financial_year_id is not None
+        ):
             date_fy = get_fy_for_date(db, payload.invoice_date, company_id=active_company.id)
             if date_fy is not None and date_fy.id != invoice.financial_year_id:
                 current_fy = (

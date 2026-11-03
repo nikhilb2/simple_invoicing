@@ -6,10 +6,11 @@ blocked with a 400. Same-year changes, and dates no financial year covers,
 keep working as before.
 """
 
-from datetime import date
+from datetime import date, datetime
 
 from src.models.company import CompanyProfile
 from src.models.financial_year import FinancialYear
+from src.models.invoice import Invoice
 
 
 def _seed_company_and_years(db_session):
@@ -159,3 +160,27 @@ def test_update_invoice_date_without_covering_fy_still_works(client, db_session)
     )
 
     assert response.status_code == 200, response.text
+
+
+def test_update_existing_mismatched_invoice_keeps_same_date_and_edits_price(client, db_session):
+    _seed_company_and_years(db_session)
+    ledger_id = _create_ledger(client)
+    product_id = _create_product(client)
+    invoice = _create_invoice_in_old_fy(client, ledger_id, product_id)
+    stored = db_session.get(Invoice, invoice["id"])
+    stored.invoice_date = datetime(2026, 4, 2, 10, 0)
+    db_session.commit()
+    payload = _payload(ledger_id, product_id, "2026-04-02")
+    payload["items"][0].update(quantity=2, unit_price=125)
+
+    response = client.put(f"/api/invoices/{invoice['id']}", json=payload)
+
+    assert response.status_code == 200, response.text
+    updated = response.json()
+    assert updated["financial_year_id"] == 1
+    assert updated["invoice_number"] == invoice["invoice_number"]
+    assert updated["invoice_date"].startswith("2026-04-02")
+    assert updated["items"][0]["quantity"] == 2
+    assert updated["items"][0]["unit_price"] == 125
+    db_session.expire_all()
+    assert db_session.get(Invoice, invoice["id"]).financial_year_id == 1
