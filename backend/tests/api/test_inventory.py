@@ -170,6 +170,66 @@ def test_adjust_inventory_accepts_fractional_quantity_for_decimal_product(client
     assert item["allow_decimal"] is True
     assert item["quantity"] == 1.5
 
+
+def _decimal_product(client, sku: str = "DECINVNF"):
+    created = client.post(
+        "/api/products/",
+        json={
+            "sku": sku,
+            "name": "Liquid Product",
+            "price": 90,
+            "gst_rate": 18,
+            "unit": "l",
+            "allow_decimal": True,
+            "initial_quantity": 2,
+        },
+    )
+    assert created.status_code == 200
+    return created.json()["id"]
+
+
+def test_adjust_inventory_rejects_nan_quantity(client):
+    product_id = _decimal_product(client, "DECINVNAN")
+    response = client.post(
+        "/api/inventory/adjust",
+        content=f'{{"product_id": {product_id}, "quantity": NaN}}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    listing = client.get("/api/inventory/?search=Liquid&page=1&page_size=50")
+    assert listing.status_code == 200
+    item = next(i for i in listing.json()["items"] if i["sku"] == "DECINVNAN")
+    assert item["quantity"] == 2
+
+
+def test_adjust_inventory_rejects_infinity_quantity(client):
+    product_id = _decimal_product(client, "DECINVINF")
+    response = client.post(
+        "/api/inventory/adjust",
+        content=f'{{"product_id": {product_id}, "quantity": Infinity}}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    listing = client.get("/api/inventory/?search=Liquid&page=1&page_size=50")
+    assert listing.status_code == 200
+    item = next(i for i in listing.json()["items"] if i["sku"] == "DECINVINF")
+    assert item["quantity"] == 2
+
+
+def test_adjust_inventory_rejects_negative_infinity_quantity(client):
+    product_id = _decimal_product(client, "DECINVNINF")
+    response = client.post(
+        "/api/inventory/adjust",
+        content=f'{{"product_id": {product_id}, "quantity": -Infinity}}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    listing = client.get("/api/inventory/?search=Liquid&page=1&page_size=50")
+    assert listing.status_code == 200
+    item = next(i for i in listing.json()["items"] if i["sku"] == "DECINVNINF")
+    assert item["quantity"] == 2
+
+
 def test_produce_saves_notes_in_production_history(client, db_session):
     finished = _make_producible_setup(db_session)
 
