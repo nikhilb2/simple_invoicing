@@ -8,6 +8,7 @@ import { useFY } from '../context/FYContext';
 import type { CompanyProfile, Gstr1Summary, Gstr1ValidationResult } from '../types/api';
 import formatCurrency from '../utils/formatting';
 import { defaultFilingPeriod } from '../utils/dateRanges';
+import { zeroRateSalesNote } from '../utils/gstr1Notes';
 
 type Gstr1Step = 'select-period' | 'validate' | 'summary';
 
@@ -410,7 +411,7 @@ const CATEGORIES: { key: keyof Pick<Gstr1Summary, 'b2b' | 'b2cl' | 'b2cs' | 'nil
   { key: 'b2b', label: 'B2B (with GSTIN)' },
   { key: 'b2cl', label: 'B2CL (large interstate)' },
   { key: 'b2cs', label: 'B2CS (before credit notes)' },
-  { key: 'nil_rated', label: 'Nil rated / exempt' },
+  { key: 'nil_rated', label: 'B2C sales with no tax (in B2CS at rate 0)' },
   { key: 'credit_notes', label: 'Credit notes' },
   { key: 'debit_notes', label: 'Debit notes' },
 ];
@@ -423,6 +424,10 @@ function Gstr1SummaryView({
   activeCurrencyCode: string;
 }) {
   const docs = summary.doc_summary;
+  const zeroRateNote = zeroRateSalesNote(
+    summary.zero_rate_invoices ?? 0,
+    formatCurrency(summary.zero_rate_value ?? 0, activeCurrencyCode),
+  );
 
   return (
     <>
@@ -451,6 +456,7 @@ function Gstr1SummaryView({
               />
             ))}
           </div>
+          {zeroRateNote ? <p className="field-warning">{zeroRateNote}</p> : null}
         </article>
       </section>
 

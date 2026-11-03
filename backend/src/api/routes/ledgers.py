@@ -1964,6 +1964,24 @@ def _tax_heads_error(igst: float, cgst: float, sgst: float, pos: str, company_po
     return None
 
 
+def _is_zero_value_invoice(inv: Invoice) -> bool:
+    """A real invoice that charges nothing, such as a 100% discount.
+
+    It has a number, so Table 13 counts it, but no value for any other table.
+    """
+    if inv.taxable_amount is None:
+        return False
+    amounts = [inv.taxable_amount, inv.total_tax_amount, inv.total_amount]
+    for item in inv.items:
+        amounts += [item.taxable_amount, item.tax_amount]
+    return all(float(amount or 0) == 0 for amount in amounts)
+
+
+def _filed_sales(invoices: list[Invoice]) -> list[Invoice]:
+    """The sales that carry a value into the GSTR-1 tables."""
+    return [inv for inv in invoices if inv.voucher_type == "sales" and not _is_zero_value_invoice(inv)]
+
+
 def _invoice_filing_errors(inv: Invoice, company_gstin: str | None, company_pos: str) -> list[tuple[str, str]]:
     """What stops a sales invoice being filed, as (field, message), beyond its GSTIN and lines."""
     errors: list[tuple[str, str]] = []
@@ -2137,6 +2155,200 @@ def _validate_hsn(hsn: str | None) -> str | None:
     return None
 
 
+def _round_amount(value: float) -> float:
+    """Two decimals, without the -0.0 that rounding a tiny negative leaves behind."""
+    return round(value, 2) + 0.0
+
+
+def _b2cs_rows(
+    sales: list[Invoice],
+    credit_notes: list[CreditNote],
+    invoices_by_id: dict[int, Invoice],
+    company_pos: str,
+) -> list[dict]:
+    """Table 7 rows by (POS, rate, supply type), net of the notes that reduce them.
+
+    A row can go negative when a period's notes outweigh its sales, and one they
+    exactly cancel has nothing to report.
+    """
+    by_key: dict[tuple[str, float, str], dict] = {}
+
+    def add(pos: str, rate: float, txval: float, iamt: float, camt: float, samt: float) -> None:
+        sply_ty = "INTER" if is_interstate_pos(pos, company_pos) else "INTRA"
+        agg = by_key.setdefault((pos, rate, sply_ty), {"txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0})
+        agg["txval"] += txval
+        agg["iamt"] += iamt
+        agg["camt"] += camt
+        agg["samt"] += samt
+
+    for inv in sales:
+        if gstr1_section(inv, company_pos) != "B2CS":
+            continue
+        for item in inv.items:
+            add(
+                invoice_filing_pos(inv, company_pos),
+                float(item.gst_rate or 0),
+                float(item.taxable_amount or 0),
+                float(item.igst_amount or 0),
+                float(item.cgst_amount or 0),
+                float(item.sgst_amount or 0),
+            )
+
+    for cn in credit_notes:
+        section, _, pos = _note_section(cn, invoices_by_id, company_pos)
+        if section != "B2CS":
+            continue
+        for item in cn.items or []:
+            iamt, camt, samt = _note_item_heads(cn, item)
+            add(pos, float(item.gst_rate or 0), -float(item.taxable_amount or 0), -iamt, -camt, -samt)
+
+    rows: list[dict] = []
+    for (pos, rate, sply_ty), data in by_key.items():
+        row = {
+            "sply_ty": sply_ty,
+            "pos": pos,
+            "typ": "OE",  # OE = supplies other than through an e-commerce operator
+            "rt": rate,
+            "txval": _round_amount(data["txval"]),
+            "iamt": _round_amount(data["iamt"]),
+            "camt": _round_amount(data["camt"]),
+            "samt": _round_amount(data["samt"]),
+            "csamt": 0.0,
+        }
+        if any(row[amount] for amount in ("txval", "iamt", "camt", "samt")):
+            rows.append(row)
+    return rows
+
+
+def _hsn_section(
+    db: Session,
+    sales: list[Invoice],
+    credit_notes: list[CreditNote],
+    invoices_by_id: dict[int, Invoice],
+    to_date: date,
+) -> dict[str, list[dict]]:
+    """Table 12, by (HSN, rate, UQC), net of credit notes whichever period the invoice fell in."""
+    # The unit lives on the product master, not on the invoice line.
+    product_ids = {item.product_id for inv in sales for item in inv.items if item.product_id}
+    product_ids |= {item.product_id for cn in credit_notes for item in cn.items if item.product_id}
+    units_by_product: dict[int, str] = {}
+    if product_ids:
+        units_by_product = {
+            pid: unit
+            for pid, unit in db.query(Product.id, Product.unit).filter(Product.id.in_(product_ids)).all()
+        }
+
+    b2b_map: dict[tuple[str, float, str], dict] = {}
+    b2c_map: dict[tuple[str, float, str], dict] = {}
+
+    def row_for(target: dict, hsn: str, rate: float, product_id: int | None) -> dict:
+        uqc = _hsn_uqc(hsn, units_by_product.get(product_id))
+        return target.setdefault((hsn, rate, uqc), {"qty": 0.0, "txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0, "desc": ""})
+
+    for inv in sales:
+        target = b2b_map if (inv.ledger_gst and inv.ledger_gst.strip()) else b2c_map
+        for item in inv.items:
+            agg = row_for(target, (item.hsn_sac or "").strip(), float(item.gst_rate or 0), item.product_id)
+            agg["qty"] += float(item.quantity or 0)
+            agg["txval"] += float(item.taxable_amount or 0)
+            agg["iamt"] += float(item.igst_amount or 0)
+            agg["camt"] += float(item.cgst_amount or 0)
+            agg["samt"] += float(item.sgst_amount or 0)
+            # Carry the first non-empty item description as the HSN desc.
+            if not agg["desc"] and (item.description or "").strip():
+                agg["desc"] = item.description.strip()
+
+    for cn in credit_notes:
+        for item in cn.items:
+            # A return against a zero-value invoice: the sale isn't here, so
+            # neither is taking its quantity back.
+            if not float(item.taxable_amount or 0) and not float(item.tax_amount or 0):
+                continue
+            original = invoices_by_id.get(item.invoice_id)
+            target = b2b_map if (original and original.ledger_gst and original.ledger_gst.strip()) else b2c_map
+            agg = row_for(target, _note_item_hsn(item), float(item.gst_rate or 0), item.product_id)
+            iamt, camt, samt = _note_item_heads(cn, item)
+            agg["qty"] -= _note_item_qty(cn, item)
+            agg["txval"] -= float(item.taxable_amount or 0)
+            agg["iamt"] -= iamt
+            agg["camt"] -= camt
+            agg["samt"] -= samt
+            if not agg["desc"] and item.invoice_item and (item.invoice_item.description or "").strip():
+                agg["desc"] = item.invoice_item.description.strip()
+
+    def rows_of(hsn_map: dict[tuple[str, float, str], dict]) -> list[dict]:
+        rows: list[dict] = []
+        for (hsn, rate, uqc), data in sorted(hsn_map.items()):
+            is_service = hsn.startswith("99")
+            row = {
+                "hsn_sc": hsn,
+                # Either hsn_sc or desc must be present (RET191194).
+                "desc": _hsn_desc(data.get("desc"), hsn),
+                "num": len(rows) + 1,
+                "uqc": uqc,
+                "rt": rate,
+                "qty": 0.0 if is_service else _round_amount(data["qty"]),
+                "txval": _round_amount(data["txval"]),
+                "iamt": _round_amount(data["iamt"]),
+                "camt": _round_amount(data["camt"]),
+                "samt": _round_amount(data["samt"]),
+                "csamt": 0.0,
+            }
+            # Sold and fully returned in one period leaves nothing to report.
+            if any(row[amount] for amount in ("qty", "txval", "iamt", "camt", "samt")):
+                rows.append(row)
+        return rows
+
+    # Table 12 has been split into B2B and B2C lists since the May 2025 return.
+    if (to_date.year, to_date.month) >= (2025, 5):
+        return {"hsn_b2b": rows_of(b2b_map), "hsn_b2c": rows_of(b2c_map)}
+    merged = {key: dict(data) for key, data in b2b_map.items()}
+    for key, data in b2c_map.items():
+        row = merged.get(key)
+        if row is None:
+            merged[key] = dict(data)
+            continue
+        for amount in ("qty", "txval", "iamt", "camt", "samt"):
+            row[amount] += data[amount]
+        row["desc"] = row["desc"] or data["desc"]
+    return {"data": rows_of(merged)}
+
+
+def _negative_row_warnings(b2cs_rows: list[dict], hsn_section: dict[str, list[dict]]) -> list[Gstr1ValidationError]:
+    """A warning for each row in the file that a period's credit notes took below zero."""
+    advice = "Credit notes outweigh this period's sales there, and the portal may refuse a negative row. Check it before filing."
+    warnings: list[Gstr1ValidationError] = []
+    for row in b2cs_rows:
+        if min(row["txval"], row["iamt"], row["camt"], row["samt"]) < 0:
+            warnings.append(Gstr1ValidationError(
+                invoice_number="", field="B2CS", severity="warning",
+                message=f"The row for state {row['pos']} at {row['rt']:g}% is negative (taxable {row['txval']:.2f}). {advice}",
+            ))
+    for rows in hsn_section.values():
+        for row in rows:
+            if min(row["qty"], row["txval"], row["iamt"], row["camt"], row["samt"]) < 0:
+                warnings.append(Gstr1ValidationError(
+                    invoice_number="", field="HSN summary", severity="warning",
+                    message=(
+                        f"The row for HSN {row['hsn_sc']} at {row['rt']:g}% is negative "
+                        f"(quantity {row['qty']:g}, taxable {row['txval']:.2f}). {advice}"
+                    ),
+                ))
+    return warnings
+
+
+def _zero_rate_sales(sales: list[Invoice]) -> tuple[int, float]:
+    """How many invoices have lines at 0%, and the taxable value of those lines."""
+    count = 0
+    value = 0.0
+    for inv in sales:
+        lines = [item for item in inv.items if float(item.gst_rate or 0) == 0]
+        if lines:
+            count += 1
+            value += sum(float(item.taxable_amount or 0) for item in lines)
+    return count, round(value, 2)
+
+
 def _validate_gstr1_export(
     db: Session,
     company_gstin: str | None,
@@ -2170,6 +2382,19 @@ def _validate_gstr1_export(
         inv_num = inv.invoice_number or f"INV-{inv.id}"
         ctin = (inv.ledger_gst or "").strip().upper()
 
+        # Check for duplicate invoice numbers
+        if inv_num in seen_numbers:
+            errors.append(f"Invoice {inv_num}: Duplicate invoice number detected.")
+        else:
+            seen_numbers.add(inv_num)
+
+        if not is_gstr1_document_number(inv_num):
+            errors.append(f"Invoice {inv_num}: GSTR-1 needs a number of {GSTR1_DOCUMENT_NUMBER_RULE}.")
+
+        # Only its number reaches the file, so nothing else on it can block one.
+        if _is_zero_value_invoice(inv):
+            continue
+
         # B2B: customer GSTIN must be valid and POS must be valid
         if ctin:
             if not GSTIN_REGEX.fullmatch(ctin):
@@ -2197,17 +2422,8 @@ def _validate_gstr1_export(
                     f"Invoice {inv_num}: {float(item.gst_rate or 0):g}% on item #{item.id} is not a GST rate."
                 )
 
-        if not is_gstr1_document_number(inv_num):
-            errors.append(f"Invoice {inv_num}: GSTR-1 needs a number of {GSTR1_DOCUMENT_NUMBER_RULE}.")
-
         for _, message in _invoice_filing_errors(inv, company_gstin, company_pos):
             errors.append(f"Invoice {inv_num}: {message}.")
-
-        # Check for duplicate invoice numbers
-        if inv_num in seen_numbers:
-            errors.append(f"Invoice {inv_num}: Duplicate invoice number detected.")
-        else:
-            seen_numbers.add(inv_num)
 
     for cn in credit_notes:
         cn_num = cn.credit_note_number or f"CN-{cn.id}"
@@ -2287,6 +2503,15 @@ def gstr1_validate(
                 severity="error",
             ))
 
+        # Only its number reaches the file, so nothing else on it can block one.
+        if _is_zero_value_invoice(inv):
+            errors.append(Gstr1ValidationError(
+                invoice_number=inv_num, field="Taxable Value",
+                message="Zero value, so it's counted in Table 13 (documents issued) and left out of every other table",
+                severity="warning",
+            ))
+            continue
+
         # GSTIN validation. A missing buyer GSTIN is a legitimate B2C supply
         # (filed under B2CS/B2CL), so it is a warning — not a blocking error.
         # A present-but-malformed GSTIN is a real error that must be fixed.
@@ -2359,6 +2584,24 @@ def gstr1_validate(
                 severity="warning",
             ))
 
+    filed_sales = _filed_sales(invoices)
+    zero_rate_count, zero_rate_value = _zero_rate_sales(filed_sales)
+    if zero_rate_count:
+        errors.append(Gstr1ValidationError(
+            invoice_number="", field="0% sales", severity="warning",
+            message=(
+                f"{zero_rate_count} invoice(s) have {zero_rate_value:,.2f} of sales at 0%. The file reports them "
+                "at rate 0 in B2B, B2CL or B2CS, as taxable supplies. If any are nil-rated, exempt or non-GST "
+                "(Table 8), or zero-rated (Table 6), this file doesn't include those tables, so check with your "
+                "accountant and correct them on the portal."
+            ),
+        ))
+
+    errors.extend(_negative_row_warnings(
+        _b2cs_rows(filed_sales, credit_notes, invoices_by_id, company_pos),
+        _hsn_section(db, filed_sales, credit_notes, invoices_by_id, to_date),
+    ))
+
     invalid_set = {e.invoice_number for e in errors if e.severity == "error"} & seen_numbers.keys()
     return Gstr1ValidationResult(
         status="invalid" if any(e.severity == "error" for e in errors) else "valid",
@@ -2405,7 +2648,7 @@ def gstr1_summary(
         sgst = float(inv.sgst_amount or 0)
         igst = float(inv.igst_amount or 0)
 
-        if inv.voucher_type != "sales":
+        if inv.voucher_type != "sales" or _is_zero_value_invoice(inv):
             continue
 
         section = gstr1_section(inv, company_pos)
@@ -2451,9 +2694,8 @@ def gstr1_summary(
 
     # HSN summary
     hsn_map: dict[str, dict] = {}
-    for inv in invoices:
-        if inv.voucher_type != "sales":
-            continue
+    filed_sales = _filed_sales(invoices)
+    for inv in filed_sales:
         for item in inv.items:
             hsn = item.hsn_sac or "----"
             if hsn not in hsn_map:
@@ -2489,6 +2731,7 @@ def gstr1_summary(
         ))
 
     total_sales = sum(1 for inv in invoices if inv.voucher_type == "sales")
+    zero_rate_invoices, zero_rate_value = _zero_rate_sales(filed_sales)
     doc_summary = Gstr1DocSummary(
         total_invoices=total_sales,
         total_credit_notes=len(credit_notes),
@@ -2507,6 +2750,8 @@ def gstr1_summary(
         debit_notes=dn_summary,
         nil_rated=nil_rated,
         exempt=exempt,
+        zero_rate_invoices=zero_rate_invoices,
+        zero_rate_value=zero_rate_value,
         hsn_summary=hsn_items,
         doc_summary=doc_summary,
     )
@@ -2596,10 +2841,13 @@ def gstr1_export_json(
             })
         return itms
 
+    # A zero-value invoice reaches Table 13 and no other table.
+    filed_sales = _filed_sales(invoices)
+
     # B2B (Table 4): grouped by customer GSTIN.
     b2b_by_ctin: dict[str, list[dict]] = {}
-    for inv in invoices:
-        if inv.voucher_type != "sales" or gstr1_section(inv, company_pos) != "B2B":
+    for inv in filed_sales:
+        if gstr1_section(inv, company_pos) != "B2B":
             continue
         ctin = inv.ledger_gst.strip().upper()
         b2b_by_ctin.setdefault(ctin, []).append({
@@ -2616,8 +2864,8 @@ def gstr1_export_json(
     # B2CL (Table 5): large interstate invoices to unregistered buyers, by POS.
     # Interstate means IGST only, so the file has no CGST/SGST here.
     b2cl_by_pos: dict[str, list[dict]] = {}
-    for inv in invoices:
-        if inv.voucher_type != "sales" or gstr1_section(inv, company_pos) != "B2CL":
+    for inv in filed_sales:
+        if gstr1_section(inv, company_pos) != "B2CL":
             continue
         b2cl_by_pos.setdefault(invoice_filing_pos(inv, company_pos), []).append({
             "inum": inv.invoice_number or f"INV-{inv.id}",
@@ -2626,30 +2874,6 @@ def gstr1_export_json(
             "itms": _igst_only(_nested_items(inv.items)),
         })
     b2cl_section = [{"pos": pos, "inv": invs} for pos, invs in b2cl_by_pos.items()]
-
-    # B2CS (Table 7): aggregated by (POS, rate, supply type), flat item shape.
-    b2cs_by_key: dict[tuple[str, float, str], dict] = {}
-
-    def _add_to_b2cs(pos: str, rate: float, txval: float, iamt: float, camt: float, samt: float) -> None:
-        sply_ty = "INTER" if is_interstate_pos(pos, company_pos) else "INTRA"
-        agg = b2cs_by_key.setdefault((pos, rate, sply_ty), {"txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0})
-        agg["txval"] += txval
-        agg["iamt"] += iamt
-        agg["camt"] += camt
-        agg["samt"] += samt
-
-    for inv in invoices:
-        if inv.voucher_type != "sales" or gstr1_section(inv, company_pos) != "B2CS":
-            continue
-        for item in inv.items:
-            _add_to_b2cs(
-                invoice_filing_pos(inv, company_pos),
-                float(item.gst_rate or 0),
-                float(item.taxable_amount or 0),
-                float(item.igst_amount or 0),
-                float(item.cgst_amount or 0),
-                float(item.sgst_amount or 0),
-            )
 
     # Credit notes — registered (CDNR, Table 9B), unregistered with a B2CL invoice
     # (CDNUR), and the rest, which reduce their B2CS row.
@@ -2667,10 +2891,9 @@ def gstr1_export_json(
         nt_dt = cn.credit_note_date.strftime("%d-%m-%Y") if cn.credit_note_date else ""
         val = round(float(cn.total_amount or 0), 2)
 
-        if section == "B2CS":
-            for item in items:
-                iamt, camt, samt = _note_item_heads(cn, item)
-                _add_to_b2cs(pos, float(item.gst_rate or 0), -float(item.taxable_amount or 0), -iamt, -camt, -samt)
+        if section == "B2CS":  # Netted into its row by _b2cs_rows.
+            continue
+        if not float(cn.total_amount or 0):  # Like a zero-value invoice: Table 13 only.
             continue
 
         # Consolidate items by GST rate to avoid RET191117.
@@ -2722,105 +2945,9 @@ def gstr1_export_json(
             })
     cdnr_section = [{"ctin": ctin, "nt": nts} for ctin, nts in cdnr_by_ctin.items()]
 
-    # Built after the notes, which reduce these rows. A row can go negative when
-    # a period's notes outweigh its sales.
-    b2cs_section: list[dict] = []
-    for (pos, rate, sply_ty), data in b2cs_by_key.items():
-        b2cs_section.append({
-            "sply_ty": sply_ty,
-            "pos": pos,
-            "typ": "OE",  # OE = supplies other than through an e-commerce operator
-            "rt": rate,
-            "txval": round(data["txval"], 2),
-            "iamt": round(data["iamt"], 2),
-            "camt": round(data["camt"], 2),
-            "samt": round(data["samt"], 2),
-            "csamt": 0.0,
-        })
-
-    # HSN summary (Table 12): split into B2B / B2C, aggregated by (HSN, rate, UQC).
-    # The unit lives on the product master, not on the invoice line.
-    product_ids = {item.product_id for inv in invoices for item in inv.items if item.product_id}
-    product_ids |= {item.product_id for cn in credit_notes for item in cn.items if item.product_id}
-    units_by_product: dict[int, str] = {}
-    if product_ids:
-        units_by_product = {
-            pid: unit
-            for pid, unit in db.query(Product.id, Product.unit).filter(Product.id.in_(product_ids)).all()
-        }
-
-    hsn_b2b_map: dict[tuple[str, float, str], dict] = {}
-    hsn_b2c_map: dict[tuple[str, float, str], dict] = {}
-
-    def _hsn_row(target: dict, hsn: str, rate: float, product_id: int | None) -> dict:
-        uqc = _hsn_uqc(hsn, units_by_product.get(product_id))
-        return target.setdefault((hsn, rate, uqc), {"qty": 0.0, "txval": 0.0, "iamt": 0.0, "camt": 0.0, "samt": 0.0, "desc": ""})
-
-    for inv in invoices:
-        if inv.voucher_type != "sales":
-            continue
-        target = hsn_b2b_map if (inv.ledger_gst and inv.ledger_gst.strip()) else hsn_b2c_map
-        for item in inv.items:
-            agg = _hsn_row(target, (item.hsn_sac or "").strip(), float(item.gst_rate or 0), item.product_id)
-            agg["qty"] += float(item.quantity or 0)
-            agg["txval"] += float(item.taxable_amount or 0)
-            agg["iamt"] += float(item.igst_amount or 0)
-            agg["camt"] += float(item.cgst_amount or 0)
-            agg["samt"] += float(item.sgst_amount or 0)
-            # Carry the first non-empty item description as the HSN desc.
-            if not agg["desc"] and (item.description or "").strip():
-                agg["desc"] = item.description.strip()
-
-    # Table 12 is net of credit notes, whichever period the invoice fell in.
-    for cn in credit_notes:
-        for item in cn.items:
-            original = invoices_by_id.get(item.invoice_id)
-            target = hsn_b2b_map if (original and original.ledger_gst and original.ledger_gst.strip()) else hsn_b2c_map
-            agg = _hsn_row(target, _note_item_hsn(item), float(item.gst_rate or 0), item.product_id)
-            iamt, camt, samt = _note_item_heads(cn, item)
-            agg["qty"] -= _note_item_qty(cn, item)
-            agg["txval"] -= float(item.taxable_amount or 0)
-            agg["iamt"] -= iamt
-            agg["camt"] -= camt
-            agg["samt"] -= samt
-            if not agg["desc"] and item.invoice_item and (item.invoice_item.description or "").strip():
-                agg["desc"] = item.invoice_item.description.strip()
-
-    def _hsn_rows(hsn_map: dict[tuple[str, float, str], dict]) -> list[dict]:
-        rows: list[dict] = []
-        for (hsn, rate, uqc), data in sorted(hsn_map.items()):
-            is_service = hsn.startswith("99")
-            rows.append({
-                "hsn_sc": hsn,
-                # Either hsn_sc or desc must be present (RET191194).
-                "desc": _hsn_desc(data.get("desc"), hsn),
-                "num": len(rows) + 1,
-                "uqc": uqc,
-                "rt": rate,
-                "qty": 0.0 if is_service else round(data["qty"], 2),
-                "txval": round(data["txval"], 2),
-                "iamt": round(data["iamt"], 2),
-                "camt": round(data["camt"], 2),
-                "samt": round(data["samt"], 2),
-                "csamt": 0.0,
-            })
-        return rows
-
-    # Table 12 has been split into B2B and B2C lists since the May 2025 return.
-    hsn_section: dict[str, list[dict]]
-    if (to_date.year, to_date.month) >= (2025, 5):
-        hsn_section = {"hsn_b2b": _hsn_rows(hsn_b2b_map), "hsn_b2c": _hsn_rows(hsn_b2c_map)}
-    else:
-        merged = {key: dict(data) for key, data in hsn_b2b_map.items()}
-        for key, data in hsn_b2c_map.items():
-            row = merged.get(key)
-            if row is None:
-                merged[key] = dict(data)
-                continue
-            for amount in ("qty", "txval", "iamt", "camt", "samt"):
-                row[amount] += data[amount]
-            row["desc"] = row["desc"] or data["desc"]
-        hsn_section = {"data": _hsn_rows(merged)}
+    # B2CS (Table 7) and the HSN summary (Table 12), both net of credit notes.
+    b2cs_section = _b2cs_rows(filed_sales, credit_notes, invoices_by_id, company_pos)
+    hsn_section = _hsn_section(db, filed_sales, credit_notes, invoices_by_id, to_date)
 
     # Documents issued (Table 13): nature-of-document code + issued range.
     doc_det: list[dict] = []
@@ -2918,7 +3045,7 @@ def gstr1_export_csv(
 
         hsns = ", ".join(item.hsn_sac or "" for item in inv.items if item.hsn_sac)
         writer.writerow([
-            section,
+            "Table 13 only (zero value)" if _is_zero_value_invoice(inv) else section,
             inv.invoice_date.date().isoformat() if inv.invoice_date else "",
             inv.invoice_number or f"INV-{inv.id}",
             inv.ledger_name or "",
@@ -2982,7 +3109,7 @@ def gstr1_export_pdf(
 
     invoices = _gstr1_invoice_query(db, from_date, to_date, company_id)
     company_pos = _derive_place_of_supply(company.gst if company else None)
-    sales = [inv for inv in invoices if inv.voucher_type == "sales"]
+    sales = _filed_sales(invoices)
 
     def _invoice_tax(inv: Invoice) -> float:
         return float(inv.cgst_amount or 0) + float(inv.sgst_amount or 0) + float(inv.igst_amount or 0)
@@ -3033,7 +3160,7 @@ def gstr1_export_pdf(
             <td class="right">₹{sum(float(inv.taxable_amount or 0) for inv in b2cs_invoices):,.2f}</td>
             <td colspan="4" class="right">-</td>
         </tr>
-        <tr><td>Nil Rated / Exempt</td><td>{nil_rated_count}</td>
+        <tr><td>B2C sales with no tax (filed in B2CS at rate 0)</td><td>{nil_rated_count}</td>
             <td colspan="5" class="right">-</td>
         </tr>
         <tr><td>Credit notes</td><td>{len(credit_notes)}</td>

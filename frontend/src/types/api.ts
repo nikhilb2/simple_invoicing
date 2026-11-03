@@ -681,6 +681,8 @@ export type Gstr1Summary = {
   nil_rated: Gstr1CategorySummary;
   exempt: Gstr1CategorySummary;
   non_gst: Gstr1CategorySummary;
+  zero_rate_invoices?: number;
+  zero_rate_value?: number;
   hsn_summary: Gstr1HsnSummaryItem[];
   doc_summary: Gstr1DocSummary;
 };
