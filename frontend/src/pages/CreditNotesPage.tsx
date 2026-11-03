@@ -23,6 +23,7 @@ import type {
   Product,
 } from '../types/api';
 import formatCurrency, { formatDate } from '../utils/formatting';
+import { backdatedNoteWarning, creditNoteDateChoice as nextCreditNoteDateChoice, shownCreditNoteDate } from '../utils/creditNoteDate';
 import { toIsoDate } from '../utils/dateRanges';
 import { downloadCsv } from '../utils/csv';
 import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
@@ -72,7 +73,11 @@ export default function CreditNotesPage() {
   const [direction, setDirection] = useState<CreditNoteDirection>('outward');
   const [supplierNoteNumber, setSupplierNoteNumber] = useState('');
   const [supplierNoteDate, setSupplierNoteDate] = useState('');
-  const [creditNoteDate, setCreditNoteDate] = useState(() => toIsoDate(new Date()));
+  // The date stays null until the user picks one, so the form sends none and the
+  // server dates the note today in India. What it shows follows the clock.
+  const [today, setToday] = useState(() => toIsoDate(new Date()));
+  const [creditNoteDateChoice, setCreditNoteDateChoice] = useState<string | null>(null);
+  const creditNoteDate = shownCreditNoteDate(creditNoteDateChoice, today);
   const [reason, setReason] = useState('');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [discountAmounts, setDiscountAmounts] = useState<Record<string, string>>({});
@@ -102,6 +107,17 @@ export default function CreditNotesPage() {
   // and whatever the other filters were left on.
   const deepLinkCreditNoteId = numericParam(searchParams, 'cn_id');
   const [highlightCreditNoteId, setHighlightCreditNoteId] = useState<number | null>(null);
+
+  // A form left open overnight would otherwise still offer yesterday.
+  useEffect(() => {
+    const refreshToday = () => setToday(toIsoDate(new Date()));
+    window.addEventListener('focus', refreshToday);
+    document.addEventListener('visibilitychange', refreshToday);
+    return () => {
+      window.removeEventListener('focus', refreshToday);
+      document.removeEventListener('visibilitychange', refreshToday);
+    };
+  }, []);
 
   const currencyCode = company?.currency_code || 'INR';
 
@@ -384,6 +400,9 @@ export default function CreditNotesPage() {
     }, { taxable: 0, tax: 0 });
   }, [creditNoteType, discountAmounts, selectedLineItems]);
 
+  // Nothing is filed for an inward note, so its date moves no return.
+  const backdatedWarning = direction === 'outward' ? backdatedNoteWarning(creditNoteDate, today) : null;
+
   function handleLedgerChange(nextLedgerId: string) {
     setSelectedLedgerId(nextLedgerId);
     setSelectedInvoiceIds([]);
@@ -442,7 +461,7 @@ export default function CreditNotesPage() {
       direction,
       supplier_credit_note_number: direction === 'inward' ? supplierNoteNumber.trim() : null,
       supplier_credit_note_date: direction === 'inward' ? supplierNoteDate : null,
-      credit_note_date: creditNoteDate,
+      credit_note_date: creditNoteDateChoice,
       reason: reason.trim() || null,
       items: payloadItems,
     };
@@ -461,7 +480,7 @@ export default function CreditNotesPage() {
       setDiscountAmounts({});
       setSupplierNoteNumber('');
       setSupplierNoteDate('');
-      setCreditNoteDate(toIsoDate(new Date()));
+      setCreditNoteDateChoice(null);
       setRefreshKey((value) => value + 1);
 
       const [creditNotesRes, invoicesRes] = await Promise.all([
@@ -616,12 +635,13 @@ export default function CreditNotesPage() {
                     className="input"
                     type="date"
                     required
-                    max={toIsoDate(new Date())}
+                    max={today}
                     value={creditNoteDate}
-                    onChange={(event) => setCreditNoteDate(event.target.value)}
+                    onChange={(event) => setCreditNoteDateChoice(nextCreditNoteDateChoice(event.target.value, today))}
                   />
                 </label>
               </div>
+              {backdatedWarning ? <p className="field-warning" role="alert">{backdatedWarning}</p> : null}
 
               {direction === 'inward' ? (
                 <>
@@ -841,7 +861,7 @@ export default function CreditNotesPage() {
                     setDirection('outward');
                     setSupplierNoteNumber('');
                     setSupplierNoteDate('');
-                    setCreditNoteDate(toIsoDate(new Date()));
+                    setCreditNoteDateChoice(null);
                   }}
                 >
                   Reset form
