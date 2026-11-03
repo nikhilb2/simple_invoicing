@@ -42,6 +42,7 @@ These show a made-up demo business.
 ### GST and billing
 
 - **Sales and Purchase Invoices** — Automatic inventory effects, plus cancel, restore and duplicate
+- **Quotations & Proforma Invoices** — Offers on their own number series with PDF and share links, converted to an invoice through the composer. No effect on stock, ledgers or returns until then
 - **Credit Notes** — Issue credit notes against invoices with linked ledger and stock reversals
 - **GSTR-1** — Validate a return and export it as JSON, CSV or PDF
 - **E-Way Bill JSON** — Check an invoice and generate the file for the portal's bulk upload (from the invoice preview's "..." menu)
@@ -279,6 +280,7 @@ All routes sit under `/api`. Full interactive docs are at `/docs` (Swagger UI) w
 | `/api/serials` | Serial-tracked units and code scanning |
 | `/api/invoices` | Sales and purchase invoices, dues, PDF and export |
 | `/api/credit-notes` | Credit notes |
+| `/api/quotations` | Quotations and proforma invoices |
 | `/api/payments` | Payments and receipts |
 | `/api/ledgers` | Ledgers, statements, day book, tax ledger and GSTR-1 |
 | `/api/invoice-series` | Invoice numbering series |

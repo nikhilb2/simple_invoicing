@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, localToday, localStartOfMonth } from './fixtures';
 
 test.describe('Ledger Statement', () => {
   test('shows period statement for a ledger', async ({ authedPage: page }) => {
@@ -32,10 +32,8 @@ test.describe('Ledger Statement', () => {
     await expect(toInput).toBeVisible();
 
     // Set date range
-    const today = new Date();
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    await fromInput.fill(startOfMonth.toISOString().split('T')[0]);
-    await toInput.fill(today.toISOString().split('T')[0]);
+    await fromInput.fill(localStartOfMonth());
+    await toInput.fill(localToday());
     await page.waitForTimeout(1_000);
   });
 
@@ -77,6 +75,13 @@ test.describe('Ledger Statement', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'invoice created');
 
+    // Creating an invoice pops the PDF preview, an aria-modal dialog whose
+    // overlay covers the sidebar — dismiss it before navigating by rail click.
+    const createdPreview = page.locator('.modal-panel--invoice-preview');
+    await expect(createdPreview).toBeVisible({ timeout: 10_000 });
+    await createdPreview.getByRole('button', { name: 'Close invoice preview' }).click();
+    await expect(createdPreview).not.toBeVisible();
+
     // 5. Navigate to ledger view page via the list
     await clickNavLink(page, '/ledgers');
     await page.waitForTimeout(500);
@@ -88,28 +93,28 @@ test.describe('Ledger Statement', () => {
     await expect(page.locator('h1')).toContainText(ledgerName, { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
     // Set date range covering today
-    const today = new Date();
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    await page.locator('#statement-from').fill(startOfMonth.toISOString().split('T')[0]);
-    await page.locator('#statement-to').fill(today.toISOString().split('T')[0]);
+    await page.locator('#statement-from').fill(localStartOfMonth());
+    await page.locator('#statement-to').fill(localToday());
     await page.waitForTimeout(1_000);
 
     // 6. Verify entry shows in the statement, then click View
-    const entryRow = page.locator('.invoice-row').filter({ hasText: /sales/i });
+    const entryRow = page.locator('.invoice-row').filter({ hasText: ledgerName });
     await expect(entryRow.first()).toBeVisible({ timeout: 10_000 });
     await entryRow.first().locator('button:has-text("View")').click();
 
-    // 7. Verify the invoice preview modal opens with the current PDF preview UI
+    // 7. The row carries no "Sales" label, so the preview title ("Invoice N", not
+    // "Purchase invoice N") is what proves this is the sales invoice.
+    // Verify the invoice preview modal opens with the current PDF preview UI
     const previewModal = page.locator('.modal-panel--invoice-preview');
     await expect(previewModal).toBeVisible({ timeout: 5_000 });
 
-    await expect(previewModal.locator('#invoice-preview-title')).toContainText('PDF invoice');
+    await expect(previewModal.locator('#invoice-preview-title')).toHaveText(/^Invoice \S+/);
     await expect(previewModal.getByRole('button', { name: 'Download invoice PDF' })).toBeVisible();
     await expect(previewModal.getByRole('button', { name: 'Email invoice' })).toBeVisible();
     await expect(previewModal.locator('iframe.invoice-pdf-viewer__frame')).toBeVisible();
 
     // Close the preview
-    await previewModal.locator('button:has-text("Close")').click();
+    await previewModal.getByRole('button', { name: 'Close invoice preview' }).click();
     await expect(previewModal).not.toBeVisible();
   });
 });

@@ -1,4 +1,18 @@
-from pydantic import BaseModel, EmailStr, Field
+from typing import Annotated
+
+from pydantic import AfterValidator, BaseModel, EmailStr, Field
+
+BCRYPT_MAX_BYTES = 72
+
+
+def _check_password_bytes(value: str) -> str:
+    # bcrypt ignores everything past 72 bytes, and a character can take up to 4.
+    if len(value.encode("utf-8")) > BCRYPT_MAX_BYTES:
+        raise ValueError(f"Password must be at most {BCRYPT_MAX_BYTES} bytes long")
+    return value
+
+
+NewPassword = Annotated[str, Field(min_length=8, max_length=128), AfterValidator(_check_password_bytes)]
 
 
 class Token(BaseModel):
@@ -21,7 +35,7 @@ class ChangePasswordRequest(BaseModel):
     # that is how such a user sets their first one. The route still demands it
     # whenever a password exists.
     current_password: str | None = None
-    new_password: str = Field(min_length=8, max_length=128)
+    new_password: NewPassword
 
 
 class ChangePasswordResponse(BaseModel):
@@ -50,13 +64,12 @@ class EmailRequest(BaseModel):
 
 class VerifyEmailRequest(BaseModel):
     token: str = Field(min_length=1, max_length=4096)
-    # The upper bound is for bcrypt, which silently ignores everything past 72 bytes.
-    new_password: str = Field(min_length=8, max_length=128)
+    new_password: NewPassword
 
 
 class ResetPasswordRequest(BaseModel):
     token: str = Field(min_length=1, max_length=4096)
-    new_password: str = Field(min_length=8, max_length=128)
+    new_password: NewPassword
 
 
 class OAuthExchangeRequest(BaseModel):

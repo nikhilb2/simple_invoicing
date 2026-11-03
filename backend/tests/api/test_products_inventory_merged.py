@@ -22,6 +22,34 @@ def _create_product(client: TestClient, sku: str, name: str, price: float = 99.0
 
 
 class TestProductsWithInventory:
+    @pytest.mark.parametrize(
+        "allow_decimal, quantity, status, expected_stock",
+        [(False, 2.5, 400, 10), (False, 3, 200, 3), (True, 2.5, 200, 2.5)],
+    )
+    def test_update_inventory_respects_whole_number_products(
+        self, client, allow_decimal, quantity, status, expected_stock
+    ):
+        response = client.post("/api/products/", json={
+            "sku": "WHOLE-STOCK",
+            "name": "Whole Stock",
+            "price": 99,
+            "initial_quantity": 10,
+            "allow_decimal": allow_decimal,
+        })
+        assert response.status_code == 200, response.text
+        product = response.json()
+
+        response = client.put(f"/api/products/{product['id']}/with-inventory", json={
+            "current_stock": quantity,
+        })
+        assert response.status_code == status, response.text
+        if status == 400:
+            assert response.json()["detail"] == "Quantity must be a whole number for this product"
+
+        listing = client.get("/api/products/with-inventory?search=Whole Stock")
+        assert listing.status_code == 200
+        assert listing.json()["items"][0]["current_stock"] == expected_stock
+
     def test_list_products_with_inventory(self, client):
         _create_product(client, "PI001", "Widget A", price=50, initial_quantity=10)
         _create_product(client, "PI002", "Widget B", price=75, initial_quantity=5)
@@ -169,6 +197,29 @@ class TestProductsWithInventory:
         res = client.put(f"/api/products/{p['id']}/with-inventory", json={"status": "active"})
         assert res.status_code == 200
         assert res.json()["status"] == "active"
+
+    @pytest.mark.parametrize("body", [{"unit": "   "}, {"status": "archived"}])
+    def test_update_rejects_blank_unit_and_unknown_status(self, client, body):
+        # Issue #667: the update route must reject a blank unit and an
+        # unknown status with 422 and leave the stored product untouched.
+        res = client.post("/api/products/", json={
+            "sku": "VAL1",
+            "name": "Validate Me",
+            "price": 99.0,
+            "gst_rate": 18.0,
+            "maintain_inventory": True,
+            "initial_quantity": 0,
+            "unit": "Pieces",
+        })
+        assert res.status_code == 200, res.text
+        p = res.json()
+
+        res = client.put(f"/api/products/{p['id']}/with-inventory", json=body)
+        assert res.status_code == 422
+
+        item = client.get("/api/products/with-inventory?search=Validate Me").json()["items"][0]
+        assert item["unit"] == "Pieces"
+        assert item["status"] == "active"
 
     def test_update_nonexistent_product(self, client):
         res = client.put("/api/products/99999/with-inventory", json={"name": "Ghost"})

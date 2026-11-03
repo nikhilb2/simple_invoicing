@@ -6,6 +6,7 @@ from src.models.product import Product
 from src.models.inventory import Inventory
 from src.models.product_serial import ProductSerial
 from src.models.invoice import Invoice, InvoiceItem
+from src.models.quotation import Quotation, QuotationItem
 from src.models.buyer import Buyer
 from src.models.ledger_address import LedgerAddress
 from src.models.company import CompanyProfile

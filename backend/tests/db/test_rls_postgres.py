@@ -115,6 +115,10 @@ def _seed_tenant(client, act_as, user, name: str, sku: str) -> dict:
     credit_note = iso._create_credit_note(client, ledger, invoice)
     share = iso._ok(client.post("/api/share/", json={"resource_type": "invoice", "resource_id": invoice["id"]}))
     iso._ok(client.post("/api/eway-bill/transporters", json={"transporter_name": f"{name} Transport", "is_default": True}))
+    iso._ok(client.post("/api/quotations/", json={
+        "ledger_id": ledger,
+        "items": [{"product_id": product, "quantity": 1, "unit_price": 100}],
+    }))
     return {
         "company": company,
         "ledger": ledger,
@@ -168,6 +172,7 @@ BUSINESS_TABLES = [
     "payment_invoice_allocations", "credit_notes", "credit_note_items",
     "credit_note_invoice_refs", "financial_years", "invoice_series", "share_links",
     "eway_bill_transporters",
+    "quotations", "quotation_items",
 ]
 
 

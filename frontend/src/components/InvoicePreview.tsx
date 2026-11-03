@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Copy, Download, FileJson, Mail, Printer, Share2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import type { EwayBillSettings, Invoice } from '../types/api';
@@ -183,6 +184,14 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
             <>
               {formatInvoiceDateLabel(invoice.invoice_date)}
               {invoice.due_date ? ` · Due ${formatInvoiceDateLabel(invoice.due_date)}` : ' · No due date'}
+              {invoice.source_quotation_number ? (
+                <>
+                  {' · Created from '}
+                  <Link to={`/quotations?search=${encodeURIComponent(invoice.source_quotation_number)}`}>
+                    {invoice.source_quotation_number}
+                  </Link>
+                </>
+              ) : null}
             </>
           }
           primary={{
