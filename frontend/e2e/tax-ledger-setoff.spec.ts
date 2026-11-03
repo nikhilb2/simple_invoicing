@@ -8,9 +8,9 @@ import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOpti
  *   - intrastate sale        CGST due 100, SGST due 100
  *   - intrastate purchase    CGST credit 50, SGST credit 50
  *   - interstate purchase    IGST credit 100
- * CGST/SGST credit clear their own head first; the IGST credit then pays the
- * 50 left on each. Spending the IGST credit before the CGST/SGST credit would
- * strand 50 of SGST due as cash. Cash payable must be 0 with nothing left over.
+ * IGST credit must be used up before CGST/SGST credit, and it goes first to
+ * what own-head credit cannot cover: here 50 each on CGST and SGST. Putting it
+ * all on CGST would leave 50 of SGST due as cash. Cash payable must be 0.
  *
  * The ledgers' GSTIN state codes are taken from the active company, so the
  * test holds whichever company an earlier spec left selected. A company with

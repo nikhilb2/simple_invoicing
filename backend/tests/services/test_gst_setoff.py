@@ -128,9 +128,9 @@ def test_issue_81_free_gst_billing_software_example():
 def _min_cash_by_brute_force(liab, cred):
     """Lowest cash over every allocation the rule allows.
 
-    Deliberately looser than the implementation: own-head-first is not forced,
-    only that IGST credit clears IGST first, CGST/SGST credit reaches IGST
-    once IGST credit is fully spent, and CGST and SGST never meet.
+    Deliberately looser than the implementation: only that IGST credit clears
+    IGST first, CGST/SGST credit is not used until IGST credit is fully spent,
+    and CGST and SGST credit never meet.
     """
     lc, ls, li = liab
     cc, cs, ci = cred
@@ -147,7 +147,8 @@ def _min_cash_by_brute_force(liab, cred):
                     continue
                 if ii + cc_i + ss_i > li:
                     continue
-                if (cc_i or ss_i) and ii + ic + is_ != ci:
+                # Circular 98/17/2019: no CGST/SGST credit until IGST is spent.
+                if (cc_c or ss_s or cc_i or ss_i) and ii + ic + is_ != ci:
                     continue
                 cash = (lc - ic - cc_c) + (ls - is_ - ss_s) + (li - ii - cc_i - ss_i)
                 best = cash if best is None else min(best, cash)
@@ -167,3 +168,35 @@ def test_no_legal_allocation_beats_the_result():
         assert_balanced(r)
         checked += 1
     assert checked == 4096
+
+
+def test_circular_98_example_carries_cgst_or_sgst_not_igst():
+    """Circular 98/17/2019: output I1000 C300 S300, credit I1300 C200 S200."""
+    r = run(out=(300, 300, 1000), inp=(200, 200, 1300))
+    assert r.igst.credit_carried_forward == 0
+    assert r.cgst.credit_carried_forward == 100  # Option 1 (tie-break)
+    assert r.sgst.credit_carried_forward == 0
+    assert [getattr(r, h).payable for h in HEADS] == [0, 0, 0]
+    assert_balanced(r)
+
+
+def test_igst_carry_only_when_cgst_and_sgst_credit_untouched():
+    for liab in product(range(5), repeat=3):
+        for cred in product(range(5), repeat=3):
+            r = run(out=liab, inp=cred)
+            if r.igst.credit_carried_forward > 0:
+                assert r.cgst.credit_carried_forward == cred[0], (liab, cred)
+                assert r.sgst.credit_carried_forward == cred[1], (liab, cred)
+
+
+def test_tie_breaks_are_pinned():
+    # IGST credit goes to CGST before SGST when own-head credit is equal.
+    r = run(out=(10, 10, 0), inp=(0, 0, 10))
+    assert (r.cgst.credit_used, r.sgst.credit_used) == (10, 0)
+    # Surplus CGST credit pays IGST before surplus SGST credit.
+    r = run(out=(0, 0, 10), inp=(10, 10, 0))
+    assert r.cgst.credit_carried_forward == 0
+    assert r.sgst.credit_carried_forward == 10
+    # IGST credit covers the head own credit cannot, so no cash is due.
+    r = run(out=(100, 100, 0), inp=(100, 0, 100))
+    assert r.cgst.payable == r.sgst.payable == 0
