@@ -323,6 +323,15 @@ def update_quotation(db: Session, quotation: Quotation, payload: QuotationUpdate
             detail=f"A {quotation.status} {document_label(quotation.document_type).lower()} cannot be edited",
         )
 
+    # An invoice cancelled earlier was for the offer as it stood then. Once the offer
+    # changes, restoring that invoice must not mark this quotation as converted, so the
+    # link ends here and the invoice comes back on its own.
+    db.query(Invoice).filter(
+        Invoice.source_quotation_id == quotation.id,
+        Invoice.company_id == company.id,
+        Invoice.status == "cancelled",
+    ).update({Invoice.source_quotation_id: None}, synchronize_session=False)
+
     quotation_date = payload.quotation_date or quotation.quotation_date
     valid_until = payload.valid_until if "valid_until" in payload.model_fields_set else quotation.valid_until
     if valid_until is not None and valid_until < quotation_date:
@@ -729,7 +738,8 @@ def lock_invoice(db: Session, invoice_id: int, company_id: int | None) -> Invoic
 def reopen_after_invoice_cancelled(quotation: Quotation | None) -> None:
     """The deal is back on the table: an accepted quote returns to accepted, else open.
 
-    The cancelled invoice keeps its link, so the history still shows it.
+    The cancelled invoice keeps its link, so the history still shows it, until the
+    quotation is next edited: see update_quotation.
     """
     if quotation is None or quotation.status != STATUS_CONVERTED:
         return

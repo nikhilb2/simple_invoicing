@@ -175,6 +175,22 @@ def test_editing_and_cancelling_one_invoice_cannot_deadlock(app_db, signed_in, a
     assert _stock(app_db, tenant["product"]) == stock_before
 
 
+def test_editing_a_reopened_quote_unlinks_its_cancelled_invoice_under_rls(app_db, signed_in):
+    client = TestClient(app)
+    tenant = _seed_company(client, signed_in, app_db, "alice@alpha.example", "Alpha Traders", "ALPHA-1")
+    quote, invoice = _quoted_invoice(client, tenant)
+    iso._ok(client.delete(f"/api/invoices/{invoice['id']}"))
+
+    iso._ok(client.put(f"/api/quotations/{quote['id']}", json={
+        "ledger_id": tenant["ledger"],
+        "items": [{"product_id": tenant["product"], "quantity": 5, "unit_price": 100}],
+    }))
+    assert _invoices_for(app_db, quote["id"]) == []
+
+    iso._ok(client.post(f"/api/invoices/{invoice['id']}/restore"))
+    assert _status_of(app_db, quote["id"]) == "open"
+
+
 def test_a_restore_that_waited_through_an_edit_leaves_the_quote_alone(app_db, signed_in):
     """The edit unlinked the invoice while the restore was queued behind the lock."""
     client = TestClient(app)

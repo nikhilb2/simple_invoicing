@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from quotation_helpers import (
+    GST_KA,
     convert,
     create_ledger,
     create_product,
@@ -43,6 +44,79 @@ def _edit(client, quote, ledger_id: int, product_id: int, quantity=9) -> dict:
         f"/api/quotations/{quote['id']}",
         json={"ledger_id": ledger_id, "items": [{"product_id": product_id, "quantity": quantity, "unit_price": 100}]},
     ))
+
+
+# ---------------------------------------------------------------------------
+# Restoring an invoice after its quotation was edited
+# ---------------------------------------------------------------------------
+
+def _reopened_and_edited(client, ledger, product):
+    """Convert, cancel the invoice so the quote reopens, then change the quote."""
+    quote = create_quotation(client, ledger["id"], product["id"])
+    invoice = ok(convert(client, quote["id"]))
+    ok(client.delete(f"/api/invoices/{invoice['id']}"))
+    other = create_ledger(client, "Customer Two", gst=GST_KA)
+    return _edit(client, quote, other["id"], product["id"]), invoice
+
+
+def test_restoring_after_the_quote_was_edited_leaves_the_quote_alone(setup):
+    client, ledger, product = setup
+    quote, invoice = _reopened_and_edited(client, ledger, product)
+
+    restored = ok(client.post(f"/api/invoices/{invoice['id']}/restore"))
+    assert restored["status"] == "active"
+    assert restored["source_quotation_number"] is None
+    assert restored["ledger_id"] == ledger["id"]
+    assert _stock(client, product["id"]) == 98
+
+    after = ok(client.get(f"/api/quotations/{quote['id']}"))
+    assert after["status"] == "open"
+    assert after["ledger_name"] == "Customer Two"
+    assert after["total_amount"] == quote["total_amount"]
+    assert after["converted_invoice_id"] is None
+    assert after["invoices"] == []
+
+
+def test_an_edited_quote_can_be_converted_while_its_old_invoice_is_live(setup):
+    client, ledger, product = setup
+    quote, old = _reopened_and_edited(client, ledger, product)
+    ok(client.post(f"/api/invoices/{old['id']}/restore"))
+
+    new = ok(convert(client, quote["id"]))
+    assert new["id"] != old["id"]
+    after = ok(client.get(f"/api/quotations/{quote['id']}"))
+    assert after["status"] == "converted"
+    assert [row["id"] for row in after["invoices"]] == [new["id"]]
+
+
+def test_editing_a_quote_unlinks_only_its_own_cancelled_invoices(setup, db_session):
+    client, ledger, product = setup
+    edited, invoice = _reopened_and_edited(client, ledger, product)
+    assert db_session.query(Invoice).filter(Invoice.id == invoice["id"]).one().source_quotation_id is None
+
+    other_quote = create_quotation(client, ledger["id"], product["id"])
+    other_invoice = ok(convert(client, other_quote["id"]))
+    ok(client.delete(f"/api/invoices/{other_invoice['id']}"))
+    _edit(client, edited, ledger["id"], product["id"], quantity=1)
+
+    db_session.expire_all()
+    still_linked = db_session.query(Invoice).filter(Invoice.id == other_invoice["id"]).one()
+    assert still_linked.source_quotation_id == other_quote["id"]
+
+
+@pytest.mark.parametrize("moves", [["accepted"], ["declined"], ["accepted", "open"]])
+def test_answering_the_quote_is_not_an_edit_so_a_restore_still_closes_it(setup, moves):
+    client, ledger, product = setup
+    quote = create_quotation(client, ledger["id"], product["id"])
+    invoice = ok(convert(client, quote["id"]))
+    ok(client.delete(f"/api/invoices/{invoice['id']}"))
+    for status in moves:
+        ok(client.post(f"/api/quotations/{quote['id']}/status", json={"status": status}))
+
+    ok(client.post(f"/api/invoices/{invoice['id']}/restore"))
+    after = ok(client.get(f"/api/quotations/{quote['id']}"))
+    assert after["status"] == "converted"
+    assert after["converted_invoice_id"] == invoice["id"]
 
 
 # ---------------------------------------------------------------------------

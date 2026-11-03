@@ -74,7 +74,9 @@ class Invoice(Base):
     company_additional_info = Column(Text, nullable=True)
     company_terms_text = Column(Text, nullable=True)
 
-    # The quotation or proforma this invoice was converted from, kept for life.
+    # The quotation or proforma this invoice was converted from. Kept for life, unless
+    # the invoice is cancelled and the quotation is then edited: it no longer describes
+    # this invoice, so update_quotation clears the link.
     source_quotation_id = Column(Integer, ForeignKey("quotations.id"), nullable=True)
 
     ledger = relationship("Buyer", back_populates="invoices")
