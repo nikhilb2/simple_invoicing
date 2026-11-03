@@ -604,9 +604,11 @@ def test_return_after_a_discount_cannot_credit_more_than_the_line(client, gst_se
     invoice = _sale(client, {"quantity": 10, "unit_price": 100, "gst_rate": 18})
     assert _note(client, invoice, note_type="discount", discount_amount_inclusive="118").status_code == 201
 
-    assert _note(client, invoice, quantity=10).status_code == 400
-    # The discount's placeholder quantity of 1 did not use up a unit.
-    assert _note(client, invoice, quantity=9).status_code == 201
+    # The discount's placeholder quantity of 1 did not use up a unit, so all ten
+    # can come back, for what is left of the line's 1,180.
+    returned = _note(client, invoice, quantity=10)
+    assert returned.status_code == 201
+    assert returned.json()["total_amount"] == 1062
 
 
 def test_same_line_twice_in_one_note_is_held_to_the_limits(client, gst_seller):

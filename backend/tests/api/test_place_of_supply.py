@@ -298,3 +298,111 @@ def test_new_financial_year_warns_when_its_label_breaks_the_number_rule(client, 
     )
     assert short_label.status_code in (200, 201), short_label.text
     assert short_label.json()["warnings"] == []
+
+
+def _gstin_99():
+    return next(g for g in (f"99AAAAA0000A1Z{c}" for c in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ") if is_valid_gstin_checksum(g))
+
+
+def _last_month():
+    last_day = india_today().replace(day=1) - timedelta(days=1)
+    return last_day, {"from_date": last_day.replace(day=1).isoformat(), "to_date": last_day.isoformat()}
+
+
+def _dated_payload(ledger, product, day, **extra):
+    return {**_invoice_payload(ledger, product, **extra), "invoice_date": day.isoformat()}
+
+
+def test_gstin_starting_99_with_no_place_of_supply_is_not_filed(client, seller):
+    day, period = _last_month()
+    ledger, product = _ledger_with_gst(client, "UN Body", _gstin_99()), _create_product(client, "S-1", "Widget", hsn_sac="84713010")
+    invoice = client.post("/api/invoices/", json=_dated_payload(ledger, product, day)).json()
+
+    validated = client.get("/api/ledgers/tax-ledger/gstr1/validate", params=period).json()
+    exported = client.get("/api/ledgers/tax-ledger/gstr1/export-json", params=period)
+
+    assert validated["status"] == "invalid"
+    assert any(e["field"] == "Place of Supply" and "isn't a state" in e["message"] for e in validated["errors"])
+    assert exported.status_code == 400
+
+    # Choosing a state is the way out.
+    fixed = client.put(f"/api/invoices/{invoice['id']}", json=_dated_payload(ledger, product, day, place_of_supply="10"))
+    assert fixed.status_code == 200, fixed.text
+    filed = client.get("/api/ledgers/tax-ledger/gstr1/export-json", params=period)
+    assert filed.status_code == 200, filed.text
+    assert filed.json()["b2b"][0]["inv"][0]["pos"] == "10"
+
+
+def _sale_of_ten(client, ledger, product):
+    payload = _invoice_payload(ledger, product)
+    payload["items"] = [_line(product, 10, 100)]
+    return client.post("/api/invoices/", json=payload).json()
+
+
+def _discount_note(client, invoice, amount):
+    return client.post("/api/credit-notes/", json={
+        **_note_payload([invoice]),
+        "credit_note_type": "discount",
+        "items": [{"invoice_id": invoice["id"], "invoice_item_id": invoice["items"][0]["id"], "discount_amount_inclusive": amount}],
+    })
+
+
+def _return_note(client, invoice, quantity):
+    return client.post("/api/credit-notes/", json={
+        **_note_payload([invoice]),
+        "items": [{"invoice_id": invoice["id"], "invoice_item_id": invoice["items"][0]["id"], "quantity": quantity}],
+    })
+
+
+def test_every_unit_can_come_back_after_a_discount_for_what_is_left_of_the_line(client, seller):
+    invoice = _sale_of_ten(client, _create_ledger(client, "Walk-in"), _create_product(client, "S-1", "Widget"))
+    assert _discount_note(client, invoice, 118).status_code == 201
+
+    response = _return_note(client, invoice, 10)
+
+    assert response.status_code == 201, response.text
+    note = response.json()
+    assert note["total_amount"] == 1062
+    assert note["taxable_amount"] == 900
+    assert (note["cgst_amount"], note["sgst_amount"]) == (81, 81)
+    assert note["items"][0]["quantity"] == 10
+
+
+def test_a_partial_return_is_not_cut_while_the_line_still_covers_it(client, seller):
+    invoice = _sale_of_ten(client, _create_ledger(client, "Walk-in"), _create_product(client, "S-1", "Widget"))
+    assert _discount_note(client, invoice, 118).status_code == 201
+
+    note = _return_note(client, invoice, 2).json()
+
+    assert note["total_amount"] == 236
+
+
+def test_goods_return_at_no_value_once_a_discount_used_up_the_line(client, seller):
+    day, period = _last_month()
+    ledger, product = _create_ledger(client, "Walk-in"), _create_product(client, "S-1", "Widget", hsn_sac="84713010")
+    payload = _dated_payload(ledger, product, day)
+    payload["items"] = [_line(product, 10, 100)]
+    invoice = client.post("/api/invoices/", json=payload).json()
+    for note in (_discount_note(client, invoice, 1180), _return_note(client, invoice, 10)):
+        assert note.status_code == 201, note.text
+    assert note.json()["total_amount"] == 0
+
+
+def test_zero_value_note_with_a_blank_hsn_does_not_block_the_month(client, seller, db_session):
+    from src.models.invoice import Invoice
+
+    day, period = _last_month()
+    ledger, product = _create_ledger(client, "Walk-in"), _create_product(client, "S-1", "Widget", hsn_sac="84713010")
+    payload = _dated_payload(ledger, product, day)
+    payload["items"] = [{**_line(product, 1, 100), "discount_type": "percentage", "discount_value": 100}]
+    invoice = client.post("/api/invoices/", json=payload).json()
+    note = client.post("/api/credit-notes/", json={**_note_payload([invoice]), "credit_note_date": day.isoformat()})
+    assert note.status_code == 201, note.text
+    db_session.query(Invoice).filter(Invoice.id == invoice["id"]).one().items[0].hsn_sac = None
+    db_session.commit()
+
+    exported = client.get("/api/ledgers/tax-ledger/gstr1/export-json", params=period)
+
+    assert exported.status_code == 200, exported.text
+    assert "cdnur" not in exported.json() and "cdnr" not in exported.json()
+    assert note.json()["credit_note_number"] in str(exported.json()["doc_issue"])

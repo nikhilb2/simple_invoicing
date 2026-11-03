@@ -7,12 +7,15 @@ using the shared TestClient + db_session fixtures from tests/conftest.py.
 
 from contextlib import contextmanager
 
+from datetime import date
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app_main import app
 from src.api.deps import get_current_user
 from src.models.company import CompanyProfile
+from src.models.financial_year import FinancialYear
 from src.models.invoice_series import InvoiceSeries
 from src.models.user import User, UserRole
 
@@ -243,3 +246,49 @@ def test_update_leaves_room_for_the_counter_to_grow(client, db_session):
     )
 
     assert response.status_code == 400
+
+
+def _year(db_session, year_id, label, *, active=False):
+    db_session.add(FinancialYear(
+        id=year_id, company_id=1, label=label, start_date=date(2000 + year_id, 4, 1),
+        end_date=date(2001 + year_id, 3, 31), is_active=active,
+    ))
+    db_session.commit()
+
+
+def _fy_format(db_session, series_id, prefix):
+    series = db_session.get(InvoiceSeries, series_id)
+    series.prefix, series.year_format = prefix, "FY"
+    db_session.commit()
+
+
+def test_warning_on_a_past_year_judges_the_format_its_numbers_take(client, db_session):
+    _seed_company(db_session, 1, "Company A").gst = "29AAAAA0000A1Z5"
+    _year(db_session, 25, "2025-26", active=True)
+    _year(db_session, 24, "A LONGER 2024-25")
+    _seed_series(db_session, 1, 1, financial_year_id=25)
+    _seed_series(db_session, 2, 1, financial_year_id=24, prefix="OLD")
+    _fy_format(db_session, 1, "INVOICE")
+    # The past year's own row is short, but its documents borrow the active format.
+    db_session.get(InvoiceSeries, 2).include_year = False
+    db_session.commit()
+
+    rows = {row["id"]: row for row in client.get("/api/invoice-series/").json()}
+
+    assert "GSTR-1" in (rows[2]["gstr1_warning"] or "")
+
+
+def test_active_format_is_refused_when_a_past_years_label_breaks_it(client, db_session):
+    _seed_company(db_session, 1, "Company A").gst = "29AAAAA0000A1Z5"
+    _year(db_session, 25, "2025-26", active=True)
+    _year(db_session, 24, "OLD YEAR 2024-25")
+    _seed_series(db_session, 1, 1, financial_year_id=25)
+    _seed_series(db_session, 2, 1, financial_year_id=24)
+
+    response = client.put(
+        "/api/invoice-series/1",
+        json={"prefix": "INV", "suffix": "", "include_year": True, "year_format": "FY", "separator": "-", "pad_digits": 3},
+    )
+
+    assert response.status_code == 400
+    assert "OLD YEAR 2024-25" in response.json()["detail"]

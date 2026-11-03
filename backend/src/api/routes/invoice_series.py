@@ -27,10 +27,24 @@ def _series_fy(db: Session, series: InvoiceSeries, company: CompanyProfile) -> O
     return get_active_fy(db, company_id=company.id)
 
 
+def _active_series(db: Session, series: InvoiceSeries, company: CompanyProfile) -> Optional[InvoiceSeries]:
+    """The active year's row for this voucher type, whose format every year's numbers take."""
+    active_fy = get_active_fy(db, company_id=company.id)
+    if active_fy is None:
+        return None
+    return db.query(InvoiceSeries).filter(
+        InvoiceSeries.company_id == company.id,
+        InvoiceSeries.voucher_type == series.voucher_type,
+        InvoiceSeries.financial_year_id == active_fy.id,
+    ).first()
+
+
 def _series_out(db: Session, series: InvoiceSeries, company: CompanyProfile) -> InvoiceSeriesOut:
     out = InvoiceSeriesOut.model_validate(series)
     if _reaches_gstr1(series, company):
-        out.gstr1_warning = gstr1_series_warning(series, _series_fy(db, series, company))
+        out.gstr1_warning = gstr1_series_warning(
+            series, _series_fy(db, series, company), _active_series(db, series, company),
+        )
     return out
 
 
@@ -81,6 +95,19 @@ def update_invoice_series(
     # still have its counter moved, so the check waits for a change of format.
     if _reaches_gstr1(series, active_company) and format_of(series) != format_before:
         problem = gstr1_number_problem(series, _series_fy(db, series, active_company))
+        # The active year's format is also what backdated documents are numbered
+        # with, under their own year's label.
+        active = _active_series(db, series, active_company)
+        if not problem and active is not None and active.id == series.id:
+            other_years = db.query(InvoiceSeries).filter(
+                InvoiceSeries.company_id == active_company.id,
+                InvoiceSeries.voucher_type == series.voucher_type,
+                InvoiceSeries.id != series.id,
+            ).all()
+            for other in other_years:
+                problem = gstr1_number_problem(other, _series_fy(db, other, active_company), series)
+                if problem:
+                    break
         if problem:
             db.rollback()
             raise HTTPException(status_code=400, detail=problem)

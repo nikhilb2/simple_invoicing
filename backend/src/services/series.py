@@ -38,11 +38,19 @@ def _format_number(
         return f"{series.prefix}{sep}{seq_str}{suffix}"
 
 
-def gstr1_number_problem(series: InvoiceSeries, fy: Optional[FinancialYear]) -> Optional[str]:
-    """Why this series would issue numbers GSTR-1 refuses, or None if it would not."""
+def gstr1_number_problem(
+    series: InvoiceSeries,
+    fy: Optional[FinancialYear],
+    format_series: Optional[InvoiceSeries] = None,
+) -> Optional[str]:
+    """Why this series would issue numbers GSTR-1 refuses, or None if it would not.
+
+    ``format_series`` is the row whose format the numbers take, when it isn't this
+    one: a document in a non-active year borrows the active year's format.
+    """
     # Numbers cannot be edited once issued, so leave room for the counter to
     # grow: a format that only just fits today breaks at the next digit.
-    sample = _format_number(series, max(series.next_sequence or 1, 9999), fy)
+    sample = _format_number(format_series or series, max(series.next_sequence or 1, 9999), fy)
     if is_gstr1_document_number(sample):
         return None
     return f"This format gives numbers like {sample}. GSTR-1 needs {GSTR1_DOCUMENT_NUMBER_RULE}."
@@ -52,25 +60,30 @@ def gstr1_number_problem(series: InvoiceSeries, fy: Optional[FinancialYear]) -> 
 GSTR1_SERIES_WARN_WITHIN = 100
 
 
-def gstr1_series_warning(series: InvoiceSeries, fy: Optional[FinancialYear]) -> Optional[str]:
+def gstr1_series_warning(
+    series: InvoiceSeries,
+    fy: Optional[FinancialYear],
+    format_series: Optional[InvoiceSeries] = None,
+) -> Optional[str]:
     """What to tell the user about a series running out of room, or None.
 
     Unlike gstr1_number_problem this judges the numbers the series will actually
     issue next, so a format that is fine for years stays quiet until it isn't.
     """
+    formatted_by = format_series or series
     seq = series.next_sequence or 1
-    number = _format_number(series, seq, fy)
+    number = _format_number(formatted_by, seq, fy)
     if not is_gstr1_document_number(number):
         return (
             f"The next number is {number}, which GSTR-1 will refuse. It needs {GSTR1_DOCUMENT_NUMBER_RULE}. "
             "Change the format before issuing more."
         )
-    digits = max(len(str(seq)), series.pad_digits)
+    digits = max(len(str(seq)), formatted_by.pad_digits)
     first_too_long = 10 ** (digits + GSTR1_DOCUMENT_NUMBER_MAX_LENGTH - len(number))
     left = first_too_long - seq
     if left > GSTR1_SERIES_WARN_WITHIN:
         return None
-    last_legal = _format_number(series, first_too_long - 1, fy)
+    last_legal = _format_number(formatted_by, first_too_long - 1, fy)
     return (
         f"{left} number{'' if left == 1 else 's'} left before GSTR-1 refuses this series: "
         f"{last_legal} is the last that fits {GSTR1_DOCUMENT_NUMBER_MAX_LENGTH} characters. "

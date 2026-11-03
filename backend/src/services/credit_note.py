@@ -77,6 +77,18 @@ def _change_inventory_quantity(
         raise HTTPException(status_code=400, detail=f"Insufficient inventory while {context}")
 
 
+def _credited_on_line(db: Session, invoice_item_id: int, company_id: int | None) -> Decimal:
+    """What active notes of every type have already credited against an invoice line."""
+    query = (
+        db.query(func.sum(CreditNoteItem.line_total))
+        .join(CreditNote, CreditNote.id == CreditNoteItem.credit_note_id)
+        .filter(CreditNoteItem.invoice_item_id == invoice_item_id, CreditNote.status == "active")
+    )
+    if company_id is not None:
+        query = query.filter(company_scope(CreditNote.company_id, company_id))
+    return Decimal(str(query.scalar() or 0))
+
+
 def _recompute_credit_status(invoice_id: int, db: Session, company_id: int | None = None) -> None:
     """Recalculate and persist credit_status for a single invoice."""
     invoice_query = db.query(Invoice).filter(Invoice.id == invoice_id)
@@ -375,6 +387,20 @@ def create_credit_note(
             tax = _pro_rata(line_tax, before, quantity, whole)
             half = _pro_rata(line_tax / Decimal("2"), before, quantity, whole)
             returned_before[ii.id] = before + quantity
+            # The goods can still come back when earlier notes have used up part of
+            # the line's value, as a discount note does. They bring back only what
+            # is left of it, and the note carries nothing once none is.
+            remaining = max(
+                _money(Decimal(str(ii.line_total or 0)))
+                - _credited_on_line(db, ii.id, company_id)
+                - new_credit.get(ii.id, Decimal("0")),
+                Decimal("0"),
+            )
+            share = taxable + tax
+            if share > remaining + Decimal("0.01"):
+                taxable = _money(taxable * remaining / share)
+                tax = remaining - taxable
+                half = _money(tax / Decimal("2"))
             unit_price = _money(taxable / quantity)
             line_total = _money(taxable + tax)
 
@@ -416,14 +442,7 @@ def create_credit_note(
     # halve evenly, which is rounding rather than an over-credit.
     tolerance = Decimal("0") if payload.credit_note_type == "discount" else Decimal("0.01")
     for item_id, credit in new_credit.items():
-        credited_query = (
-            db.query(func.sum(CreditNoteItem.line_total))
-            .join(CN, CN.id == CreditNoteItem.credit_note_id)
-            .filter(CreditNoteItem.invoice_item_id == item_id, CN.status == "active")
-        )
-        if company_id is not None:
-            credited_query = credited_query.filter(company_scope(CN.company_id, company_id))
-        credited = Decimal(str(credited_query.scalar() or 0))
+        credited = _credited_on_line(db, item_id, company_id)
         limit = _money(Decimal(str(invoice_item_map[item_id].line_total or 0)))
         if credited + credit > limit + tolerance:
             raise HTTPException(

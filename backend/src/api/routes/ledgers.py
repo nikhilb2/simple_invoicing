@@ -39,7 +39,7 @@ from src.services.invoice_payments import auto_allocate_outstanding_invoices, bu
 from src.services.pdf_templates import _build_day_book_html, _build_statement_html  # noqa: F401
 from src.services.pdf_templates.builders import _e
 from src.services.share_documents import get_ledger as get_shared_ledger, render_statement_pdf
-from src.services.gst_tax_service import b2cl_limit, gstr1_section, invoice_filing_pos, is_b2cl_invoice, is_interstate_pos
+from src.services.gst_tax_service import b2cl_limit, gstr1_section, invoice_filing_pos, is_b2cl_invoice, is_interstate_pos, needs_place_of_supply
 from src.services.uqc import hsn_uqc
 from src.core.validation import GSTIN_REGEX, GSTR1_DOCUMENT_NUMBER_RULE, HSN_SAC_REGEX, is_gst_rate_slab, is_gstr1_document_number
 from src.services.company_access import company_scope, legacy_default_company
@@ -1986,6 +1986,14 @@ def _is_zero_value_invoice(inv: Invoice) -> bool:
     return all(float(amount or 0) == 0 for amount in amounts)
 
 
+def _is_zero_value_note(cn: CreditNote) -> bool:
+    """A note with nothing left to credit. Like a zero-value invoice, only Table 13 sees it."""
+    return all(
+        float(amount or 0) == 0
+        for amount in (cn.taxable_amount, cn.cgst_amount, cn.sgst_amount, cn.igst_amount, cn.total_amount)
+    )
+
+
 def _filed_sales(invoices: list[Invoice]) -> list[Invoice]:
     """The sales that carry a value into the GSTR-1 tables."""
     return [inv for inv in invoices if inv.voucher_type == "sales" and not _is_zero_value_invoice(inv)]
@@ -2009,14 +2017,20 @@ def _invoice_filing_errors(inv: Invoice, company_gstin: str | None, company_pos:
             f"Item tax sum ({total_item_tax:.2f}) ≠ invoice tax total ({expected_tax:.2f})",
         ))
 
-    heads_error = _tax_heads_error(
-        float(inv.igst_amount or 0), float(inv.cgst_amount or 0), float(inv.sgst_amount or 0),
-        invoice_filing_pos(inv, company_pos), company_pos,
-    )
-    if heads_error:
-        errors.append(("Place of Supply", heads_error))
-
     ctin = (inv.ledger_gst or "").strip().upper()
+    if needs_place_of_supply(inv):
+        errors.append((
+            "Place of Supply",
+            f"The buyer's GSTIN {ctin} starts with a code that isn't a state. Edit the invoice and choose a place of supply",
+        ))
+    else:
+        heads_error = _tax_heads_error(
+            float(inv.igst_amount or 0), float(inv.cgst_amount or 0), float(inv.sgst_amount or 0),
+            invoice_filing_pos(inv, company_pos), company_pos,
+        )
+        if heads_error:
+            errors.append(("Place of Supply", heads_error))
+
     if ctin and ctin == (company_gstin or "").strip().upper():
         errors.append(("GSTIN", "The buyer's GSTIN is your own, and a sale to yourself is not a B2B supply"))
     return errors
@@ -2040,6 +2054,10 @@ def _note_filing_errors(cn: CreditNote, invoices_by_id: dict[int, Invoice], comp
     if not is_gstr1_document_number(cn_num):
         errors.append(("Credit Note Number", f"GSTR-1 needs a number of {GSTR1_DOCUMENT_NUMBER_RULE}"))
 
+    # Only its number reaches the file, so nothing else on it can block one.
+    if _is_zero_value_note(cn):
+        return errors
+
     for item in cn.items:
         hsn_error = _validate_hsn(_note_item_hsn(item))
         if hsn_error:
@@ -2059,6 +2077,16 @@ def _note_filing_errors(cn: CreditNote, invoices_by_id: dict[int, Invoice], comp
         ctin = ((original.ledger_gst if original else None) or "").strip().upper()
         if ctin and not GSTIN_REGEX.fullmatch(ctin):
             errors.append(("GSTIN", f"Invoice {original.invoice_number} has an invalid buyer GSTIN: {ctin}"))
+
+    without_state = [inv for inv in originals.values() if inv and needs_place_of_supply(inv)]
+    if without_state:
+        errors.append((
+            "Place of Supply",
+            f"Invoice {without_state[0].invoice_number} has no place of supply, and its buyer's GSTIN starts "
+            "with a code that isn't a state. Cancel this note, edit the invoice to choose one, and raise the "
+            "note again with the same date",
+        ))
+        return errors
 
     _, _, pos = _note_section(cn, invoices_by_id, company_pos)
     heads_error = _tax_heads_error(
@@ -2892,7 +2920,8 @@ def gstr1_export_json(
         nt_dt = cn.credit_note_date.strftime("%d-%m-%Y") if cn.credit_note_date else ""
         val = round(float(cn.total_amount or 0), 2)
 
-        if section == "B2CS":  # Netted into its row by _b2cs_rows.
+        # Netted into its row by _b2cs_rows, or nothing to credit at all.
+        if section == "B2CS" or _is_zero_value_note(cn):
             continue
         if not float(cn.total_amount or 0):  # Like a zero-value invoice: Table 13 only.
             continue

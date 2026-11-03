@@ -91,7 +91,14 @@ def invoice_filing_pos(invoice: Invoice, company_pos: str) -> str:
     if invoice.place_of_supply:
         return invoice.place_of_supply
     # Sales from before the column: tax was decided by the two GSTINs.
-    return _state_code(invoice.ledger_gst) or company_pos
+    buyer_state = _state_code(invoice.ledger_gst)
+    return buyer_state if is_place_of_supply(buyer_state) else company_pos
+
+
+def needs_place_of_supply(invoice: Invoice) -> bool:
+    """Whether a sale has no state to file under: its buyer's GSTIN starts 99 and nobody chose one."""
+    buyer_state = _state_code(invoice.ledger_gst)
+    return not invoice.place_of_supply and bool(buyer_state) and not is_place_of_supply(buyer_state)
 
 
 def is_interstate_pos(pos: str, company_pos: str) -> bool:
