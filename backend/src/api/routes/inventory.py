@@ -117,6 +117,7 @@ def adjust_inventory(
 @router.get("/", response_model=PaginatedInventoryOut)
 def list_inventory(
     search: str = Query(""),
+    maintain_inventory: bool | None = Query(None),
     sort_by: Literal["name", "quantity", "date_added", "last_sold"] = Query("name"),
     sort_order: Literal["asc", "desc"] = Query("asc"),
     page: int = Query(1, ge=1),
@@ -154,6 +155,9 @@ def list_inventory(
         .filter(Product.company_id == active_company.id)
     )
 
+    if maintain_inventory is not None:
+        query = query.filter(Product.maintain_inventory.is_(maintain_inventory))
+
     if search.strip():
         term = f"%{search.strip()}%"
         query = query.filter(
@@ -186,6 +190,7 @@ def list_inventory(
             allow_decimal=bool(product.allow_decimal),
             price=float(product.price),
             maintain_inventory=bool(product.maintain_inventory),
+            reorder_level=float(product.reorder_level or 0),
             track_serials=bool(product.track_serials),
             quantity=float(quantity),
             date_added=product.created_at,

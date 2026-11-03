@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+import pytest
+
 from src.models.bom import BillOfMaterial
 from src.models.company import CompanyProfile
 from src.models.inventory import Inventory
@@ -96,6 +98,54 @@ def test_inventory_list_marks_untracked_products(client):
     assert item["quantity"] == 0
     assert item["unit"] == "Pieces"
     assert item["allow_decimal"] is False
+
+
+@pytest.mark.parametrize("maintained,expected_total,first_name", [
+    (None, 3, "A Service"),
+    (True, 2, "B Stock"),
+    (False, 1, "A Service"),
+])
+def test_inventory_tracking_filter_applies_before_pagination(client, maintained, expected_total, first_name):
+    for index, (name, tracked) in enumerate([("A Service", False), ("B Stock", True), ("C Stock", True)]):
+        created = client.post("/api/products/", json={
+            "sku": f"FILTER-{index}", "name": name, "price": 10, "gst_rate": 0,
+            "maintain_inventory": tracked,
+        })
+        assert created.status_code == 200, created.text
+
+    params = {"page_size": 1, "sort_by": "name"}
+    if maintained is not None:
+        params["maintain_inventory"] = maintained
+    response = client.get("/api/inventory/", params=params)
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["total"] == result["total_pages"] == expected_total
+    assert [row["product_name"] for row in result["items"]] == [first_name]
+    if maintained is not None:
+        assert result["items"][0]["maintain_inventory"] is maintained
+
+
+def test_inventory_list_returns_each_products_reorder_level(client):
+    created = client.post("/api/products/", json={
+        "sku": "REORDER-50", "name": "Custom Reorder", "price": 10, "gst_rate": 0,
+        "reorder_level": 50,
+    })
+    assert created.status_code == 200, created.text
+    adjusted = client.post("/api/inventory/adjust", json={
+        "product_id": created.json()["id"], "quantity": 20,
+    })
+    assert adjusted.status_code == 200, adjusted.text
+
+    response = client.get("/api/inventory/", params={"search": "REORDER-50"})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["items"][0]["reorder_level"] == 50
+    assert response.json()["items"][0]["quantity"] == 20
+    metrics = client.get("/api/dashboard/metrics")
+    assert metrics.status_code == 200, metrics.text
+    assert metrics.json()["inventory"]["low_stock_count"] == 1
+    assert metrics.json()["inventory"]["out_of_stock_count"] == 0
 
 
 def test_adjust_inventory_rejects_untracked_product(client):
