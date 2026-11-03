@@ -856,6 +856,8 @@ export default function CompanyPage() {
         // First company for this user: the creator becomes its admin and the
         // new company becomes their active one.
         const created = await api.post<CompanyProfile>('/company/companies', payload);
+        setNoCompany(false);
+        setCompanyId(created.data.id);
         localStorage.setItem('active_company_id', String(created.data.id));
         // The creator's role only exists now; without this they would look like a
         // non-admin until the next page load.
