@@ -11,7 +11,7 @@ from src.models.invoice_series import InvoiceSeries
 from src.models.user import User, UserRole
 from src.schemas.financial_year import FinancialYearCreate, FinancialYearOut
 from src.services.financial_year import activate_fy, get_active_fy
-from src.services.series import gstr1_number_problem
+from src.services.series import gstr1_series_warning
 
 router = APIRouter()
 
@@ -129,7 +129,10 @@ def create_financial_year(
         db.flush()  # get fy.id before committing
         _seed_series_for_fy(db, fy.id, active_company.id)
         db.flush()
-        # A series that prints the year label takes on this new label.
+        # A series that prints the year label takes on this new label. Nobody can
+        # edit a generated label, and a year has to be there to work in, so this
+        # warns rather than refuses. Settings shows the same warning on the series.
+        warnings: list[str] = []
         if (active_company.gst or "").strip():
             for series in db.query(InvoiceSeries).filter(
                 InvoiceSeries.financial_year_id == fy.id,
@@ -137,10 +140,9 @@ def create_financial_year(
                 InvoiceSeries.year_format == "FY",
                 InvoiceSeries.include_year.is_(True),
             ):
-                problem = gstr1_number_problem(series, fy)
-                if problem:
-                    db.rollback()
-                    raise HTTPException(status_code=400, detail=f"Financial year label '{payload.label}': {problem}")
+                warning = gstr1_series_warning(series, fy)
+                if warning:
+                    warnings.append(f"{series.voucher_type.replace('_', ' ').capitalize()} series: {warning}")
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -154,7 +156,9 @@ def create_financial_year(
             )
         raise
     db.refresh(fy)
-    return fy
+    created = FinancialYearOut.model_validate(fy)
+    created.warnings = warnings
+    return created
 
 
 @router.put("/{fy_id}/activate", response_model=FinancialYearOut)

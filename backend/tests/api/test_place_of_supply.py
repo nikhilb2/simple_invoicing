@@ -273,7 +273,7 @@ def test_credit_note_cannot_span_b2cl_and_b2cs(client, seller):
     assert "different GSTR-1 tables" in response.json()["detail"]
 
 
-def test_new_financial_year_label_is_held_to_the_number_rule(client, seller, db_session):
+def test_new_financial_year_warns_when_its_label_breaks_the_number_rule(client, seller, db_session):
     from src.models.financial_year import FinancialYear
     from src.models.invoice_series import InvoiceSeries
 
@@ -289,11 +289,12 @@ def test_new_financial_year_label_is_held_to_the_number_rule(client, seller, db_
         "/api/financial-years/",
         json={"label": "A VERY LONG LABEL 2031-32", "start_date": "2031-04-01", "end_date": "2032-03-31"},
     )
-    assert long_label.status_code == 400
-    assert "GSTR-1" in long_label.json()["detail"]
+    assert long_label.status_code == 201, long_label.text
+    assert "GSTR-1" in long_label.json()["warnings"][0]
 
     short_label = client.post(
         "/api/financial-years/",
-        json={"label": "2031-32", "start_date": "2031-04-01", "end_date": "2032-03-31"},
+        json={"label": "2032-33", "start_date": "2032-04-01", "end_date": "2033-03-31"},
     )
     assert short_label.status_code in (200, 201), short_label.text
+    assert short_label.json()["warnings"] == []

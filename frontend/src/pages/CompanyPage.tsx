@@ -613,6 +613,7 @@ function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLEl
                 {rowSuccess[s.id] && <span style={{ color: 'var(--color-success)', fontSize: '0.875rem' }}>{rowSuccess[s.id]}</span>}
                 {rowError[s.id] && <span style={{ color: 'var(--color-danger)', fontSize: '0.875rem' }}>{rowError[s.id]}</span>}
               </div>
+              {s.gstr1_warning ? <p className="field-warning" role="alert">{s.gstr1_warning}</p> : null}
             </div>
           );
         })}

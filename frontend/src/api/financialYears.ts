@@ -7,6 +7,8 @@ export interface FinancialYear {
   end_date: string;
   is_active: boolean;
   created_at?: string | null;
+  /** Only on creating a year: series its new label pushes over the GSTR-1 number rule. */
+  warnings?: string[];
 }
 
 export async function getFinancialYears(): Promise<FinancialYear[]> {

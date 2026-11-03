@@ -840,6 +840,8 @@ export type InvoiceSeries = {
   next_sequence: number;
   pad_digits: 2 | 3 | 4;
   created_at: string | null;
+  /** Set when GSTR-1 will soon refuse, or already refuses, this series' numbers. */
+  gstr1_warning?: string | null;
 };
 
 export type InvoiceSeriesUpdate = {

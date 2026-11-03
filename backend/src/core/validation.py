@@ -16,6 +16,7 @@ GST_RATE_SLABS = (0.0, 0.1, 0.25, 1.0, 1.5, 3.0, 5.0, 6.0, 7.5, 12.0, 18.0, 28.0
 # GSTR-1 takes invoice and note numbers of at most 16 characters, made of
 # letters, digits, "-" and "/" (RET191115). One bad number rejects the whole file.
 GSTR1_DOCUMENT_NUMBER_REGEX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9/-]{0,15}$")
+GSTR1_DOCUMENT_NUMBER_MAX_LENGTH = 16
 GSTR1_DOCUMENT_NUMBER_RULE = 'at most 16 characters, starting with a letter or digit and using only letters, digits, "-" and "/"'
 
 # GST state codes, as they appear at the start of a GSTIN.

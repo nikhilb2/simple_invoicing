@@ -10,6 +10,9 @@ class FinancialYearOut(BaseModel):
     end_date: date
     is_active: bool
     created_at: Optional[datetime] = None
+    # Set only by creating a year, for number series its new label pushes over
+    # the GSTR-1 number rule. The year is created either way.
+    warnings: list[str] = []
 
     class Config:
         from_attributes = True

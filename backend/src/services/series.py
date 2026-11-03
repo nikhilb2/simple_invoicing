@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 
 from src.core.config import settings
 from src.models.financial_year import FinancialYear
-from src.core.validation import GSTR1_DOCUMENT_NUMBER_RULE, is_gstr1_document_number
+from src.core.validation import (
+    GSTR1_DOCUMENT_NUMBER_MAX_LENGTH,
+    GSTR1_DOCUMENT_NUMBER_RULE,
+    is_gstr1_document_number,
+)
 from src.models.invoice_series import InvoiceSeries
 from src.services.company_access import company_scope
 
@@ -42,6 +46,36 @@ def gstr1_number_problem(series: InvoiceSeries, fy: Optional[FinancialYear]) -> 
     if is_gstr1_document_number(sample):
         return None
     return f"This format gives numbers like {sample}. GSTR-1 needs {GSTR1_DOCUMENT_NUMBER_RULE}."
+
+
+# How close the counter gets to a number GSTR-1 refuses before settings says so.
+GSTR1_SERIES_WARN_WITHIN = 100
+
+
+def gstr1_series_warning(series: InvoiceSeries, fy: Optional[FinancialYear]) -> Optional[str]:
+    """What to tell the user about a series running out of room, or None.
+
+    Unlike gstr1_number_problem this judges the numbers the series will actually
+    issue next, so a format that is fine for years stays quiet until it isn't.
+    """
+    seq = series.next_sequence or 1
+    number = _format_number(series, seq, fy)
+    if not is_gstr1_document_number(number):
+        return (
+            f"The next number is {number}, which GSTR-1 will refuse. It needs {GSTR1_DOCUMENT_NUMBER_RULE}. "
+            "Change the format before issuing more."
+        )
+    digits = max(len(str(seq)), series.pad_digits)
+    first_too_long = 10 ** (digits + GSTR1_DOCUMENT_NUMBER_MAX_LENGTH - len(number))
+    left = first_too_long - seq
+    if left > GSTR1_SERIES_WARN_WITHIN:
+        return None
+    last_legal = _format_number(series, first_too_long - 1, fy)
+    return (
+        f"{left} number{'' if left == 1 else 's'} left before GSTR-1 refuses this series: "
+        f"{last_legal} is the last that fits {GSTR1_DOCUMENT_NUMBER_MAX_LENGTH} characters. "
+        "Shorten the format before then."
+    )
 
 
 def _number_taken(db: Session, voucher_type: str, number: str, company_id: Optional[int]) -> bool:
