@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, searchAllFY } from './fixtures';
 
 /**
  * Helper: create a product (with stock) + ledger, navigate to /invoices, and
@@ -49,8 +49,8 @@ async function openInvoiceFeed(page: Parameters<typeof selectComboboxOption>[0])
   await expect(page.locator('h1')).toContainText('Invoice Feed', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
   // Keep feed tests independent from FY/view toggles mutated by other tests.
-  await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Search all FY' }).locator('input').check();
-  await page.getByRole('button', { name: 'Card' }).click();
+  await searchAllFY(page);
+  await page.getByRole('tab', { name: 'Card' }).click();
 }
 
 test.describe('Invoice cancellation', () => {

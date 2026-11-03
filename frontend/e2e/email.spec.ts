@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, searchAllFY } from './fixtures';
 
 const LEDGER_EMAIL = 'buyer@example.com';
 const EXPECT_TIMEOUT_MS = Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '2000');
@@ -181,8 +181,8 @@ test.describe('Send Email Modal', () => {
       // Open preview from the invoice feed view
       await page.goto('/invoices-view');
       await expect(page.locator('h1')).toContainText('Invoice Feed', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-      await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Search all FY' }).locator('input').check();
-      await page.getByRole('button', { name: 'Card' }).click();
+      await searchAllFY(page);
+      await page.getByRole('tab', { name: 'Card' }).click();
       const invoiceCard = page.locator('.invoice-compact-card', { hasText: ledgerName }).first();
       await expect(invoiceCard).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
       await invoiceCard.locator('button[title="Preview"]').click();
@@ -196,7 +196,7 @@ test.describe('Send Email Modal', () => {
     test('Email Invoice button opens modal with correct title', async ({ authedPage: page }) => {
       const { preview } = await seedAndOpenInvoicePreview(page);
 
-      await preview.locator('button:has-text("Email Invoice")').click();
+      await preview.getByRole('button', { name: 'Email invoice' }).click();
 
       const emailModal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
       await expect(emailModal).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
@@ -210,7 +210,7 @@ test.describe('Send Email Modal', () => {
     test('Cancel closes the email modal, leaving invoice preview open', async ({ authedPage: page }) => {
       const { preview } = await seedAndOpenInvoicePreview(page);
 
-      await preview.locator('button:has-text("Email Invoice")').click();
+      await preview.getByRole('button', { name: 'Email invoice' }).click();
       const emailModal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
       await expect(emailModal).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
 
@@ -257,6 +257,13 @@ test.describe('Send Email Modal', () => {
       await page.click('button:has-text("Create invoice")');
       await expectSuccess(page, 'invoice created');
 
+      // Creating an invoice pops the PDF preview, an aria-modal dialog whose
+      // overlay covers the sidebar — dismiss it before navigating by rail click.
+      const createdPreview = page.locator('.modal-panel--invoice-preview');
+      await expect(createdPreview).toBeVisible({ timeout: 10_000 });
+      await createdPreview.getByRole('button', { name: 'Close invoice preview' }).click();
+      await expect(createdPreview).not.toBeVisible();
+
       // Navigate to ledger view
       await clickNavLink(page, '/ledgers');
       await page.waitForTimeout(500);
@@ -272,7 +279,7 @@ test.describe('Send Email Modal', () => {
       const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
       await page.locator('#statement-from').fill(startOfMonth.toISOString().split('T')[0]);
       await page.locator('#statement-to').fill(today.toISOString().split('T')[0]);
-      await expect(page.locator('.invoice-row').filter({ hasText: 'Sales' }).first()).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
+      await expect(page.locator('.invoice-row').filter({ hasText: ledgerName }).first()).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
 
       // Open statement preview — button only shows when entries exist
       await page.click('button:has-text("Preview / PDF")');
@@ -285,7 +292,7 @@ test.describe('Send Email Modal', () => {
     test('Email Statement button opens modal with correct title', async ({ authedPage: page }) => {
       const statementPreview = await seedAndOpenStatementPreview(page);
 
-      await statementPreview.locator('button:has-text("Email Statement")').click();
+      await statementPreview.getByRole('button', { name: 'Email statement' }).click();
 
       const emailModal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
       await expect(emailModal).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
@@ -302,7 +309,7 @@ test.describe('Send Email Modal', () => {
     test('Cancel closes the email modal leaving statement preview open', async ({ authedPage: page }) => {
       const statementPreview = await seedAndOpenStatementPreview(page);
 
-      await statementPreview.locator('button:has-text("Email Statement")').click();
+      await statementPreview.getByRole('button', { name: 'Email statement' }).click();
       const emailModal = page.locator('[role="dialog"][aria-labelledby="send-email-title"]');
       await expect(emailModal).toBeVisible({ timeout: EXPECT_TIMEOUT_MS });
 

@@ -144,7 +144,7 @@ test.describe('Share link', () => {
     await expect(preview).toBeVisible({ timeout: 10_000 });
 
     await captureWindowOpen(page);
-    await preview.getByRole('button', { name: 'Share invoice' }).click();
+    await preview.getByRole('button', { name: 'Share a link to this invoice' }).click();
 
     const dialog = page.locator('.modal-panel', { has: page.locator('#share-modal-title') });
     await expect(dialog).toBeVisible({ timeout: 10_000 });

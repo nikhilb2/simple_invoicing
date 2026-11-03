@@ -75,7 +75,9 @@ test.describe('Ledgers CRUD', () => {
 
     await expect(page.locator('h1')).toContainText('Edit ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await expect(page.locator('#ledger-opening-balance')).toHaveValue('250');
-    await page.fill('#ledger-opening-balance', '-125');
+    // The amount field takes a magnitude only; the sign lives in the Debit/Credit selector.
+    await page.fill('#ledger-opening-balance', '125');
+    await page.selectOption('#ledger-opening-balance-side', 'credit');
     await page.click('button:has-text("Update ledger")');
 
     await expect(page.locator('h1')).toContainText('Ledger master', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
@@ -91,7 +93,8 @@ test.describe('Ledgers CRUD', () => {
     await expect(page.locator('.invoice-row', { hasText: 'Opening Balance' }).first()).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await page.click('button:has-text("Edit Ledger")');
     await expect(page.locator('h1')).toContainText('Edit ledger', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
-    await expect(page.locator('#ledger-opening-balance')).toHaveValue('-125');
+    await expect(page.locator('#ledger-opening-balance')).toHaveValue('125');
+    await expect(page.locator('#ledger-opening-balance-side')).toHaveValue('credit');
   });
 
   test('edits an existing ledger via edit page', async ({ authedPage: page }) => {

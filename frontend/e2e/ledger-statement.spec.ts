@@ -77,6 +77,13 @@ test.describe('Ledger Statement', () => {
     await page.click('button:has-text("Create invoice")');
     await expectSuccess(page, 'invoice created');
 
+    // Creating an invoice pops the PDF preview, an aria-modal dialog whose
+    // overlay covers the sidebar — dismiss it before navigating by rail click.
+    const createdPreview = page.locator('.modal-panel--invoice-preview');
+    await expect(createdPreview).toBeVisible({ timeout: 10_000 });
+    await createdPreview.getByRole('button', { name: 'Close invoice preview' }).click();
+    await expect(createdPreview).not.toBeVisible();
+
     // 5. Navigate to ledger view page via the list
     await clickNavLink(page, '/ledgers');
     await page.waitForTimeout(500);
@@ -95,7 +102,7 @@ test.describe('Ledger Statement', () => {
     await page.waitForTimeout(1_000);
 
     // 6. Verify entry shows in the statement, then click View
-    const entryRow = page.locator('.invoice-row').filter({ hasText: /sales/i });
+    const entryRow = page.locator('.invoice-row').filter({ hasText: ledgerName });
     await expect(entryRow.first()).toBeVisible({ timeout: 10_000 });
     await entryRow.first().locator('button:has-text("View")').click();
 
@@ -103,13 +110,13 @@ test.describe('Ledger Statement', () => {
     const previewModal = page.locator('.modal-panel--invoice-preview');
     await expect(previewModal).toBeVisible({ timeout: 5_000 });
 
-    await expect(previewModal.locator('#invoice-preview-title')).toContainText('PDF invoice');
+    await expect(previewModal.locator('#invoice-preview-title')).toHaveText(/^(Purchase )?[Ii]nvoice \S+/);
     await expect(previewModal.getByRole('button', { name: 'Download invoice PDF' })).toBeVisible();
     await expect(previewModal.getByRole('button', { name: 'Email invoice' })).toBeVisible();
     await expect(previewModal.locator('iframe.invoice-pdf-viewer__frame')).toBeVisible();
 
     // Close the preview
-    await previewModal.locator('button:has-text("Close")').click();
+    await previewModal.getByRole('button', { name: 'Close invoice preview' }).click();
     await expect(previewModal).not.toBeVisible();
   });
 });

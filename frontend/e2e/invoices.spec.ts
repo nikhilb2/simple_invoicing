@@ -1,4 +1,4 @@
-import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory } from './fixtures';
+import { test, expect, expectSuccess, uniqueSku, uniqueGstin, selectComboboxOption, clickNavLink, createProduct, adjustInventory, searchAllFY, localToday } from './fixtures';
 
 test.describe('Invoices', () => {
   async function openInvoiceFeed(page: import('@playwright/test').Page) {
@@ -10,11 +10,8 @@ test.describe('Invoices', () => {
     if (await noFYButton.isVisible()) {
       await noFYButton.click();
     } else {
-      // Normal state: check the "Search all FY" checkbox
-      const checkbox = page.locator('label.invoice-feed-view__checkbox', { hasText: 'Search all FY' }).locator('input');
-      if (await checkbox.isVisible()) {
-        await checkbox.check();
-      }
+      // Normal state: tick "Search all FY" (inside the collapsed Filters panel)
+      await searchAllFY(page);
     }
     
     // Wait for the feed to load
@@ -127,7 +124,7 @@ test.describe('Invoices', () => {
 
     await selectComboboxOption(page, 'modal-stock-product', sku);
     await modal.locator('#modal-stock-adjustment').fill('7');
-    await modal.getByRole('button', { name: 'Update stock' }).click();
+    await modal.getByRole('button', { name: 'Update stock', exact: true }).click();
 
     await expectSuccess(page, 'Stock updated successfully.');
     await expect(modal).toHaveCount(0);
@@ -315,7 +312,7 @@ test.describe('Invoices', () => {
     await page.goto('/invoices');
     const dateInput = page.locator('#invoice-date');
     const resetValue = await dateInput.inputValue();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localToday();
     expect(resetValue).toBe(today);
   });
 
@@ -325,7 +322,7 @@ test.describe('Invoices', () => {
 
     const dateInput = page.locator('#invoice-date');
     const value = await dateInput.inputValue();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localToday();
     expect(value).toBe(today);
   });
 
@@ -334,7 +331,7 @@ test.describe('Invoices', () => {
     await page.fill('.invoice-feed-view__search', 'ZZZZNONEXISTENT999');
     await page.waitForTimeout(500);
 
-    await expect(page.locator('.empty-state')).toContainText('No invoices match your search.');
+    await expect(page.locator('.empty-state')).toContainText('No invoices match “ZZZZNONEXISTENT999”.');
   });
 
   test('shows friendly empty state with CTA when no invoices exist', async ({ authedPage: page }) => {
@@ -346,7 +343,9 @@ test.describe('Invoices', () => {
         body: JSON.stringify({ items: [], total: 0, total_pages: 0, page: 1 }),
       })
     );
-    await page.route(/\/api\/company\//, (route) =>
+    // Anchored: the sidebar's company switcher reads /api/company/companies,
+    // which a bare prefix match would also swallow, crashing the page.
+    await page.route(/\/api\/company\/(\?.*)?$/, (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -699,7 +698,7 @@ test.describe('Invoices', () => {
     await expect(modal).toBeVisible();
 
     // Preview is PDF-based now; validate key controls and title rendering.
-    await expect(modal.locator('#invoice-preview-title')).toContainText('PDF invoice');
+    await expect(modal.locator('#invoice-preview-title')).toHaveText(/^(Purchase )?[Ii]nvoice \S+/);
     await expect(modal.getByRole('button', { name: 'Download invoice PDF' })).toBeVisible();
     await expect(modal.getByRole('button', { name: 'Email invoice' })).toBeVisible();
     await expect(modal.locator('iframe.invoice-pdf-viewer__frame')).toBeVisible();
@@ -809,7 +808,7 @@ test.describe('Invoices', () => {
     await expect(modal).toBeVisible();
 
     // Sales preview uses the same PDF modal controls.
-    await expect(modal.locator('#invoice-preview-title')).toContainText('PDF invoice');
+    await expect(modal.locator('#invoice-preview-title')).toHaveText(/^(Purchase )?[Ii]nvoice \S+/);
     await expect(modal.getByRole('button', { name: 'Download invoice PDF' })).toBeVisible();
     await expect(modal.getByRole('button', { name: 'Email invoice' })).toBeVisible();
     await expect(modal.locator('iframe.invoice-pdf-viewer__frame')).toBeVisible();
@@ -840,7 +839,7 @@ test.describe('Invoices', () => {
     await expect(modal).toBeVisible();
 
     const [pdfResponse] = await Promise.all([
-      page.waitForResponse(res => res.url().includes('/invoices/') && res.url().endsWith('/pdf')),
+      page.waitForResponse(res => /\/invoices\/\d+\/pdf(\?|$)/.test(res.url())),
       modal.locator('[aria-label="Download invoice PDF"]').click(),
     ]);
     expect(pdfResponse.status()).toBe(200);
@@ -869,7 +868,7 @@ test.describe('Invoices', () => {
     await expect(modal).toBeVisible();
 
     const [pdfResponse] = await Promise.all([
-      page.waitForResponse(res => res.url().includes('/invoices/') && res.url().endsWith('/pdf')),
+      page.waitForResponse(res => /\/invoices\/\d+\/pdf(\?|$)/.test(res.url())),
       modal.locator('[aria-label="Download invoice PDF"]').click(),
     ]);
     expect(pdfResponse.status()).toBe(200);

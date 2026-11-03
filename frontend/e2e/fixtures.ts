@@ -251,3 +251,76 @@ export async function clickNavLink(page: Page, href: string) {
   }
   await page.locator(`.sidebar a.sidebar__link[href="${href}"]`).click();
 }
+
+/**
+ * Helper: tick "Search all FY" on the invoice feed.
+ *
+ * The checkbox lives in the Filters panel, which is collapsed until the
+ * "Filters" toolbar button is pressed, so it cannot be ticked straight away.
+ * Assumes the page is already showing /invoices-view.
+ */
+export async function searchAllFY(page: Page) {
+  const filters = page.getByRole('button', { name: /^Filters/ });
+  if ((await filters.getAttribute('aria-expanded')) !== 'true') {
+    await filters.click();
+  }
+  await page.locator('label.invoice-feed-view__checkbox', { hasText: 'Search all FY' }).locator('input').check();
+}
+
+/**
+ * Today as YYYY-MM-DD in the browser's local zone, which is what the app's date
+ * inputs default to. `new Date().toISOString()` is UTC and disagrees with it
+ * for a few hours either side of midnight anywhere but UTC.
+ */
+export function localToday() {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+let salesDataSeeded = false;
+
+/**
+ * Helper: make sure the database holds at least one product, one ledger and
+ * one sales invoice dated today, creating them through the UI if not.
+ *
+ * Specs that pick "the first option" of a combobox or measure a populated
+ * report table cannot assume another spec (or a demo seed) ran first: a
+ * database seeded as CONTRIBUTING.md describes holds only the admin user.
+ * Runs once per worker.
+ */
+export async function ensureSalesData(page: Page) {
+  if (salesDataSeeded) return;
+  const sku = uniqueSku();
+  const ledgerName = `SeedLedger-${Date.now().toString(36)}`;
+
+  await clickNavLink(page, '/catalogue');
+  await createProduct(page, { sku, name: `SeedProd ${sku}`, price: '100', gstRate: '18' });
+  await adjustInventory(page, sku, '10');
+
+  await clickNavLink(page, '/ledgers');
+  await page.click('button:has-text("Create ledger")');
+  await page.fill('#ledger-name', ledgerName);
+  await page.fill('#ledger-address', '1 Seed Street');
+  await page.fill('#ledger-gst', uniqueGstin());
+  await page.fill('#ledger-phone', '+91 9000000002');
+  await page.click('button:has-text("Create ledger")');
+  await expectSuccess(page, 'Ledger created');
+
+  await clickNavLink(page, '/invoices');
+  await expect(page.locator('#invoice-ledger')).not.toBeDisabled({ timeout: 5_000 });
+  await page.selectOption('#invoice-voucher-type', 'sales');
+  await selectComboboxOption(page, 'invoice-ledger', ledgerName);
+  await selectComboboxOption(page, 'invoice-product-1', sku);
+  await page.locator('[id^="invoice-quantity-"]').first().fill('1');
+  await page.click('button:has-text("Create invoice")');
+  await expectSuccess(page, 'Sales invoice created');
+
+  // Creating an invoice pops the PDF preview over the whole page.
+  const preview = page.locator('.modal-panel--invoice-preview');
+  await expect(preview).toBeVisible({ timeout: 10_000 });
+  await preview.getByRole('button', { name: 'Close invoice preview' }).click();
+  await expect(preview).not.toBeVisible();
+
+  salesDataSeeded = true;
+}
