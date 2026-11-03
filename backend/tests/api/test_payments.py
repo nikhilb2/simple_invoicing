@@ -836,3 +836,23 @@ def test_update_payment_without_date_still_works(client, db_session, payment_in_
     assert response.status_code == 200, response.text
     assert response.json()["amount"] == 250
     assert response.json()["financial_year_id"] == 1
+
+
+def test_update_existing_mismatched_payment_keeps_same_day_and_edits_amount(client, db_session, payment_in_old_fy):
+    payment_in_old_fy.date = datetime(2026, 4, 5, 10, 0)
+    db_session.commit()
+
+    response = client.put(
+        f"/api/payments/{payment_in_old_fy.id}",
+        json={"voucher_type": "receipt", "amount": 250, "date": "2026-04-05T00:00:00", "mode": "cash"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["amount"] == 250
+    assert response.json()["financial_year_id"] == 1
+    assert response.json()["payment_number"] == "REC-0001"
+    db_session.expire_all()
+    payment = db_session.get(Payment, payment_in_old_fy.id)
+    assert payment.amount == 250
+    assert payment.financial_year_id == 1
+    assert payment.date.date() == date(2026, 4, 5)

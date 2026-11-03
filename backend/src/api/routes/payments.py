@@ -316,7 +316,8 @@ def update_payment(
     # that no financial year covers keeps the previous behaviour (allowed).
     if payload.date is not None and getattr(payment, "financial_year_id", None) is not None:
         new_day = payload.date.date() if hasattr(payload.date, "date") else payload.date
-        date_fy = get_fy_for_date(db, new_day, company_id=company_id)
+        current_day = payment.date.date() if payment.date else None
+        date_fy = get_fy_for_date(db, new_day, company_id=company_id) if new_day != current_day else None
         if date_fy is not None and date_fy.id != payment.financial_year_id:
             current_fy = (
                 db.query(FinancialYear)
