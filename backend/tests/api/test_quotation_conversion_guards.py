@@ -410,3 +410,20 @@ def test_the_share_page_agrees(setup, after_midnight_in_india):
     quote = _quote_valid_through_the_servers_today(client, ledger, product)
     token = ok(client.post("/api/share/", json={"resource_type": "quotation", "resource_id": quote["id"]}))["token"]
     assert "This quotation expired on" in client.get(f"/s/{token}").text
+
+
+def test_at_1am_in_india_on_1_april_the_draft_and_the_new_quote_are_dated_the_first(setup, monkeypatch):
+    """19:30 UTC on 31 March: the server's own date is still the 31st."""
+    client, ledger, product = setup
+    instant = datetime(2027, 3, 31, 19, 30, tzinfo=timezone.utc)
+
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant.astimezone(tz) if tz else instant.replace(tzinfo=None)
+
+    monkeypatch.setattr(gst_tax_service, "datetime", Frozen)
+    quote = create_quotation(client, ledger["id"], product["id"])
+    assert quote["quotation_date"] == "2027-04-01"
+    assert _draft(client, quote)["invoice_date"] == "2027-04-01"
+    assert ok(client.post(f"/api/quotations/{quote['id']}/duplicate"))["quotation_date"] == "2027-04-01"
