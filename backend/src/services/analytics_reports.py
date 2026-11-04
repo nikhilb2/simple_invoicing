@@ -12,6 +12,7 @@ this precedent.
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
+from types import SimpleNamespace
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -241,10 +242,26 @@ def build_product_sales_report(
         )
         stock_map = {pid: Decimal(str(qty or 0)) for pid, qty in stock_rows}
 
+    # Sales amount is taxable net of the invoice-level discount, apportioned
+    # across all of an invoice's lines first (same rule as Product Performance).
+    # The helper fetches every line of in-scope invoices even under a product
+    # filter, so a filtered product only takes its own share of the discount.
+    discounted_sales: dict[int, Decimal] = {}
+    for line_pid, _qty, discounted_taxable, _date in _dated_discounted_invoice_lines(
+        db,
+        company_id=company_id,
+        voucher_type=voucher_type,
+        from_date=from_date,
+        to_date=to_date,
+        ledger_id=ledger_id,
+        product_id=product_id,
+    ):
+        discounted_sales[line_pid] = discounted_sales.get(line_pid, Decimal("0")) + discounted_taxable
+
     rows: list[dict] = []
     for pid, name, sku, maintain_inventory, quantity, taxable, tax, revenue, invoice_count in grouped:
         qty = Decimal(str(quantity or 0))
-        sales_amount = Decimal(str(taxable or 0))
+        sales_amount = discounted_sales.get(pid, Decimal(str(taxable or 0)))
         rows.append({
             "product_id": pid,
             "name": name,
@@ -334,7 +351,9 @@ def build_profit_loss_report(
     Cost basis is the product's *current* ``purchase_price`` — invoice lines
     carry no cost snapshot, so a historical period is priced at today's cost and
     its margin shifts if the cost is later edited. Revenue is ``taxable_amount``
-    (ex-GST); GST is pass-through and never counted as profit.
+    net of the invoice-level discount (ex-GST), apportioned across an invoice's
+    lines the same way Product Performance does; GST is pass-through and never
+    counted as profit.
 
     All three breakdowns come from one line-level scan so the numbers can't
     diverge. When ``product_id`` is set, ``monthly_rows`` narrows to that
@@ -354,6 +373,11 @@ def build_profit_loss_report(
             Product.name,
             Product.sku,
             Product.purchase_price,
+            # Header totals, for the invoice-level discount (see below).
+            Invoice.taxable_amount.label("header_taxable"),
+            Invoice.total_tax_amount.label("header_tax"),
+            Invoice.round_off_amount.label("header_round_off"),
+            Invoice.total_amount.label("header_total"),
         )
         .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
         .join(Product, Product.id == InvoiceItem.product_id)
@@ -364,11 +388,15 @@ def build_profit_loss_report(
             Invoice.invoice_date >= start,
             Invoice.invoice_date <= end,
         )
+        .order_by(Invoice.id, InvoiceItem.id)
     )
     if ledger_id is not None:
         query = query.filter(Invoice.ledger_id == ledger_id)
     if product_id is not None:
-        query = query.filter(Product.id == product_id)
+        # Fetch every line of invoices containing the product; the discount
+        # is apportioned across all of them before the other lines are skipped.
+        containing = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id)
+        query = query.filter(Invoice.id.in_(containing))
 
     # Per-product, per-month, and per-customer accumulators, all built in one pass.
     products: dict[int, dict] = {}
@@ -379,29 +407,50 @@ def build_profit_loss_report(
     customers: dict[int | None, dict] = {}
     total_invoice_ids: set[int] = set()
 
-    for (
-        invoice_id,
-        invoice_date,
-        row_ledger_id,
-        ledger_name,
-        pid,
-        quantity,
-        taxable,
-        name,
-        sku,
-        purchase_price,
-    ) in query.all():
-        qty = Decimal(str(quantity or 0))
-        revenue = Decimal(str(taxable or 0))
-        cost = Decimal(str(purchase_price or 0))
+    # Revenue is each line's taxable amount net of its share of the invoice-level
+    # discount, apportioned across all of an invoice's lines first — the same
+    # rule as Product Performance. Under a product filter the query narrows to
+    # invoices containing that product (see below) and the other lines are
+    # skipped only after apportioning, so the filtered product never takes the
+    # whole discount.
+    rows_by_invoice: dict[int, list] = {}
+    for row in query.all():
+        rows_by_invoice.setdefault(row.id, []).append(row)
+
+    discounted_rows: list[tuple] = []
+    for invoice_rows in rows_by_invoice.values():
+        header = invoice_rows[0]  # every row repeats the invoice's own columns
+        shares = apportion_invoice_discount(
+            [Decimal(str(row.taxable_amount or 0)) for row in invoice_rows],
+            invoice_discount=invoice_discount_amount(SimpleNamespace(
+                taxable_amount=header.header_taxable,
+                total_tax_amount=header.header_tax,
+                round_off_amount=header.header_round_off,
+                total_amount=header.header_total,
+            )),
+            invoice_tax=Decimal(str(header.header_tax or 0)),
+        )
+        for row, share in zip(invoice_rows, shares):
+            if product_id is not None and row.product_id != product_id:
+                continue
+            discounted_rows.append((row, Decimal(str(row.taxable_amount or 0)) - share))
+
+    for row, revenue in discounted_rows:
+        invoice_id = row.id
+        invoice_date = row.invoice_date
+        row_ledger_id = row.ledger_id
+        ledger_name = row.ledger_name
+        pid = row.product_id
+        qty = Decimal(str(row.quantity or 0))
+        cost = Decimal(str(row.purchase_price or 0))
         line_cogs = qty * cost
 
         product = products.get(pid)
         if product is None:
             product = {
                 "product_id": pid,
-                "name": name,
-                "sku": sku,
+                "name": row.name,
+                "sku": row.sku,
                 "purchase_price": cost,
                 "quantity_sold": Decimal("0"),
                 "revenue": Decimal("0"),
