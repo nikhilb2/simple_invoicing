@@ -3,14 +3,19 @@ export type DateRange = { fromDate: string; toDate: string };
 /**
  * Local calendar date as YYYY-MM-DD.
  *
- * Not `toISOString().slice(0, 10)`: that converts to UTC first, so anywhere
- * east of Greenwich "today" becomes yesterday for the whole evening — an
- * off-by-one-day report on every Indian install after 05:30 IST.
+ * UTC conversion can turn an early-morning local date into the previous day.
  */
 export function toIsoDate(date: Date): string {
   const month = `${date.getMonth() + 1}`.padStart(2, '0');
   const day = `${date.getDate()}`.padStart(2, '0');
   return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/** Local date and time as YYYY-MM-DDTHH:mm for a datetime-local input. */
+export function toLocalDateTimeInput(date: Date): string {
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${toIsoDate(date)}T${hours}:${minutes}`;
 }
 
 function startOfWeek(today: Date): Date {

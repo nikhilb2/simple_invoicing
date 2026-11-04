@@ -8,6 +8,7 @@ import { useEscapeClose } from '../hooks/useEscapeClose';
 import ModalCloseButton from '../components/ModalCloseButton';
 import { formatDate } from '../utils/formatting';
 import { copyTextToClipboard } from '../utils/clipboard';
+import { toIsoDate } from '../utils/dateRanges';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -16,13 +17,13 @@ import { copyTextToClipboard } from '../utils/clipboard';
 function maxExpiryDate(): string {
   const d = new Date();
   d.setFullYear(d.getFullYear() + 1);
-  return d.toISOString().split('T')[0];
+  return toIsoDate(d);
 }
 
 function minExpiryDate(): string {
   const d = new Date();
   d.setDate(d.getDate() + 1);
-  return d.toISOString().split('T')[0];
+  return toIsoDate(d);
 }
 
 function formatExpiry(iso: string): string {

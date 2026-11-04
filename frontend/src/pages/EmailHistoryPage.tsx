@@ -11,6 +11,7 @@ import LoadingState from '../components/LoadingState';
 import PageSizeSelect, { readStoredPageSize, storePageSize } from '../components/PageSizeSelect';
 import { formatDateTime } from '../utils/formatting';
 import { downloadCsv } from '../utils/csv';
+import { toIsoDate } from '../utils/dateRanges';
 
 const EMAIL_TYPE_LABELS: Record<string, string> = {
   invoice: 'Invoice',
@@ -20,7 +21,7 @@ const EMAIL_TYPE_LABELS: Record<string, string> = {
 };
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return toIsoDate(new Date());
 }
 
 function monthStart() {
@@ -66,7 +67,7 @@ export default function EmailHistoryPage() {
   function handleExportEmailCsv() {
     if (!data) return;
     downloadCsv(
-      `email_history_${new Date().toISOString().slice(0, 10)}.csv`,
+      `email_history_${toIsoDate(new Date())}.csv`,
       ['Date', 'Recipient', 'Subject', 'Status'],
       data.items.map((log) => [
         formatDateTime(log.sent_at),

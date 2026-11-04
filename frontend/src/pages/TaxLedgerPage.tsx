@@ -16,12 +16,12 @@ import type {
 } from '../types/api';
 import formatCurrency, { formatDate } from '../utils/formatting';
 import { parseGstRate } from '../utils/gstRate';
+import { toIsoDate } from '../utils/dateRanges';
 
 function defaultDateRange() {
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-  const toIso = (date: Date) => date.toISOString().slice(0, 10);
-  return { fromDate: toIso(firstDay), toDate: toIso(today) };
+  return { fromDate: toIsoDate(firstDay), toDate: toIsoDate(today) };
 }
 
 export default function TaxLedgerPage() {

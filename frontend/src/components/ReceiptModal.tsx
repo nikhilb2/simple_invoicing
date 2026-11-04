@@ -9,6 +9,7 @@ import EmptyState from './EmptyState';
 import ModalCloseButton from './ModalCloseButton';
 import { useFY } from '../context/FYContext';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import { toLocalDateTimeInput } from '../utils/dateRanges';
 
 interface ReceiptModalProps {
   ledgerId: number;
@@ -79,7 +80,7 @@ export default function ReceiptModal({
     voucher_type: 'receipt',
     amount: 0,
     account_id: null,
-    date: new Date().toISOString().slice(0, 16),
+    date: toLocalDateTimeInput(new Date()),
     mode: '',
     reference: '',
     notes: '',

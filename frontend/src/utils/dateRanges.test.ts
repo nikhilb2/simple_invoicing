@@ -1,5 +1,28 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { buildRangePresets, defaultFilingPeriod, matchPreset, toIsoDate } from './dateRanges.ts';
+import { buildRangePresets, defaultFilingPeriod, matchPreset, toIsoDate, toLocalDateTimeInput } from './dateRanges.ts';
+
+describe('toLocalDateTimeInput', () => {
+  test('an early-morning time keeps its local date and clock', () => {
+    expect(toLocalDateTimeInput(new Date(2026, 4, 9, 0, 30))).toBe('2026-05-09T00:30');
+  });
+
+  test('single-digit hours and minutes are zero-padded', () => {
+    expect(toLocalDateTimeInput(new Date(2026, 4, 9, 7, 5))).toBe('2026-05-09T07:05');
+  });
+
+  test('midnight has no seconds or timezone suffix', () => {
+    expect(toLocalDateTimeInput(new Date(2026, 4, 9))).toBe('2026-05-09T00:00');
+  });
+
+  test('month boundaries follow the local calendar', () => {
+    expect(toLocalDateTimeInput(new Date(2026, 5, 1, 0, 1))).toBe('2026-06-01T00:01');
+  });
+
+  test('year boundaries follow the local calendar', () => {
+    expect(toLocalDateTimeInput(new Date(2027, 0, 1, 0, 1))).toBe('2027-01-01T00:01');
+    expect(toLocalDateTimeInput(new Date(2026, 11, 31, 23, 59))).toBe('2026-12-31T23:59');
+  });
+});
 
 describe('toIsoDate — local calendar date, zero-padded', () => {
   test('single-digit month and day are zero-padded', () => {
