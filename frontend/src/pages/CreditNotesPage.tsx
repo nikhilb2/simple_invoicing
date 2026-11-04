@@ -22,7 +22,7 @@ import type {
   Ledger,
   Product,
 } from '../types/api';
-import formatCurrency, { formatDate } from '../utils/formatting';
+import formatCurrency, { formatDate, plural } from '../utils/formatting';
 import { backdatedNoteWarning, creditNoteDateChoice as nextCreditNoteDateChoice, shownCreditNoteDate } from '../utils/creditNoteDate';
 import { toIsoDate } from '../utils/dateRanges';
 import { downloadCsv } from '../utils/csv';
@@ -730,7 +730,7 @@ export default function CreditNotesPage() {
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
                               <div>
                                 <strong>{invoice.invoice_number || `#${invoice.id}`}</strong>
-                                <p style={{ margin: '4px 0 0', color: 'var(--text-muted)' }}>Date {formatDate(invoice.invoice_date)} • {invoice.items.length} items</p>
+                                <p style={{ margin: '4px 0 0', color: 'var(--text-muted)' }}>Date {formatDate(invoice.invoice_date)} • {plural(invoice.items.length, 'item')}</p>
                               </div>
                               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ padding: '4px 10px', borderRadius: '999px', background: creditStatus.background, color: creditStatus.color, fontSize: '0.8rem', fontWeight: 600 }}>

@@ -9,7 +9,7 @@ import StatusToasts from '../components/StatusToasts';
 import ScopeBar, { Metric } from '../components/ScopeBar';
 import InvoicePreview from '../components/InvoicePreview';
 import ConfirmDialog from '../components/ConfirmDialog';
-import formatCurrency from '../utils/formatting';
+import formatCurrency, { plural } from '../utils/formatting';
 import { buildWhatsAppUrl, toWhatsAppNumber } from '../utils/phone';
 import { buildWhatsAppReminderMessage } from '../utils/whatsappReminder';
 import { downloadCsv } from '../utils/csv';
@@ -44,7 +44,7 @@ function dueBadgeLabel(dueInDays: number | null) {
   const overdue = overdueLabel(dueInDays);
   if (overdue !== null) return overdue;
   if (dueInDays === 0) return 'Due today';
-  return `Due in ${dueInDays} days`;
+  return `Due in ${plural(dueInDays, 'day')}`;
 }
 
 export default function InvoiceDuesPage() {
@@ -188,7 +188,7 @@ export default function InvoiceDuesPage() {
       const result: DueRemindersResponse = await sendDueReminders();
       const parts: string[] = [];
       if (result.sent.length > 0) {
-        parts.push(`Sent to ${result.sent.length} ledgers`);
+        parts.push(`Sent to ${plural(result.sent.length, 'ledger')}`);
       }
       const noEmail = result.skipped.filter((s) => s.reason_code !== 'net_payable_offset');
       if (noEmail.length > 0) {
@@ -221,7 +221,7 @@ export default function InvoiceDuesPage() {
           <h1 className="page-title">Dues</h1>
           <p className="section-copy">Track overdue and upcoming invoice dues, narrow by ledger, and preview invoices before following up.</p>
         </div>
-        <div className="status-chip">{total} invoices</div>
+        <div className="status-chip">{plural(total, 'invoice')}</div>
       </section>
 
       <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />

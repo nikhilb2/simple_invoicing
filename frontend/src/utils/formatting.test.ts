@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import formatCurrency, { formatDate, formatDateTime } from './formatting.ts';
+import formatCurrency, { formatDate, formatDateTime, plural } from './formatting.ts';
 import { formatInvoiceDateLabel } from './invoiceDueDate.ts';
 
 test('formatCurrency(1000) → $1,000.00', () => {
@@ -77,4 +77,19 @@ test('accepts Date objects without mutating them and rejects invalid ones', () =
   expect(date.getTime()).toBe(original);
   expect(formatDate(new Date(NaN))).toBe('—');
   expect(formatDateTime(new Date(NaN))).toBe('—');
+});
+
+test('plural uses the singular for a count of one', () => {
+  expect(plural(1, 'invoice')).toBe('1 invoice');
+  expect(plural(1, 'day')).toBe('1 day');
+});
+
+test('plural uses the plural for counts of zero and two', () => {
+  expect(plural(0, 'invoice')).toBe('0 invoices');
+  expect(plural(2, 'invoice')).toBe('2 invoices');
+});
+
+test('plural accepts a custom plural form', () => {
+  expect(plural(1, 'company', 'companies')).toBe('1 company');
+  expect(plural(2, 'company', 'companies')).toBe('2 companies');
 });

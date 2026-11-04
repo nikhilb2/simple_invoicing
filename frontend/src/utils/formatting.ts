@@ -23,6 +23,10 @@ export default function formatCurrency(value: number, currencyCode = 'USD') {
  * figures don't overflow. INR renders lakh/crore (₹1.2Cr), others use M/K.
  * Values under 1,000 fall back to the full format to stay precise.
  */
+export function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : pluralForm}`;
+}
+
 export function formatCompactCurrency(value: number, currencyCode = 'USD') {
     if (Math.abs(value) < 1000) {
         return formatCurrency(value, currencyCode);

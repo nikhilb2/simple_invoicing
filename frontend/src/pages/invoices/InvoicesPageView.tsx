@@ -10,7 +10,7 @@ import ScanBar, { type ScanOutcome, type ScanResolution } from '../../components
 import StatusToasts from '../../components/StatusToasts';
 import ProductCombobox from '../../components/ProductCombobox';
 import LedgerCombobox from '../../components/LedgerCombobox';
-import formatCurrency from '../../utils/formatting';
+import formatCurrency, { plural } from '../../utils/formatting';
 import { computeInvoiceTotals, computeLineTotal, type InvoiceTotalLine } from '../../utils/invoiceTotals';
 import { toIsoDate } from '../../utils/dateRanges';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../../utils/invoiceTax';
@@ -1086,7 +1086,7 @@ export default function InvoicesPage() {
               : 'Build multi-line invoices against live product pricing and submit directly to the API.'}
           </p>
         </div>
-        <div className="status-chip">{invoiceTotal} invoices listed</div>
+        <div className="status-chip">{plural(invoiceTotal, 'invoice')} listed</div>
       </section>
 
       <StatusToasts

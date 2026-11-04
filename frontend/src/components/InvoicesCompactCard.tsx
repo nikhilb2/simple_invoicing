@@ -1,6 +1,6 @@
 import { Eye, Pencil, RotateCcw, Trash2, FileText, Copy } from 'lucide-react';
 import type { Invoice } from '../types/api';
-import formatCurrency from '../utils/formatting';
+import formatCurrency, { plural } from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import OverdueBadge from './OverdueBadge';
 
@@ -73,7 +73,7 @@ interface InvoicesCompactCardProps {
         {/* Items Summary */}
           <div className="invoice-compact-card__items">
             <div>
-              <div className="invoice-compact-card__items-count">{invoice.items.length} items</div>
+              <div className="invoice-compact-card__items-count">{plural(invoice.items.length, 'item')}</div>
               <div className="invoice-compact-card__items-list">
               {invoice.items.map((item, idx) => (
                   <div key={idx} className="invoice-compact-card__item">
