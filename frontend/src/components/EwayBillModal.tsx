@@ -207,7 +207,8 @@ export default function EwayBillModal({ invoice, onClose }: Props) {
     // The user is dealing with it, so stop calling it wrong.
     setFieldNotes(prev => {
       if (!prev[field]) return prev;
-      const { [field]: _cleared, ...rest } = prev;
+      const rest = { ...prev };
+      delete rest[field];
       return rest;
     });
   };

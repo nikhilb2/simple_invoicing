@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
 
@@ -23,18 +23,18 @@ class BOMCreate(BaseModel):
     """Create a new BOM entry"""
     product_id: int
     component_product_id: int
-    quantity_required: float
+    quantity_required: float = Field(gt=0, allow_inf_nan=False)
 
 
 class BOMUpdate(BaseModel):
     """Update a BOM entry"""
-    quantity_required: float
+    quantity_required: float = Field(gt=0, allow_inf_nan=False)
 
 
 class ProduceRequest(BaseModel):
     """Request to produce an item"""
     product_id: int
-    quantity: float
+    quantity: float = Field(gt=0, allow_inf_nan=False)
     notes: Optional[str] = None
 
     @field_validator("notes")
