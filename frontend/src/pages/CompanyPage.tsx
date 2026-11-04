@@ -10,6 +10,7 @@ import { useAuthStore } from '../store/useAuthStore';
 import { useFY } from '../context/FYContext';
 import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, CompanyTermOut } from '../types/api';
 import { isCompanyConfigured } from '../utils/companySetup';
+import { buildSeriesPreview, gstr1SeriesFormatError } from '../utils/seriesPreview';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -26,24 +27,6 @@ const VOUCHER_LABELS: Record<string, string> = {
   quotation: 'Quotation',
   proforma: 'Proforma Invoice',
 };
-
-function buildPreview(s: InvoiceSeriesUpdate, nextSeq: number, fyLabel?: string | null): string {
-  const sep = s.separator ?? '-';
-  const seq = String(nextSeq).padStart(s.pad_digits, '0');
-  if (!s.include_year) {
-    return `${s.prefix}${sep}${seq}${s.suffix}`;
-  }
-  const now = new Date();
-  let yearPart: string;
-  if (s.year_format === 'FY') {
-    yearPart = fyLabel ?? 'FY';
-  } else if (s.year_format === 'MM-YYYY') {
-    yearPart = `${String(now.getMonth() + 1).padStart(2, '0')}${sep}${now.getFullYear()}`;
-  } else {
-    yearPart = `${now.getFullYear()}`;
-  }
-  return `${s.prefix}${sep}${yearPart}${sep}${seq}${s.suffix}`;
-}
 
 const MAX_LOGO_SIZE_BYTES = 100 * 1024; // 100 KB
 
@@ -417,7 +400,7 @@ function TermsAndConditionsCard({ companyId }: { companyId: number }) {
 
 type SeriesRowState = Required<InvoiceSeriesUpdate>;
 
-function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLElement> }) {
+function InvoiceSeriesCard({ sectionRef, savedGstin }: { sectionRef?: React.RefObject<HTMLElement>; savedGstin: string }) {
   const { activeFY, loading: fyLoading } = useFY();
   const [seriesList, setSeriesList] = useState<InvoiceSeries[]>([]);
   const [drafts, setDrafts] = useState<Record<number, SeriesRowState>>({});
@@ -511,7 +494,9 @@ function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLEl
         {seriesList.map((s) => {
           const draft = drafts[s.id];
           if (!draft) return null;
-          const preview = buildPreview(draft, draft.next_sequence, activeFY?.label);
+          const preview = buildSeriesPreview(draft, draft.next_sequence, activeFY?.label);
+          const longest = buildSeriesPreview(draft, Math.max(draft.next_sequence, 9999), activeFY?.label);
+          const formatError = gstr1SeriesFormatError(draft, s, savedGstin, activeFY?.label);
           return (
             <div key={s.id} className="panel" style={{ padding: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -609,13 +594,14 @@ function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLEl
               </div>
 
               <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.875rem', opacity: 0.7 }}>
-                  Preview: <strong>{preview}</strong>
-                </span>
+                <div style={{ fontSize: '0.875rem', opacity: 0.7 }}>
+                  <div>Preview: <strong>{preview}</strong> ({preview.length}/16)</div>
+                  <div>Longest number: <strong>{longest}</strong> ({longest.length}/16)</div>
+                </div>
                 <button
                   className="button button--primary"
                   style={{ marginTop: 0, padding: '6px 16px', fontSize: '0.875rem' }}
-                  disabled={saving[s.id]}
+                  disabled={saving[s.id] || Boolean(formatError)}
                   onClick={() => void saveSeries(s)}
                 >
                   {saving[s.id] ? 'Saving…' : 'Save'}
@@ -623,6 +609,7 @@ function InvoiceSeriesCard({ sectionRef }: { sectionRef?: React.RefObject<HTMLEl
                 {rowSuccess[s.id] && <span style={{ color: 'var(--color-success)', fontSize: '0.875rem' }}>{rowSuccess[s.id]}</span>}
                 {rowError[s.id] && <span style={{ color: 'var(--color-danger)', fontSize: '0.875rem' }}>{rowError[s.id]}</span>}
               </div>
+              {formatError && <p className="field-error" role="alert">{formatError}</p>}
               {s.gstr1_warning ? <p className="field-warning" role="alert">{s.gstr1_warning}</p> : null}
             </div>
           );
@@ -753,6 +740,7 @@ export default function CompanyPage() {
     show_upi_pay_button: false,
   });
   const [companyId, setCompanyId] = useState<number>(0);
+  const [savedGstin, setSavedGstin] = useState('');
   // True when the server says this user has no company at all (409
   // company_required), so saving has to create one rather than update one.
   const [noCompany, setNoCompany] = useState(false);
@@ -786,6 +774,7 @@ export default function CompanyPage() {
         setInitialSetupRequired(!isCompanyConfigured(data));
       }
       setCompanyId(data.id);
+      setSavedGstin(data.gst || '');
       setForm({
         name: data.name || '',
         address: data.address || '',
@@ -1225,7 +1214,7 @@ export default function CompanyPage() {
           />
         )}
 
-        {!noCompany && <InvoiceSeriesCard sectionRef={seriesSectionRef} />}
+        {!noCompany && <InvoiceSeriesCard sectionRef={seriesSectionRef} savedGstin={savedGstin} />}
       </section>
     </div>
   );
