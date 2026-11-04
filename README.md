@@ -353,3 +353,5 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 ## Acknowledgments
 
 Inspired by [Tally](https://tallysolutions.com/) accounting software. Built with FastAPI, React, and PostgreSQL.
+
+Special thanks to [Nash Aschenbath](https://github.com/Aschenbath) for the live GSTR-1 number limits in the invoice series form (#545).
