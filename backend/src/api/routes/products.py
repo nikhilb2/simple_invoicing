@@ -11,11 +11,14 @@ from sqlalchemy.orm import Session
 from decimal import Decimal
 
 from src.db.session import get_db
+from src.models.bom import BillOfMaterial
 from src.models.company import CompanyProfile
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
+from src.models.marketplace import MarketplaceListing, MarketplaceProductLink
 from src.models.product import Product
 from src.models.product_serial import ProductSerial
+from src.models.production_transaction import ProductionTransaction
 from src.models.quotation import Quotation, QuotationItem
 from src.models.user import User, UserRole
 from src.schemas.product import (
@@ -350,6 +353,57 @@ def delete_product(
     )
     if has_quotation_items:
         raise HTTPException(status_code=400, detail="Cannot delete product linked to quotations")
+
+    has_serials = db.query(ProductSerial.id).filter(
+        ProductSerial.company_id == active_company.id,
+        ProductSerial.product_id == product_id,
+    ).first()
+    if has_serials:
+        raise HTTPException(status_code=400, detail="Cannot delete product with serial number records")
+
+    has_marketplace_listing = db.query(MarketplaceListing.id).filter(
+        MarketplaceListing.company_id == active_company.id,
+        MarketplaceListing.product_id == product_id,
+    ).first()
+    if has_marketplace_listing:
+        raise HTTPException(status_code=400, detail="Cannot delete product linked to marketplace listings")
+
+    has_marketplace_link = db.query(MarketplaceProductLink.id).filter(
+        MarketplaceProductLink.company_id == active_company.id,
+        MarketplaceProductLink.product_id == product_id,
+    ).first()
+    if has_marketplace_link:
+        raise HTTPException(status_code=400, detail="Cannot delete product linked to marketplace products")
+
+    parent_products = (
+        db.query(Product.name)
+        .join(BillOfMaterial, BillOfMaterial.product_id == Product.id)
+        .filter(
+            BillOfMaterial.company_id == active_company.id,
+            BillOfMaterial.component_product_id == product_id,
+            BillOfMaterial.product_id != product_id,
+            Product.company_id == active_company.id,
+        )
+        .distinct()
+        .order_by(Product.name)
+        .all()
+    )
+    if parent_products:
+        names = ", ".join(name for (name,) in parent_products)
+        raise HTTPException(status_code=400, detail=f"Cannot delete product used in the bill of materials for: {names}")
+
+    has_production = db.query(ProductionTransaction.id).filter(
+        ProductionTransaction.company_id == active_company.id,
+        ProductionTransaction.product_id == product_id,
+    ).first()
+    if has_production:
+        raise HTTPException(status_code=400, detail="Cannot delete product with production history")
+
+    # A product's own recipe can go with it when there is no production history.
+    db.query(BillOfMaterial).filter(
+        BillOfMaterial.company_id == active_company.id,
+        BillOfMaterial.product_id == product_id,
+    ).delete(synchronize_session=False)
 
     inventory = db.query(Inventory).filter(
         Inventory.product_id == product_id,
