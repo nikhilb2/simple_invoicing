@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { MessageSquarePlus } from 'lucide-react';
+import { CircleHelp, MessageSquarePlus } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { NAV_SHORTCUTS, resolveDocumentTitle } from '../config/navigation';
 import { useShortcuts } from '../context/ShortcutsContext';
@@ -14,6 +14,8 @@ import InvoiceCancelDialog from './InvoiceCancelDialog';
 import ShortcutCheatSheet from './ShortcutCheatSheet';
 import ThemeToggle from './ThemeToggle';
 import UpdateAvailableToast from './UpdateAvailableToast';
+
+const GUIDE_URL = 'https://guide.simpleinvoicings.com';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -93,6 +95,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           >
             Press <kbd>?</kbd> for shortcuts
           </button>
+          <a
+            className="button button--ghost button--small page-header__help"
+            href={GUIDE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Open the user guide"
+            title="Open the user guide"
+          >
+            <CircleHelp size={16} aria-hidden="true" />
+            <span className="page-header__help-label">Help</span>
+          </a>
           <button
             type="button"
             className="button button--ghost button--small page-header__feedback"

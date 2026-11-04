@@ -676,6 +676,7 @@ textarea {
   color: var(--text);
 }
 
+.page-header__help,
 .page-header__feedback {
   flex-shrink: 0;
   margin-left: 12px;
@@ -683,6 +684,7 @@ textarea {
 
 /* Icon only on phones: the header also has to fit the menu and shortcut hint. */
 @media (max-width: 767px) {
+  .page-header__help-label,
   .page-header__feedback-label {
     display: none;
   }
