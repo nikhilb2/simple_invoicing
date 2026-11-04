@@ -6,7 +6,7 @@ from src.core.config import settings
 from src.models.bom import BillOfMaterial
 from src.models.company import CompanyProfile
 from src.models.inventory import Inventory
-from src.models.marketplace import MarketplaceListing, MarketplaceProductLink
+from src.models.marketplace import MarketplaceListing, MarketplaceOrder, MarketplaceOrderItem, MarketplaceProductLink
 from src.models.product import Product
 from src.models.product_serial import ProductSerial
 from src.models.production_transaction import ProductionTransaction
@@ -58,6 +58,12 @@ def _product_reference(db_session, product, kind, make_product):
         reference = MarketplaceListing(company_id=1, product_id=product.id, title=product.name)
     elif kind == "link":
         reference = MarketplaceProductLink(company_id=1, product_id=product.id, remote_listing_id="delete-listing")
+    elif kind == "order_item":
+        order = MarketplaceOrder(company_id=1, side="buy", remote_order_id="delete-order", state="posted")
+        db_session.add(order)
+        db_session.flush()
+        reference = MarketplaceOrderItem(order_id=order.id, line_no=1, product_id=product.id,
+                                         quantity=1, unit_price=10)
     elif kind == "bom":
         parent = make_product("Parent product", is_producable=True)
         reference = BillOfMaterial(company_id=1, product_id=parent.id, component_product_id=product.id, quantity_required=1)
@@ -71,6 +77,7 @@ def _product_reference(db_session, product, kind, make_product):
 
 @pytest.mark.parametrize("kind,reason", [
     ("serial", "serial"), ("listing", "marketplace"), ("link", "marketplace"),
+    ("order_item", "marketplace orders"),
     ("bom", "bill of materials"), ("production", "production"),
 ])
 @pytest.mark.parametrize("references_target", [True, False])

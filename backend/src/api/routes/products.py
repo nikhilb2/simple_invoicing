@@ -15,7 +15,7 @@ from src.models.bom import BillOfMaterial
 from src.models.company import CompanyProfile
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
-from src.models.marketplace import MarketplaceListing, MarketplaceProductLink
+from src.models.marketplace import MarketplaceListing, MarketplaceOrder, MarketplaceOrderItem, MarketplaceProductLink
 from src.models.product import Product
 from src.models.product_serial import ProductSerial
 from src.models.production_transaction import ProductionTransaction
@@ -374,6 +374,15 @@ def delete_product(
     ).first()
     if has_marketplace_link:
         raise HTTPException(status_code=400, detail="Cannot delete product linked to marketplace products")
+
+    has_marketplace_order = (
+        db.query(MarketplaceOrderItem.id)
+        .join(MarketplaceOrder, MarketplaceOrderItem.order_id == MarketplaceOrder.id)
+        .filter(MarketplaceOrder.company_id == active_company.id, MarketplaceOrderItem.product_id == product_id)
+        .first()
+    )
+    if has_marketplace_order:
+        raise HTTPException(status_code=400, detail="Cannot delete product linked to marketplace orders")
 
     parent_products = (
         db.query(Product.name)
