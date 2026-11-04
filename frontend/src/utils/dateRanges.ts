@@ -24,6 +24,12 @@ export function localDateInputToIso(value: string): string {
   return new Date(year, month - 1, day).toISOString();
 }
 
+/** Match the API's 365-day lifetime, including leap years and local DST changes. */
+export function maxApiKeyExpiryDate(now: Date = new Date()): string {
+  const deadline = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+  return toIsoDate(deadline);
+}
+
 function startOfWeek(today: Date): Date {
   // Monday-first: the accounting week everywhere this app is used.
   const offset = (today.getDay() + 6) % 7;

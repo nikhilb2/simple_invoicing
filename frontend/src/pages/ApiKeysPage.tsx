@@ -8,17 +8,11 @@ import { useEscapeClose } from '../hooks/useEscapeClose';
 import ModalCloseButton from '../components/ModalCloseButton';
 import { formatDate } from '../utils/formatting';
 import { copyTextToClipboard } from '../utils/clipboard';
-import { localDateInputToIso, toIsoDate } from '../utils/dateRanges';
+import { localDateInputToIso, maxApiKeyExpiryDate, toIsoDate } from '../utils/dateRanges';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function maxExpiryDate(): string {
-  const d = new Date();
-  d.setFullYear(d.getFullYear() + 1);
-  return toIsoDate(d);
-}
 
 function minExpiryDate(): string {
   const d = new Date();
@@ -113,7 +107,7 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
               type="date"
               value={expiresAt}
               min={minExpiryDate()}
-              max={maxExpiryDate()}
+              max={maxApiKeyExpiryDate()}
               onChange={(e) => setExpiresAt(e.target.value)}
               required
             />
