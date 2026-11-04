@@ -11,6 +11,7 @@ import StatusToasts from '../../components/StatusToasts';
 import ProductCombobox from '../../components/ProductCombobox';
 import LedgerCombobox from '../../components/LedgerCombobox';
 import formatCurrency from '../../utils/formatting';
+import { computeInvoiceTotals, type InvoiceTotalLine } from '../../utils/invoiceTotals';
 import { toIsoDate } from '../../utils/dateRanges';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../../utils/invoiceTax';
 import { isInterstatePlaceOfSupply, resolvePlaceOfSupply, stalePlaceOfSupplyWarning, type PlaceOfSupplyChoice } from '../../utils/gstStates';
@@ -306,64 +307,6 @@ export default function InvoicesPage() {
     setError(getApiErrorMessage(composerQuery.error, 'Unable to load invoice data'));
   }, [composerQuery.error]);
 
-  const totalAmount = items.reduce((sum, item) => {
-    const product = products.find((entry) => entry.id === Number(item.productId));
-    /* A tracked line is worth exactly as many units as it has serials — there
-       is no state in which the two can disagree. A quote names no units yet. */
-    const quantity = !isQuote && product?.track_serials ? item.serials.length : Number(item.quantity);
-    const unitPrice = item.unit_price ? Number(item.unit_price) : (product?.price || 0);
-    const gstRate = product?.gst_rate || 0;
-
-    if (!product || Number.isNaN(quantity)) {
-      return sum;
-    }
-
-    let lineTotal: number;
-    let taxableAmount: number;
-    if (taxInclusive) {
-      lineTotal = unitPrice * quantity;
-      taxableAmount = lineTotal / (1 + gstRate / 100);
-    } else {
-      taxableAmount = unitPrice * quantity;
-      lineTotal = taxableAmount + taxableAmount * gstRate / 100;
-    }
-
-    // Apply item-level discount
-    if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
-      const discVal = Number(item.discount_value);
-      let discAmount = 0;
-      if (item.discount_type === 'percentage') {
-        discAmount = taxableAmount * discVal / 100;
-      } else {
-        discAmount = Math.min(discVal, taxableAmount);
-      }
-      const discountedTaxable = taxableAmount - discAmount;
-      if (taxInclusive) {
-        lineTotal = discountedTaxable * (1 + gstRate / 100);
-      } else {
-        lineTotal = discountedTaxable + discountedTaxable * gstRate / 100;
-      }
-    }
-
-    return sum + lineTotal;
-  }, 0);
-
-  // Apply invoice-level discount
-  let invoiceDiscountAmount = 0;
-  if (invoiceDiscountType && invoiceDiscountValue && Number(invoiceDiscountValue) > 0) {
-    const discVal = Number(invoiceDiscountValue);
-    if (invoiceDiscountType === 'percentage') {
-      invoiceDiscountAmount = totalAmount * discVal / 100;
-    } else {
-      invoiceDiscountAmount = Math.min(discVal, totalAmount);
-    }
-  }
-  const afterDiscountTotal = totalAmount - invoiceDiscountAmount;
-
-  const roundedTotalAmount = Math.round(afterDiscountTotal);
-  const roundOffPreviewAmount = applyRoundOff ? roundedTotalAmount - afterDiscountTotal : 0;
-  const projectedTotalAmount = applyRoundOff ? roundedTotalAmount : afterDiscountTotal;
-
   const activeCurrencyCode = company?.currency_code || 'USD';
   const selectedLedger = ledgers.find((entry) => entry.id === Number(selectedLedgerId));
   const placeOfSupply = resolvePlaceOfSupply(placeOfSupplyChoice, selectedLedgerId, company?.gst, selectedLedger?.gst);
@@ -375,6 +318,30 @@ export default function InvoicesPage() {
   const composerInterstateSupply = voucherType === 'sales' && placeOfSupply
     ? isInterstatePlaceOfSupply(placeOfSupply, company?.gst)
     : isInterstateSupply(company?.gst, selectedLedger?.gst);
+
+  const totalLines = items.flatMap((item): InvoiceTotalLine[] => {
+    const product = products.find((entry) => entry.id === Number(item.productId));
+    if (!product) return [];
+    // A quote names no physical units yet; an invoice uses its selected serials.
+    const quantity = !isQuote && product.track_serials ? item.serials.length : Number(item.quantity);
+    return [{
+      quantity,
+      unitPrice: item.unit_price ? Number(item.unit_price) : product.price || 0,
+      gstRate: product.gst_rate || 0,
+      discountType: item.discount_type,
+      discountValue: Number(item.discount_value),
+    }];
+  });
+  const {
+    invoiceDiscountAmount, afterDiscountTotal,
+    roundOffAmount: roundOffPreviewAmount, total: projectedTotalAmount,
+  } = computeInvoiceTotals(totalLines, {
+    taxInclusive,
+    invoiceDiscount: { type: invoiceDiscountType, value: Number(invoiceDiscountValue) },
+    applyRoundOff,
+    interstateSupply: composerInterstateSupply,
+  });
+
   const resolvedDueDate = resolveDueDate({
     mode: dueDateMode,
     invoiceDate,
