@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import api from '../api/client';
 import type { Ledger } from '../types/api';
@@ -28,9 +28,22 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, 
   const [searching, setSearching] = useState(false);
   const [serverResults, setServerResults] = useState<Ledger[] | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestRequest = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+
+  const clearServerSearch = useCallback(() => {
+    latestRequest.current += 1;
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = null;
+    setServerResults(null);
+  }, []);
+
+  useEffect(() => () => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    latestRequest.current += 1;
+  }, []);
 
   // Sync label when external value changes (e.g. default ledger on load)
   useEffect(() => {
@@ -57,18 +70,16 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, 
     setOpen(true);
     setActiveIndex(-1);
 
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    if (val.trim() === '') {
-      setServerResults(null);
-      return;
-    }
+    clearServerSearch();
+    if (val.trim() === '') return;
+    const requestId = latestRequest.current;
     searchTimerRef.current = setTimeout(() => {
       void (async () => {
         try {
           const res = await api.get<{ items: Ledger[] }>('/ledgers/', {
             params: { page: 1, page_size: 30, search: val.trim() },
           });
-          setServerResults(res.data.items);
+          if (latestRequest.current === requestId) setServerResults(res.data.items);
         } catch {
           // silently ignore search errors
         }
@@ -77,6 +88,7 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, 
   }
 
   function handleSelect(ledger: Ledger) {
+    clearServerSearch();
     setQuery(formatLedgerLabel(ledger));
     setOpen(false);
     setActiveIndex(-1);
@@ -105,6 +117,7 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, 
         handleSelect(suggestions[activeIndex]);
       }
     } else if (e.key === 'Escape') {
+      clearServerSearch();
       setOpen(false);
       setActiveIndex(-1);
       setSearching(false);
@@ -125,6 +138,7 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, 
   useEffect(() => {
     function handleOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        clearServerSearch();
         setOpen(false);
         setSearching(false);
         const l = ledgers.find((ledger) => String(ledger.id) === value);
@@ -133,12 +147,13 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, 
     }
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
-  }, [value, ledgers]);
+  }, [value, ledgers, clearServerSearch]);
 
   const listboxId = `${id}-listbox`;
   const showClear = Boolean(onClear && value);
 
   function handleClear() {
+    clearServerSearch();
     setQuery('');
     setOpen(false);
     setSearching(false);
