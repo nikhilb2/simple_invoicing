@@ -12,7 +12,6 @@ this precedent.
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
-from types import SimpleNamespace
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -336,6 +335,37 @@ class ProfitLossData:
     totals: dict
 
 
+def _apportioned_invoice_rows(query, *, weight_attr="line_taxable"):
+    """Yield ``(row, share of the invoice discount)`` for every invoice line.
+
+    Every row must carry the invoice header totals under the names
+    :func:`invoice_discount_amount` reads (``taxable_amount``,
+    ``total_tax_amount``, ``round_off_amount``, ``total_amount``), the invoice
+    id as ``row.id``, and the apportionment weight as ``weight_attr``
+    (``line_taxable`` by default). Rows are grouped by invoice in
+    ``Invoice.id, InvoiceItem.id`` order and the discount is apportioned
+    across *all* of an invoice's lines before the caller filters any out, so
+    a filtered product never takes the whole discount. A caller that weights
+    by a different column — Sales-by-Product total revenue weights by
+    ``line_total`` — passes ``weight_attr`` and selects that column.
+    """
+    by_invoice: dict[int, list] = {}
+    for row in query.order_by(Invoice.id, InvoiceItem.id).all():
+        by_invoice.setdefault(row.id, []).append(row)
+
+    for invoice_rows in by_invoice.values():
+        header = invoice_rows[0]  # every row repeats the invoice's own columns
+        weights = [Decimal(str(getattr(row, weight_attr) or 0)) for row in invoice_rows]
+        shares = apportion_invoice_discount(
+            weights,
+            # invoice_discount_amount only reads the four total columns, all
+            # of which the row carries under the same names.
+            invoice_discount=invoice_discount_amount(header),
+            invoice_tax=Decimal(str(header.total_tax_amount or 0)),
+        )
+        yield from zip(invoice_rows, shares)
+
+
 def build_profit_loss_report(
     db: Session,
     *,
@@ -369,15 +399,16 @@ def build_profit_loss_report(
             Invoice.ledger_name,
             InvoiceItem.product_id,
             InvoiceItem.quantity,
-            InvoiceItem.taxable_amount,
+            InvoiceItem.taxable_amount.label("line_taxable"),
             Product.name,
             Product.sku,
             Product.purchase_price,
-            # Header totals, for the invoice-level discount (see below).
-            Invoice.taxable_amount.label("header_taxable"),
-            Invoice.total_tax_amount.label("header_tax"),
-            Invoice.round_off_amount.label("header_round_off"),
-            Invoice.total_amount.label("header_total"),
+            # Header totals, carried under the names invoice_discount_amount
+            # reads so the row goes straight to it in _apportioned_invoice_rows.
+            Invoice.taxable_amount,
+            Invoice.total_tax_amount,
+            Invoice.round_off_amount,
+            Invoice.total_amount,
         )
         .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
         .join(Product, Product.id == InvoiceItem.product_id)
@@ -388,7 +419,6 @@ def build_profit_loss_report(
             Invoice.invoice_date >= start,
             Invoice.invoice_date <= end,
         )
-        .order_by(Invoice.id, InvoiceItem.id)
     )
     if ledger_id is not None:
         query = query.filter(Invoice.ledger_id == ledger_id)
@@ -410,30 +440,14 @@ def build_profit_loss_report(
     # Revenue is each line's taxable amount net of its share of the invoice-level
     # discount, apportioned across all of an invoice's lines first — the same
     # rule as Product Performance. Under a product filter the query narrows to
-    # invoices containing that product (see below) and the other lines are
-    # skipped only after apportioning, so the filtered product never takes the
-    # whole discount.
-    rows_by_invoice: dict[int, list] = {}
-    for row in query.all():
-        rows_by_invoice.setdefault(row.id, []).append(row)
-
+    # invoices containing that product (in the query above) and the other lines
+    # are skipped only after apportioning, so the filtered product never takes
+    # the whole discount.
     discounted_rows: list[tuple] = []
-    for invoice_rows in rows_by_invoice.values():
-        header = invoice_rows[0]  # every row repeats the invoice's own columns
-        shares = apportion_invoice_discount(
-            [Decimal(str(row.taxable_amount or 0)) for row in invoice_rows],
-            invoice_discount=invoice_discount_amount(SimpleNamespace(
-                taxable_amount=header.header_taxable,
-                total_tax_amount=header.header_tax,
-                round_off_amount=header.header_round_off,
-                total_amount=header.header_total,
-            )),
-            invoice_tax=Decimal(str(header.header_tax or 0)),
-        )
-        for row, share in zip(invoice_rows, shares):
-            if product_id is not None and row.product_id != product_id:
-                continue
-            discounted_rows.append((row, Decimal(str(row.taxable_amount or 0)) - share))
+    for row, share in _apportioned_invoice_rows(query):
+        if product_id is not None and row.product_id != product_id:
+            continue
+        discounted_rows.append((row, Decimal(str(row.line_taxable or 0)) - share))
 
     for row, revenue in discounted_rows:
         invoice_id = row.id
@@ -662,25 +676,16 @@ def _dated_discounted_invoice_lines(
         containing = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id)
         query = query.filter(Invoice.id.in_(containing))
 
-    by_invoice: dict[int, list] = {}
-    for row in query.order_by(Invoice.id, InvoiceItem.id).all():
-        by_invoice.setdefault(row.id, []).append(row)
-
     lines: list[tuple[int, Decimal, Decimal, datetime]] = []
-    for invoice_rows in by_invoice.values():
-        header = invoice_rows[0]  # every row repeats the invoice's own columns
-        taxables = [Decimal(str(row.line_taxable or 0)) for row in invoice_rows]
-        shares = apportion_invoice_discount(
-            taxables,
-            # invoice_discount_amount only reads the four total columns, all
-            # of which the row carries under the same names.
-            invoice_discount=invoice_discount_amount(header),
-            invoice_tax=Decimal(str(header.total_tax_amount or 0)),
-        )
-        for row, taxable, share in zip(invoice_rows, taxables, shares):
-            if product_id is not None and row.product_id != product_id:
-                continue
-            lines.append((row.product_id, Decimal(str(row.quantity or 0)), taxable - share, header.invoice_date))
+    for row, share in _apportioned_invoice_rows(query):
+        if product_id is not None and row.product_id != product_id:
+            continue
+        lines.append((
+            row.product_id,
+            Decimal(str(row.quantity or 0)),
+            Decimal(str(row.line_taxable or 0)) - share,
+            row.invoice_date,
+        ))
     return lines
 
 

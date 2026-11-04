@@ -325,6 +325,10 @@ class TestProductSales:
         assert res.json()["totals"]["sales_amount"] == 900.00
         # Total Revenue (incl. GST) is #674's column, not this issue's: unchanged here.
         assert row["total_revenue"] == 1180.00
+        # The monthly report reads the invoice header, so its taxable value
+        # stays the pre-discount 1000.00 even though the line reports are net.
+        monthly = client.get("/api/analytics/sales-by-month", params={"from_date": "2026-10-01", "to_date": "2026-10-31"}).json()
+        assert monthly["rows"][0]["taxable_value"] == 1000.00
 
     def test_product_filter_takes_only_its_share_of_discount(self, client):
         """Issue #635: under a product filter, the discount is apportioned
@@ -494,6 +498,34 @@ class TestProfitLoss:
         assert rows["Plain"]["sales_amount"] == 100.00
         assert data["totals"]["revenue"] == 1000.00
         assert data["monthly_rows"][0]["revenue"] == 1000.00
+
+    def test_product_filter_with_discount(self, client):
+        """Review on #715: under a P&L product filter, the filtered product
+        takes only its share of the invoice discount, and COGS / customer
+        figures cover that product only. Widget 1000 + gadget 300, both at
+        18%, 10% off: widget's ex-GST share is 1000 - 130 x 1000/1300 = 900."""
+        widget = _create_product(client, "PL-8", "Widget", 1000, purchase_price=60)
+        gadget = _create_product(client, "PL-9", "Gadget", 300, purchase_price=40)
+        ledger = _create_ledger(client, "Acme")
+        _create_invoice(client, ledger, [
+            {"product_id": widget, "quantity": 1, "unit_price": 1000, "gst_rate": 18},
+            {"product_id": gadget, "quantity": 1, "unit_price": 300, "gst_rate": 18},
+        ], invoice_date=datetime(2026, 3, 10, 12, 0),
+            discount_type="percentage", discount_value=10)
+
+        data = client.get("/api/analytics/profit-loss", params={
+            "from_date": "2026-03-01", "to_date": "2026-03-31", "product_id": widget,
+        }).json()
+        assert len(data["product_rows"]) == 1
+        row = data["product_rows"][0]
+        assert row["name"] == "Widget"
+        assert row["quantity_sold"] == 1
+        assert row["sales_amount"] == 900.00
+        assert row["cogs"] == 60.00  # widget only, not gadget's 40
+        assert data["totals"]["revenue"] == 900.00
+        assert len(data["customer_rows"]) == 1
+        assert data["customer_rows"][0]["revenue"] == 900.00
+        assert data["customer_rows"][0]["invoice_count"] == 1
 
     def test_product_filter_narrows_monthly_rows(self, client):
         widget = _create_product(client, "PL-6", "Widget", 100, purchase_price=60)
