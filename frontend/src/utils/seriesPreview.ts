@@ -13,14 +13,14 @@ export function buildSeriesPreview(
   if (!series.include_year) {
     return `${prefix}${sep}${seq}${suffix}`;
   }
-  // Without a document date, the server formats its preview using UTC.
+  // Real numbers take the document's date, which is normally today's local date.
   let yearPart: string;
   if (series.year_format === 'FY') {
     yearPart = fyLabel ?? 'FY';
   } else if (series.year_format === 'MM-YYYY') {
-    yearPart = `${String(now.getUTCMonth() + 1).padStart(2, '0')}${sep}${now.getUTCFullYear()}`;
+    yearPart = `${String(now.getMonth() + 1).padStart(2, '0')}${sep}${now.getFullYear()}`;
   } else {
-    yearPart = `${now.getUTCFullYear()}`;
+    yearPart = `${now.getFullYear()}`;
   }
   return `${prefix}${sep}${yearPart}${sep}${seq}${suffix}`;
 }

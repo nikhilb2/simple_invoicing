@@ -22,10 +22,13 @@ describe('buildSeriesPreview matches server formatting', () => {
     expect(buildSeriesPreview({ ...format, ...patch }, counter, label, now)).toBe(expected);
   });
 
-  test('uses the same UTC year/month as the server at a timezone boundary', () => {
+  test.each<[InvoiceSeriesUpdate['year_format'], string]>([
+    ['YYYY', 'INV-2027-001'],
+    ['MM-YYYY', 'INV-01-2027-001'],
+  ])('uses the local date for %s, as a document dated today would', (year_format, expected) => {
     expect(buildSeriesPreview(
-      { ...format, year_format: 'MM-YYYY' }, 1, null, new Date('2026-12-31T23:45:00Z'),
-    )).toBe('INV-12-2026-001');
+      { ...format, year_format }, 1, null, new Date(2027, 0, 1, 0, 30),
+    )).toBe(expected);
   });
 });
 
