@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api, { getApiErrorMessage, getBlobErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
@@ -31,8 +31,23 @@ export default function Gstr1FilingPage() {
   const [downloading, setDownloading] = useState<'json' | 'csv' | 'pdf' | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const requestId = useRef(0);
 
   const activeCurrencyCode = company?.currency_code || 'USD';
+
+  const reset = useCallback(() => {
+    // Invalidate every pending result, error and finally handler together.
+    requestId.current += 1;
+    setStep('select-period');
+    setValidation(null);
+    setSummary(null);
+    setLoading(false);
+    setDownloading(null);
+    setError('');
+    setSuccess('');
+  }, []);
+
+  useEffect(() => () => { requestId.current += 1; }, []);
 
   useEffect(() => {
     api.get<CompanyProfile>('/company/')
@@ -42,14 +57,11 @@ export default function Gstr1FilingPage() {
 
   useEffect(() => {
     // Financial years can load after someone has already set the dates.
-    if (!periodEdited.current) setPeriod(defaultFilingPeriod(activeFY));
-  }, [activeFY]);
-
-  function reset() {
-    setStep('select-period');
-    setValidation(null);
-    setSummary(null);
-  }
+    if (!periodEdited.current) {
+      setPeriod(defaultFilingPeriod(activeFY));
+      reset();
+    }
+  }, [activeFY, reset]);
 
   // A return is a statement about one period, so a validation pass or a summary
   // belongs to the period it was run for. Moving the dates has to discard both
@@ -62,9 +74,11 @@ export default function Gstr1FilingPage() {
   }
 
   async function handleValidate() {
+    const id = ++requestId.current;
     try {
       setLoading(true);
       setError('');
+      setSuccess('');
       setValidation(null);
       setSummary(null);
 
@@ -72,6 +86,7 @@ export default function Gstr1FilingPage() {
         '/ledgers/tax-ledger/gstr1/validate',
         { params: { from_date: period.fromDate, to_date: period.toDate } },
       );
+      if (id !== requestId.current) return;
       setValidation(response.data);
       // Always move to the results step so validation errors (or the all-clear)
       // are rendered. Previously we only advanced on success, so an invalid
@@ -89,30 +104,38 @@ export default function Gstr1FilingPage() {
         );
       }
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to validate GSTR-1 data'));
+      if (id === requestId.current) {
+        setError(getApiErrorMessage(err, 'Unable to validate GSTR-1 data'));
+      }
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }
 
   async function handleSummary() {
+    const id = ++requestId.current;
     setStep('summary');
     try {
       setLoading(true);
       setError('');
+      setSuccess('');
       const response = await api.get<Gstr1Summary>(
         '/ledgers/tax-ledger/gstr1/summary',
         { params: { from_date: period.fromDate, to_date: period.toDate } },
       );
+      if (id !== requestId.current) return;
       setSummary(response.data);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to load GSTR-1 summary'));
+      if (id === requestId.current) {
+        setError(getApiErrorMessage(err, 'Unable to load GSTR-1 summary'));
+      }
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }
 
   async function handleDownload(format: 'json' | 'csv' | 'pdf') {
+    const id = ++requestId.current;
     try {
       setDownloading(format);
       setError('');
@@ -120,6 +143,7 @@ export default function Gstr1FilingPage() {
         params: { from_date: period.fromDate, to_date: period.toDate },
         responseType: 'blob',
       });
+      if (id !== requestId.current) return;
       const url = window.URL.createObjectURL(response.data as Blob);
       const link = document.createElement('a');
       link.href = url;
@@ -127,9 +151,10 @@ export default function Gstr1FilingPage() {
       link.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      setError(await getBlobErrorMessage(err, `Unable to download GSTR-1 ${format.toUpperCase()}`));
+      const message = await getBlobErrorMessage(err, `Unable to download GSTR-1 ${format.toUpperCase()}`);
+      if (id === requestId.current) setError(message);
     } finally {
-      setDownloading(null);
+      if (id === requestId.current) setDownloading(null);
     }
   }
 
