@@ -223,3 +223,32 @@ describe('reading API errors', () => {
     });
   });
 });
+
+describe('stale company id', () => {
+  it('drops the stored id and retries once without it on 404 Company not found', async () => {
+    store.active_company_id = '999';
+    api.defaults.adapter = async (config) => {
+      if (config.headers['X-Company-Id']) {
+        const detail = { detail: 'Company not found' };
+        throw new AxiosError('Company not found', 'ERR_BAD_RESPONSE', config, null,
+          { data: detail, status: 404, statusText: 'Not Found', headers: {}, config } as AxiosResponse);
+      }
+      return respond(config, 200);
+    };
+
+    await expect(api.get('/company/')).resolves.toMatchObject({ status: 200 });
+    expect(store.active_company_id).toBeUndefined();
+  });
+
+  it('does not retry other 404s', async () => {
+    store.active_company_id = '999';
+    api.defaults.adapter = async (config) => {
+      const detail = { detail: 'Not found' };
+      throw new AxiosError('Not found', 'ERR_BAD_RESPONSE', config, null,
+        { data: detail, status: 404, statusText: 'Not Found', headers: {}, config } as AxiosResponse);
+    };
+
+    await expect(api.get('/company/')).rejects.toMatchObject({ response: { status: 404 } });
+    expect(store.active_company_id).toBe('999');
+  });
+});

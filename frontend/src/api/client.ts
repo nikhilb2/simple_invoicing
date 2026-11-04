@@ -16,6 +16,7 @@ let refreshPromise: Promise<string | null> | null = null;
 
 type RetryableRequestConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;
+  _companyRetry?: boolean;
 };
 
 api.interceptors.request.use((config) => {
@@ -50,6 +51,36 @@ api.interceptors.response.use(
     const originalRequest = error.config as RetryableRequestConfig | undefined;
     const requestUrl = originalRequest?.url || '';
     const isRefreshCall = requestUrl.includes('/auth/refresh');
+
+    // A stored company id can go stale (e.g. a database restore while the
+    // browser is still logged in). The server answers those company-scoped
+    // requests 404 'Company not found' — including the startup company
+    // query, which races hydrateUserRole's /auth/me correction. Rather than
+    // showing that error, drop the stale id and retry once without it: the
+    // server then resolves the user's first accessible company (or the
+    // company_required redirect when there is none), and later requests
+    // stop sending the stale id because it is no longer stored.
+    if (
+      status === 404 &&
+      error.response?.data?.detail === 'Company not found' &&
+      originalRequest &&
+      !originalRequest._companyRetry &&
+      !requestUrl.includes('/auth/') &&
+      originalRequest.headers?.['X-Company-Id']
+    ) {
+      originalRequest._companyRetry = true;
+      localStorage.removeItem('active_company_id');
+      const staleHeaders = originalRequest.headers as unknown as {
+        delete?: (name: string) => void;
+        [key: string]: unknown;
+      };
+      if (typeof staleHeaders.delete === 'function') {
+        staleHeaders.delete('X-Company-Id');
+      } else {
+        delete staleHeaders['X-Company-Id'];
+      }
+      return api.request(originalRequest);
+    }
 
     if (status !== 401 || !originalRequest || originalRequest._retry || isRefreshCall) {
       return Promise.reject(error);
