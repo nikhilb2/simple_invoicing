@@ -6,6 +6,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, joinedload
 from decimal import Decimal
@@ -33,6 +34,7 @@ from src.schemas.invoice import (
 from src.api.deps import get_active_company, get_current_user
 from src.core.analytics import distinct_id_for, track
 from src.services.financial_year import get_active_fy, get_fy_for_date
+from src.services.gst_tax_service import india_today
 from src.services.invoice_payments import (
     build_invoice_payment_summaries,
     is_offset_by_payables,
@@ -1036,7 +1038,7 @@ def duplicate_invoice(
         payload = InvoiceCreate(
             ledger_id=original.ledger_id,
             voucher_type=original.voucher_type,
-            invoice_date=datetime.utcnow().date(),
+            invoice_date=india_today(),
             place_of_supply=original.place_of_supply,
             supplier_invoice_number=original.supplier_invoice_number,
             reference_notes=original.reference_notes,
@@ -1058,7 +1060,7 @@ def duplicate_invoice(
                 for item in original.items
             ],
         )
-        new_invoice, _warnings = create_invoice_record(
+        new_invoice, warnings = create_invoice_record(
             db,
             payload,
             created_by=current_user.id,
@@ -1073,7 +1075,13 @@ def duplicate_invoice(
         db.commit()
         db.refresh(new_invoice)
 
-        return {"id": new_invoice.id, "invoice_number": new_invoice.invoice_number}
+        result = {"id": new_invoice.id, "invoice_number": new_invoice.invoice_number}
+    except ValidationError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="This invoice has details that no longer pass validation. Copy it from the UI and correct them.",
+        )
     except HTTPException:
         db.rollback()
         raise
@@ -1081,3 +1089,6 @@ def duplicate_invoice(
         logger.exception("Error duplicating invoice")
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to duplicate invoice")
+
+    track_invoice_created(current_user, new_invoice, payload, warnings, source="duplicate")
+    return result

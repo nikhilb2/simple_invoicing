@@ -1,11 +1,13 @@
 """Tests for the duplicate invoice endpoint."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
 
+from src.api.routes import invoices
+from src.services import gst_tax_service
 from src.models.financial_year import FinancialYear
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice
@@ -80,12 +82,20 @@ class TestDuplicateInvoice:
     def test_short_stock_rolls_back_duplicate(self, client, db_session):
         product = _create_product(client, "DUPSHORT", "Short stock")
         ledger = _create_ledger(client)
+        today = gst_tax_service.india_today()
+        fy = client.post("/api/financial-years/", json={
+            "label": str(today.year),
+            "start_date": f"{today.year}-01-01",
+            "end_date": f"{today.year}-12-31",
+        })
+        assert fy.status_code == 201, fy.text
         original = _create_invoice(client, product["id"], ledger["id"])
         stock = db_session.query(Inventory).filter_by(product_id=product["id"]).one()
         stock.quantity = 1
         db_session.commit()
         invoice_count = db_session.query(Invoice).count()
         sequences = db_session.query(InvoiceSeries.id, InvoiceSeries.next_sequence).all()
+        assert sequences
 
         response = client.post(f"/api/invoices/{original['id']}/duplicate")
 
@@ -167,26 +177,76 @@ class TestDuplicateInvoice:
         duplicate = db_session.get(Invoice, response.json()["id"])
         assert duplicate.created_by == 1
 
-    def test_duplicate_uses_todays_financial_year(self, client, db_session):
+    def test_duplicate_uses_india_date_at_financial_year_boundary(self, client, db_session, monkeypatch):
         product = _create_product(client, "DUPFY", "FY product")
         ledger = _create_ledger(client)
         original = _create_invoice(client, product["id"], ledger["id"])
         company_id = db_session.get(Product, product["id"]).company_id
         db_session.query(FinancialYear).update({"is_active": False})
-        today = datetime.utcnow().date()
-        old_fy = FinancialYear(company_id=company_id, label="2000-01", start_date=date(2000, 4, 1),
-                               end_date=date(2001, 3, 31), is_active=True)
-        current_fy = FinancialYear(company_id=company_id, label=str(today.year),
-                                   start_date=date(today.year, 1, 1), end_date=date(today.year, 12, 31))
+        old_fy = FinancialYear(company_id=company_id, label="2025-26", start_date=date(2025, 4, 1),
+                               end_date=date(2026, 3, 31), is_active=True)
+        current_fy = FinancialYear(company_id=company_id, label="2026-27",
+                                   start_date=date(2026, 4, 1), end_date=date(2027, 3, 31))
         db_session.add_all([old_fy, current_fy])
         db_session.commit()
 
+        # 02:00 IST on April 1 is still March 31 in UTC.
+        class BoundaryDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                instant = datetime(2026, 3, 31, 20, 30, tzinfo=timezone.utc)
+                return instant.astimezone(tz) if tz else instant.replace(tzinfo=None)
+
+            @classmethod
+            def utcnow(cls):
+                return datetime(2026, 3, 31, 20, 30)
+
+        monkeypatch.setattr(invoices, "datetime", BoundaryDateTime)
+        monkeypatch.setattr(gst_tax_service, "datetime", BoundaryDateTime)
         response = client.post(f"/api/invoices/{original['id']}/duplicate")
 
         assert response.status_code == 200, response.text
         duplicate = db_session.get(Invoice, response.json()["id"])
-        assert duplicate.invoice_date.date() == today
+        assert duplicate.invoice_date.date() == date(2026, 4, 1)
         assert duplicate.financial_year_id == current_fy.id
+
+    def test_invalid_legacy_line_returns_actionable_error_without_copy(self, client, db_session, monkeypatch):
+        product = _create_product(client, "DUPLEGACY", "Legacy product")
+        ledger = _create_ledger(client)
+        original = _create_invoice(client, product["id"], ledger["id"])
+        db_session.get(Invoice, original["id"]).items[0].hsn_sac = "12345"
+        db_session.commit()
+        invoice_count = db_session.query(Invoice).count()
+        stock_before = db_session.query(Inventory).filter_by(product_id=product["id"]).one().quantity
+        events = []
+        monkeypatch.setattr(invoices, "track", lambda *args: events.append(args))
+
+        response = client.post(f"/api/invoices/{original['id']}/duplicate")
+
+        assert response.status_code == 400, response.text
+        assert "validation" in response.json()["detail"].lower()
+        assert "ui" in response.json()["detail"].lower()
+        db_session.expire_all()
+        assert db_session.query(Invoice).count() == invoice_count
+        assert db_session.query(Inventory).filter_by(product_id=product["id"]).one().quantity == stock_before
+        assert events == []
+
+    def test_duplicate_tracks_invoice_created(self, client, db_session, monkeypatch):
+        product = _create_product(client, "DUPTRACK", "Tracked product")
+        ledger = _create_ledger(client)
+        original = _create_invoice(client, product["id"], ledger["id"])
+        events = []
+        monkeypatch.setattr(invoices, "track", lambda *args: events.append(args))
+
+        response = client.post(f"/api/invoices/{original['id']}/duplicate")
+
+        assert response.status_code == 200, response.text
+        assert len(events) == 1
+        event, _, properties = events[0]
+        assert event == "invoice_created"
+        assert properties["source"] == "duplicate"
+        assert properties["invoice_id"] == response.json()["id"]
+        assert db_session.get(Invoice, properties["invoice_id"]) is not None
 
     def test_duplicate_preserves_pricing_overrides_and_discounts(self, client, db_session):
         product = _create_product(client, "DUPPRICE", "Pricing product")
