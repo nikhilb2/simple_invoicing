@@ -7,6 +7,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import type { InvoiceCreate, Invoice, Ledger, Product } from '../types/api';
 import { useFY } from '../context/FYContext';
 import formatCurrency from '../utils/formatting';
+import { computeInvoiceTotals, computeLineTotal, type InvoiceTotalLine } from '../utils/invoiceTotals';
 import { toIsoDate } from '../utils/dateRanges';
 import { formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../utils/invoiceDueDate.ts';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../utils/invoiceTax';
@@ -105,42 +106,26 @@ export default function CreateInvoiceModal({
     return () => { cancelled = true; };
   }, []);
 
-  const totalAmount = items.reduce((sum, item) => {
+  const selectedLedger = ledgers.find((ledger) => ledger.id === Number(selectedLedgerId));
+  const placeOfSupply = resolvePlaceOfSupply(placeOfSupplyChoice, selectedLedgerId, companyGst, selectedLedger?.gst);
+  const composerInterstateSupply = voucherType === 'sales' && placeOfSupply
+    ? isInterstatePlaceOfSupply(placeOfSupply, companyGst)
+    : isInterstateSupply(companyGst, selectedLedger?.gst);
+
+  const totalLines = items.flatMap((item): InvoiceTotalLine[] => {
     const product = products.find((p) => p.id === Number(item.productId));
-    const quantity = product?.track_serials ? item.serials.length : Number(item.quantity);
-    const unitPrice = item.unit_price ? Number(item.unit_price) : (product?.price || 0);
-    const gstRate = product?.gst_rate || 0;
-    if (!product || Number.isNaN(quantity)) return sum;
-
-    let taxableAmount: number;
-    let lineTotal: number;
-    if (taxInclusive) {
-      lineTotal = unitPrice * quantity;
-      taxableAmount = lineTotal / (1 + gstRate / 100);
-    } else {
-      taxableAmount = unitPrice * quantity;
-      lineTotal = taxableAmount + taxableAmount * gstRate / 100;
-    }
-
-    // Apply item-level discount
-    if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
-      const discVal = Number(item.discount_value);
-      let discAmount = 0;
-      if (item.discount_type === 'percentage') {
-        discAmount = taxableAmount * discVal / 100;
-      } else {
-        discAmount = Math.min(discVal, taxableAmount);
-      }
-      const discountedTaxable = taxableAmount - discAmount;
-      if (taxInclusive) {
-        lineTotal = discountedTaxable * (1 + gstRate / 100);
-      } else {
-        lineTotal = discountedTaxable + discountedTaxable * gstRate / 100;
-      }
-    }
-
-    return sum + lineTotal;
-  }, 0);
+    if (!product) return [];
+    return [{
+      quantity: product.track_serials ? item.serials.length : Number(item.quantity),
+      unitPrice: item.unit_price ? Number(item.unit_price) : product.price || 0,
+      gstRate: product.gst_rate || 0,
+      discountType: item.discount_type,
+      discountValue: Number(item.discount_value),
+    }];
+  });
+  const { total: totalAmount } = computeInvoiceTotals(totalLines, {
+    taxInclusive, interstateSupply: composerInterstateSupply,
+  });
 
   function addItem() {
     const defaultProduct = products[0];
@@ -170,11 +155,6 @@ export default function CreateInvoiceModal({
     activeFY !== null &&
     invoiceDate !== '' &&
     (invoiceDate < activeFY.start_date || invoiceDate > activeFY.end_date);
-  const selectedLedger = ledgers.find((ledger) => ledger.id === Number(selectedLedgerId));
-  const placeOfSupply = resolvePlaceOfSupply(placeOfSupplyChoice, selectedLedgerId, companyGst, selectedLedger?.gst);
-  const composerInterstateSupply = voucherType === 'sales' && placeOfSupply
-    ? isInterstatePlaceOfSupply(placeOfSupply, companyGst)
-    : isInterstateSupply(companyGst, selectedLedger?.gst);
   const resolvedDueDate = resolveDueDate({
     mode: dueDateMode,
     invoiceDate,
@@ -416,46 +396,15 @@ export default function CreateInvoiceModal({
                   const quantityValue = tracked ? String(item.serials.length) : item.quantity;
                   const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
                   const gstRate = selectedProduct?.gst_rate || 0;
-                  let lineTotal: number;
-                  let taxAmount: number;
-                  if (taxInclusive) {
-                    let baseLineTotal = unitPrice * Number(quantityValue || 0);
-                    let baseTaxableAmount = baseLineTotal / (1 + gstRate / 100);
-                    // Apply item-level discount
-                    if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
-                      const discVal = Number(item.discount_value);
-                      let discAmount = 0;
-                      if (item.discount_type === 'percentage') {
-                        discAmount = baseTaxableAmount * discVal / 100;
-                      } else {
-                        discAmount = Math.min(discVal, baseTaxableAmount);
-                      }
-                      const discountedTaxable = baseTaxableAmount - discAmount;
-                      lineTotal = discountedTaxable * (1 + gstRate / 100);
-                      taxAmount = lineTotal - discountedTaxable;
-                    } else {
-                      lineTotal = baseLineTotal;
-                      taxAmount = lineTotal - baseTaxableAmount;
-                    }
-                  } else {
-                    const baseTaxableAmount = unitPrice * Number(quantityValue || 0);
-                    // Apply item-level discount
-                    if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
-                      const discVal = Number(item.discount_value);
-                      let discAmount = 0;
-                      if (item.discount_type === 'percentage') {
-                        discAmount = baseTaxableAmount * discVal / 100;
-                      } else {
-                        discAmount = Math.min(discVal, baseTaxableAmount);
-                      }
-                      const discountedTaxable = baseTaxableAmount - discAmount;
-                      taxAmount = discountedTaxable * gstRate / 100;
-                      lineTotal = discountedTaxable + taxAmount;
-                    } else {
-                      taxAmount = baseTaxableAmount * gstRate / 100;
-                      lineTotal = baseTaxableAmount + taxAmount;
-                    }
-                  }
+                  const { lineTotal, taxAmount } = computeLineTotal({
+                    unitPrice,
+                    quantity: Number(quantityValue || 0),
+                    gstRate,
+                    taxInclusive,
+                    discountType: item.discount_type,
+                    discountValue: Number(item.discount_value),
+                    interstateSupply: composerInterstateSupply,
+                  });
 
                   return (
                     <div key={item.id} className="line-item">
