@@ -323,12 +323,81 @@ class TestProductSales:
         row = res.json()["rows"][0]
         assert row["sales_amount"] == 900.00
         assert res.json()["totals"]["sales_amount"] == 900.00
-        # Total Revenue (incl. GST) is #674's column, not this issue's: unchanged here.
-        assert row["total_revenue"] == 1180.00
+        # Issue #674: Total Revenue includes GST, so the whole discount comes off.
+        assert row["total_revenue"] == 1062.00
+        assert res.json()["totals"]["total_revenue"] == 1062.00
+        # Stored GST is left as the invoice wrote it.
+        assert row["total_gst"] == 180.00
         # The monthly report reads the invoice header, so its taxable value
         # stays the pre-discount 1000.00 even though the line reports are net.
         monthly = client.get("/api/analytics/sales-by-month", params={"from_date": "2026-10-01", "to_date": "2026-10-31"}).json()
         assert monthly["rows"][0]["taxable_value"] == 1000.00
+
+    def test_total_revenue_is_what_the_invoice_charged(self, client):
+        """Issue #674: 1 x 1000 at 18% GST (1180) with a flat discount leaves
+        Total Revenue equal to the invoice total, even when the discount is
+        larger than the ex-GST value."""
+        product = _create_product(client, "PRD-REV-1", "Widget", 1000)
+        ledger = _create_ledger(client, "Acme")
+        params = {"from_date": "2026-10-01", "to_date": "2026-10-31"}
+
+        for discount, day, invoice_total, expected_total in (
+            (1100, 10, 80.00, 80.00),
+            (1180, 11, 0.00, 80.00),
+        ):
+            invoice = _create_invoice(client, ledger, [
+                {"product_id": product, "quantity": 1, "unit_price": 1000, "gst_rate": 18},
+            ], invoice_date=datetime(2026, 10, day, 12, 0),
+                discount_type="net", discount_value=discount)
+            assert invoice["total_amount"] == invoice_total
+            row = client.get("/api/analytics/sales-by-product", params=params).json()["rows"][0]
+            assert row["total_revenue"] == expected_total
+
+    def test_total_revenue_splits_discount_by_line_total_across_gst_rates(self, client):
+        """Issue #674: 1000 at 0% (1000) and 1000 at 28% (1280) with a flat 228
+        discount, 10% of 2280, split by each line's GST-inclusive total."""
+        exempt = _create_product(client, "PRD-REV-2", "Exempt", 1000)
+        taxed = _create_product(client, "PRD-REV-3", "Taxed", 1000)
+        ledger = _create_ledger(client, "Acme")
+        _create_invoice(client, ledger, [
+            {"product_id": exempt, "quantity": 1, "unit_price": 1000, "gst_rate": 0},
+            {"product_id": taxed, "quantity": 1, "unit_price": 1000, "gst_rate": 28},
+        ], invoice_date=datetime(2026, 10, 10, 12, 0),
+            discount_type="net", discount_value=228)
+
+        res = client.get("/api/analytics/sales-by-product", params={"from_date": "2026-10-01", "to_date": "2026-10-31"})
+        rows = {row["name"]: row for row in res.json()["rows"]}
+        assert rows["Exempt"]["total_revenue"] == 900.00
+        assert rows["Taxed"]["total_revenue"] == 1152.00
+        assert res.json()["totals"]["total_revenue"] == 2052.00
+
+    def test_total_revenue_filter_takes_only_its_share_and_csv_agrees(self, client):
+        """Issue #674: under a product filter, the whole discount is apportioned
+        across all of the invoice's lines first, and the CSV shows the same figure."""
+        widget = _create_product(client, "PRD-REV-4", "Widget", 100)
+        gadget = _create_product(client, "PRD-REV-5", "Gadget", 50)
+        ledger = _create_ledger(client, "Acme")
+        # 118 + 59 = 177; a flat 17.70 is 10% of each line.
+        _create_invoice(client, ledger, [
+            {"product_id": widget, "quantity": 1, "unit_price": 100, "gst_rate": 18},
+            {"product_id": gadget, "quantity": 1, "unit_price": 50, "gst_rate": 18},
+        ], invoice_date=datetime(2026, 10, 10, 12, 0),
+            discount_type="net", discount_value=17.70)
+
+        params = {"from_date": "2026-10-01", "to_date": "2026-10-31"}
+        rows = {r["name"]: r for r in client.get("/api/analytics/sales-by-product", params=params).json()["rows"]}
+        assert rows["Widget"]["total_revenue"] == 106.20
+        assert rows["Gadget"]["total_revenue"] == 53.10
+
+        narrowed = {**params, "product_id": widget}
+        data = client.get("/api/analytics/sales-by-product", params=narrowed).json()
+        assert [r["total_revenue"] for r in data["rows"]] == [106.20]
+        assert data["totals"]["total_revenue"] == 106.20
+
+        csv_text = client.get("/api/analytics/sales-by-product/csv", params=params).text
+        assert "106.20" in csv_text
+        assert "53.10" in csv_text
+        assert "118.00" not in csv_text
 
     def test_product_filter_takes_only_its_share_of_discount(self, client):
         """Issue #635: under a product filter, the discount is apportioned

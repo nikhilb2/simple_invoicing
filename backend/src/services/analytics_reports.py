@@ -257,6 +257,17 @@ def build_product_sales_report(
     ):
         discounted_sales[line_pid] = discounted_sales.get(line_pid, Decimal("0")) + discounted_taxable
 
+    # Total revenue includes GST, so the whole invoice discount comes off it.
+    discounted_revenue = _discounted_line_totals(
+        db,
+        company_id=company_id,
+        voucher_type=voucher_type,
+        from_date=from_date,
+        to_date=to_date,
+        ledger_id=ledger_id,
+        product_id=product_id,
+    )
+
     rows: list[dict] = []
     for pid, name, sku, maintain_inventory, quantity, taxable, tax, revenue, invoice_count in grouped:
         qty = Decimal(str(quantity or 0))
@@ -268,7 +279,7 @@ def build_product_sales_report(
             "quantity_sold": qty,
             "sales_amount": sales_amount,
             "average_selling_price": average_of(sales_amount, qty),
-            "total_revenue": Decimal(str(revenue or 0)),
+            "total_revenue": discounted_revenue.get(pid, Decimal(str(revenue or 0))),
             "total_gst": Decimal(str(tax or 0)),
             "invoice_count": int(invoice_count or 0),
             "current_stock": stock_map.get(pid, Decimal("0")) if maintain_inventory else None,
@@ -335,19 +346,21 @@ class ProfitLossData:
     totals: dict
 
 
-def _apportioned_invoice_rows(query, *, weight_attr="line_taxable"):
+def _apportioned_invoice_rows(query, *, gst_inclusive=False):
     """Yield ``(row, share of the invoice discount)`` for every invoice line.
 
     Every row must carry the invoice header totals under the names
     :func:`invoice_discount_amount` reads (``taxable_amount``,
     ``total_tax_amount``, ``round_off_amount``, ``total_amount``), the invoice
-    id as ``row.id``, and the apportionment weight as ``weight_attr``
-    (``line_taxable`` by default). Rows are grouped by invoice in
+    id as ``row.id``, and the line's weight: ``line_taxable``, or ``line_total``
+    with ``gst_inclusive``. Rows are grouped by invoice in
     ``Invoice.id, InvoiceItem.id`` order and the discount is apportioned
     across *all* of an invoice's lines before the caller filters any out, so
-    a filtered product never takes the whole discount. A caller that weights
-    by a different column — Sales-by-Product total revenue weights by
-    ``line_total`` — passes ``weight_attr`` and selects that column.
+    a filtered product never takes the whole discount.
+
+    By default each share is the ex-GST part of the discount, to take off
+    ``line_taxable``. With ``gst_inclusive`` it is the line's share of the whole
+    discount, to take off ``line_total``, which already includes the GST.
     """
     by_invoice: dict[int, list] = {}
     for row in query.order_by(Invoice.id, InvoiceItem.id).all():
@@ -355,15 +368,66 @@ def _apportioned_invoice_rows(query, *, weight_attr="line_taxable"):
 
     for invoice_rows in by_invoice.values():
         header = invoice_rows[0]  # every row repeats the invoice's own columns
-        weights = [Decimal(str(getattr(row, weight_attr) or 0)) for row in invoice_rows]
+        weights = [
+            Decimal(str((row.line_total if gst_inclusive else row.line_taxable) or 0))
+            for row in invoice_rows
+        ]
         shares = apportion_invoice_discount(
             weights,
             # invoice_discount_amount only reads the four total columns, all
             # of which the row carries under the same names.
             invoice_discount=invoice_discount_amount(header),
-            invoice_tax=Decimal(str(header.total_tax_amount or 0)),
+            invoice_tax=Decimal("0") if gst_inclusive else Decimal(str(header.total_tax_amount or 0)),
         )
         yield from zip(invoice_rows, shares)
+
+
+def _discounted_line_totals(
+    db: Session,
+    *,
+    company_id: int,
+    voucher_type: str,
+    from_date: date,
+    to_date: date,
+    ledger_id: int | None,
+    product_id: int | None,
+) -> dict[int, Decimal]:
+    """Per-product revenue: ``line_total`` (incl. GST) net of the invoice discount."""
+    start, end = _date_bounds(from_date, to_date)
+    query = (
+        db.query(
+            Invoice.id,
+            InvoiceItem.product_id,
+            InvoiceItem.line_total,
+            Invoice.taxable_amount,
+            Invoice.total_tax_amount,
+            Invoice.round_off_amount,
+            Invoice.total_amount,
+        )
+        .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
+        .filter(
+            Invoice.company_id == company_id,
+            Invoice.status == "active",
+            Invoice.voucher_type == voucher_type,
+            Invoice.invoice_date >= start,
+            Invoice.invoice_date <= end,
+        )
+    )
+    if ledger_id is not None:
+        query = query.filter(Invoice.ledger_id == ledger_id)
+    if product_id is not None:
+        # Fetch every line of invoices containing the product; the discount
+        # is apportioned across all of them before the other lines are skipped.
+        containing = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id)
+        query = query.filter(Invoice.id.in_(containing))
+
+    revenue: dict[int, Decimal] = {}
+    for row, share in _apportioned_invoice_rows(query, gst_inclusive=True):
+        if product_id is not None and row.product_id != product_id:
+            continue
+        net_total = Decimal(str(row.line_total or 0)) - share
+        revenue[row.product_id] = revenue.get(row.product_id, Decimal("0")) + net_total
+    return revenue
 
 
 def build_profit_loss_report(
