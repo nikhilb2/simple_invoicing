@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { MessageSquarePlus } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { NAV_SHORTCUTS, resolveDocumentTitle } from '../config/navigation';
 import { useShortcuts } from '../context/ShortcutsContext';
@@ -8,6 +9,7 @@ import { isCheatSheetKey } from '../utils/keyboard';
 import { useMarketplaceSync } from '../features/marketplace/useMarketplaceSync';
 import { useSidebarStore } from '../store/useSidebarStore';
 import Sidebar from './Sidebar';
+import FeedbackDialog from './FeedbackDialog';
 import InvoiceCancelDialog from './InvoiceCancelDialog';
 import ShortcutCheatSheet from './ShortcutCheatSheet';
 import ThemeToggle from './ThemeToggle';
@@ -39,6 +41,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
   const closeCheatSheet = useCallback(() => setCheatSheetOpen(false), []);
+
+  // Rendered outside the header: its backdrop-filter would trap the fixed overlay.
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -88,6 +93,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           >
             Press <kbd>?</kbd> for shortcuts
           </button>
+          <button
+            type="button"
+            className="button button--ghost button--small page-header__feedback"
+            onClick={() => setFeedbackOpen(true)}
+            aria-label="Request a feature or report a bug"
+            title="Request a feature or report a bug"
+          >
+            <MessageSquarePlus size={16} aria-hidden="true" />
+            <span className="page-header__feedback-label">Request a feature or report a bug</span>
+          </button>
           <ThemeToggle />
         </header>
 
@@ -102,6 +117,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </motion.main>
       </div>
       {cheatSheetOpen && <ShortcutCheatSheet onClose={closeCheatSheet} />}
+      {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
       <InvoiceCancelDialog />
       <UpdateAvailableToast />
     </div>

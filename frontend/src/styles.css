@@ -676,6 +676,18 @@ textarea {
   color: var(--text);
 }
 
+.page-header__feedback {
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+/* Icon only on phones: the header also has to fit the menu and shortcut hint. */
+@media (max-width: 767px) {
+  .page-header__feedback-label {
+    display: none;
+  }
+}
+
 .theme-toggle {
   display: inline-flex;
   align-items: center;
