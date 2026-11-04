@@ -28,7 +28,7 @@ from src.schemas.product import (
 )
 from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.core.analytics import distinct_id_for, track
-from src.core.validation import hsn_sac_warning
+from src.core.validation import hsn_sac_warning, normalize_hsn_sac
 from src.services.serial_service import SerialManager
 
 router = APIRouter()
@@ -873,8 +873,14 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             errors.append({"row": row_num, "message": f"Invalid Reorder Level for {sku}"})
             continue
 
+        try:
+            hsn_sac = normalize_hsn_sac(values.get("hsn_code"))
+        except ValueError:
+            errors.append({"row": row_num, "message": f"Invalid HSN Code for {sku}: must be 4, 6 or 8 digits"})
+            continue
+
         # Saved all the same, like the serial-tracked stock note below.
-        hsn_warning = hsn_sac_warning(values.get("hsn_code"))
+        hsn_warning = hsn_sac_warning(hsn_sac)
         if hsn_warning:
             errors.append({"row": row_num, "message": f"{sku} was saved. {hsn_warning}"})
 
@@ -895,8 +901,8 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             existing.reorder_level = reorder_level
             if values.get("description"):
                 existing.description = values["description"]
-            if values.get("hsn_code"):
-                existing.hsn_sac = values["hsn_code"]
+            if hsn_sac:
+                existing.hsn_sac = hsn_sac
             if values.get("unit"):
                 existing.unit = values["unit"]
 
@@ -928,7 +934,7 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
                 sku=sku,
                 name=item_name,
                 description=values.get("description") or None,
-                hsn_sac=values.get("hsn_code") or None,
+                hsn_sac=hsn_sac,
                 price=selling_price,
                 purchase_price=purchase_price,
                 gst_rate=gst_rate,

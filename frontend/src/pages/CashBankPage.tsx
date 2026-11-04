@@ -8,7 +8,7 @@ import DateRangePresets from '../components/DateRangePresets';
 import type { CompanyAccount, CompanyProfile, Ledger, Payment, PaymentCreate, PaymentUpdate } from '../types/api';
 import formatCurrency, { formatDate } from '../utils/formatting';
 import { toIsoDate } from '../utils/dateRanges';
-import { buildCashBankEditPayload } from '../utils/cashBank';
+import { buildCashBankEditPayload, openingBalanceAt } from '../utils/cashBank';
 import { useFY } from '../context/FYContext';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
@@ -298,7 +298,12 @@ export default function CashBankPage() {
   const totals = useMemo(() => {
     const totalDebit = accountEntries.reduce((sum, entry) => sum + entry.debit, 0);
     const totalCredit = accountEntries.reduce((sum, entry) => sum + entry.credit, 0);
-    const openingBalance = selectedAccount ? Number(selectedAccount.opening_balance || 0) : 0;
+    const openingBalance = openingBalanceAt(
+      Number(selectedAccount?.opening_balance || 0),
+      payments,
+      selectedAccountId === '' ? null : Number(selectedAccountId),
+      new Date(`${period.fromDate}T00:00:00`).getTime(),
+    );
     const availableBalance = openingBalance + totalCredit - totalDebit;
 
     return {
@@ -307,7 +312,7 @@ export default function CashBankPage() {
       openingBalance,
       availableBalance,
     };
-  }, [accountEntries, selectedAccount]);
+  }, [accountEntries, selectedAccount, selectedAccountId, payments, period.fromDate]);
 
   return (
     <div className="page-grid">
