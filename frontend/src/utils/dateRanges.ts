@@ -18,6 +18,12 @@ export function toLocalDateTimeInput(date: Date): string {
   return `${toIsoDate(date)}T${hours}:${minutes}`;
 }
 
+/** Convert a date input's local midnight to the instant sent to the API. */
+export function localDateInputToIso(value: string): string {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day).toISOString();
+}
+
 function startOfWeek(today: Date): Date {
   // Monday-first: the accounting week everywhere this app is used.
   const offset = (today.getDay() + 6) % 7;
