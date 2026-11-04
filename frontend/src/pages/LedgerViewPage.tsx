@@ -18,6 +18,7 @@ import { remainingAmount, validateAllocations } from '../utils/validateAllocatio
 import { useFY } from '../context/FYContext';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { fetchOutstandingInvoices, fetchLedgerAddresses, createLedgerAddress, updateLedgerAddress, deleteLedgerAddress } from '../features/invoices/api';
+import { toIsoDate, toLocalDateTimeInput } from '../utils/dateRanges';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import EmptyState from '../components/EmptyState';
 import LedgerPhoneLinks from '../components/LedgerPhoneLinks';
@@ -25,8 +26,7 @@ import LedgerPhoneLinks from '../components/LedgerPhoneLinks';
 function defaultDateRange() {
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-  const toIso = (d: Date) => d.toISOString().slice(0, 10);
-  return { fromDate: toIso(firstDay), toDate: toIso(today) };
+  return { fromDate: toIsoDate(firstDay), toDate: toIsoDate(today) };
 }
 
 function createDefaultPaymentForm(ledgerId: number): PaymentCreate {
@@ -35,7 +35,7 @@ function createDefaultPaymentForm(ledgerId: number): PaymentCreate {
     voucher_type: 'receipt',
     amount: 0,
     account_id: null,
-    date: new Date().toISOString().slice(0, 16),
+    date: toLocalDateTimeInput(new Date()),
     mode: '',
     reference: '',
     notes: '',
@@ -48,7 +48,7 @@ function createDefaultEditPaymentForm(): PaymentUpdate {
     voucher_type: 'receipt',
     amount: 0,
     account_id: null,
-    date: new Date().toISOString().slice(0, 16),
+    date: toLocalDateTimeInput(new Date()),
     mode: '',
     reference: '',
     notes: '',

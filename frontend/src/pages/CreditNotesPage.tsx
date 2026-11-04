@@ -540,7 +540,7 @@ export default function CreditNotesPage() {
 
   function handleExportCreditNotesCsv() {
     downloadCsv(
-      `credit_notes_${new Date().toISOString().slice(0, 10)}.csv`,
+      `credit_notes_${toIsoDate(new Date())}.csv`,
       ['Number', 'Date', 'Ledger', 'Original invoice', 'Total'],
       creditNotes.map((creditNote) => {
         const ledger = ledgers.find((entry) => entry.id === creditNote.ledger_id);

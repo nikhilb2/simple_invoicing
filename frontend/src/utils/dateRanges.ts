@@ -13,6 +13,13 @@ export function toIsoDate(date: Date): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
+/** Local date and time as YYYY-MM-DDTHH:mm, the format a datetime-local input expects. */
+export function toLocalDateTimeInput(date: Date): string {
+  const hours = `${date.getHours()}`.padStart(2, '0');
+  const minutes = `${date.getMinutes()}`.padStart(2, '0');
+  return `${toIsoDate(date)}T${hours}:${minutes}`;
+}
+
 function startOfWeek(today: Date): Date {
   // Monday-first: the accounting week everywhere this app is used.
   const offset = (today.getDay() + 6) % 7;

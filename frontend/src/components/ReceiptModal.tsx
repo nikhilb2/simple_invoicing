@@ -5,6 +5,7 @@ import { fetchOutstandingInvoices } from '../features/invoices/api';
 import formatCurrency from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate';
 import { remainingAmount } from '../utils/validateAllocations';
+import { toLocalDateTimeInput } from '../utils/dateRanges';
 import EmptyState from './EmptyState';
 import ModalCloseButton from './ModalCloseButton';
 import { useFY } from '../context/FYContext';
@@ -79,7 +80,7 @@ export default function ReceiptModal({
     voucher_type: 'receipt',
     amount: 0,
     account_id: null,
-    date: new Date().toISOString().slice(0, 16),
+    date: toLocalDateTimeInput(new Date()),
     mode: '',
     reference: '',
     notes: '',

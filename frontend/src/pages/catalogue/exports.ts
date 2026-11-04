@@ -8,6 +8,7 @@
  */
 import api, { cleanParams, getBlobErrorMessage } from '../../api/client';
 import formatCurrency, { formatDateTime } from '../../utils/formatting';
+import { toIsoDate } from '../../utils/dateRanges';
 import { formatQuantity, isLowStock } from './types';
 import type { CatalogueFilters, CatalogueRow, PaginatedCatalogue, SortKey } from './types';
 
@@ -107,7 +108,7 @@ export async function exportCatalogueCsv(filters: ExportFilters): Promise<void> 
   try {
     const link = document.createElement('a');
     link.href = url;
-    link.download = `catalogue_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `catalogue_${toIsoDate(new Date())}.csv`;
     // Firefox ignores a click on an anchor that is not in the document.
     document.body.appendChild(link);
     link.click();

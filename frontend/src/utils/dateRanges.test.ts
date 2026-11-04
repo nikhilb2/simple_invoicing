@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { buildRangePresets, defaultFilingPeriod, matchPreset, toIsoDate } from './dateRanges.ts';
+import { buildRangePresets, defaultFilingPeriod, matchPreset, toIsoDate, toLocalDateTimeInput } from './dateRanges.ts';
 
 describe('toIsoDate — local calendar date, zero-padded', () => {
   test('single-digit month and day are zero-padded', () => {
@@ -14,6 +14,25 @@ describe('toIsoDate — local calendar date, zero-padded', () => {
     // East of Greenwich, 00:30 local is still the previous day in UTC — a
     // toISOString-based implementation would return '2026-05-08' here.
     expect(toIsoDate(new Date(2026, 4, 9, 0, 30))).toBe('2026-05-09');
+  });
+});
+
+describe('toLocalDateTimeInput — local date and time for datetime-local inputs', () => {
+  test('an early-morning local time stays on the local date, not the UTC date', () => {
+    expect(toLocalDateTimeInput(new Date(2026, 4, 9, 0, 30))).toBe('2026-05-09T00:30');
+  });
+
+  test('single-digit hour and minute are zero-padded', () => {
+    expect(toLocalDateTimeInput(new Date(2026, 4, 9, 5, 7))).toBe('2026-05-09T05:07');
+  });
+
+  test('midnight gives T00:00', () => {
+    expect(toLocalDateTimeInput(new Date(2026, 4, 9, 0, 0))).toBe('2026-05-09T00:00');
+  });
+
+  test('month and year boundaries stay local', () => {
+    expect(toLocalDateTimeInput(new Date(2026, 11, 31, 23, 59))).toBe('2026-12-31T23:59');
+    expect(toLocalDateTimeInput(new Date(2027, 0, 1, 0, 5))).toBe('2027-01-01T00:05');
   });
 });
 
