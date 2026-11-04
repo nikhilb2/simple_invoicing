@@ -12,7 +12,7 @@ type Discount = { type?: string; value?: number };
 /** ROUND_HALF_UP, including negative values; tolerate binary error at a tie. */
 export function roundMoney(value: number): number {
   const magnitude = Math.abs(value);
-  const rounded = Math.round((magnitude + Number.EPSILON * Math.max(1, magnitude)) * 100) / 100;
+  const rounded = Math.round((magnitude + 4 * Number.EPSILON * Math.max(1, magnitude)) * 100) / 100;
   return rounded === 0 ? 0 : Math.sign(value) * rounded;
 }
 

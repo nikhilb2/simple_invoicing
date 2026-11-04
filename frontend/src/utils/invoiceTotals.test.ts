@@ -4,6 +4,19 @@ import { computeInvoiceTotals, computeLineTotal, roundMoney } from './invoiceTot
 const line = { unitPrice: 10.1, quantity: 1, gstRate: 5 };
 
 describe('rounded invoice previews', () => {
+  it('rounds a fractional quantity half-paisa tie despite accumulated binary error', () => {
+    expect(roundMoney(8.45 * 2.3)).toBe(19.44);
+  });
+
+  it('keeps fractional-price rupee round-off aligned with the server', () => {
+    const result = computeInvoiceTotals([{ unitPrice: 136.45, quantity: 2.3, gstRate: 12 }], {
+      taxInclusive: false, applyRoundOff: true, interstateSupply: true,
+    });
+    expect(result.afterDiscountTotal).toBe(351.5);
+    expect(result.total).toBe(352);
+    expect(result.roundOffAmount).toBe(0.5);
+  });
+
   it('sums rounded line taxes: three 10.10 lines at 5% IGST total 31.83', () => {
     expect(computeInvoiceTotals([line, line, line], {
       taxInclusive: false, interstateSupply: true,
