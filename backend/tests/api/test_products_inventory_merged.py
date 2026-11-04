@@ -385,6 +385,75 @@ class TestCSVImport:
         assert data["updated"] == 0
         assert data["errors"] == [{"row": 2, "message": message}]
 
+    @pytest.mark.parametrize("bad_hsn", ["402", "8471.30", "abcd"])
+    def test_import_csv_invalid_hsn_errors_and_creates_nothing(self, client, bad_hsn):
+        """A malformed HSN cell errors its row instead of saving the code (Issue #604)."""
+        csv_content = (
+            "Item Name,Item Code,Selling Price,HSN Code\n"
+            f"Bad HSN,IMP030,10,{bad_hsn}\n"
+        )
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 0
+        assert data["updated"] == 0
+        assert data["errors"] == [
+            {"row": 2, "message": "Invalid HSN Code for IMP030: must be 4, 6 or 8 digits"}
+        ]
+        assert client.get("/api/products/?search=Bad HSN").json()["items"] == []
+
+    @pytest.mark.parametrize(
+        "cell,stored",
+        [("0402", "0402"), ("847130", "847130"), ("84713000", "84713000"), (" 8482 ", "8482")],
+    )
+    def test_import_csv_valid_hsn_is_stored_normalized(self, client, cell, stored):
+        """Well-formed HSN codes import, with surrounding spaces stripped (Issue #604)."""
+        csv_content = (
+            "Item Name,Item Code,Selling Price,HSN Code\n"
+            f"HSN Keeper,IMP031,10,{cell}\n"
+        )
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 1
+        assert not any("Invalid HSN Code" in e["message"] for e in data["errors"])
+        items = client.get("/api/products/?search=HSN Keeper").json()["items"]
+        assert len(items) == 1
+        assert items[0]["hsn_sac"] == stored
+
+    def test_import_csv_invalid_hsn_leaves_existing_unchanged(self, client, db_session):
+        """Re-importing an existing SKU with a bad HSN must not overwrite its code (Issue #604)."""
+        from src.models.product import Product
+
+        created = _create_product(client, "IMP032", "HSN Keeper", price=10)
+        product = db_session.query(Product).filter(Product.id == created["id"]).first()
+        product.hsn_sac = "8471"
+        db_session.commit()
+
+        csv_content = (
+            "Item Name,Item Code,Selling Price,HSN Code\n"
+            "HSN Keeper,IMP032,12,abcd\n"
+            "Good Row,IMP033,10,8471\n"
+        )
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 1
+        assert data["updated"] == 0
+        assert {"row": 2, "message": "Invalid HSN Code for IMP032: must be 4, 6 or 8 digits"} in data["errors"]
+
+        kept = db_session.query(Product).filter(Product.id == created["id"]).first()
+        assert kept.hsn_sac == "8471"
+
     def test_import_csv_tax_percent_and_empty_cells(self, client):
         """'18%' imports as 18; empty optional cells still mean 0 / defaults (Issue #556)."""
         csv_content = (
