@@ -11,7 +11,7 @@ import StatusToasts from '../../components/StatusToasts';
 import ProductCombobox from '../../components/ProductCombobox';
 import LedgerCombobox from '../../components/LedgerCombobox';
 import formatCurrency from '../../utils/formatting';
-import { computeInvoiceTotals, type InvoiceTotalLine } from '../../utils/invoiceTotals';
+import { computeInvoiceTotals, computeLineTotal, type InvoiceTotalLine } from '../../utils/invoiceTotals';
 import { toIsoDate } from '../../utils/dateRanges';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../../utils/invoiceTax';
 import { isInterstatePlaceOfSupply, resolvePlaceOfSupply, stalePlaceOfSupplyWarning, type PlaceOfSupplyChoice } from '../../utils/gstStates';
@@ -1697,16 +1697,15 @@ export default function InvoicesPage() {
                   const quantityValue = tracked ? String(item.serials.length) : item.quantity;
                   const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
                   const gstRate = selectedProduct?.gst_rate || 0;
-                  let lineTotal: number;
-                  let taxAmount: number;
-                  if (taxInclusive) {
-                    lineTotal = unitPrice * Number(quantityValue || 0);
-                    taxAmount = lineTotal - lineTotal / (1 + gstRate / 100);
-                  } else {
-                    const taxableAmount = unitPrice * Number(quantityValue || 0);
-                    taxAmount = taxableAmount * gstRate / 100;
-                    lineTotal = taxableAmount + taxAmount;
-                  }
+                  const { lineTotal, taxAmount } = computeLineTotal({
+                    unitPrice,
+                    quantity: Number(quantityValue || 0),
+                    gstRate,
+                    taxInclusive,
+                    discountType: item.discount_type,
+                    discountValue: Number(item.discount_value),
+                    interstateSupply: composerInterstateSupply,
+                  });
 
                   return (
                     <div
