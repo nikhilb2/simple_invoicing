@@ -50,7 +50,7 @@ class ProductSalesRow(BaseModel):
     name: str
     sku: str | None = None
     quantity_sold: float
-    sales_amount: float  # sum of line taxable_amount, ex-GST
+    sales_amount: float  # sum of line taxable_amount net of invoice-level discount, ex-GST
     average_selling_price: float  # sales_amount / quantity_sold
     total_revenue: float  # sum of line_total, incl. GST
     total_gst: float  # sum of line tax_amount
@@ -88,7 +88,7 @@ class ProfitLossProductRow(BaseModel):
     name: str
     sku: str | None = None
     quantity_sold: float
-    sales_amount: float  # revenue, sum of line taxable_amount (ex-GST)
+    sales_amount: float  # revenue, sum of line taxable_amount net of invoice-level discount (ex-GST)
     average_selling_price: float  # sales_amount / quantity_sold
     purchase_price: float  # current unit cost
     cogs: float  # quantity_sold * purchase_price
