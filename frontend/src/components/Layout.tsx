@@ -10,6 +10,7 @@ import { useMarketplaceSync } from '../features/marketplace/useMarketplaceSync';
 import { useSidebarStore } from '../store/useSidebarStore';
 import Sidebar from './Sidebar';
 import FeedbackDialog from './FeedbackDialog';
+import GitHubStarButton from './GitHubStarButton';
 import InvoiceCancelDialog from './InvoiceCancelDialog';
 import ShortcutCheatSheet from './ShortcutCheatSheet';
 import ThemeToggle from './ThemeToggle';
@@ -95,6 +96,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           >
             Press <kbd>?</kbd> for shortcuts
           </button>
+          <GitHubStarButton className="page-header__github" />
           <a
             className="button button--ghost button--small page-header__help"
             href={GUIDE_URL}

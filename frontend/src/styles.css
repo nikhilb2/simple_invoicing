@@ -676,14 +676,28 @@ textarea {
   color: var(--text);
 }
 
+.page-header__github,
 .page-header__help,
 .page-header__feedback {
   flex-shrink: 0;
   margin-left: 12px;
 }
 
-/* Icon only on phones: the header also has to fit the menu and shortcut hint. */
+.github-star__count {
+  padding-left: 6px;
+  border-left: 1px solid var(--line);
+}
+
+/* The first thing to go when the header runs short: it would wrap beside the sidebar. */
+@media (max-width: 959px) {
+  .page-header__shortcut-hint {
+    display: none;
+  }
+}
+
+/* Icon only on phones: the header also has to fit the menu. */
 @media (max-width: 767px) {
+  .page-header__github .github-star__label,
   .page-header__help-label,
   .page-header__feedback-label {
     display: none;
@@ -3000,6 +3014,10 @@ a.invoice-row {
   width: min(460px, 100%);
   justify-self: end;
   align-self: start;
+}
+
+.login-card__github {
+  justify-self: center;
 }
 
 .login-hero__title {

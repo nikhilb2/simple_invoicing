@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
+import GitHubStarButton from './GitHubStarButton';
 
 type AuthLayoutProps = {
   /** Browser tab title, without the app name. */
@@ -60,6 +61,7 @@ export default function AuthLayout({ title, children }: AuthLayoutProps) {
           className="login-card stack"
         >
           {children}
+          <GitHubStarButton className="login-card__github" />
         </motion.div>
       </motion.div>
     </div>
