@@ -1,4 +1,195 @@
 import pytest
+from fastapi.testclient import TestClient
+
+from app_main import app
+from src.core.config import settings
+from src.models.bom import BillOfMaterial
+from src.models.company import CompanyProfile
+from src.models.inventory import Inventory
+from src.models.marketplace import MarketplaceListing, MarketplaceOrder, MarketplaceOrderItem, MarketplaceProductLink
+from src.models.product import Product
+from src.models.product_serial import ProductSerial
+from src.models.production_transaction import ProductionTransaction
+from src.models.user import User, UserRole
+
+
+@pytest.fixture
+def deletion_products(db_session, monkeypatch):
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "single_tenant")
+    sqlite = db_session.get_bind().dialect.name == "sqlite"
+    if sqlite:
+        connection = db_session.connection()
+        previous_foreign_keys = connection.exec_driver_sql("PRAGMA foreign_keys").scalar()
+        connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+        assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
+    db_session.add(CompanyProfile(id=1, name="Deletion Test Co", address=""))
+    db_session.add(User(id=1, email="test@example.com", full_name="Tester", hashed_password="x", role=UserRole.admin))
+    db_session.commit()
+    sequence = 0
+
+    def make_product(name="Delete Test Product", **kwargs):
+        nonlocal sequence
+        sequence += 1
+        product = Product(company_id=1, sku=f"DELETE-{sequence}", name=name, price=10, **kwargs)
+        db_session.add(product)
+        db_session.flush()
+        db_session.add(Inventory(company_id=1, product_id=product.id, quantity=5))
+        db_session.commit()
+        return product
+
+    try:
+        yield make_product
+    finally:
+        db_session.rollback()
+        if sqlite:
+            connection = db_session.connection()
+            setting = "ON" if previous_foreign_keys else "OFF"
+            connection.exec_driver_sql(f"PRAGMA foreign_keys={setting}")
+            assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar() == previous_foreign_keys
+            db_session.rollback()
+
+
+def _product_reference(db_session, product, kind, make_product):
+    if kind == "serial":
+        product.track_serials = True
+        db_session.query(Inventory).filter_by(product_id=product.id).one().quantity = 1
+        reference = ProductSerial(company_id=1, product_id=product.id, serial_number="DELETE-SERIAL")
+    elif kind == "listing":
+        reference = MarketplaceListing(company_id=1, product_id=product.id, title=product.name)
+    elif kind == "link":
+        reference = MarketplaceProductLink(company_id=1, product_id=product.id, remote_listing_id="delete-listing")
+    elif kind == "order_item":
+        order = MarketplaceOrder(company_id=1, side="buy", remote_order_id="delete-order", state="posted")
+        db_session.add(order)
+        db_session.flush()
+        reference = MarketplaceOrderItem(order_id=order.id, line_no=1, product_id=product.id,
+                                         quantity=1, unit_price=10)
+    elif kind == "bom":
+        parent = make_product("Parent product", is_producable=True)
+        reference = BillOfMaterial(company_id=1, product_id=parent.id, component_product_id=product.id, quantity_required=1)
+    else:
+        product.is_producable = True
+        reference = ProductionTransaction(company_id=1, product_id=product.id, quantity_produced=1, user_id=1)
+    db_session.add(reference)
+    db_session.commit()
+    return reference
+
+
+@pytest.mark.parametrize("kind,reason", [
+    ("serial", "serial"), ("listing", "marketplace"), ("link", "marketplace"),
+    ("order_item", "marketplace orders"),
+    ("bom", "bill of materials"), ("production", "production"),
+])
+@pytest.mark.parametrize("references_target", [True, False])
+def test_delete_product_preserves_referenced_products_and_history(
+    db_session, deletion_products, kind, reason, references_target,
+):
+    target = deletion_products()
+    referenced = target if references_target else deletion_products("Other product")
+    reference = _product_reference(db_session, referenced, kind, deletion_products)
+    target_id, referenced_id, reference_id = target.id, referenced.id, reference.id
+    original_quantity = db_session.query(Inventory).filter_by(product_id=target_id).one().quantity
+
+    response = TestClient(app, raise_server_exceptions=False).delete(f"/api/products/{target_id}")
+
+    assert response.status_code == (400 if references_target else 200), response.text
+    if references_target:
+        assert reason in response.json()["detail"].lower()
+        if kind == "bom":
+            assert "Parent product" in response.json()["detail"]
+    db_session.expire_all()
+    assert db_session.get(type(reference), reference_id) is not None
+    assert db_session.get(Product, referenced_id) is not None
+    if references_target:
+        assert db_session.query(Inventory).filter_by(product_id=target_id).one().quantity == original_quantity
+    else:
+        assert db_session.get(Product, target_id) is None
+        assert db_session.query(Inventory).filter_by(product_id=target_id).first() is None
+
+
+@pytest.mark.parametrize("status", ["sold", "void"])
+def test_delete_product_keeps_historical_serial_rows(db_session, deletion_products, status):
+    product = deletion_products()
+    serial = _product_reference(db_session, product, "serial", deletion_products)
+    serial.status = status
+    db_session.query(Inventory).filter_by(product_id=product.id).one().quantity = 0
+    db_session.commit()
+    product_id, serial_id = product.id, serial.id
+
+    response = TestClient(app, raise_server_exceptions=False).delete(f"/api/products/{product_id}")
+
+    assert response.status_code == 400, response.text
+    assert "serial" in response.json()["detail"].lower()
+    db_session.expire_all()
+    assert db_session.get(ProductSerial, serial_id).status == status
+    assert db_session.get(Product, product_id) is not None
+
+
+def test_delete_product_with_only_its_own_bom_removes_the_recipe(db_session, deletion_products):
+    parent = deletion_products("Finished product", is_producable=True)
+    component = deletion_products("Component")
+    recipe = BillOfMaterial(company_id=1, product_id=parent.id, component_product_id=component.id, quantity_required=1)
+    db_session.add(recipe)
+    db_session.commit()
+    parent_id, component_id, recipe_id = parent.id, component.id, recipe.id
+
+    response = TestClient(app, raise_server_exceptions=False).delete(f"/api/products/{parent_id}")
+
+    assert response.status_code == 200, response.text
+    db_session.expire_all()
+    assert db_session.get(Product, parent_id) is None
+    assert db_session.get(BillOfMaterial, recipe_id) is None
+    assert db_session.get(Product, component_id) is not None
+
+
+def test_delete_product_without_references_still_deletes(db_session, deletion_products):
+    product_id = deletion_products().id
+
+    response = TestClient(app, raise_server_exceptions=False).delete(f"/api/products/{product_id}")
+
+    assert response.status_code == 200, response.text
+    db_session.expire_all()
+    assert db_session.get(Product, product_id) is None
+
+
+def test_delete_product_in_another_company_stays_not_found(db_session, deletion_products):
+    deletion_products()
+    db_session.add(CompanyProfile(id=2, name="Other Company", address=""))
+    db_session.flush()
+    foreign = Product(company_id=2, sku="FOREIGN-DELETE", name="Other private product", price=10, track_serials=True)
+    db_session.add(foreign)
+    db_session.flush()
+    db_session.add(ProductSerial(company_id=2, product_id=foreign.id, serial_number="FOREIGN-SERIAL"))
+    db_session.commit()
+    product_id = foreign.id
+
+    response = TestClient(app, raise_server_exceptions=False).delete(f"/api/products/{product_id}")
+
+    assert response.status_code == 404, response.text
+    assert "Other private product" not in response.text
+    db_session.expire_all()
+    assert db_session.get(Product, product_id) is not None
+
+
+def test_delete_product_names_all_parent_recipes_without_removing_them(db_session, deletion_products):
+    component = deletion_products("Shared component")
+    parents = [deletion_products(name, is_producable=True) for name in ("Chair", "Table")]
+    recipes = [BillOfMaterial(
+        company_id=1, product_id=parent.id, component_product_id=component.id, quantity_required=1,
+    ) for parent in parents]
+    db_session.add_all(recipes)
+    db_session.commit()
+    component_id = component.id
+    recipe_ids = [recipe.id for recipe in recipes]
+
+    response = TestClient(app, raise_server_exceptions=False).delete(f"/api/products/{component_id}")
+
+    assert response.status_code == 400, response.text
+    assert "Chair" in response.json()["detail"]
+    assert "Table" in response.json()["detail"]
+    db_session.expire_all()
+    assert db_session.get(Product, component_id) is not None
+    assert all(db_session.get(BillOfMaterial, recipe_id) is not None for recipe_id in recipe_ids)
 
 
 def test_create_product(client):
