@@ -241,6 +241,55 @@ def build_product_sales_report(
         )
         stock_map = {pid: Decimal(str(qty or 0)) for pid, qty in stock_rows}
 
+    # Total Revenue is each line's line_total net of its share of the
+    # invoice-level discount. The whole discount applies here because this
+    # figure includes GST, so the split is apportioned with invoice_tax=0
+    # (weights are still the lines' taxable amounts). Like
+    # _dated_discounted_invoice_lines, every line of an in-scope invoice is
+    # fetched and the discount split before any product filter is applied,
+    # so a filtered product only takes its own share.
+    discounted_revenue: dict[int, Decimal] = {}
+    revenue_lines = (
+        db.query(
+            Invoice.id,
+            Invoice.taxable_amount,
+            Invoice.total_tax_amount,
+            Invoice.round_off_amount,
+            Invoice.total_amount,
+            InvoiceItem.product_id,
+            InvoiceItem.taxable_amount.label("line_taxable"),
+            InvoiceItem.line_total,
+        )
+        .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
+        .filter(
+            Invoice.company_id == company_id,
+            Invoice.status == "active",
+            Invoice.voucher_type == voucher_type,
+            Invoice.invoice_date >= start,
+            Invoice.invoice_date <= end,
+        )
+    )
+    if ledger_id is not None:
+        revenue_lines = revenue_lines.filter(Invoice.ledger_id == ledger_id)
+    if product_id is not None:
+        containing = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id)
+        revenue_lines = revenue_lines.filter(Invoice.id.in_(containing))
+    revenue_by_invoice: dict[int, list] = {}
+    for line in revenue_lines.order_by(Invoice.id, InvoiceItem.id).all():
+        revenue_by_invoice.setdefault(line.id, []).append(line)
+    for invoice_lines in revenue_by_invoice.values():
+        header = invoice_lines[0]  # every row repeats the invoice's own columns
+        shares = apportion_invoice_discount(
+            [Decimal(str(line.line_taxable or 0)) for line in invoice_lines],
+            invoice_discount=invoice_discount_amount(header),
+            invoice_tax=Decimal("0"),
+        )
+        for line, share in zip(invoice_lines, shares):
+            if product_id is not None and line.product_id != product_id:
+                continue
+            discounted = Decimal(str(line.line_total or 0)) - share
+            discounted_revenue[line.product_id] = discounted_revenue.get(line.product_id, Decimal("0")) + discounted
+
     rows: list[dict] = []
     for pid, name, sku, maintain_inventory, quantity, taxable, tax, revenue, invoice_count in grouped:
         qty = Decimal(str(quantity or 0))
@@ -252,7 +301,7 @@ def build_product_sales_report(
             "quantity_sold": qty,
             "sales_amount": sales_amount,
             "average_selling_price": average_of(sales_amount, qty),
-            "total_revenue": Decimal(str(revenue or 0)),
+            "total_revenue": discounted_revenue.get(pid, Decimal(str(revenue or 0))),
             "total_gst": Decimal(str(tax or 0)),
             "invoice_count": int(invoice_count or 0),
             "current_stock": stock_map.get(pid, Decimal("0")) if maintain_inventory else None,

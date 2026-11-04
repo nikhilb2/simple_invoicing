@@ -30,11 +30,11 @@ def _create_ledger(client, name):
     return response.json()["id"]
 
 
-def _create_invoice(client, ledger_id, items, *, voucher_type="sales", invoice_date=None):
+def _create_invoice(client, ledger_id, items, *, voucher_type="sales", invoice_date=None, **extra):
     """Create an invoice. Omitting invoice_date lets the column default to
     datetime.utcnow — which, unlike the API's date-only input, carries a real
     time component (see test_invoice_dated_today_is_included)."""
-    payload = {"voucher_type": voucher_type, "ledger_id": ledger_id, "items": items}
+    payload = {"voucher_type": voucher_type, "ledger_id": ledger_id, "items": items, **extra}
     if invoice_date is not None:
         payload["invoice_date"] = invoice_date.date().isoformat()
     response = client.post("/api/invoices/", json=payload)
@@ -307,6 +307,49 @@ class TestProductSales:
             "from_date": "2026-09-01", "to_date": "2026-09-30", "limit": 2,
         })
         assert len(res.json()["rows"]) == 2
+
+    def test_invoice_level_discount_reduces_total_revenue(self, client):
+        """Issue #674: 1 x 1000 at 18% GST with a flat 118 invoice discount
+        reports Total Revenue 1062.00 (1180 - 118); the whole discount applies
+        because this figure includes GST."""
+        product = _create_product(client, "PRD-16", "Widget", 1000)
+        ledger = _create_ledger(client, "Acme")
+        _create_invoice(client, ledger, [
+            {"product_id": product, "quantity": 1, "unit_price": 1000, "gst_rate": 18},
+        ], invoice_date=datetime(2026, 10, 10, 12, 0),
+            discount_type="net", discount_value=118)
+
+        res = client.get("/api/analytics/sales-by-product", params={"from_date": "2026-10-01", "to_date": "2026-10-31"})
+        assert res.status_code == 200, res.text
+        row = res.json()["rows"][0]
+        assert row["total_revenue"] == 1062.00
+        assert res.json()["totals"]["total_revenue"] == 1062.00
+        # The CSV export shows the same figure as the screen.
+        csv_body = client.get("/api/analytics/sales-by-product/csv", params={
+            "from_date": "2026-10-01", "to_date": "2026-10-31",
+        }).content.decode("utf-8-sig")
+        assert "1062.00" in csv_body
+
+    def test_product_filter_takes_only_its_share_of_total_revenue(self, client):
+        """Issue #674: under a product filter, the discount is split across
+        all of the invoice's lines first, so the filtered product does not
+        take the whole discount."""
+        widget = _create_product(client, "PRD-17", "Widget", 1000)
+        gadget = _create_product(client, "PRD-18", "Gadget", 1000)
+        ledger = _create_ledger(client, "Acme")
+        # Two equal lines; a flat 236 discount splits 118 / 118.
+        _create_invoice(client, ledger, [
+            {"product_id": widget, "quantity": 1, "unit_price": 1000, "gst_rate": 18},
+            {"product_id": gadget, "quantity": 1, "unit_price": 1000, "gst_rate": 18},
+        ], invoice_date=datetime(2026, 10, 10, 12, 0),
+            discount_type="net", discount_value=236)
+
+        res = client.get("/api/analytics/sales-by-product", params={
+            "from_date": "2026-10-01", "to_date": "2026-10-31", "product_id": widget,
+        })
+        rows = res.json()["rows"]
+        assert len(rows) == 1
+        assert rows[0]["total_revenue"] == 1062.00
 
     def test_product_filter_narrows_results(self, client):
         widget = _create_product(client, "PRD-12", "Widget", 100)
