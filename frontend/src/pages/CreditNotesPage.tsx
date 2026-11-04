@@ -695,7 +695,7 @@ export default function CreditNotesPage() {
                       <h3 className="nav-panel__title" style={{ fontSize: '1rem' }}>Select invoice set</h3>
                     </div>
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                      {filteredInvoices.length} active {expectedVoucherType} invoices for this ledger
+                      {filteredInvoices.length} active {expectedVoucherType} {filteredInvoices.length === 1 ? 'invoice' : 'invoices'} for this ledger
                     </span>
                   </div>
 
@@ -761,7 +761,7 @@ export default function CreditNotesPage() {
                         {creditNoteType === 'discount' ? 'Enter discount amount (tax inclusive)' : 'Choose credited quantities'}
                       </h3>
                     </div>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{payloadItems.length} lines selected</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{plural(payloadItems.length, 'line')} selected</span>
                   </div>
 
                   {creditNoteType === 'discount' ? (
