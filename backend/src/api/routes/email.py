@@ -77,26 +77,6 @@ class DueRemindersRequest(BaseModel):
     message: str | None = None
 
 
-def _reminder_statement_window(db: Session, ledger_id: int, company_id: int | None) -> tuple[date, date]:
-    """The period a reminder's "view and pay" statement link should cover.
-
-    The reminder itself is all-time -- it has no date range of its own -- but a
-    statement share link needs one. Anchoring the start at the ledger's earliest
-    voucher and ending today makes the statement's closing balance the same all-time
-    figure the reminder body prints, which matters: a pay button priced differently
-    from the number above it is a support ticket.
-    """
-    today = date.today()
-    query = db.query(func.min(Invoice.invoice_date)).filter(
-        Invoice.ledger_id == ledger_id, Invoice.status == "active"
-    )
-    if company_id is not None:
-        query = query.filter(company_scope(Invoice.company_id, company_id))
-    earliest = query.scalar()
-    start = earliest.date() if earliest is not None else today
-    return min(start, today), today
-
-
 def _last_receipt_date(db: Session, ledger_id: int, company_id: int | None) -> str | None:
     """The ledger's most recent receipt, formatted for the reminder body.
 
@@ -437,15 +417,12 @@ async def send_payment_reminder_email(
     # case the button simply does not render.
     share_url = None
     if company_id is not None and outstanding_balance > 0:
-        from_date, to_date = _reminder_statement_window(db, ledger_id, company_id)
         share_url = document_share_url(
             db,
             request,
             company,
             RESOURCE_STATEMENT,
             ledger_id,
-            from_date=from_date,
-            to_date=to_date,
             user_id=current_user.id,
         )
 
@@ -600,19 +577,16 @@ async def send_due_reminders(
 
         last_payment_date = _last_receipt_date(db, ledger_id, company_id)
 
-        # One statement link per ledger. document_share_url is idempotent, so a ledger
-        # reminded every month keeps the same URL rather than accumulating tokens.
+        # No stored period: reminders reuse one live link per ledger, whose
+        # statement window is resolved each time the customer opens it.
         share_url = None
         if company_id is not None:
-            from_date, to_date = _reminder_statement_window(db, ledger_id, company_id)
             share_url = document_share_url(
                 db,
                 request,
                 company,
                 RESOURCE_STATEMENT,
                 ledger_id,
-                from_date=from_date,
-                to_date=to_date,
                 user_id=current_user.id,
             )
 
