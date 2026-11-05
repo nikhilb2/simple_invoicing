@@ -816,7 +816,15 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             continue
 
         try:
-            gst_rate = float(values.get("tax") or values.get("gst") or 0)
+            tax_str = (
+                values.get("tax")
+                or values.get("gst")
+                or values.get("gst_rate")
+                or values.get("tax_rate")
+                or "0"
+            )
+            tax_str = str(tax_str).strip().rstrip("%")
+            gst_rate = float(tax_str or 0)
             if gst_rate < 0 or gst_rate > 100:
                 gst_rate = 0
         except ValueError:
