@@ -1,7 +1,8 @@
 ---
 layout: home
-title: Simple Invoicing Guide
+title: "Simple Invoicing Guide: free GST billing software for India"
 titleTemplate: false
+description: "How to use Simple Invoicing, free and open-source GST billing software: make GST invoices, prepare GSTR-1, track stock, ledgers and UPI payments."
 
 hero:
   name: Simple Invoicing

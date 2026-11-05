@@ -1,3 +1,7 @@
+---
+description: "Add products with HSN codes, prices and GST rates, adjust stock, set low-stock alerts, and import or export your catalogue as CSV."
+---
+
 # Products and stock
 
 **Catalogue → Products & Stock** holds everything you sell or buy. A product and its stock are one record, so you change prices and see what is on the shelf in the same place.

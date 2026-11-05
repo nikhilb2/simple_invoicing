@@ -1,3 +1,7 @@
+---
+description: "Record receipts and payments, allocate them to invoices, and track the balance of each cash and bank account."
+---
+
 # Cash and bank
 
 Record money coming in and going out, allocate it to invoices, and see the balance of each account.

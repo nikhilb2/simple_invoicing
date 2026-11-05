@@ -1,3 +1,8 @@
+---
+title: "Customer and supplier ledgers"
+description: "Create ledgers for customers and suppliers, read ledger statements, export them as PDF or CSV, and send them on WhatsApp or email."
+---
+
 # Ledgers
 
 A **ledger** is the account for someone you deal with. The same type of ledger covers customers and suppliers, and one party can be both. Every invoice, receipt and credit note posts to a ledger, so its statement is your full history with that party.

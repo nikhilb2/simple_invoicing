@@ -1,3 +1,7 @@
+---
+description: "Email invoices and reminders from Simple Invoicing. Set up SMTP on a self-hosted copy and see the history of every email sent."
+---
+
 # Email setup and history
 
 ## On the hosted version

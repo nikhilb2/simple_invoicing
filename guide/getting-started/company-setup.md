@@ -1,3 +1,7 @@
+---
+description: "Set your GSTIN, logo, bank details, invoice terms, e-way bill settings and invoice number series for GST invoices in Simple Invoicing."
+---
+
 # Company setup
 
 **Settings → Company** controls what appears on your invoices and how they are numbered. Everyone can open this page. Admins and managers can save changes, and only admins can see the invoice series.

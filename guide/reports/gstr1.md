@@ -1,3 +1,8 @@
+---
+title: "GSTR-1 JSON file: how to prepare and upload it"
+description: "Check your sales for a period, fix errors, and export the GSTR-1 JSON file to upload on the GST portal. Covers B2B, B2CL, B2CS and HSN summary."
+---
+
 # GSTR-1 filing
 
 **Reports → GSTR-1 Filing** checks your sales for a period and produces the JSON file for the GST portal. It does not file for you and does not connect to the portal. You upload the file yourself.

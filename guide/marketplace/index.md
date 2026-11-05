@@ -1,3 +1,7 @@
+---
+description: "Trade surplus stock with other businesses on Simple Invoicing: publish listings, place and handle orders, and get paid directly."
+---
+
 # Marketplace
 
 The Marketplace lets businesses running Simple Invoicing trade surplus stock with each other. It is optional, and everything else works without it.

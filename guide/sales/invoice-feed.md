@@ -1,3 +1,7 @@
+---
+description: "Find, preview, edit, cancel and export your GST invoices from the Invoice Feed, in card or table view with period summaries."
+---
+
 # Invoice Feed
 
 **Sales → Invoice Feed** lists your invoices, so you can find, preview, edit, cancel and export them.

@@ -1,3 +1,7 @@
+---
+description: "Simple Invoicing settings: password and security, keyboard shortcuts and light or dark appearance."
+---
+
 # Settings
 
 Click **Settings** at the bottom of the sidebar. You only see the items your role allows.

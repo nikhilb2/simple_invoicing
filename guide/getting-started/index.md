@@ -1,3 +1,8 @@
+---
+title: "Quick start: create your first GST invoice"
+description: "Set up Simple Invoicing, the free GST billing software, and send your first GST invoice in about ten minutes: account, company, customer, product, invoice."
+---
+
 # Quick start
 
 This page takes you from a new account to your first invoice. It takes about ten minutes.

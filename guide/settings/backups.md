@@ -1,3 +1,7 @@
+---
+description: "Create, download and restore backups of a self-hosted Simple Invoicing copy, with automatic nightly backups."
+---
+
 # Backups
 
 **Settings → Backups** is for administrators of a self-hosted copy. On the hosted version the page is not shown to you. To keep your own records there, export from [GSTR-1](../reports/gstr1), the [Day Book](../reports/day-book), [ledgers](../ledgers/) and [products](../catalogue/products).

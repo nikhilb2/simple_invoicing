@@ -1,3 +1,7 @@
+---
+description: "The Simple Invoicing dashboard: sales, money owed, overdue invoices, stock value and a 12-month trend at a glance."
+---
+
 # Dashboard
 
 **Overview** is the first page you see after signing in, with a snapshot of sales, money owed and stock.

@@ -1,3 +1,7 @@
+---
+description: "See which customers owe you money, chase overdue invoices with email reminders, and export your receivables."
+---
+
 # Invoice Dues
 
 **Sales → Invoice Dues** shows who owes you money and helps you chase it. Everyone can view it. Only admins and managers can send email reminders.

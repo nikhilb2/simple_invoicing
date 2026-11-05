@@ -1,3 +1,7 @@
+---
+description: "Set up a bill of materials (BOM) and record production that uses raw materials and adds finished goods to stock."
+---
+
 # Manufacturing
 
 If you assemble or make products, a **bill of materials** (BOM) lists the components for one finished unit. **Produce Items** then records each production run, taking the components out of stock and adding the finished product.

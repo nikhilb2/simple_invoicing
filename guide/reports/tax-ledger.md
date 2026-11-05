@@ -1,3 +1,8 @@
+---
+title: "Tax ledger and GST payable"
+description: "Track CGST, SGST and IGST across every voucher and estimate the GST you owe for a period after input tax credit."
+---
+
 # Tax Ledger
 
 **Reports → Tax Ledger** tracks CGST, SGST and IGST across every voucher, and estimates the GST you owe for a period after input credit.
