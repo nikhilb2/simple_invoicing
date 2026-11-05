@@ -10,7 +10,7 @@ Active sales invoices with money still owing. Purchases, cancelled invoices and 
 
 The remaining amount is the invoice total, less credit notes, less payments **allocated to that invoice**.
 
-An invoice with no due date, such as a marketplace sale, counts as due on its invoice date.
+An invoice with no due date, such as a marketplace sale, counts as due on its invoice date. Each row shows the invoice in its own currency, even if you have since changed your company's currency.
 
 ::: warning Allocate your receipts
 A receipt recorded without [allocating it to an invoice](./cash-bank#record-a-receipt-against-invoices) does not reduce the amount here, even though the customer has paid.

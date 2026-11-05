@@ -27,6 +27,8 @@ export default function StockUpdateModal() {
   const setFeedbackSuccess = useInvoiceComposerStore((state) => state.setFeedbackSuccess);
   const [stockForm, setStockForm] = useState<StockFormState>(createInitialStockForm());
   const [stockSubmitting, setStockSubmitting] = useState(false);
+  // Shown inside the dialog, because the page toast sits behind the overlay.
+  const [stockError, setStockError] = useState('');
   const productsQuery = useQuery({
     queryKey: invoiceQueryKeys.products,
     queryFn: fetchProducts,
@@ -46,6 +48,10 @@ export default function StockUpdateModal() {
     }
   }, [showStockUpdateModal, stockUpdateStart]);
 
+  useEffect(() => {
+    setStockError('');
+  }, [showStockUpdateModal]);
+
   useEscapeClose(() => {
     if (showStockUpdateModal) {
       closeStockUpdateModal();
@@ -58,9 +64,15 @@ export default function StockUpdateModal() {
     try {
       setStockSubmitting(true);
       setFeedbackError('');
+      setStockError('');
 
       const productId = Number(stockForm.productId);
       const quantity = Number(stockForm.adjustment);
+
+      if (quantity === 0) {
+        setStockError('Enter how many units to add or remove. 0 does not change your stock.');
+        return;
+      }
 
       const selectedProduct = products.find((product) => product.id === productId);
       if (selectedProduct && !selectedProduct.maintain_inventory) {
@@ -157,6 +169,7 @@ export default function StockUpdateModal() {
               required
             />
           </div>
+          {stockError ? <div className="form-error" role="alert">{stockError}</div> : null}
           <div className="field-hint">
             Use positive numbers to increase stock, negative numbers (like -5) to decrease stock.
           </div>

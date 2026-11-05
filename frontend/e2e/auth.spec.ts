@@ -19,6 +19,24 @@ test.describe('Authentication', () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1366, height: 768 }]) {
+    test(`shows the sign-in error toast fully on screen at ${viewport.width}px`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await page.goto('/login');
+      await page.fill('#email', 'wrong@example.com');
+      await page.fill('#password', 'WrongPassword');
+      await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+      const toast = page.locator('.toast--error');
+      await expect(toast).toBeVisible();
+      const box = await toast.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.y).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+    });
+  }
+
   test('logs in with valid admin credentials', async ({ page }) => {
     await page.goto('/login');
     await page.fill('#email', 'admin@simple.dev');

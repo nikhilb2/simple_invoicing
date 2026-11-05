@@ -109,6 +109,7 @@ interface InvoicesCompactCardProps {
                 type="button"
                 className="button button--secondary button--small"
                 onClick={() => onRecordPayment(invoice)}
+                aria-label={`Record payment for invoice ${invoice.invoice_number || `#${invoice.id}`}`}
               >
                 Record payment
               </button>

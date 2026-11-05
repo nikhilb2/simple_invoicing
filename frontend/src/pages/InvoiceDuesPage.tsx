@@ -443,7 +443,7 @@ export default function InvoiceDuesPage() {
                           customerName: invoice.ledger_name,
                           invoiceNumber: invoice.invoice_number || `#${invoice.id}`,
                           outstandingAmount: invoice.outstanding_amount,
-                          currencyCode,
+                          currencyCode: invoice.company_currency_code || currencyCode,
                           dueDate: invoice.due_date,
                           overdue: isOverdueInvoice(invoice),
                         }),
@@ -471,7 +471,7 @@ export default function InvoiceDuesPage() {
                         )}
                         Status {invoice.payment_status}
                         {' · '}
-                        Remaining {formatCurrency(invoice.outstanding_amount, currencyCode)}
+                        Remaining {formatCurrency(invoice.outstanding_amount, invoice.company_currency_code || currencyCode)}
                       </span>
                       {(invoice.ledger_payable_amount ?? 0) > 0 ? (
                         <span className="table-subtext">
@@ -481,7 +481,7 @@ export default function InvoiceDuesPage() {
                         </span>
                       ) : null}
                     </div>
-                    <span className="invoice-row__price">{formatCurrency(invoice.total_amount, currencyCode)}</span>
+                    <span className="invoice-row__price">{formatCurrency(invoice.total_amount, invoice.company_currency_code || currencyCode)}</span>
                     <div className="invoice-row__actions">
                       {invoice.ledger_id ? (
                         <Link className="button button--ghost button--small" to={`/ledgers/${invoice.ledger_id}`}>
@@ -493,6 +493,7 @@ export default function InvoiceDuesPage() {
                           type="button"
                           className="button button--secondary button--small"
                           onClick={() => setPaymentInvoice(invoice)}
+                          aria-label={`Record payment for invoice ${invoice.invoice_number || `#${invoice.id}`}`}
                         >
                           Record payment
                         </button>
@@ -557,7 +558,7 @@ export default function InvoiceDuesPage() {
         <ReceiptModal
           ledgerId={paymentInvoice.ledger_id}
           ledgerName={paymentInvoice.ledger_name || 'customer'}
-          currencyCode={currencyCode}
+          currencyCode={paymentInvoice.company_currency_code || currencyCode}
           invoiceId={paymentInvoice.id}
           onClose={() => setPaymentInvoice(null)}
           onSuccess={handlePaymentRecorded}

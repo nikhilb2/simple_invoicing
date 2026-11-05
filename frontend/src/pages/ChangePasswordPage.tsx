@@ -32,7 +32,10 @@ export default function ChangePasswordPage() {
     numberOrSymbol: /[0-9\W_]/.test(newPassword),
   };
 
-  const completedChecks = Object.values(checks).filter(Boolean).length;
+  // A password on the common list is refused whatever it contains, so the
+  // meter scores it as the weakest.
+  const tooCommon = isCommonPassword(newPassword);
+  const completedChecks = tooCommon ? 0 : Object.values(checks).filter(Boolean).length;
   const strengthLabels = ['Very weak', 'Weak', 'Fair', 'Strong', 'Very strong'];
   const strengthClassByScore = [
     'change-password-strength__fill--very-weak',
@@ -189,6 +192,7 @@ export default function ChangePasswordPage() {
                   </div>
                   <span className="change-password-strength__label">Strength: {strengthLabel}</span>
                 </div>
+                {tooCommon ? <small className="field-error" role="alert">{COMMON_PASSWORD_MESSAGE}</small> : null}
                 <small className="field-hint">Minimum {MIN_PASSWORD_LENGTH} characters.</small>
               </div>
 

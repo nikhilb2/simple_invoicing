@@ -39,6 +39,11 @@ describe('InvoicesCompactCard record payment', () => {
     expect(render(invoice({ payment_status: 'partial', outstanding_amount: 100 }))).toContain('Record payment');
   });
 
+  test('names the button after its invoice so a screen reader can tell them apart', () => {
+    expect(render(invoice({ invoice_number: 'INV-2026-001' }))).toContain('aria-label="Record payment for invoice INV-2026-001"');
+    expect(render(invoice({ id: 9, invoice_number: '' }))).toContain('aria-label="Record payment for invoice #9"');
+  });
+
   test('hides it for paid, cancelled and purchase invoices', () => {
     expect(render(invoice({ payment_status: 'paid', outstanding_amount: 0 }))).not.toContain('Record payment');
     expect(render(invoice({ status: 'cancelled' }))).not.toContain('Record payment');

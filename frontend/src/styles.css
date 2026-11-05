@@ -3017,10 +3017,12 @@ a.invoice-row {
   padding: clamp(24px, 4vw, 40px);
   border-radius: 32px;
   border: 1px solid var(--line);
-  backdrop-filter: blur(18px);
 }
 
+/* A blur here would make the card the containing block of the fixed toast
+   stack, clipping error toasts to the card. */
 .login-hero {
+  backdrop-filter: blur(18px);
   background:
     radial-gradient(circle at top left, rgb(var(--rgb-accent) / 0.18), transparent 34%),
     linear-gradient(180deg, rgb(var(--rgb-hero-top) / 0.92) 0%, rgb(var(--rgb-hero-bottom) / 0.88) 100%);
