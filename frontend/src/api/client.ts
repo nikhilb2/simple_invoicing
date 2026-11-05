@@ -16,7 +16,22 @@ let refreshPromise: Promise<string | null> | null = null;
 
 type RetryableRequestConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;
+  _companyRetry?: boolean;
 };
+
+/** The X-Company-Id value a failed request actually sent, if any. */
+function readSentCompanyId(headers: unknown): string | undefined {
+  if (!headers || typeof headers !== 'object') {
+    return undefined;
+  }
+  const getter = (headers as { get?: unknown }).get;
+  if (typeof getter === 'function') {
+    const value = (getter as (name: string) => unknown).call(headers, 'X-Company-Id');
+    return typeof value === 'string' ? value : undefined;
+  }
+  const value = (headers as Record<string, unknown>)['X-Company-Id'];
+  return typeof value === 'string' ? value : undefined;
+}
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
@@ -50,6 +65,51 @@ api.interceptors.response.use(
     const originalRequest = error.config as RetryableRequestConfig | undefined;
     const requestUrl = originalRequest?.url || '';
     const isRefreshCall = requestUrl.includes('/auth/refresh');
+
+    // A stored company id can go stale (e.g. a database restore while the
+    // browser is still logged in). The server answers those company-scoped
+    // requests 404 'Company not found' — including the startup company
+    // query, which races hydrateUserRole's /auth/me correction — or 403
+    // 'You do not have access to this company' when the id names a company
+    // the user cannot reach. Rather than showing that error, drop the stale
+    // id and retry once without it: the server then resolves the user's
+    // first accessible company (or the company_required redirect when there
+    // is none), and later requests stop sending the stale id because it is
+    // no longer stored. Only reads are retried: resending a write without
+    // its company header would apply it to whatever company the server
+    // picks instead. And the stored id is only cleared when it is still the
+    // one that failed, so a newer id (e.g. /auth/me's correction landing
+    // while this request was in flight) is never wiped.
+    const sentCompanyId = readSentCompanyId(originalRequest?.headers);
+    const isStaleCompanyError =
+      (status === 404 && error.response?.data?.detail === 'Company not found') ||
+      (status === 403 && error.response?.data?.detail === 'You do not have access to this company');
+    if (
+      isStaleCompanyError &&
+      originalRequest &&
+      !originalRequest._companyRetry &&
+      !requestUrl.includes('/auth/') &&
+      sentCompanyId
+    ) {
+      originalRequest._companyRetry = true;
+      if (localStorage.getItem('active_company_id') === sentCompanyId) {
+        localStorage.removeItem('active_company_id');
+      }
+      const method = (originalRequest.method || 'get').toLowerCase();
+      if (method !== 'get' && method !== 'head') {
+        return Promise.reject(error);
+      }
+      const staleHeaders = originalRequest.headers as unknown as {
+        delete?: (name: string) => void;
+        [key: string]: unknown;
+      };
+      if (typeof staleHeaders.delete === 'function') {
+        staleHeaders.delete('X-Company-Id');
+      } else {
+        delete staleHeaders['X-Company-Id'];
+      }
+      return api.request(originalRequest);
+    }
 
     if (status !== 401 || !originalRequest || originalRequest._retry || isRefreshCall) {
       return Promise.reject(error);
