@@ -264,7 +264,7 @@ export default function ProductQuickCreateModal() {
             <button type="button" className="button button--ghost" onClick={closeProductCreateModal} title="Cancel product creation" aria-label="Cancel product creation">
               Cancel
             </button>
-            <button className="button button--primary" disabled={productSubmitting} title="Save product" aria-label="Save product">
+            <button data-tour="save-product" className="button button--primary" disabled={productSubmitting} title="Save product" aria-label="Save product">
               {productSubmitting ? 'Saving product...' : 'Save product'}
             </button>
           </div>

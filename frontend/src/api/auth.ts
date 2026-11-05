@@ -64,6 +64,13 @@ export async function exchangeOAuthCode(code: string): Promise<AuthToken> {
   return res.data;
 }
 
+export async function saveFirstInvoiceTourStatus(
+  status: NonNullable<UserProfile['first_invoice_tour_status']>,
+): Promise<UserProfile['first_invoice_tour_status']> {
+  const res = await api.put<Pick<UserProfile, 'first_invoice_tour_status'>>('/auth/me/first-invoice-tour', { status });
+  return res.data.first_invoice_tour_status;
+}
+
 export async function fetchMe(): Promise<UserProfile> {
   const res = await api.get<UserProfile>('/auth/me');
   return res.data;

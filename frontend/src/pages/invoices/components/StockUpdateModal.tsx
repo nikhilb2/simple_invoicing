@@ -213,6 +213,7 @@ export default function StockUpdateModal() {
               Cancel
             </button>
             <button
+              data-tour="save-stock"
               className="button button--primary"
               disabled={
                 productsQuery.isLoading ||

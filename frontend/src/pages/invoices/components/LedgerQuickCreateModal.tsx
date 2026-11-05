@@ -263,7 +263,7 @@ export default function LedgerQuickCreateModal() {
             <button type="button" className="button button--ghost" onClick={closeLedgerCreateModal} title="Cancel ledger creation" aria-label="Cancel ledger creation">
               Cancel
             </button>
-            <button className="button button--primary" disabled={ledgerSubmitting} title="Save ledger" aria-label="Save ledger">
+            <button data-tour="save-customer" className="button button--primary" disabled={ledgerSubmitting} title="Save ledger" aria-label="Save ledger">
               {ledgerSubmitting ? 'Saving ledger...' : 'Save ledger'}
             </button>
           </div>
