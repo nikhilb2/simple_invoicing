@@ -240,6 +240,53 @@ describe('stale company id', () => {
     expect(store.active_company_id).toBeUndefined();
   });
 
+  it('clears the stale id but does not retry a POST', async () => {
+    store.active_company_id = '999';
+    let calls = 0;
+    api.defaults.adapter = async (config) => {
+      calls += 1;
+      const detail = { detail: 'Company not found' };
+      throw new AxiosError('Company not found', 'ERR_BAD_RESPONSE', config, null,
+        { data: detail, status: 404, statusText: 'Not Found', headers: {}, config } as AxiosResponse);
+    };
+
+    await expect(api.post('/invoices/')).rejects.toMatchObject({ response: { status: 404 } });
+    expect(calls).toBe(1);
+    expect(store.active_company_id).toBeUndefined();
+  });
+
+  it('retries a read once without the id on the shared-hosting 403', async () => {
+    store.active_company_id = '999';
+    api.defaults.adapter = async (config) => {
+      if (config.headers['X-Company-Id']) {
+        const detail = { detail: 'You do not have access to this company' };
+        throw new AxiosError('Forbidden', 'ERR_BAD_RESPONSE', config, null,
+          { data: detail, status: 403, statusText: 'Forbidden', headers: {}, config } as AxiosResponse);
+      }
+      return respond(config, 200);
+    };
+
+    await expect(api.get('/company/')).resolves.toMatchObject({ status: 200 });
+    expect(store.active_company_id).toBeUndefined();
+  });
+
+  it('keeps a corrected id when the stored id changed while the request was in flight', async () => {
+    store.active_company_id = '999';
+    api.defaults.adapter = async (config) => {
+      if (config.headers['X-Company-Id'] === '999') {
+        // /auth/me's correction landing mid-flight.
+        store.active_company_id = '100';
+        const detail = { detail: 'Company not found' };
+        throw new AxiosError('Company not found', 'ERR_BAD_RESPONSE', config, null,
+          { data: detail, status: 404, statusText: 'Not Found', headers: {}, config } as AxiosResponse);
+      }
+      return respond(config, 200);
+    };
+
+    await expect(api.get('/company/')).resolves.toMatchObject({ status: 200 });
+    expect(store.active_company_id).toBe('100');
+  });
+
   it('does not retry other 404s', async () => {
     store.active_company_id = '999';
     api.defaults.adapter = async (config) => {
