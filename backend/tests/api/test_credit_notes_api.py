@@ -276,7 +276,7 @@ def _bootstrap_company(client, name: str) -> tuple[int, dict]:
     """
     response = client.post(
         "/api/company/companies",
-        json={"name": name, "address": "1 MG Road"},
+        json={"name": name, "address": "1 MG Road", "gst": "27ABCDE1234F1Z0"},
     )
     assert response.status_code < 400, f"company create failed: {response.text}"
     company_id = response.json()["id"]

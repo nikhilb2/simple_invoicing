@@ -84,6 +84,7 @@ test.describe('Public signup', () => {
     await page.click('button:has-text("Start setup")');
     await page.fill('#company-name', 'Signup Tester Co');
     await page.fill('#company-address', '1 Test Road');
+    await page.fill('#company-gst', '27ABCDE1234F1Z0');
     await page.click('button:has-text("Save company details")');
     await expect(page.locator('.sidebar__user-role')).toHaveText('Admin');
 

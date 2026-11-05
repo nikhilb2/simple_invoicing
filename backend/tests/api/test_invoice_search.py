@@ -73,7 +73,7 @@ def _create_company(client, name: str) -> int:
     response = client.post("/api/company/companies", json={
         "name": name,
         "address": "",
-        "gst": "",
+        "gst": "27ABCDE1234F1Z0",
         "phone_number": "",
         "currency_code": "INR",
         "email": "",

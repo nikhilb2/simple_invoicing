@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app_main import app
 from src.api.deps import get_current_user
 from src.db.session import get_db
+from src.models.company import CompanyProfile
 from src.models.user import User, UserRole
 from src.models.global_settings import GlobalSettings
 import pytest
@@ -22,7 +23,7 @@ import pytest
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _company_payload(name: str, gst: str = ""):
+def _company_payload(name: str, gst: str = "27ABCDE1234F1Z0"):
     return {
         "name": name,
         "address": "",
@@ -76,7 +77,7 @@ def _restore_user_override(old_override):
     app.dependency_overrides[get_current_user] = old_override
 
 
-def _create_company(client, name: str, gst: str = "") -> int:
+def _create_company(client, name: str, gst: str = "27ABCDE1234F1Z0") -> int:
     response = client.post("/api/company/companies", json=_company_payload(name, gst))
     assert response.status_code == 200, response.text
     return response.json()["id"]
@@ -591,5 +592,59 @@ def test_first_run_blank_company_starts_on_inr(client, db_session):
         response = client.get("/api/company/")
         assert response.status_code == 200, response.text
         assert response.json()["currency_code"] == "INR"
+    finally:
+        _restore_user_override(old_override)
+
+
+def test_creating_a_company_needs_a_gstin(client, db_session):
+    old_override = _with_persistent_user_override()
+    try:
+        response = client.post("/api/company/companies", json=_company_payload("No GSTIN Co", ""))
+        assert response.status_code == 422, response.text
+        assert response.json()["detail"]["errors"][0]["field"] == "gst"
+    finally:
+        _restore_user_override(old_override)
+
+
+def test_first_setup_needs_a_gstin(client, db_session):
+    old_override = _with_persistent_user_override()
+    try:
+        assert client.get("/api/company/").status_code == 200  # conjures the blank company
+        payload = _company_payload("First Setup Co", "")
+        payload["address"] = "1 MG Road"
+        response = client.put("/api/company/", json=payload)
+        assert response.status_code == 422, response.text
+        assert response.json()["detail"]["errors"][0]["field"] == "gst"
+    finally:
+        _restore_user_override(old_override)
+
+
+def test_a_saved_gstin_cannot_be_blanked(client, db_session):
+    old_override = _with_persistent_user_override()
+    try:
+        company_id = _create_company(client, "Keeps GSTIN Co")
+        payload = _company_payload("Keeps GSTIN Co", "")
+        payload["address"] = "1 MG Road"
+        response = client.put("/api/company/", json=payload, headers={"X-Company-Id": str(company_id)})
+        assert response.status_code == 422, response.text
+    finally:
+        _restore_user_override(old_override)
+
+
+def test_a_company_set_up_without_a_gstin_can_keep_saving(client, db_session):
+    # Set up before GSTIN became mandatory: they must not be locked out of their settings.
+    old_override = _with_persistent_user_override()
+    try:
+        company_id = _create_company(client, "Older Co")
+        company = db_session.get(CompanyProfile, company_id)
+        company.address = "1 MG Road"
+        company.gst = ""
+        db_session.commit()
+
+        payload = _company_payload("Older Co Renamed", "")
+        payload["address"] = "1 MG Road"
+        response = client.put("/api/company/", json=payload, headers={"X-Company-Id": str(company_id)})
+        assert response.status_code == 200, response.text
+        assert response.json()["name"] == "Older Co Renamed"
     finally:
         _restore_user_override(old_override)

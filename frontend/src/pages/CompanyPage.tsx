@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
-import api, { getApiErrorCode, getApiErrorMessage } from '../api/client';
+import api, { getApiErrorCode, getApiErrorDetails, getApiErrorMessage } from '../api/client';
 import { createTerm, deleteTerm, removeLogo, updateTerm, uploadLogo } from '../api/company';
 import CurrencyChangeDialog from '../components/CurrencyChangeDialog';
 import StatusToasts from '../components/StatusToasts';
@@ -10,7 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAuthStore } from '../store/useAuthStore';
 import { useFY } from '../context/FYContext';
 import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, CompanyTermOut } from '../types/api';
-import { isCompanyConfigured } from '../utils/companySetup';
+import { isCompanyConfigured, isGstinRequired } from '../utils/companySetup';
 import { isCurrencyChange } from '../utils/currencyChange';
 import { buildSeriesPreview, gstr1SeriesFormatError } from '../utils/seriesPreview';
 
@@ -725,6 +725,7 @@ export default function CompanyPage() {
   const { isAdmin } = useAuth();
   const seriesSectionRef = useRef<HTMLElement>(null);
   const companySetupSectionRef = useRef<HTMLElement>(null);
+  const gstInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<CompanyProfileUpdate>({
     name: '',
     address: '',
@@ -758,6 +759,8 @@ export default function CompanyPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [initialSetupRequired, setInitialSetupRequired] = useState<boolean | null>(null);
+  const [gstRequired, setGstRequired] = useState(true);
+  const [gstError, setGstError] = useState('');
   const [showFirstSetupPrompt, setShowFirstSetupPrompt] = useState(false);
   const setupRequiredByRoute = searchParams.get('setup') === 'required';
   const [showSetupDialog, setShowSetupDialog] = useState(setupRequiredByRoute);
@@ -781,6 +784,7 @@ export default function CompanyPage() {
       }
       setCompanyId(data.id);
       setSavedGstin(data.gst || '');
+      setGstRequired(isGstinRequired(data));
       setSavedCurrency(data.currency_code || '');
       setForm({
         name: data.name || '',
@@ -895,9 +899,18 @@ export default function CompanyPage() {
       if (initialSetupRequired && payload.name) {
         setShowFirstSetupPrompt(true);
       }
+      setGstError('');
       await loadCompanyProfile();
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to save company profile'));
+      const { message, fieldErrors } = await getApiErrorDetails(err, 'Unable to save company profile');
+      setError(message);
+      const gstFieldError = fieldErrors.find((fieldError) => fieldError.field === 'gst');
+      if (gstFieldError) {
+        // The button is at the foot of a long form, so on a phone the field is off-screen.
+        setGstError(gstFieldError.message);
+        gstInputRef.current?.focus();
+        gstInputRef.current?.scrollIntoView({ block: 'center' });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -1087,15 +1100,25 @@ export default function CompanyPage() {
                 </div>
 
                 <div className="field">
-                  <label htmlFor="company-gst">GSTIN</label>
+                  <label htmlFor="company-gst">
+                    GSTIN{gstRequired ? <>{' '}<span style={{ color: 'var(--color-danger)' }} aria-hidden="true">*</span></> : null}
+                  </label>
                   <input
                     id="company-gst"
+                    ref={gstInputRef}
                     className="input"
                     value={form.gst}
-                    onChange={(event) => setForm((current) => ({ ...current, gst: event.target.value }))}
+                    onChange={(event) => {
+                      setGstError('');
+                      setForm((current) => ({ ...current, gst: event.target.value }));
+                    }}
                     placeholder="27ABCDE1234F1Z0"
+                    required={gstRequired}
+                    aria-invalid={gstError ? true : undefined}
+                    aria-describedby={gstError ? 'company-gst-error' : undefined}
                   />
                   <small className="field-hint">Format: 27ABCDE1234F1Z0</small>
+                  {gstError ? <p className="field-error" id="company-gst-error" role="alert">{gstError}</p> : null}
                 </div>
 
                 <div className="field">

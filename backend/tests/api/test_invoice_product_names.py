@@ -153,7 +153,7 @@ def _pdf_test_invoice(voucher_type="sales"):
         ledger_gst="07AABB1234C1Z5",
         company_name="Seller One",
         company_address="Seller Address",
-        company_gst="07AAMPB1274B1Z8",
+        company_gst="07ZZZZZ9999Z1ZA",
         company_currency_code="INR",
         voucher_type=voucher_type,
         created_by=1,
@@ -293,7 +293,7 @@ class TestCompanyShowSkuSetting:
         resp = client.put("/api/company/", json={
             "name": "My Company",
             "address": "123 Main St",
-            "gst": "",
+            "gst": "27ABCDE1234F1Z0",
             "phone_number": "",
             "currency_code": "INR",
             "email": "",
@@ -310,7 +310,7 @@ class TestCompanyShowSkuSetting:
         client.put("/api/company/", json={
             "name": "My Company",
             "address": "123 Main St",
-            "gst": "",
+            "gst": "27ABCDE1234F1Z0",
             "phone_number": "",
             "currency_code": "INR",
             "email": "",
@@ -321,7 +321,7 @@ class TestCompanyShowSkuSetting:
         resp = client.put("/api/company/", json={
             "name": "My Company",
             "address": "123 Main St",
-            "gst": "",
+            "gst": "27ABCDE1234F1Z0",
             "phone_number": "",
             "currency_code": "INR",
             "email": "",
@@ -336,7 +336,7 @@ class TestCompanyShowSkuSetting:
         client.put("/api/company/", json={
             "name": "My Company",
             "address": "123 Main St",
-            "gst": "",
+            "gst": "27ABCDE1234F1Z0",
             "phone_number": "",
             "currency_code": "INR",
             "email": "",

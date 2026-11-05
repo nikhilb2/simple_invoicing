@@ -98,7 +98,7 @@ def test_company_creation_through_mcp_keeps_browser_selection(
     db_session.commit()
     monkeypatch.delitem(app.dependency_overrides, get_current_user)
 
-    result = mcp_call.call_tool("companies_create", {"name": "Created via MCP", "address": ""})["result"]
+    result = mcp_call.call_tool("companies_create", {"name": "Created via MCP", "address": "", "gst": "27ABCDE1234F1Z0"})["result"]
 
     assert result["isError"] is False, result
     assert result["structuredContent"]["name"] == "Created via MCP"

@@ -20,6 +20,7 @@ export default function CompanySelector() {
 
   useEscapeClose(useCallback(() => setNewCompanyModalOpen(false), []));
   const [newCompanyName, setNewCompanyName] = useState('');
+  const [newCompanyGst, setNewCompanyGst] = useState('');
   const [newCompanySubmitting, setNewCompanySubmitting] = useState(false);
   const [newCompanyError, setNewCompanyError] = useState('');
   const companyDropdownRef = useRef<HTMLDivElement>(null);
@@ -80,12 +81,17 @@ export default function CompanySelector() {
       setNewCompanyError('Company name is required.');
       return;
     }
+    const trimmedGst = newCompanyGst.trim().toUpperCase();
+    if (!trimmedGst) {
+      setNewCompanyError('GSTIN is required.');
+      return;
+    }
     setNewCompanySubmitting(true);
     setNewCompanyError('');
     const payload: CompanyProfileUpdate = {
       name: trimmedName,
       address: '',
-      gst: '',
+      gst: trimmedGst,
       phone_number: '',
       currency_code: 'INR',
       email: '',
@@ -195,6 +201,7 @@ export default function CompanySelector() {
                   onClick={() => {
                     setCompanyDropdownOpen(false);
                     setNewCompanyName('');
+                    setNewCompanyGst('');
                     setNewCompanyError('');
                     setNewCompanyModalOpen(true);
                   }}
@@ -247,8 +254,18 @@ export default function CompanySelector() {
                     autoFocus
                   />
                 </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.875rem', fontWeight: 500 }}>
+                  GSTIN
+                  <input
+                    className="input"
+                    value={newCompanyGst}
+                    onChange={(e) => setNewCompanyGst(e.target.value)}
+                    placeholder="27ABCDE1234F1Z0"
+                    maxLength={15}
+                  />
+                </label>
                 <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.7 }}>
-                  This creates a blank company profile. You can complete GST, address, and bank details on the Company page.
+                  You can complete the address and bank details on the Company page.
                 </p>
                 {newCompanyError && <p style={{ margin: 0, color: 'var(--error)', fontSize: '0.85rem' }}>{newCompanyError}</p>}
                 <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
