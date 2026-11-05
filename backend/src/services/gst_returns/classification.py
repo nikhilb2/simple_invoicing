@@ -126,9 +126,9 @@ def classify_note(direction: str | None, status: str | None) -> Side:
 def classify_note_line(note_side: Side, line: NoteLine) -> Side:
     """A note line counts only if the invoice it reverses still counts, on that side.
 
-    Cancelling an invoice does not touch the notes raised against it (#602), so
-    an active note can point at a cancelled invoice. The sale is already gone
-    from the figures; taking the note off as well would count the reversal twice.
+    Invoices cancelled before the credit-note guard (#602) can still have active
+    notes. The sale is already gone from the figures, so taking the note off as
+    well would count the reversal twice.
 
     A line whose source invoice is unknown keeps the note's side: the note's own
     direction is the only evidence left, and that is what GSTR-1 goes by.

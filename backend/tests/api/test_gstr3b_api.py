@@ -516,14 +516,16 @@ def test_a_note_on_a_cancelled_invoice_is_the_labelled_difference(client, db_ses
     books = reconciling_books
     sale = _invoice(client, books.intra, [_line(books.at18, 4, 100)])
     note = _note(client, db_session, books.intra, sale)
-    _ok(client.delete(f"/api/invoices/{sale['id']}"))
+    # Recreate an invoice cancelled before the credit-note guard (#602).
+    db_session.get(Invoice, sale["id"]).status = "cancelled"
+    db_session.commit()
 
     export = _ok(client.get("/api/ledgers/tax-ledger/gstr1/export-json", params=PERIOD))
     totals = _gstr1_totals(export)["taxed"]
     sheet = _sheet(client)
     row = _row(sheet, "3.1a")
 
-    # The export still subtracts this note although its sale is gone (#602). The
+    # The export still subtracts this legacy note although its sale is gone. The
     # worksheet does not, so it is higher by exactly the note, and says so.
     assert Decimal(str(row["taxable_value"])) - totals["txval"] == Decimal("100")
     assert Decimal(str(row["cgst"])) - totals["camt"] == Decimal("9")
