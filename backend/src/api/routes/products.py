@@ -879,6 +879,11 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
 
     # Normalise column names
     normalised = [h.strip().lower().replace(" ", "_") for h in reader.fieldnames]
+    headers = set(normalised)
+    tax_headers = ("tax", "gst")
+    stock_headers = ("current_stock", "stock")
+    has_tax_column = not headers.isdisjoint(tax_headers)
+    has_stock_column = not headers.isdisjoint(stock_headers)
 
     row_num = 1  # header is row 0
     for row in reader:
@@ -904,7 +909,7 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             continue
 
         try:
-            tax_cell = values.get("tax") or values.get("gst") or ""
+            tax_cell = next((values[key] for key in tax_headers if values.get(key)), "")
             gst_rate = _csv_number(tax_cell.removesuffix("%"))
             if gst_rate < 0 or gst_rate > 100:
                 raise ValueError(gst_rate)
@@ -913,7 +918,7 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             continue
 
         try:
-            stock = _csv_number(values.get("current_stock") or values.get("stock") or 0)
+            stock = _csv_number(next((values[key] for key in stock_headers if values.get(key)), ""))
             if stock < 0:
                 raise ValueError(stock)
         except ValueError:
@@ -958,10 +963,14 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
 
         if existing:
             existing.name = item_name
-            existing.price = selling_price
-            existing.purchase_price = purchase_price
-            existing.gst_rate = gst_rate
-            existing.reorder_level = reorder_level
+            if "selling_price" in headers:
+                existing.price = selling_price
+            if "purchase_price" in headers:
+                existing.purchase_price = purchase_price
+            if has_tax_column:
+                existing.gst_rate = gst_rate
+            if "reorder_level" in headers:
+                existing.reorder_level = reorder_level
             if values.get("description"):
                 existing.description = values["description"]
             if hsn_sac:
@@ -969,15 +978,6 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             if values.get("unit"):
                 existing.unit = values["unit"]
 
-            # Update inventory
-            inv = (
-                db.query(Inventory)
-                .filter(
-                    Inventory.product_id == existing.id,
-                    Inventory.company_id == active_company.id,
-                )
-                .first()
-            )
             # Same reason as the with-inventory update: a CSV cannot carry the
             # serials that a tracked product's stock has to be backed by.
             if existing.track_serials:
@@ -985,10 +985,19 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
                     "row": row_num,
                     "message": f"Stock for {sku} was left as-is — it is serial-tracked",
                 })
-            elif inv:
-                inv.quantity = Decimal(str(stock))
-            elif existing.maintain_inventory:
-                db.add(Inventory(company_id=active_company.id, product_id=existing.id, quantity=Decimal(str(stock))))
+            elif has_stock_column:
+                inv = (
+                    db.query(Inventory)
+                    .filter(
+                        Inventory.product_id == existing.id,
+                        Inventory.company_id == active_company.id,
+                    )
+                    .first()
+                )
+                if inv:
+                    inv.quantity = Decimal(str(stock))
+                elif existing.maintain_inventory:
+                    db.add(Inventory(company_id=active_company.id, product_id=existing.id, quantity=Decimal(str(stock))))
 
             updated += 1
         else:
