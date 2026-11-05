@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="frontend/public/favicon.svg" alt="Simple Invoicing logo" width="96" height="96">
+
 # Simple Invoicing
 
 **Free GST software for Indian small businesses**
