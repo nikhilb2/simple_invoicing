@@ -29,7 +29,7 @@ Large amounts are shortened, such as ₹66.2L. Hover over a figure for the full 
 
 - **Sales, purchases & receipts**: a monthly chart for the last 12 months.
 - **Payment status**: how many sales invoices are paid, part paid and unpaid.
-- **Inventory pressure points**: the five tracked products with the least stock.
+- **Inventory pressure points**: up to five stock-tracked products. Products that are out of stock or at or below their reorder level come first, with the lowest quantities first within each group.
 - **Top products by revenue**: your five best sellers.
 - **Latest activity**: the six newest invoices. Click one to preview it.
 

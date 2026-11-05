@@ -126,6 +126,33 @@ def test_inventory_tracking_filter_applies_before_pagination(client, maintained,
         assert result["items"][0]["maintain_inventory"] is maintained
 
 
+@pytest.mark.parametrize("attention_stock,expected", [
+    ([], [1, 2, 3, 4, 5]),
+    ([(50, 100)], [50, 1, 2, 3, 4]),
+    ([(50, 50), (0, 0)], [0, 50, 1, 2, 3]),
+])
+def test_inventory_attention_sort_prioritizes_reorder_level_before_pagination(
+    client, attention_stock, expected,
+):
+    stock = [(quantity, 0) for quantity in range(1, 6)] + attention_stock
+    for index, (quantity, reorder_level) in enumerate(stock):
+        created = client.post("/api/products/", json={
+            "sku": f"ATTENTION-{index}", "name": f"Stock {index}", "price": 10,
+            "gst_rate": 0, "initial_quantity": quantity, "reorder_level": reorder_level,
+        })
+        assert created.status_code == 200, created.text
+
+    params = {"maintain_inventory": True, "sort_order": "asc", "page_size": 5}
+    legacy = client.get("/api/inventory/", params={**params, "sort_by": "quantity"})
+    assert legacy.status_code == 200, legacy.text
+    assert [row["quantity"] for row in legacy.json()["items"]] == sorted(qty for qty, _ in stock)[:5]
+
+    response = client.get("/api/inventory/", params={**params, "sort_by": "attention"})
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == len(stock)
+    assert [row["quantity"] for row in response.json()["items"]] == expected
+
+
 def test_inventory_list_returns_each_products_reorder_level(client):
     created = client.post("/api/products/", json={
         "sku": "REORDER-50", "name": "Custom Reorder", "price": 10, "gst_rate": 0,

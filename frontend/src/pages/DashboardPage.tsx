@@ -53,7 +53,7 @@ export default function DashboardPage() {
         const [metricsRes, inventoryRes, invoicesRes] = await Promise.all([
           api.get<DashboardMetrics>('/dashboard/metrics'),
           api.get<PaginatedInventoryOut>('/inventory/', {
-            params: { maintain_inventory: true, sort_by: 'quantity', sort_order: 'asc', page_size: 5 },
+            params: { maintain_inventory: true, sort_by: 'attention', sort_order: 'asc', page_size: 5 },
           }),
           api.get<{ items: Invoice[] }>('/invoices/', { params: { page_size: 6 } }),
         ]);
