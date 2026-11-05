@@ -39,7 +39,6 @@ from src.schemas.invoice import InvoiceItemCreate
 from src.schemas.ledger_address import ShippingAddressInline
 from src.schemas.quotation import (
     LATEST_DOCUMENT_DATE,
-    MONEY_LIMIT,
     ConversionWarning,
     QuotationConversionDraft,
     QuotationConvert,
@@ -50,7 +49,7 @@ from src.schemas.quotation import (
     QuotationUpdate,
 )
 from src.services.company_access import company_scope
-from src.services.document_totals import apply_discount_and_round_off, snapshot_company_fields
+from src.services.document_totals import apply_discount_and_round_off, require_money_fits, snapshot_company_fields
 from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.gst_tax_service import (
     assign_invoice_tax_totals,
@@ -263,7 +262,7 @@ def _apply_payload(
     taxable_total = Decimal("0")
     items: list[QuotationItem] = []
     for result in processor.calculate_totals(validated, payload.tax_inclusive):
-        _require_fits(
+        require_money_fits(
             f"The total for {result['product'].name}",
             result["taxable_amount"],
             result["tax_amount"],
@@ -301,21 +300,12 @@ def _apply_payload(
         payload.discount_type,
         payload.discount_value,
     )
-    _require_fits(
+    require_money_fits(
         "The total of this document",
         taxable_total,
         tax_total,
         Decimal(str(quotation.total_amount)),
     )
-
-
-def _require_fits(subject: str, *amounts: Decimal) -> None:
-    """Refuse a figure its NUMERIC(10, 2) column cannot hold, rather than fail on saving."""
-    if any(abs(amount) >= MONEY_LIMIT for amount in amounts):
-        raise HTTPException(
-            status_code=400,
-            detail=f"{subject} is too large. Amounts must stay below {MONEY_LIMIT:,}.",
-        )
 
 
 def create_quotation(

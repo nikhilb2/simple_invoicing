@@ -4,6 +4,7 @@ from typing import List, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
+from src.core.document_limits import MONEY_LIMIT, QUANTITY_LIMIT
 from src.schemas.invoice import InvoiceCreate, _validate_discount_value
 from src.schemas.ledger_address import ShippingAddressInline
 
@@ -13,10 +14,6 @@ StatusFilter = Literal["open", "accepted", "declined", "converted", "cancelled",
 # Converted and cancelled are reached through their own actions, not this route.
 SettableStatus = Literal["open", "accepted", "declined"]
 
-# Exclusive limits from the columns: money is NUMERIC(10, 2), quantity NUMERIC(12, 3).
-# Computed totals have to fit the same money columns; the service checks those.
-MONEY_LIMIT = 100_000_000
-QUANTITY_LIMIT = 1_000_000_000
 # Nobody means a date outside this, and a far one overflows date arithmetic.
 EARLIEST_DOCUMENT_DATE = date(2000, 1, 1)
 LATEST_DOCUMENT_DATE = date(2099, 12, 31)

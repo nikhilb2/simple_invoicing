@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator
 from typing import List, Literal, Optional
 from src.schemas.ledger import LedgerOut
 from src.schemas.ledger_address import ShippingAddressInline
+from src.core.document_limits import MONEY_LIMIT, QUANTITY_LIMIT
 from src.core.validation import normalize_hsn_sac, normalize_place_of_supply
 
 
@@ -30,11 +31,11 @@ def _validate_discount_value(
 
 class InvoiceItemCreate(BaseModel):
     product_id: int
-    quantity: float = Field(allow_inf_nan=False)
-    unit_price: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    quantity: float = Field(lt=QUANTITY_LIMIT, allow_inf_nan=False)
+    unit_price: float | None = Field(default=None, ge=0, lt=MONEY_LIMIT, allow_inf_nan=False)
     description: str | None = None
     discount_type: Literal["percentage", "net"] | None = None
-    discount_value: float | None = Field(default=None, allow_inf_nan=False)
+    discount_value: float | None = Field(default=None, lt=MONEY_LIMIT, allow_inf_nan=False)
 
     @field_validator("discount_value", mode="after")
     @classmethod
@@ -67,7 +68,7 @@ class InvoiceCreate(BaseModel):
     tax_inclusive: bool = False
     apply_round_off: bool = False
     discount_type: Literal["percentage", "net"] | None = None
-    discount_value: float | None = Field(default=None, allow_inf_nan=False)
+    discount_value: float | None = Field(default=None, lt=MONEY_LIMIT, allow_inf_nan=False)
     shipping_address_same_as_billing: bool = True
     shipping_address_id: int | None = None
     new_shipping_address: ShippingAddressInline | None = None

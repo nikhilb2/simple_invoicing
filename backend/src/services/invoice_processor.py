@@ -22,7 +22,7 @@ from src.models.invoice import Invoice, InvoiceItem
 from src.models.ledger_address import LedgerAddress
 from src.models.product import Product
 from src.schemas.invoice import InvoiceCreate
-from src.services.document_totals import apply_discount_and_round_off, snapshot_company_fields
+from src.services.document_totals import apply_discount_and_round_off, require_money_fits, snapshot_company_fields
 from src.services.gst_tax_service import (
     assign_invoice_tax_totals,
     assign_item_tax_split,
@@ -33,6 +33,7 @@ from src.services.gst_tax_service import (
 from src.services.inventory_service import InventoryManager
 from src.services.serial_service import SerialManager
 from src.core.config import settings
+from src.core.document_limits import QUANTITY_LIMIT
 from src.services.series import generate_next_number
 from src.services.company_access import company_scope, legacy_default_company
 
@@ -245,6 +246,14 @@ class InvoiceProcessor:
         tuples, raising 400/404 errors for invalid data.
         """
         validated = self.resolve_items(items, company_id)
+
+        # NUMERIC(12, 3) rounds before checking the bound.
+        for _, product, quantity in validated:
+            if quantity >= Decimal(QUANTITY_LIMIT) - Decimal("0.0005"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Quantity for {product.name} must stay below {QUANTITY_LIMIT:,} after rounding.",
+                )
 
         # Runs once the products are resolved but before any stock is touched, so a
         # mistyped IMEI produces a clean error rather than a rolled-back half-write.
@@ -551,6 +560,14 @@ class InvoiceProcessor:
                 if getattr(result["item_schema"], "discount_value", None) is not None
                 else None
             )
+            require_money_fits(
+                f"The amounts for {result['product'].name}",
+                result["unit_price"],
+                result["taxable_amount"],
+                result["tax_amount"],
+                result["line_total"],
+                Decimal(str(item_dval)) if item_dval is not None else Decimal("0"),
+            )
             invoice_item = InvoiceItem(
                 invoice_id=invoice.id,
                 product_id=result["product"].id,
@@ -583,6 +600,13 @@ class InvoiceProcessor:
 
         # Apply invoice-level discount and round off
         apply_discount_and_round_off(invoice, raw_total, payload.discount_type, payload.discount_value)
+        require_money_fits(
+            "The invoice totals and discount",
+            taxable_total,
+            tax_total,
+            Decimal(str(invoice.total_amount)),
+            Decimal(str(payload.discount_value)) if payload.discount_value is not None else Decimal("0"),
+        )
 
     # ------------------------------------------------------------------
     # Shipping address helpers
