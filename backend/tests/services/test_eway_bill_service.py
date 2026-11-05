@@ -203,7 +203,7 @@ def test_extract_pincode_empty():
 
 def test_gstin_regex():
     assert GSTIN_REGEX.match("29AABCT1234Q1Z5")
-    assert GSTIN_REGEX.match("07AAMPB1274B1Z8")
+    assert GSTIN_REGEX.match("07ZZZZZ9999Z1ZA")
     assert not GSTIN_REGEX.match("12345")
     assert not GSTIN_REGEX.match("")
     assert not GSTIN_REGEX.match("29AABCT1234Q1Z")  # too short
@@ -309,7 +309,7 @@ def test_pre_check_no_buyer_record_uses_ledger_snapshot(db_session, invoice, inv
     """When no Buyer record exists, the invoice ledger snapshot is used."""
     invoice.ledger_id = None
     invoice.ledger_name = "Cash Customer"
-    invoice.ledger_gst = "07AAMPB1274B1Z8"
+    invoice.ledger_gst = "07ZZZZZ9999Z1ZA"
     invoice.ledger_address = "Some Place\nDelhi\n110001"
     db_session.flush()
 
@@ -317,7 +317,7 @@ def test_pre_check_no_buyer_record_uses_ledger_snapshot(db_session, invoice, inv
     result = pre_check(invoice, company, None, invoice_items, products_map)
 
     assert result.valid is True
-    assert result.form_data.buyer_gstin == "07AAMPB1274B1Z8"
+    assert result.form_data.buyer_gstin == "07ZZZZZ9999Z1ZA"
     assert result.form_data.buyer_trade_name == "Cash Customer"
     assert result.form_data.buyer_state_code == "07"
 
@@ -510,11 +510,11 @@ def test_generate_without_vehicle(db_session, invoice, invoice_items, company, b
 
 
 def test_generate_respects_transporter(db_session, invoice, invoice_items, company, buyer, product_with_hsn):
-    form = _complete_form(transporter_name="Fast Logistics", transporter_gstin="07AAMPB1274B1Z8")
+    form = _complete_form(transporter_name="Fast Logistics", transporter_gstin="07ZZZZZ9999Z1ZA")
     products_map = {product_with_hsn.id: product_with_hsn}
     bill = generate_eway_bill_json(invoice, invoice_items, products_map, form)["billLists"][0]
     assert bill["transporterName"] == "Fast Logistics"
-    assert bill["transporterId"] == "07AAMPB1274B1Z8"
+    assert bill["transporterId"] == "07ZZZZZ9999Z1ZA"
 
 
 def test_generate_total_value_reconciles(db_session, invoice, invoice_items, company, buyer, product_with_hsn):
@@ -562,7 +562,7 @@ def test_get_default_transporter_returns_default(db_session, company):
     t = EwayBillTransporter(
         company_id=company.id,
         transporter_name="Default Transporter",
-        transporter_gstin="07AAMPB1274B1Z8",
+        transporter_gstin="07ZZZZZ9999Z1ZA",
         transport_mode="1",
         vehicle_type="R",
         is_default=True,
@@ -810,7 +810,7 @@ def test_vehicle_number_spaces_are_removed(db_session, invoice, invoice_items, p
 def test_road_needs_a_vehicle_or_a_transporter():
     errors = validate_form_data(_complete_form(vehicle_number="", transporter_gstin=""))
     assert [e.field for e in errors] == ["vehicle_number"]
-    assert validate_form_data(_complete_form(vehicle_number="", transporter_gstin="07AAMPB1274B1Z8")) == []
+    assert validate_form_data(_complete_form(vehicle_number="", transporter_gstin="07ZZZZZ9999Z1ZA")) == []
 
 
 @pytest.mark.parametrize("mode", ["2", "3", "4"])
@@ -897,7 +897,7 @@ def test_long_invoice_number_is_refused(invoice, invoice_items, product_with_hsn
 
 def test_pre_check_prefers_the_invoice_over_changed_master_records(db_session, invoice, invoice_items, company, buyer, product_with_hsn):
     company.name = "Renamed Corp"
-    company.gst = "07AAMPB1274B1Z8"
+    company.gst = "07ZZZZZ9999Z1ZA"
     company.address = "New Office\nDelhi\n110001"
     buyer.name = "Renamed Buyer"
     buyer.gst = "07BBBCD5678R2Z9"
@@ -1020,12 +1020,12 @@ def test_saving_over_an_existing_transporter_clears_the_previous_default(db_sess
     old_default = _transporter(db_session, company, "Old Default", is_default=True)
     existing = _transporter(db_session, company, "Existing", is_default=False)
 
-    save_default_transporter(db_session, company.id, _complete_form(transporter_name="Existing", transporter_gstin="07AAMPB1274B1Z8"))
+    save_default_transporter(db_session, company.id, _complete_form(transporter_name="Existing", transporter_gstin="07ZZZZZ9999Z1ZA"))
     db_session.flush()
     db_session.expire_all()
 
     assert existing.is_default is True
-    assert existing.transporter_gstin == "07AAMPB1274B1Z8"
+    assert existing.transporter_gstin == "07ZZZZZ9999Z1ZA"
     assert old_default.is_default is False
     assert db_session.query(EwayBillTransporter).filter_by(company_id=company.id, is_default=True).count() == 1
 
