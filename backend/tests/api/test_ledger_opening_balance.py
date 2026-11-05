@@ -1,3 +1,6 @@
+import pytest
+
+
 def _ledger_payload(name: str, opening_balance=None):
     return {
         "name": name,
@@ -60,3 +63,28 @@ def test_update_ledger_updates_and_clears_opening_balance(client):
 
     payments_after_clear = client.get("/api/payments/", params={"ledger_id": ledger_id}).json()
     assert payments_after_clear == []
+
+
+@pytest.mark.parametrize("amount", [1_000_000_000_000, -100_000_000, 99_999_999.995, -99_999_999.995])
+def test_opening_balance_overflow_is_rejected_on_create_and_edit(client, amount):
+    response = client.post("/api/ledgers/", json=_ledger_payload("Refused ledger", amount))
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"] == ["body", "opening_balance"]
+
+    response = client.post("/api/ledgers/", json=_ledger_payload("Original ledger", 150.25))
+    assert response.status_code == 200, response.text
+    ledger_id = response.json()["id"]
+    response = client.put(f"/api/ledgers/{ledger_id}", json=_ledger_payload("Renamed ledger", amount))
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"] == ["body", "opening_balance"]
+
+    saved = client.get(f"/api/ledgers/{ledger_id}").json()
+    assert saved["name"] == "Original ledger"
+    assert saved["opening_balance"] == 150.25
+
+
+@pytest.mark.parametrize("amount", [50_000_000, -50_000_000, 99_999_999.99, -99_999_999.99])
+def test_large_opening_balances_within_bounds_are_saved(client, amount):
+    response = client.post("/api/ledgers/", json=_ledger_payload("Large balance ledger", amount))
+    assert response.status_code == 200, response.text
+    assert response.json()["opening_balance"] == amount
