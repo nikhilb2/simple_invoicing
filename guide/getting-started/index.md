@@ -24,6 +24,8 @@ Click **Save company details**. You can then adjust how invoices are numbered, o
 
 The dashboard then shows a **Get started** checklist with the next steps below. It goes away once you have created an invoice, or you can hide it.
 
+The dashboard also offers to walk you through your first invoice. Click **Show me how** and the app points at each field while you add a real customer and product and create the invoice. If you choose **Skip for now**, you can start it later with **Walk me through it** on the checklist. Admins and managers see this.
+
 ## 3. Add a customer
 
 1. Click **Ledgers** in the sidebar, then **Create ledger**.

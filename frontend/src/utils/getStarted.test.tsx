@@ -11,6 +11,9 @@ import {
   writeGetStartedDismissed,
 } from './getStarted';
 
+vi.mock('../store/useAuthStore', () => ({ useAuthStore: () => null }));
+vi.mock('../store/useFirstInvoiceTourStore', () => ({ useFirstInvoiceTourStore: () => undefined }));
+
 function metrics(over: { products?: number; tracked?: number; units?: number; sales?: number; purchases?: number } = {}) {
   return {
     catalog: { total_products: over.products ?? 0, producible_products: 0 },

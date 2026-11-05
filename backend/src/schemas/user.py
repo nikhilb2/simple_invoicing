@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, EmailStr
 from src.models.user import UserRole
 from src.schemas.auth import NewPassword
@@ -27,6 +29,15 @@ class UserOut(BaseModel):
     # the deployment itself. Filled in by GET /auth/me, which has the session.
     company_role: UserRole | None = None
     can_manage_platform: bool = False
+    first_invoice_tour_status: str | None = None
 
     class Config:
         from_attributes = True
+
+
+class FirstInvoiceTourUpdate(BaseModel):
+    status: Literal["completed", "skipped", "not_needed"]
+
+
+class FirstInvoiceTourOut(BaseModel):
+    first_invoice_tour_status: str | None = None

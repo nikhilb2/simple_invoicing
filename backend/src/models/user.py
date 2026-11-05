@@ -28,6 +28,10 @@ class User(Base):
     # when Google sign-in drops a password nobody proved: the moments someone
     # else may be holding a session.
     sessions_valid_after = Column(DateTime(timezone=True), nullable=True)
+    # NULL until the user answers the first-invoice walkthrough, then "completed",
+    # "skipped" or "not_needed". See the PUT /auth/me/first-invoice-tour route.
+    first_invoice_tour_status = Column(String(20), nullable=True)
+    first_invoice_tour_finished_at = Column(DateTime(timezone=True), nullable=True)
 
     @property
     def has_password(self) -> bool:

@@ -8782,3 +8782,112 @@ a.ledger-chip:focus-visible {
 .worksheet-row--total td {
   font-weight: 700;
 }
+
+/* First-invoice walkthrough. Above every dialog, because it guides what is inside
+   them, and never in the way: only the card itself takes clicks. */
+.tour-coach {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1300;
+  display: grid;
+  gap: 8px;
+  width: min(340px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgb(var(--rgb-panel-top) / 0.99) 0%, rgb(var(--rgb-panel) / 0.99) 100%);
+  box-shadow: var(--shadow);
+}
+
+.tour-coach--top {
+  top: 16px;
+  bottom: auto;
+}
+
+:root[data-tour-card] .modal-overlay,
+:root[data-tour-card] .page-frame {
+  padding-bottom: calc(var(--tour-card-height, 0px) + 32px);
+}
+
+/* A dialog scrolls inside its own panel, so the padding above can't lift what the
+   panel holds. Ending the panel above the card is what keeps its Save button clear. */
+:root[data-tour-card] .modal-panel {
+  max-height: calc(100vh - var(--tour-card-height, 0px) - 56px);
+  max-height: calc(100dvh - var(--tour-card-height, 0px) - 56px);
+}
+
+.tour-coach .eyebrow {
+  margin: 0;
+}
+
+.tour-coach__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.tour-coach__body {
+  margin: 4px 0 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.tour-coach__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.tour-coach__progress {
+  display: flex;
+  gap: 4px;
+}
+
+.tour-coach__dot {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+
+.tour-coach__dot--on {
+  background: rgb(var(--rgb-accent));
+}
+
+.tour-ring {
+  position: fixed;
+  z-index: 1290;
+  border: 2px solid rgb(var(--rgb-accent));
+  border-radius: 10px;
+  box-shadow: 0 0 0 4px rgb(var(--rgb-accent) / 0.25);
+  pointer-events: none;
+  animation: tour-ring-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes tour-ring-pulse {
+  50% {
+    box-shadow: 0 0 0 8px rgb(var(--rgb-accent) / 0.1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-ring {
+    animation: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .tour-coach {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+  }
+
+  .tour-coach--top {
+    top: 12px;
+    bottom: auto;
+  }
+}

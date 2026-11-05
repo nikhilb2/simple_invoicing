@@ -35,7 +35,7 @@ from src.schemas.auth import (
     VerifyEmailRequest,
     VerifyEmailResponse,
 )
-from src.schemas.user import UserOut
+from src.schemas.user import FirstInvoiceTourOut, FirstInvoiceTourUpdate, UserOut
 from src.core.config import settings
 from src.services.company_access import company_role, first_accessible_company, is_platform_admin
 from src.core.rate_limit import TokenBucket, client_ip
@@ -529,6 +529,29 @@ def get_me(current_user: User = Depends(get_current_user), db: Session = Depends
         out.company_role = current_user.role
         out.can_manage_platform = current_user.role == UserRole.admin
     return out
+
+
+@router.put("/me/first-invoice-tour", response_model=FirstInvoiceTourOut, include_in_schema=False)
+def set_first_invoice_tour(
+    payload: FirstInvoiceTourUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_session_user),
+):
+    """Record the user's answer to the walkthrough so it is not offered again.
+
+    The first answer stands, except that actually finishing replaces it: someone
+    who skipped can still start the walkthrough from the dashboard checklist.
+    """
+    current = current_user.first_invoice_tour_status
+    finishing = payload.status == "completed" and current != "completed"
+    if current is None or finishing:
+        current_user.first_invoice_tour_status = payload.status
+        current_user.first_invoice_tour_finished_at = datetime.now(timezone.utc)
+        db.commit()
+        # not_needed is the app tidying up after an existing user, not a decision.
+        if payload.status != "not_needed":
+            track("first_invoice_tour_finished", distinct_id_for(current_user), {"status": payload.status})
+    return FirstInvoiceTourOut(first_invoice_tour_status=current_user.first_invoice_tour_status)
 
 
 def _signed_in_interactively(request: Request) -> bool:

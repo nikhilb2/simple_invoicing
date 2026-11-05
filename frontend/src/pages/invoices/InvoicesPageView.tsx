@@ -38,6 +38,7 @@ import {
 } from '../../utils/quotationDraft';
 import { invoiceQueryKeys } from '../../features/invoices/queryKeys';
 import { missingQuantity, readStockShortage } from '../../features/invoices/stockShortage';
+import { useFirstInvoiceTourStore } from '../../store/useFirstInvoiceTourStore';
 import { useInvoiceComposerStore } from '../../store/useInvoiceComposerStore';
 import LedgerQuickCreateModal from './components/LedgerQuickCreateModal';
 import ProductQuickCreateModal from './components/ProductQuickCreateModal';
@@ -1034,6 +1035,7 @@ export default function InvoicesPage() {
             : '';
         setSuccess(baseMsg + warningNote);
         setPreviewInvoice(res.data);
+        if (voucherType === 'sales') useFirstInvoiceTourStore.getState().invoiceCreated();
       }
 
       resetInvoiceForm();
@@ -1071,6 +1073,29 @@ export default function InvoicesPage() {
   const scanTargetEntry =
     trackedEntries.find((entry) => entry.item.id === scanTargetItemId) ?? trackedEntries[trackedEntries.length - 1] ?? null;
   const hasTrackedProducts = !isQuote && products.some((product) => product.track_serials);
+  /* Tells the first-invoice walkthrough what is on the page. It only ever reads this. */
+  const reportToTour = useFirstInvoiceTourStore((state) => state.report);
+  const ledgerFormOpen = useInvoiceComposerStore((state) => state.showLedgerCreateModal);
+  const productFormOpen = useInvoiceComposerStore((state) => state.showProductCreateModal);
+  const stockFormOpen = useInvoiceComposerStore((state) => state.showStockUpdateModal);
+  const composerLoaded = Boolean(composerQuery.data);
+  const productChosen = items.some((item) => Boolean(item.productId));
+  useEffect(() => {
+    if (!composerLoaded) return;
+    reportToTour({
+      ledgerCount: ledgers.length,
+      productCount: products.length,
+      ledgerChosen: Boolean(selectedLedgerId),
+      productChosen,
+      isSales: voucherType === 'sales',
+      stockShortage: Boolean(stockShortage),
+      ledgerFormOpen,
+      productFormOpen,
+      stockFormOpen,
+    });
+  }, [composerLoaded, ledgers.length, products.length, selectedLedgerId, productChosen, voucherType, stockShortage, ledgerFormOpen, productFormOpen, stockFormOpen, reportToTour]);
+  useEffect(() => () => reportToTour(null), [reportToTour]);
+
   const documentName = composerDocumentName(voucherType);
   const conversionLedgerChanged = conversion !== null && Number(selectedLedgerId) !== conversion.invoice.ledger_id;
   const conversionShortfalls = conversion
@@ -1159,13 +1184,13 @@ export default function InvoicesPage() {
               </p>
               <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                 {ledgers.length === 0 ? (
-                  <button type="button" className="button button--primary" onClick={openLedgerCreateModal}>
+                  <button type="button" className="button button--primary" data-tour="add-customer" onClick={openLedgerCreateModal}>
                     <Plus size={13} />
                     Add a customer
                   </button>
                 ) : null}
                 {products.length === 0 ? (
-                  <button type="button" className="button button--primary" onClick={openProductCreateModal}>
+                  <button type="button" className="button button--primary" data-tour="add-product" onClick={openProductCreateModal}>
                     <Plus size={13} />
                     Add a product
                   </button>
@@ -1872,6 +1897,7 @@ export default function InvoicesPage() {
                 <button
                   type="button"
                   className="button button--secondary"
+                  data-tour="add-stock"
                   onClick={() => {
                     setError('');
                     openStockUpdateModal({ productId: stockShortage.productId, quantity: missingQuantity(stockShortage) });
@@ -1920,7 +1946,7 @@ export default function InvoicesPage() {
                   {submitting ? 'Saving...' : `${editingQuotation ? 'Update' : 'Create'} ${documentName}`}
                 </button>
               ) : (
-                <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId} title={!selectedLedgerId ? 'Choose who you are billing first' : editingInvoiceId ? 'Update invoice' : 'Create invoice'} aria-label={editingInvoiceId ? 'Update invoice' : 'Create invoice'}>
+                <button data-tour="create-invoice" className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId} title={!selectedLedgerId ? 'Choose who you are billing first' : editingInvoiceId ? 'Update invoice' : 'Create invoice'} aria-label={editingInvoiceId ? 'Update invoice' : 'Create invoice'}>
                   {submitting ? (editingInvoiceId ? 'Updating invoice...' : 'Creating invoice...') : editingInvoiceId ? 'Update invoice' : 'Create invoice'}
                 </button>
               )}

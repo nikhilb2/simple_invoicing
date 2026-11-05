@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Check, X } from 'lucide-react';
 import api from '../api/client';
+import { canStartTour, INVOICE_PATH } from '../features/firstInvoiceTour/tourSteps';
+import { useAuthStore } from '../store/useAuthStore';
+import { useFirstInvoiceTourStore } from '../store/useFirstInvoiceTourStore';
 import type { CompanyAccount, DashboardMetrics, PaginatedLedgers } from '../types/api';
 import {
   activeCompanyId,
@@ -46,10 +49,12 @@ const STEPS: Array<{
 type Props = {
   status: GetStartedStatus;
   onDismiss: () => void;
+  /** Starts the walkthrough. Left out for people who could not finish it. */
+  onStartTour?: () => void;
 };
 
 /** Presentational half: renders nothing once the required steps are done. */
-export function GetStartedCard({ status, onDismiss }: Props) {
+export function GetStartedCard({ status, onDismiss, onStartTour }: Props) {
   if (isGetStartedComplete(status)) return null;
 
   return (
@@ -92,7 +97,14 @@ export function GetStartedCard({ status, onDismiss }: Props) {
       </ol>
 
       <p className="table-subtext">
-        New to this? <a href={QUICK_START_URL} target="_blank" rel="noreferrer">Read the Quick start</a>
+        New to this?{' '}
+        {onStartTour ? (
+          <>
+            <button type="button" className="link-button" onClick={onStartTour}>Walk me through it</button>
+            {' or '}
+          </>
+        ) : null}
+        <a href={QUICK_START_URL} target="_blank" rel="noreferrer">{onStartTour ? 'read the Quick start' : 'Read the Quick start'}</a>
       </p>
     </section>
   );
@@ -108,6 +120,9 @@ export default function GetStartedChecklist({ metrics }: { metrics: DashboardMet
   const [dismissed, setDismissed] = useState(() => readGetStartedDismissed(companyId));
   const [facts, setFacts] = useState<GetStartedFacts | null>(null);
   const run = shouldRunGetStarted(metrics, dismissed);
+  const companyRole = useAuthStore((state) => state.companyRole);
+  const startTour = useFirstInvoiceTourStore((state) => state.start);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!run) return;
@@ -130,6 +145,14 @@ export default function GetStartedChecklist({ metrics }: { metrics: DashboardMet
   return (
     <GetStartedCard
       status={getStartedStatus(metrics, facts)}
+      onStartTour={
+        canStartTour(companyRole)
+          ? () => {
+              startTour();
+              navigate(INVOICE_PATH);
+            }
+          : undefined
+      }
       onDismiss={() => {
         writeGetStartedDismissed(companyId);
         setDismissed(true);

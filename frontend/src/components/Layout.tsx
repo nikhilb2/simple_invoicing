@@ -10,6 +10,7 @@ import { useMarketplaceSync } from '../features/marketplace/useMarketplaceSync';
 import { useSidebarStore } from '../store/useSidebarStore';
 import Sidebar from './Sidebar';
 import FeedbackDialog from './FeedbackDialog';
+import FirstInvoiceTourCoach from './FirstInvoiceTourCoach';
 import GitHubStarButton from './GitHubStarButton';
 import InvoiceCancelDialog from './InvoiceCancelDialog';
 import ShortcutCheatSheet from './ShortcutCheatSheet';
@@ -135,6 +136,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
       <InvoiceCancelDialog />
       <UpdateAvailableToast />
+      <FirstInvoiceTourCoach />
     </div>
   );
 }

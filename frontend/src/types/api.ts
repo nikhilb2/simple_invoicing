@@ -889,6 +889,8 @@ export type UserProfile = {
   /** Role in the active company; `role` is the global one. */
   company_role?: 'admin' | 'manager' | 'staff' | null;
   can_manage_platform?: boolean;
+  /** Null until the user answers the first-invoice walkthrough. */
+  first_invoice_tour_status?: 'completed' | 'skipped' | 'not_needed' | null;
 };
 
 export type AuthProvider = {
