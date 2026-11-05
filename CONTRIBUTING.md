@@ -176,6 +176,8 @@ cd backend && python -m compileall .
 
 ## Pull Request Process
 
+Before you start on an issue, check its page for an open pull request, because someone may already be working on it. If there is one, pick another issue.
+
 1. Ensure your branch is up to date with `main`:
    ```bash
    git fetch upstream
