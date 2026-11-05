@@ -6,7 +6,7 @@ import StatusToasts from '../components/StatusToasts';
 import ScopeBar, { Metric } from '../components/ScopeBar';
 import DateRangePresets from '../components/DateRangePresets';
 import type { CompanyAccount, CompanyProfile, Ledger, Payment, PaymentCreate, PaymentUpdate } from '../types/api';
-import formatCurrency, { formatDate } from '../utils/formatting';
+import formatCurrency, { formatDate, plural } from '../utils/formatting';
 import { toIsoDate } from '../utils/dateRanges';
 import { buildCashBankEditPayload, openingBalanceAt } from '../utils/cashBank';
 import { useFY } from '../context/FYContext';
@@ -323,7 +323,7 @@ export default function CashBankPage() {
           <p className="section-copy">Track account-wise receipts, payments, and available balance in one register.</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div className="status-chip">{accountEntries.length} entries</div>
+          <div className="status-chip">{plural(accountEntries.length, 'entry', 'entries')}</div>
           <button
             type="button"
             className="button button--primary"

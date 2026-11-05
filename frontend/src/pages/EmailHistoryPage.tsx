@@ -9,7 +9,7 @@ import DateRangePresets from '../components/DateRangePresets';
 import EmptyState from '../components/EmptyState';
 import LoadingState from '../components/LoadingState';
 import PageSizeSelect, { readStoredPageSize, storePageSize } from '../components/PageSizeSelect';
-import { formatDateTime } from '../utils/formatting';
+import { formatDateTime, plural } from '../utils/formatting';
 import { toIsoDate } from '../utils/dateRanges';
 import { EMAIL_TYPE_LABELS, emailTypeLabel } from '../utils/emailTypes';
 import { downloadCsv } from '../utils/csv';
@@ -82,7 +82,7 @@ export default function EmailHistoryPage() {
           <h1 className="page-title">Email history</h1>
           <p className="section-copy">A log of all outbound emails sent from this company.</p>
         </div>
-        {data && <div className="status-chip">{data.total} emails</div>}
+        {data && <div className="status-chip">{plural(data.total, 'email')}</div>}
       </section>
 
       <StatusToasts error={error ? getApiErrorMessage(error) : ''} onClearError={() => {}} onClearSuccess={() => {}} />

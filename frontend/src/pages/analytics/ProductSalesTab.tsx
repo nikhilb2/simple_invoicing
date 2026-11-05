@@ -6,7 +6,7 @@ import StatusToasts from '../../components/StatusToasts';
 import { downloadProductSalesCsv, fetchProductSales } from '../../features/analytics/api';
 import { analyticsQueryKeys } from '../../features/analytics/queryKeys';
 import type { AnalyticsFilters, ProductSortBy, SortDir } from '../../features/analytics/types';
-import formatCurrency from '../../utils/formatting';
+import formatCurrency, { plural } from '../../utils/formatting';
 import ProductSalesChart, { type ProductMetric } from './charts/ProductSalesChart';
 
 const CHART_ROWS = 10;
@@ -157,7 +157,7 @@ export default function ProductSalesTab({ filters }: { filters: AnalyticsFilters
               <tfoot>
                 <tr>
                   <th scope="row">Totals</th>
-                  <th scope="col">{totals.product_count} products</th>
+                  <th scope="col">{plural(totals.product_count, 'product')}</th>
                   <th scope="col" className="text-right">{totals.quantity_sold}</th>
                   <th scope="col" className="text-right">{formatCurrency(totals.sales_amount, currency)}</th>
                   <th scope="col" className="text-right">—</th>

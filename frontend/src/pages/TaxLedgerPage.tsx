@@ -14,7 +14,7 @@ import type {
   TaxLiability,
   TaxLiabilityBucket,
 } from '../types/api';
-import formatCurrency, { formatDate } from '../utils/formatting';
+import formatCurrency, { formatDate, plural } from '../utils/formatting';
 import { parseGstRate } from '../utils/gstRate';
 import { toIsoDate } from '../utils/dateRanges';
 
@@ -165,7 +165,7 @@ export default function TaxLedgerPage() {
           </p>
         </div>
         <div className="page-hero__aside">
-          <div className="status-chip">{entries.length} rows</div>
+          <div className="status-chip">{plural(entries.length, 'row')}</div>
           {/* Filing used to be the second half of this page. It has its own
               route now, so the ledger keeps the link that the tab bar was. */}
           <Link className="button button--ghost button--small" to="/gstr1">

@@ -18,6 +18,11 @@ export default function formatCurrency(value: number, currencyCode = 'USD') {
     }
 }
 
+/** Singular for a count of one, `pluralForm` otherwise: `plural(1, 'entry', 'entries')` is "1 entry". */
+export function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : pluralForm}`;
+}
+
 /**
  * Compact currency for tight spaces (e.g. dashboard KPI cards) so large
  * figures don't overflow. INR renders lakh/crore (₹1.2Cr), others use M/K.
