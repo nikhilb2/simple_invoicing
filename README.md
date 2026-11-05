@@ -12,7 +12,7 @@ A free, open-source **invoice maker** and **Tally alternative** for shops, trade
 
 **[Try the hosted app](https://app.simpleinvoicings.com/register)** (first month free, nothing to install) · **[Self-host it free](#quick-start)** · **[User guide](https://guide.simpleinvoicings.com)** · **[Website](https://simpleinvoicings.com)**
 
-[![GitHub stars](https://img.shields.io/github/stars/nikhilb2/simple_invoicing?style=social)](https://github.com/nikhilb2/simple_invoicing/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/nikhilb2/simple-invoicing-free-gst-billing-software?style=social)](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Backend: FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
@@ -156,8 +156,8 @@ To use the app without installing anything, [create an account](https://app.simp
 
 ```bash
 # Clone the repository
-git clone https://github.com/nikhilb2/simple_invoicing.git
-cd simple_invoicing
+git clone https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software.git
+cd simple-invoicing-free-gst-billing-software
 
 # Copy environment files
 cp .env.example .env
@@ -229,7 +229,7 @@ See [DOCKER.md](DOCKER.md) for running production with `make prod`, and [ENV.md]
 ## Project Structure
 
 ```
-simple_invoicing/
+simple-invoicing-free-gst-billing-software/
 ├── backend/                # FastAPI application
 │   ├── src/
 │   │   ├── api/routes/     # REST API endpoints (one module per resource)

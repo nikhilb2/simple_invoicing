@@ -1,6 +1,6 @@
 import ConfirmDialog from './ConfirmDialog';
 
-const ISSUES_URL = 'https://github.com/nikhilb2/simple_invoicing/issues';
+const ISSUES_URL = 'https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/issues';
 
 export default function FeedbackDialog({ onClose }: { onClose: () => void }) {
   const openIssues = () => {

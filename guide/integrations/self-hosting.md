@@ -12,8 +12,8 @@ Simple Invoicing is open source under the MIT licence. If you would rather not r
 You need [Docker](https://docs.docker.com/get-docker/) with Docker Compose.
 
 ```bash
-git clone https://github.com/nikhilb2/simple_invoicing.git
-cd simple_invoicing
+git clone https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software.git
+cd simple-invoicing-free-gst-billing-software
 
 cp .env.example .env
 cp backend/.env.example backend/.env.development
@@ -32,7 +32,7 @@ Then open:
 
 ## Run it in production
 
-Use `make prod`, or `docker compose --profile prod up -d`, behind a reverse proxy with HTTPS. See [DOCKER.md](https://github.com/nikhilb2/simple_invoicing/blob/main/DOCKER.md) for the details.
+Use `make prod`, or `docker compose --profile prod up -d`, behind a reverse proxy with HTTPS. See [DOCKER.md](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/blob/main/DOCKER.md) for the details.
 
 **Required** in `backend/.env.production`:
 
@@ -56,7 +56,7 @@ In the frontend, set `VITE_API_BASE_URL=/api`.
 | `PLATFORM_SMTP_*` | Turns on **Forgot password?** emails. |
 | `OAUTH_GOOGLE_CLIENT_ID`, `OAUTH_GOOGLE_CLIENT_SECRET` | Turns on Google sign-in. |
 
-[ENV.md](https://github.com/nikhilb2/simple_invoicing/blob/main/ENV.md) documents every setting.
+[ENV.md](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/blob/main/ENV.md) documents every setting.
 
 ## How a self-hosted copy differs
 
@@ -72,4 +72,4 @@ Running a public multi-user site needs `DEPLOYMENT_MODE=shared_hosting` and more
 
 ## Get involved
 
-Bug reports and pull requests are welcome on [GitHub](https://github.com/nikhilb2/simple_invoicing). See [CONTRIBUTING.md](https://github.com/nikhilb2/simple_invoicing/blob/main/CONTRIBUTING.md).
+Bug reports and pull requests are welcome on [GitHub](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software). See [CONTRIBUTING.md](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/blob/main/CONTRIBUTING.md).

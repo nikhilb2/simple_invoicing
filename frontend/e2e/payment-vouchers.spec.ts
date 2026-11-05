@@ -102,7 +102,7 @@ test.describe('Payment Vouchers from Invoices Page', () => {
   });
 
   // Intermittently fails with a strict-mode violation (several Payment rows)
-  // because of https://github.com/nikhilb2/simple_invoicing/issues/687. Left
+  // because of https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/issues/687. Left
   // active, not test.fail/fixme: the failure is intermittent.
   test('payment number reflects saved series suffix', async ({ authedPage: page }) => {
     const ledgerName = await createLedger(page, '-suffix');

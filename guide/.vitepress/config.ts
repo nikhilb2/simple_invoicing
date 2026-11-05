@@ -20,7 +20,7 @@ const SOFTWARE_JSON_LD = JSON.stringify({
   description:
     'Free, open-source GST billing software for Indian small businesses: GST invoices, quotations, credit notes, e-way bills, GSTR-1 JSON export, inventory, ledgers and UPI payments.',
   url: 'https://simpleinvoicings.com',
-  downloadUrl: 'https://github.com/nikhilb2/simple_invoicing',
+  downloadUrl: 'https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software',
   license: 'https://opensource.org/licenses/MIT',
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'INR', description: 'Free to self-host' },
 });
@@ -68,7 +68,7 @@ export default defineConfig({
       { text: 'Troubleshooting', link: '/help/faq' },
       { text: 'Open the app', link: 'https://app.simpleinvoicings.com' },
     ],
-    socialLinks: [{ icon: 'github', link: 'https://github.com/nikhilb2/simple_invoicing' }],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software' }],
     sidebar: [
       {
         text: 'Getting started',
