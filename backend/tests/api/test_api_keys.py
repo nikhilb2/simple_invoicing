@@ -8,7 +8,7 @@ plus db_session fixtures from tests/conftest.py.
 """
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
@@ -17,6 +17,10 @@ from src.api.deps import get_current_user
 from src.models.api_key import ApiKey
 from src.models.company import CompanyProfile
 from src.models.user import User, UserRole
+
+
+def _future_expiry():
+    return datetime.now(timezone.utc) + timedelta(days=30)
 
 
 def _seed_company(db_session, company_id, name):
@@ -60,7 +64,7 @@ def _seed_key(db_session, *, company_id, name, created_at):
         name=name,
         key_prefix="si_abcdef123",
         key_encrypted="encrypted-placeholder",
-        expires_at=datetime(2027, 6, 1, tzinfo=timezone.utc),
+        expires_at=_future_expiry(),
         is_active=True,
         created_at=created_at,
     )
@@ -88,7 +92,7 @@ def _as_role(role):
 def _create_key(client, name="CI key"):
     response = client.post(
         "/api/api-keys/",
-        json={"name": name, "expires_at": "2027-06-01T00:00:00Z"},
+        json={"name": name, "expires_at": _future_expiry().isoformat()},
     )
     assert response.status_code == 201, response.text
     return response.json()
@@ -133,7 +137,7 @@ def test_non_admin_gets_403_on_create_list_and_delete(client, db_session):
     with _as_role(UserRole.staff):
         create_response = client.post(
             "/api/api-keys/",
-            json={"name": "staff key", "expires_at": "2027-06-01T00:00:00Z"},
+            json={"name": "staff key", "expires_at": _future_expiry().isoformat()},
         )
         assert create_response.status_code == 403
 
@@ -242,7 +246,7 @@ def test_create_rejects_whitespace_only_name(client, db_session):
 
     response = client.post(
         "/api/api-keys/",
-        json={"name": "   ", "expires_at": "2027-06-01T00:00:00Z"},
+        json={"name": "   ", "expires_at": _future_expiry().isoformat()},
     )
 
     assert response.status_code == 422
