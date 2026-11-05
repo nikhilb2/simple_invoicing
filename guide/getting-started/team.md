@@ -4,7 +4,7 @@
 
 The **Company** switcher is at the top of the sidebar. Click a company to switch to it. Your choice is saved on your account, so it follows you across devices.
 
-To add one, click **+ New Company**, enter a name and GSTIN, then complete its details in [Settings → Company](./company-setup). A new company starts with the currency set to INR and no address, so check the currency and fill in the address.
+To add one, click **+ New Company**, enter a name and, if you have one, a GSTIN, then complete its details in [Settings → Company](./company-setup). A new company starts with the currency set to INR and no address, so check the currency and fill in the address.
 
 Each company keeps its own invoices, ledgers, products, numbering, financial years, bank accounts, API keys and email history.
 

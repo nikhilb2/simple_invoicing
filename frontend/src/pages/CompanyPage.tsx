@@ -10,7 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAuthStore } from '../store/useAuthStore';
 import { useFY } from '../context/FYContext';
 import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, CompanyTermOut } from '../types/api';
-import { isCompanyConfigured, isGstinRequired } from '../utils/companySetup';
+import { isCompanyConfigured } from '../utils/companySetup';
 import { isCurrencyChange } from '../utils/currencyChange';
 import { buildSeriesPreview, gstr1SeriesFormatError } from '../utils/seriesPreview';
 
@@ -759,7 +759,6 @@ export default function CompanyPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [initialSetupRequired, setInitialSetupRequired] = useState<boolean | null>(null);
-  const [gstRequired, setGstRequired] = useState(true);
   const [gstError, setGstError] = useState('');
   const [showFirstSetupPrompt, setShowFirstSetupPrompt] = useState(false);
   const setupRequiredByRoute = searchParams.get('setup') === 'required';
@@ -784,7 +783,6 @@ export default function CompanyPage() {
       }
       setCompanyId(data.id);
       setSavedGstin(data.gst || '');
-      setGstRequired(isGstinRequired(data));
       setSavedCurrency(data.currency_code || '');
       setForm({
         name: data.name || '',
@@ -1100,9 +1098,7 @@ export default function CompanyPage() {
                 </div>
 
                 <div className="field">
-                  <label htmlFor="company-gst">
-                    GSTIN{gstRequired ? <>{' '}<span style={{ color: 'var(--color-danger)' }} aria-hidden="true">*</span></> : null}
-                  </label>
+                  <label htmlFor="company-gst">GSTIN</label>
                   <input
                     id="company-gst"
                     ref={gstInputRef}
@@ -1113,7 +1109,6 @@ export default function CompanyPage() {
                       setForm((current) => ({ ...current, gst: event.target.value }));
                     }}
                     placeholder="27ABCDE1234F1Z0"
-                    required={gstRequired}
                     aria-invalid={gstError ? true : undefined}
                     aria-describedby={gstError ? 'company-gst-error' : undefined}
                   />

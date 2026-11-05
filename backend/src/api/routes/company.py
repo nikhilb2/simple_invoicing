@@ -45,8 +45,6 @@ from src.schemas.company import (
 
 router = APIRouter()
 
-GSTIN_REQUIRED_MESSAGE = "Enter your GSTIN, the 15-character number on your GST registration."
-
 
 def _get_max_companies(db: Session) -> int:
     settings_row = db.query(GlobalSettings).filter(GlobalSettings.id == 1).first()
@@ -66,13 +64,6 @@ def _get_company_creation_capability(db: Session, user: User) -> CompanyCreation
         max_companies=max_companies,
         current_companies=current_companies,
         can_create_company=current_companies < max_companies,
-    )
-
-
-def _require_gstin() -> None:
-    raise HTTPException(
-        status_code=422,
-        detail={"message": GSTIN_REQUIRED_MESSAGE, "errors": [{"field": "gst", "message": GSTIN_REQUIRED_MESSAGE}]},
     )
 
 
@@ -259,9 +250,6 @@ def create_company_profile(
     elif current_user.role not in (UserRole.admin, UserRole.manager):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    if not payload.gst:
-        _require_gstin()
-
     cap = _get_company_creation_capability(db, current_user)
     if not cap.can_create_company:
         raise HTTPException(
@@ -384,15 +372,6 @@ def upsert_company_profile(
     # than an established company correcting its address -- the same split the
     # browser event drew with `is_initial_setup`.
     is_initial_setup = not (profile.name or "").strip()
-
-    # A company set up before GSTIN became mandatory can still save without one, so
-    # nobody is locked out of their settings. Anything else needs it, and once on
-    # record it cannot be blanked.
-    set_up_without_gstin = bool(
-        (profile.name or "").strip() and (profile.address or "").strip() and not (profile.gst or "").strip()
-    )
-    if not payload.gst and not set_up_without_gstin:
-        _require_gstin()
 
     profile.name = payload.name.strip()
     profile.address = payload.address.strip()

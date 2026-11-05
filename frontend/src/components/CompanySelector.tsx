@@ -82,10 +82,6 @@ export default function CompanySelector() {
       return;
     }
     const trimmedGst = newCompanyGst.trim().toUpperCase();
-    if (!trimmedGst) {
-      setNewCompanyError('GSTIN is required.');
-      return;
-    }
     setNewCompanySubmitting(true);
     setNewCompanyError('');
     const payload: CompanyProfileUpdate = {
@@ -255,7 +251,7 @@ export default function CompanySelector() {
                   />
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.875rem', fontWeight: 500 }}>
-                  GSTIN
+                  GSTIN (optional)
                   <input
                     className="input"
                     value={newCompanyGst}
@@ -265,7 +261,7 @@ export default function CompanySelector() {
                   />
                 </label>
                 <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.7 }}>
-                  You can complete the address and bank details on the Company page.
+                  You can complete the GSTIN, address and bank details on the Company page.
                 </p>
                 {newCompanyError && <p style={{ margin: 0, color: 'var(--error)', fontSize: '0.85rem' }}>{newCompanyError}</p>}
                 <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>

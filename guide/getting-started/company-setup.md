@@ -10,7 +10,7 @@
 |---|---|
 | **Company name** | Required. |
 | **Address** | Required. |
-| **GSTIN** | Required. A company set up before this became mandatory can keep saving without one, but needs it to export GSTR-1 and join the marketplace. Once saved, it cannot be blanked. Format, state code and check digit are checked. |
+| **GSTIN** | Optional. You need it to export GSTR-1 and join the marketplace. If you enter one, its format, state code and check digit are checked. |
 | **Currency** | Starts on **INR - Indian Rupee**. USD, EUR, GBP and AED are also available. If you change it after creating invoices, the app asks you to confirm. Those invoices stay in the old currency and their amounts are not converted. Only new invoices use the new one. |
 | **Phone number**, **Email**, **Website** | Optional, shown on your documents. |
 

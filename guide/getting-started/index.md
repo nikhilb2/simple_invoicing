@@ -18,7 +18,7 @@ If no email arrives, check your spam folder. The **Resend verification email** b
 
 ## 2. Set up your company
 
-The first time you sign in, the app asks for your company details. Enter at least the **Company name**, **Address** and **GSTIN**. **Currency** starts on **INR - Indian Rupee**.
+The first time you sign in, the app asks for your company details. Enter at least the **Company name** and **Address**, and your **GSTIN** if you have one. **Currency** starts on **INR - Indian Rupee**.
 
 Click **Save company details**. You can then adjust how invoices are numbered, or choose **Skip for now**. [Company setup](./company-setup) covers every option, including your logo, bank details and terms.
 
