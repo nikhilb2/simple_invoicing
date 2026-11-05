@@ -100,11 +100,11 @@ Use this to load a catalogue from another system or to update prices in bulk.
 
 Rows are matched on Item Code:
 
-- **New code:** a product is created with stock maintained, and unit Pieces if the Unit cell is blank.
-- **Existing code:** the product is overwritten with the values in the file.
+- **New code:** a product is created with stock maintained. Missing columns use defaults, including Pieces for a missing or blank Unit.
+- **Existing code:** a column omitted from the file leaves the existing value alone.
 
 ::: warning Blank cells overwrite values
-For an existing product, a blank selling price, purchase price, GST rate or reorder level is saved as **0**. Current Stock also overwrites the stock figure, unless the product is serial-tracked. Blank Description, HSN Code and Unit cells leave those values alone. Keep every column filled in, or start from the template.
+For an existing product, a blank cell in a supplied Selling Price, Purchase Price, Tax or Reorder Level column is saved as **0**. A supplied Current Stock column also overwrites the stock figure, with a blank cell meaning **0**, unless the product is serial-tracked. Blank Description, HSN Code and Unit cells leave those values alone.
 :::
 
 The import works row by row. Bad rows are skipped and the good ones are saved, and the result screen shows the numbers created, updated and skipped, with the reason for each problem. Row 2 is the first data row. You can safely import the same file again after fixing it.

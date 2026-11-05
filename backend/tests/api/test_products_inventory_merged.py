@@ -309,6 +309,40 @@ class TestCSVImport:
         assert items[0]["selling_price"] == 20
         assert items[0]["current_stock"] == 15
 
+    @pytest.mark.parametrize("extra_headers,extra_values,expected", [
+        ("", "", (500, 300, 18, 7, 40)),
+        (",Selling Price", ",600", (600, 300, 18, 7, 40)),
+        (",Selling Price,Purchase Price,GST,Reorder Level,Stock",
+         ",600,350,12%,9,20", (600, 350, 12, 9, 20)),
+        (",Current Stock", ",0", (500, 300, 18, 7, 0)),
+        (",Selling Price,Purchase Price,Tax,Reorder Level,Current Stock",
+         ",,,,,", (0, 0, 0, 0, 0)),
+    ])
+    def test_import_csv_updates_only_supplied_columns(
+        self, client, extra_headers, extra_values, expected,
+    ):
+        created = client.post("/api/products/", json={
+            "sku": "KEEP-1", "name": "Original", "price": 500,
+            "purchase_price": 300, "gst_rate": 18, "reorder_level": 7, "initial_quantity": 40,
+        })
+        assert created.status_code == 200, created.text
+
+        csv_content = f"Item Name,Item Code{extra_headers}\nRenamed,KEEP-1{extra_values}\n"
+        response = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == {"created": 0, "updated": 1, "errors": []}
+
+        products = client.get("/api/products/with-inventory", params={"search": "KEEP-1"})
+        assert products.status_code == 200, products.text
+        item, = products.json()["items"]
+        assert item["name"] == "Renamed"
+        assert tuple(item[key] for key in (
+            "selling_price", "purchase_price", "gst_rate", "reorder_level", "current_stock",
+        )) == expected
+
     def test_import_csv_with_errors(self, client):
         csv_content = (
             "Item Name,Item Code,Selling Price\n"
