@@ -1,3 +1,7 @@
+---
+description: "Month-wise and product-wise sales reports, product performance and GST collected over any date range."
+---
+
 # Analytics
 
 **Reports → Analytics** shows sales and product performance over any date range.

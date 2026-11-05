@@ -1,3 +1,8 @@
+---
+title: "Create a GST invoice"
+description: "Create GST tax invoices and purchase bills: line items, HSN codes, discounts, and how CGST, SGST and IGST are split. Edit, cancel or duplicate invoices."
+---
+
 # Invoices
 
 **Sales → Invoices** is where you create sales invoices and purchase bills. It is a form, not a list. To see invoices you have already made, use the [Invoice Feed](./invoice-feed).

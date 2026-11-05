@@ -1,3 +1,8 @@
+---
+title: "Quotations and proforma invoices"
+description: "Make quotations and proforma invoices as PDF, follow them up, and convert them into a GST invoice when the customer accepts."
+---
+
 # Quotations and proforma invoices
 
 A **quotation** or **proforma invoice** is an offer. Nothing here affects stock, ledgers, reports or GST returns until you convert it to an invoice. They have their own numbers (`QT-…` and `PI-…`), so they never use up an invoice number.

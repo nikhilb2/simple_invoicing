@@ -1,3 +1,8 @@
+---
+title: "Connect Claude or ChatGPT to your invoices (MCP)"
+description: "Connect Claude, ChatGPT or another MCP client to Simple Invoicing and ask about unpaid invoices, profit, stock and GST in plain English."
+---
+
 # Connect an AI assistant
 
 Simple Invoicing has a built-in [MCP](https://modelcontextprotocol.io/) server, so Claude, ChatGPT and other MCP clients can work with your books. You can ask:

@@ -1,3 +1,8 @@
+---
+title: "GSTR-3B worksheet"
+description: "Estimate your GSTR-3B figures from your own books, to compare with the GST portal before you file."
+---
+
 # GSTR-3B worksheet
 
 **Reports → GSTR-3B Worksheet** estimates the figures for your GSTR-3B from your own books, so you can compare them with the portal before you file.

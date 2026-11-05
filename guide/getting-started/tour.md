@@ -1,3 +1,7 @@
+---
+description: "A tour of the Simple Invoicing app: the sidebar, the top bar, keyboard shortcuts, and how dates and links work."
+---
+
 # Finding your way around
 
 ![The app with the sidebar on the left and the dashboard on the right](/screens/dashboard.webp)

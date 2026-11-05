@@ -1,3 +1,8 @@
+---
+title: "Credit notes and debit notes under GST"
+description: "Issue a GST credit note or debit note against an invoice for a return or discount, and see how it changes stock, ledgers and returns."
+---
+
 # Credit and debit notes
 
 Use a credit note to correct an invoice after it has been issued, for a return or a discount.

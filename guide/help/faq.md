@@ -1,3 +1,8 @@
+---
+title: "Troubleshooting and FAQ"
+description: "Answers to common problems with signing in, GST invoices, GST rates, stock and email in Simple Invoicing."
+---
+
 # Troubleshooting
 
 ## Signing in

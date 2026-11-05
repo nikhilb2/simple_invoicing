@@ -1,3 +1,7 @@
+---
+description: "Track serial numbers and IMEIs for phones, laptops and appliances, from purchase to sale, and scan them on invoices."
+---
+
 # Serial numbers and IMEIs
 
 Serial tracking follows each individual unit, from the purchase that brought it in to the sale that sent it out. It suits phones, laptops, appliances and anything with a warranty.

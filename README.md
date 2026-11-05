@@ -2,14 +2,17 @@
 
 <img src="frontend/public/favicon.svg" alt="Simple Invoicing logo" width="96" height="96">
 
-# Simple Invoicing
+# Simple Invoicing: Free GST Billing Software for India
 
-**Free GST software for Indian small businesses**
+**Open-source GST billing, invoicing and accounting software for Indian small businesses**
 
-Create GST invoices, export GSTR-1, and manage inventory, ledgers and payments online. Open source, with staff logins for your team and [an MCP server](#connect-ai-assistants-mcp) for Claude, ChatGPT and other AI assistants.
+Make GST invoices, quotations, credit notes and e-way bills, and download them as PDF. Export your GSTR-1 JSON for the GST portal, and manage inventory, ledgers and UPI payments. It works in the browser on a laptop or phone, with staff logins for your team and [an MCP server](#connect-ai-assistants-mcp) for Claude, ChatGPT and other AI assistants.
 
-**[Sign up at app.simpleinvoicings.com](https://app.simpleinvoicings.com/register)** — nothing to install
+A free, open-source **invoice maker** and **Tally alternative** for shops, traders, manufacturers, freelancers and service businesses.
 
+**[Try the hosted app](https://app.simpleinvoicings.com/register)** (first month free, nothing to install) · **[Self-host it free](#quick-start)** · **[User guide](https://guide.simpleinvoicings.com)** · **[Website](https://simpleinvoicings.com)**
+
+[![GitHub stars](https://img.shields.io/github/stars/nikhilb2/simple_invoicing?style=social)](https://github.com/nikhilb2/simple_invoicing/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Backend: FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
@@ -89,6 +92,17 @@ These show a made-up demo business.
 - **REST API and API Keys** — Interactive docs at `/docs`
 - **MCP Server** — Connect Claude, ChatGPT and other AI assistants to your books ([how to connect](#connect-ai-assistants-mcp))
 - **Marketplace** — Optional B2B listings and orders through a central server. No money passes through it, so businesses settle directly with each other ([contract](MARKETPLACE.md))
+
+## An open-source alternative to Tally, Vyapar, Zoho Invoice and myBillBook
+
+Simple Invoicing covers the everyday work of a small GST-registered business: billing, stock, party ledgers and the GSTR-1 file. How it differs from the usual GST billing apps:
+
+- **Open source (MIT).** Every line of code is here. You can read it, change it and run it yourself.
+- **Free to self-host.** Run your own copy on your own server with Docker, with no licence fee and no limit on users or invoices. Or use the [hosted app](https://app.simpleinvoicings.com/register), where the first month is free.
+- **No per-user pricing on the hosted plans.** Add staff with Admin, Manager or Staff roles at no extra cost per seat.
+- **Works in the browser.** Use it on Windows, Mac, Linux, Android or iPhone. There is nothing to install on the hosted version.
+- **Your data stays yours.** Export invoices, ledgers, products and reports as CSV, JSON or PDF at any time.
+- **Built for AI assistants.** Ask Claude or ChatGPT about unpaid invoices, profit or stock through the built-in MCP server.
 
 ## Connect AI Assistants (MCP)
 
@@ -341,6 +355,28 @@ See the [Makefile](Makefile) for all available commands.
 - [ ] Mobile-responsive redesign
 
 Interested in working on any of these? Check out our [Contributing Guide](CONTRIBUTING.md) and look for issues labeled **good first issue**.
+
+## FAQ
+
+**Is Simple Invoicing free?**
+Yes, to self-host. The software is open source under the MIT licence, so you can run your own copy free, for any number of users and invoices. The [hosted version](https://app.simpleinvoicings.com/register) is free for the first month, with no credit card needed, and then paid plans start at Rs 299 a month.
+
+**Can I make GST invoices in PDF?**
+Yes. Each tax invoice shows HSN/SAC codes, the CGST, SGST or IGST breakup, your logo, bank details and an optional pay-by-UPI QR code. You can download the PDF, email it or share it on WhatsApp.
+
+**Does it file GSTR-1 for me?**
+No. It checks your sales for the period and produces the GSTR-1 JSON file, which you upload on the GST portal. It also estimates your GSTR-3B figures from your books. See the guide to [GSTR-1 filing](https://guide.simpleinvoicings.com/reports/gstr1).
+
+**Can I use it as a Tally alternative?**
+For billing, stock, party ledgers, the day book and GST returns, yes. It runs in the browser, so your team can work from any device. It does not yet do payroll, multi-currency or a full balance sheet.
+
+**Does it work on a mobile phone?**
+Yes. It runs in the phone's browser, so there is no app to install.
+
+**Can I import my products?**
+Yes. Products and stock import and export as CSV.
+
+More answers are in the [user guide](https://guide.simpleinvoicings.com) and its [troubleshooting page](https://guide.simpleinvoicings.com/help/faq).
 
 ## Contributing
 

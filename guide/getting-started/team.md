@@ -1,3 +1,7 @@
+---
+description: "Run more than one company from one login, and give staff Admin, Manager or Staff roles in Simple Invoicing."
+---
+
 # Companies, roles and team
 
 ## Run more than one company

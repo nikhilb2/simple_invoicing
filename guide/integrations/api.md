@@ -1,3 +1,7 @@
+---
+description: "Create API keys and use the Simple Invoicing REST API to connect your own systems to your invoices, ledgers and stock."
+---
+
 # API and API keys
 
 Everything in the app is available through a REST API, so you can connect your own systems. Interactive documentation is at `/docs` on your server, which on a self-hosted copy is `http://localhost:8000/docs` by default.

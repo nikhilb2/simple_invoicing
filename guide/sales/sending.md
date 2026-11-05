@@ -1,3 +1,8 @@
+---
+title: "Send an invoice, take UPI payments and make e-way bills"
+description: "Share a GST invoice PDF on WhatsApp or by email, add a pay-by-UPI QR code, and build the e-way bill JSON file for the government portal."
+---
+
 # Send and share an invoice
 
 The preview opens after you save an invoice, or from the eye icon in the [Invoice Feed](./invoice-feed). It shows the PDF your customer will receive.

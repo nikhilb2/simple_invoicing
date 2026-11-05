@@ -1,3 +1,7 @@
+---
+description: "The Day Book lists every voucher in date order across all ledgers, for reconciliation. Filter it and export it as CSV or PDF."
+---
+
 # Day Book
 
 **Reports → Day Book** lists every voucher in date order across all ledgers. Use it for reconciliation, or for checking what was entered on a given day.

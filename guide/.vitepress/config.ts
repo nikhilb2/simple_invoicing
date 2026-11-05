@@ -1,13 +1,63 @@
-import { defineConfig } from 'vitepress';
+import { defineConfig, type HeadConfig } from 'vitepress';
+
+const SITE = 'https://guide.simpleinvoicings.com';
+const SITE_NAME = 'Simple Invoicing Guide';
+const OG_IMAGE = `${SITE}/og.png`;
+
+/** `sales/invoices.md` → `/sales/invoices`, `ledgers/index.md` → `/ledgers/`, matching `cleanUrls`. */
+function pageUrl(relativePath: string): string {
+  const path = relativePath.replace(/(^|\/)index\.md$/, '$1').replace(/\.md$/, '');
+  return `${SITE}/${path}`;
+}
+
+/** Tells search engines what the product is, so the guide can show as a software result. */
+const SOFTWARE_JSON_LD = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'Simple Invoicing',
+  applicationCategory: 'BusinessApplication',
+  operatingSystem: 'Web, Windows, macOS, Linux, Android, iOS',
+  description:
+    'Free, open-source GST billing software for Indian small businesses: GST invoices, quotations, credit notes, e-way bills, GSTR-1 JSON export, inventory, ledgers and UPI payments.',
+  url: 'https://simpleinvoicings.com',
+  downloadUrl: 'https://github.com/nikhilb2/simple_invoicing',
+  license: 'https://opensource.org/licenses/MIT',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'INR', description: 'Free to self-host' },
+});
 
 export default defineConfig({
-  title: 'Simple Invoicing Guide',
-  description: 'User guide for Simple Invoicing, free GST billing and accounting software for Indian small businesses.',
+  title: SITE_NAME,
+  description: 'How to use Simple Invoicing, free and open-source GST billing software for India: GST invoices, GSTR-1, stock, ledgers and payments.',
   lang: 'en-IN',
   cleanUrls: true,
   lastUpdated: false,
-  sitemap: { hostname: 'https://guide.simpleinvoicings.com' },
-  head: [['link', { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' }]],
+  sitemap: { hostname: SITE },
+  head: [
+    ['link', { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' }],
+    ['meta', { property: 'og:site_name', content: SITE_NAME }],
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:locale', content: 'en_IN' }],
+    ['meta', { property: 'og:image', content: OG_IMAGE }],
+    ['meta', { property: 'og:image:width', content: '1200' }],
+    ['meta', { property: 'og:image:height', content: '630' }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:image', content: OG_IMAGE }],
+    ['script', { type: 'application/ld+json' }, SOFTWARE_JSON_LD],
+  ],
+  // Per-page canonical and share tags. VitePress already writes <title> and the
+  // description meta from each page's frontmatter.
+  transformHead({ pageData, title, description }): HeadConfig[] {
+    if (pageData.isNotFound) return [['meta', { name: 'robots', content: 'noindex' }]];
+    const url = pageUrl(pageData.relativePath);
+    return [
+      ['link', { rel: 'canonical', href: url }],
+      ['meta', { property: 'og:url', content: url }],
+      ['meta', { property: 'og:title', content: title }],
+      ['meta', { property: 'og:description', content: description }],
+      ['meta', { name: 'twitter:title', content: title }],
+      ['meta', { name: 'twitter:description', content: description }],
+    ];
+  },
   themeConfig: {
     logo: '/favicon.svg',
     siteTitle: 'Simple Invoicing Guide',
