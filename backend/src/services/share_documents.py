@@ -29,6 +29,7 @@ from io import BytesIO
 import weasyprint
 from src.services.pdf_render import safe_url_fetcher
 from fastapi import HTTPException, Request
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -666,6 +667,33 @@ def _safe_ledger_slug(name: str | None) -> str:
     return (name or "ledger").replace(" ", "_").replace("/", "_")[:30]
 
 
+def _reminder_statement_window(db: Session, ledger_id: int, company_id: int | None) -> tuple[date, date]:
+    """The period a reminder's open-ended statement link covers when opened.
+
+    The reminder shows the all-time balance, but a statement needs a period.
+    Starting at the ledger's earliest invoice and ending today keeps the
+    statement's closing balance and pay button amount aligned with the reminder.
+    """
+    today = india_today()
+    query = db.query(func.min(Invoice.invoice_date)).filter(
+        Invoice.ledger_id == ledger_id, Invoice.status == "active"
+    )
+    if company_id is not None:
+        query = query.filter(company_scope(Invoice.company_id, company_id))
+    earliest = query.scalar()
+    start = earliest.date() if earliest is not None else today
+    return min(start, today), today
+
+
+def _statement_share_window(db: Session, link: ShareLink) -> tuple[date | None, date | None]:
+    # Only the fully open-ended reminder links are dynamic. Chosen periods and
+    # already-sent dated reminder links retain their stored dates; a malformed
+    # partially dated link remains unavailable rather than widening its scope.
+    if link.from_date is None and link.to_date is None:
+        return _reminder_statement_window(db, link.resource_id, link.company_id)
+    return link.from_date, link.to_date
+
+
 def build_share_summary(db: Session, link: ShareLink) -> ShareSummary | None:
     """Summarise the linked document.
 
@@ -715,8 +743,7 @@ def build_share_summary(db: Session, link: ShareLink) -> ShareSummary | None:
         ledger = get_ledger(db, link.company_id, link.resource_id)
         if ledger is None:
             return None
-        from_date = link.from_date
-        to_date = link.to_date
+        from_date, to_date = _statement_share_window(db, link)
         if from_date is None or to_date is None:
             return None
         # Deferred: see the circular-import note at the top of this module.
@@ -861,8 +888,9 @@ def render_share_pdf(db: Session, link: ShareLink, *, request: Request | None = 
     if link.resource_type == RESOURCE_INVOICE:
         return render_invoice_pdf(db, link.company_id, link.resource_id, share_url=share_url)
     if link.resource_type == RESOURCE_STATEMENT:
+        from_date, to_date = _statement_share_window(db, link)
         return render_statement_pdf(
-            db, link.company_id, link.resource_id, link.from_date, link.to_date, share_url=share_url
+            db, link.company_id, link.resource_id, from_date, to_date, share_url=share_url
         )
     if link.resource_type == RESOURCE_PAYMENT:
         return render_receipt_pdf(db, link.company_id, link.resource_id)
@@ -884,8 +912,9 @@ def render_share_document_html(db: Session, link: ShareLink, *, request: Request
     if link.resource_type == RESOURCE_INVOICE:
         return build_invoice_html(db, link.company_id, link.resource_id, share_url=share_url)
     if link.resource_type == RESOURCE_STATEMENT:
+        from_date, to_date = _statement_share_window(db, link)
         return build_statement_html(
-            db, link.company_id, link.resource_id, link.from_date, link.to_date, share_url=share_url
+            db, link.company_id, link.resource_id, from_date, to_date, share_url=share_url
         )
     if link.resource_type == RESOURCE_PAYMENT:
         return build_receipt_html(db, link.company_id, link.resource_id)
