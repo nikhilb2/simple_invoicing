@@ -33,7 +33,7 @@ export default function Gstr1FilingPage() {
   const [success, setSuccess] = useState('');
   const requestId = useRef(0);
 
-  const activeCurrencyCode = company?.currency_code || 'USD';
+  const activeCurrencyCode = company?.currency_code || 'INR';
 
   const reset = useCallback(() => {
     // Invalidate every pending result, error and finally handler together.

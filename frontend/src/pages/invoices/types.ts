@@ -29,6 +29,7 @@ export type ProductFormState = {
   allow_decimal: boolean;
   maintain_inventory: boolean;
   track_serials: boolean;
+  initial_quantity: string;
 };
 
 export type StockFormState = {

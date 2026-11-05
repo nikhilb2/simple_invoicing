@@ -70,9 +70,18 @@ def test_sales_html_shows_pan_only_when_corresponding_gst_exists():
 
     html = _build_invoice_html(invoice, [])
 
-    assert "GST: 07AAMPB1274B1Z8" in html
+    assert "GSTIN: 07AAMPB1274B1Z8" in html
     assert "PAN: AAMPB1274B" in html
     assert "PAN:" not in html.split("Bill to", 1)[1]
+
+
+def test_sales_html_omits_payment_section_when_no_bank_account_is_marked():
+    html = _build_invoice_html(_invoice_base("sales"), [])
+
+    # The customer's copy has nothing useful to say about an unmarked bank account.
+    assert "No bank account marked" not in html
+    assert ">Payment details<" not in html
+    assert "Tax breakup" in html
 
 
 def test_purchase_html_shows_supplier_and_company_pan_when_gst_present():
@@ -82,9 +91,9 @@ def test_purchase_html_shows_supplier_and_company_pan_when_gst_present():
 
     html = _build_purchase_invoice_html(invoice, [])
 
-    assert "GST: 29ABCDE1234F1ZW" in html
+    assert "GSTIN: 29ABCDE1234F1ZW" in html
     assert "PAN: ABCDE1234F" in html
-    assert "GST: 07AAMPB1274B1Z8" in html
+    assert "GSTIN: 07AAMPB1274B1Z8" in html
     assert "PAN: AAMPB1274B" in html
 
 

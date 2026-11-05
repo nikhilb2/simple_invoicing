@@ -37,6 +37,7 @@ import {
   type ComposerVoucherType,
 } from '../../utils/quotationDraft';
 import { invoiceQueryKeys } from '../../features/invoices/queryKeys';
+import { missingQuantity, readStockShortage } from '../../features/invoices/stockShortage';
 import { useInvoiceComposerStore } from '../../store/useInvoiceComposerStore';
 import LedgerQuickCreateModal from './components/LedgerQuickCreateModal';
 import ProductQuickCreateModal from './components/ProductQuickCreateModal';
@@ -55,9 +56,12 @@ export default function InvoicesPage() {
   const openLedgerCreateModal = useInvoiceComposerStore((state) => state.openLedgerCreateModal);
   const openProductCreateModal = useInvoiceComposerStore((state) => state.openProductCreateModal);
   const openStockUpdateModal = useInvoiceComposerStore((state) => state.openStockUpdateModal);
+  const stockShortage = useInvoiceComposerStore((state) => state.stockShortage);
+  const setStockShortage = useInvoiceComposerStore((state) => state.setStockShortage);
   const feedbackError = useInvoiceComposerStore((state) => state.feedbackError);
   const feedbackSuccess = useInvoiceComposerStore((state) => state.feedbackSuccess);
-  const clearFeedback = useInvoiceComposerStore((state) => state.clearFeedback);
+  const clearFeedbackError = useInvoiceComposerStore((state) => state.clearFeedbackError);
+  const clearFeedbackSuccess = useInvoiceComposerStore((state) => state.clearFeedbackSuccess);
   /* Settings the user picks the same way on most invoices are restored here.
      Read in an initializer rather than an effect so a remembered choice is
      already applied on first paint instead of flipping in after it. */
@@ -124,6 +128,11 @@ export default function InvoicesPage() {
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  /* Adding stock from the "not enough stock" notice is the answer to that error,
+     so it should not sit beside the confirmation. */
+  useEffect(() => {
+    if (feedbackSuccess) setError('');
+  }, [feedbackSuccess]);
   const [success, setSuccess] = useState('');
   const invoicePage = 1;
   const [invoiceTotal, setInvoiceTotal] = useState(0);
@@ -199,6 +208,14 @@ export default function InvoicesPage() {
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
   }, []);
 
+  // A fresh composer starts with nobody chosen, even if the last session left a ledger in the
+  // store. Opening a saved invoice or quotation sets its own ledger once it loads.
+  useEffect(() => {
+    const opensSavedDocument = ['edit', 'duplicate', 'edit_quotation', 'from_quotation'].some((key) => searchParams.has(key));
+    if (!opensSavedDocument) setSelectedLedgerId('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount only
+  }, []);
+
   useEffect(() => {
     if (!composerQuery.data) {
       return;
@@ -208,22 +225,8 @@ export default function InvoicesPage() {
     setLedgers(composerQuery.data.ledgers);
     setInvoiceTotal(composerQuery.data.invoiceTotal);
     setCompany(composerQuery.data.company);
-    if (!selectedLedgerId) {
-      setSelectedLedgerId(String(composerQuery.data.ledgers[0]?.id ?? ''));
-    }
-    setItems((current) =>
-      current.map((item, index) => {
-        const defaultProduct = composerQuery.data.products[index] ?? composerQuery.data.products[0];
-        return {
-          ...item,
-          productId: item.productId || String(defaultProduct?.id ?? ''),
-          unit_price: item.unit_price || String(defaultProduct?.price ?? ''),
-          // Filled by the composer, so a scan may still take this line over.
-          autoFilled: item.productId ? item.autoFilled : true,
-        };
-      })
-    );
-  }, [composerQuery.data, selectedLedgerId, setSelectedLedgerId]);
+    // No customer or product is chosen for the user: a pre-picked first ledger could be invoiced unnoticed.
+  }, [composerQuery.data]);
 
   // Fetch ledger addresses when ledger selection changes (for shipping address UI)
   useEffect(() => {
@@ -307,7 +310,7 @@ export default function InvoicesPage() {
     setError(getApiErrorMessage(composerQuery.error, 'Unable to load invoice data'));
   }, [composerQuery.error]);
 
-  const activeCurrencyCode = company?.currency_code || 'USD';
+  const activeCurrencyCode = company?.currency_code || 'INR';
   const selectedLedger = ledgers.find((entry) => entry.id === Number(selectedLedgerId));
   const placeOfSupply = resolvePlaceOfSupply(placeOfSupplyChoice, selectedLedgerId, company?.gst, selectedLedger?.gst);
   const placeOfSupplyWarning = stalePlaceOfSupplyWarning(
@@ -371,8 +374,7 @@ export default function InvoicesPage() {
   }, [advancedCount]);
 
   function addItem() {
-    const defaultProduct = products[0];
-    setItems((current) => [...current, createItem(nextItemId, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))]);
+    setItems((current) => [...current, createItem(nextItemId)]);
     setNextItemId((current) => current + 1);
   }
 
@@ -626,12 +628,12 @@ export default function InvoicesPage() {
     // Per-invoice, never remembered: a carried-over discount would silently
     // reduce the next invoice's total.
     setInvoiceDiscountValue('');
+    setStockShortage(null);
     setPaymentMode('cash');
     setPaymentReference('');
     setSelectedPaymentAccountId('');
     setPaymentAmount('');
-    const defaultProduct = products[0];
-    itemsRef.current = [createItem(1, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))];
+    itemsRef.current = [createItem(1)];
     setItems(itemsRef.current);
     setNextItemId(2);
     setSerialBlockIds([]);
@@ -975,6 +977,7 @@ export default function InvoicesPage() {
       setSubmitting(true);
       setError('');
       setSuccess('');
+      setStockShortage(null);
 
       const payload: InvoiceCreate = {
         ledger_id: Number(selectedLedgerId),
@@ -1054,6 +1057,8 @@ export default function InvoicesPage() {
         /* Keep the form: what is on it may be worth comparing before it is replaced. */
         setConversionOutOfDate(true);
       }
+      /* Keep the form as it is; the notice beside the button offers the fix. */
+      setStockShortage(readStockShortage(err));
       setError(getApiErrorMessage(err, editingInvoiceId ? 'Unable to update invoice' : 'Unable to create invoice'));
     } finally {
       setSubmitting(false);
@@ -1083,22 +1088,22 @@ export default function InvoicesPage() {
           <p className="section-copy">
             {isQuote
               ? 'An offer, not a tax invoice. Saving this moves no stock and reaches no report.'
-              : 'Build multi-line invoices against live product pricing and submit directly to the API.'}
+              : 'Pick who you are billing, add the items they bought, and save. Prices and tax come from your product list.'}
           </p>
         </div>
         <div className="status-chip">{plural(invoiceTotal, 'invoice')} listed</div>
       </section>
 
       <StatusToasts
-        error={error || feedbackError}
+        error={feedbackError || error}
         success={success || feedbackSuccess}
         onClearError={() => {
           setError('');
-          clearFeedback();
+          clearFeedbackError();
         }}
         onClearSuccess={() => {
           setSuccess('');
-          clearFeedback();
+          clearFeedbackSuccess();
         }}
       />
 
@@ -1125,7 +1130,7 @@ export default function InvoicesPage() {
               {company?.name?.trim() ? company.name : 'Company not configured'}
             </p>
             <p className="muted-text">
-              {company?.gst ? `GST: ${company.gst} · ` : ''}
+              {company?.gst ? `GSTIN: ${company.gst} · ` : ''}
               {company?.phone_number ? `Phone: ${company.phone_number}` : 'Set details in Company page'}
             </p>
             <p className="muted-text">Currency: {activeCurrencyCode}</p>
@@ -1668,7 +1673,7 @@ export default function InvoicesPage() {
                       <Plus size={13} />
                       New product
                     </button>
-                    <button type="button" className="link-button" onClick={openStockUpdateModal}>
+                    <button type="button" className="link-button" onClick={() => openStockUpdateModal()}>
                       <Boxes size={13} />
                       Update stock
                     </button>
@@ -1858,6 +1863,26 @@ export default function InvoicesPage() {
               </div>
             ) : null}
 
+            {stockShortage ? (
+              <div className="form-error stock-shortage" role="alert" data-testid="stock-shortage">
+                <p style={{ margin: 0 }}>
+                  Only {stockShortage.available} of {stockShortage.productName} in stock, and this invoice needs {stockShortage.required}.
+                  Add the missing stock and your invoice stays as you filled it in.
+                </p>
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  onClick={() => {
+                    setError('');
+                    openStockUpdateModal({ productId: stockShortage.productId, quantity: missingQuantity(stockShortage) });
+                  }}
+                >
+                  <Boxes size={15} aria-hidden="true" />
+                  Add stock for {stockShortage.productName}
+                </button>
+              </div>
+            ) : null}
+
             <div className="button-row">
               {voucherType !== 'payment' && voucherType !== 'receipt' ? (
                 <button type="button" className="button button--ghost" onClick={addItem} disabled={products.length === 0} title="Add line item" aria-label="Add line item">
@@ -1895,7 +1920,7 @@ export default function InvoicesPage() {
                   {submitting ? 'Saving...' : `${editingQuotation ? 'Update' : 'Create'} ${documentName}`}
                 </button>
               ) : (
-                <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId} title={editingInvoiceId ? 'Update invoice' : 'Create invoice'} aria-label={editingInvoiceId ? 'Update invoice' : 'Create invoice'}>
+                <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId} title={!selectedLedgerId ? 'Choose who you are billing first' : editingInvoiceId ? 'Update invoice' : 'Create invoice'} aria-label={editingInvoiceId ? 'Update invoice' : 'Create invoice'}>
                   {submitting ? (editingInvoiceId ? 'Updating invoice...' : 'Creating invoice...') : editingInvoiceId ? 'Update invoice' : 'Create invoice'}
                 </button>
               )}
@@ -1912,6 +1937,10 @@ export default function InvoicesPage() {
           invoice={previewInvoice}
           onClose={() => setPreviewInvoice(null)}
           onError={(msg) => setError(msg)}
+          onPaymentRecorded={(message) => {
+            setSuccess(message);
+            refreshInvoicesAfterMutation();
+          }}
         />
       ) : null}
 

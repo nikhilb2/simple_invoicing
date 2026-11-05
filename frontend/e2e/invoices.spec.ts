@@ -101,7 +101,7 @@ test.describe('Invoices', () => {
     await modal.locator('#modal-product-name').fill(productName);
     await modal.locator('#modal-product-sku').fill(sku);
     await modal.locator('#modal-product-price').fill('125');
-    await modal.locator('#modal-product-gst-rate').fill('18');
+    await modal.locator('#modal-product-gst-rate').selectOption('18');
     await modal.getByRole('button', { name: 'Save product' }).click();
 
     await expectSuccess(page, 'Product created successfully.');

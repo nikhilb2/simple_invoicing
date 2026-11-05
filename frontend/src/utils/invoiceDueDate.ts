@@ -5,6 +5,10 @@ export type DueDateMode = 'none' | 'exact' | 'days';
 
 export type DueFilterMode = 'all' | 'overdue' | 'next7' | 'next15' | 'custom-days' | 'exact-date';
 
+// Opens on everything owed. New invoices fall due on their own date, so they
+// are "due today" rather than overdue and an Overdue default read as nothing owed.
+export const DEFAULT_DUE_MODE: DueFilterMode = 'all';
+
 export type DueWindow = { dueDateFrom?: string; dueDateTo?: string };
 
 export function addDays(baseDate: Date, days: number): Date {

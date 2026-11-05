@@ -4,12 +4,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import api, { getApiErrorCode, getApiErrorMessage } from '../api/client';
 import { createTerm, deleteTerm, removeLogo, updateTerm, uploadLogo } from '../api/company';
+import CurrencyChangeDialog from '../components/CurrencyChangeDialog';
 import StatusToasts from '../components/StatusToasts';
 import { useAuth } from '../context/AuthContext';
 import { useAuthStore } from '../store/useAuthStore';
 import { useFY } from '../context/FYContext';
 import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, CompanyTermOut } from '../types/api';
 import { isCompanyConfigured } from '../utils/companySetup';
+import { isCurrencyChange } from '../utils/currencyChange';
 import { buildSeriesPreview, gstr1SeriesFormatError } from '../utils/seriesPreview';
 
 // ---------------------------------------------------------------------------
@@ -728,7 +730,7 @@ export default function CompanyPage() {
     address: '',
     gst: '',
     phone_number: '',
-    currency_code: 'USD',
+    currency_code: 'INR',
     email: '',
     website: '',
     show_sku_on_pdf: false,
@@ -741,6 +743,10 @@ export default function CompanyPage() {
   });
   const [companyId, setCompanyId] = useState<number>(0);
   const [savedGstin, setSavedGstin] = useState('');
+  const [savedCurrency, setSavedCurrency] = useState('');
+  // Set once we know the company has invoices and the user is changing currency;
+  // the dialog waits for their answer before anything is saved.
+  const [showCurrencyWarning, setShowCurrencyWarning] = useState(false);
   // True when the server says this user has no company at all (409
   // company_required), so saving has to create one rather than update one.
   const [noCompany, setNoCompany] = useState(false);
@@ -775,6 +781,7 @@ export default function CompanyPage() {
       }
       setCompanyId(data.id);
       setSavedGstin(data.gst || '');
+      setSavedCurrency(data.currency_code || '');
       setForm({
         name: data.name || '',
         address: data.address || '',
@@ -816,9 +823,36 @@ export default function CompanyPage() {
     void loadCompanyProfile();
   }, []);
 
+  // Any invoice at all, cancelled and purchase vouchers included: each of them
+  // was issued in the currency the company had then. If the check fails we warn
+  // anyway, since staying silent is the worse mistake.
+  async function companyHasInvoices(): Promise<boolean> {
+    try {
+      const response = await api.get<{ total: number }>('/invoices/', {
+        params: { page: 1, page_size: 1, show_cancelled: true },
+      });
+      return response.data.total > 0;
+    } catch {
+      return true;
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (!noCompany && isCurrencyChange(savedCurrency, form.currency_code)) {
+      setSubmitting(true);
+      const hasInvoices = await companyHasInvoices();
+      setSubmitting(false);
+      if (hasInvoices) {
+        setShowCurrencyWarning(true);
+        return;
+      }
+    }
+    await saveCompany();
+  }
+
+  async function saveCompany() {
     try {
       setSubmitting(true);
       setError('');
@@ -924,6 +958,22 @@ export default function CompanyPage() {
 
       <StatusToasts error={error} success={success} onClearError={() => setError('')} onClearSuccess={() => setSuccess('')} />
 
+      {showCurrencyWarning ? (
+        <CurrencyChangeDialog
+          fromCurrency={savedCurrency}
+          toCurrency={form.currency_code.trim().toUpperCase()}
+          confirmDisabled={submitting}
+          onCancel={() => {
+            setShowCurrencyWarning(false);
+            setForm((current) => ({ ...current, currency_code: savedCurrency }));
+          }}
+          onConfirm={async () => {
+            await saveCompany();
+            setShowCurrencyWarning(false);
+          }}
+        />
+      ) : null}
+
       {showSetupDialog ? (
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="setup-required-title">
           <div className="modal-panel">
@@ -1022,9 +1072,10 @@ export default function CompanyPage() {
 
           {!loading ? (
             <form className="stack" onSubmit={handleSubmit}>
+              <small className="field-hint">Fields marked <span style={{ color: 'var(--color-danger)' }}>*</span> are required.</small>
               <div className="field-grid">
                 <div className="field">
-                  <label htmlFor="company-name">Company name</label>
+                  <label htmlFor="company-name">Company name <span style={{ color: 'var(--color-danger)' }} aria-hidden="true">*</span></label>
                   <input
                     id="company-name"
                     className="input"
@@ -1036,7 +1087,7 @@ export default function CompanyPage() {
                 </div>
 
                 <div className="field">
-                  <label htmlFor="company-gst">GST</label>
+                  <label htmlFor="company-gst">GSTIN</label>
                   <input
                     id="company-gst"
                     className="input"
@@ -1067,8 +1118,8 @@ export default function CompanyPage() {
                     value={form.currency_code}
                     onChange={(event) => setForm((current) => ({ ...current, currency_code: event.target.value }))}
                   >
-                    <option value="USD">USD - US Dollar</option>
                     <option value="INR">INR - Indian Rupee</option>
+                    <option value="USD">USD - US Dollar</option>
                     <option value="EUR">EUR - Euro</option>
                     <option value="GBP">GBP - British Pound</option>
                     <option value="AED">AED - UAE Dirham</option>
@@ -1098,13 +1149,13 @@ export default function CompanyPage() {
                 </div>
 
                 <div className="field field--full">
-                  <label htmlFor="company-address">Address</label>
+                  <label htmlFor="company-address">Address <span style={{ color: 'var(--color-danger)' }} aria-hidden="true">*</span></label>
                   <textarea
                     id="company-address"
                     className="textarea"
                     value={form.address}
                     onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))}
-                    placeholder="221B Baker Street, London"
+                    placeholder="12 MG Road, Indiranagar, Bengaluru, Karnataka 560038"
                     required
                   />
                 </div>

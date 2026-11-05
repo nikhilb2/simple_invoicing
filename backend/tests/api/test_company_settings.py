@@ -538,3 +538,58 @@ def test_upi_pay_button_setting_defaults_off_and_round_trips(client, db_session)
         assert client.get("/api/company/", headers=headers).json()["show_upi_pay_button"] is True
     finally:
         _restore_user_override(old_override)
+
+
+# ---------------------------------------------------------------------------
+# Default currency
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("submitted", [None, ""])
+def test_new_company_without_a_currency_defaults_to_inr(client, db_session, submitted):
+    # A new Indian business that never touches the currency field must not end up
+    # issuing tax invoices in dollars.
+    old_override = _with_persistent_user_override()
+    try:
+        payload = _company_payload("Default Currency Co", "27AAAAA0000A1Z2")
+        payload["currency_code"] = submitted
+        created = client.post("/api/company/companies", json=payload)
+        assert created.status_code == 200, created.text
+        assert created.json()["currency_code"] == "INR"
+    finally:
+        _restore_user_override(old_override)
+
+
+def test_saving_company_with_empty_currency_falls_back_to_inr(client, db_session):
+    old_override = _with_persistent_user_override()
+    try:
+        company_id = _create_company(client, "Empty Currency Co", "27AAAAA0000A1Z2")
+        headers = {"X-Company-Id": str(company_id)}
+        payload = _company_payload("Empty Currency Co", "27AAAAA0000A1Z2")
+        payload["currency_code"] = ""
+        updated = client.put("/api/company/", json=payload, headers=headers)
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["currency_code"] == "INR"
+    finally:
+        _restore_user_override(old_override)
+
+
+def test_explicit_usd_is_still_respected(client, db_session):
+    old_override = _with_persistent_user_override()
+    try:
+        company_id = _create_company(client, "Dollar Co", "27AAAAA0000A1Z2")
+        profile = client.get("/api/company/", headers={"X-Company-Id": str(company_id)}).json()
+        assert profile["currency_code"] == "USD"
+    finally:
+        _restore_user_override(old_override)
+
+
+def test_first_run_blank_company_starts_on_inr(client, db_session):
+    # Self-hosted first run: opening Settings conjures a blank company, and its
+    # currency is what the form shows before the owner has typed anything.
+    old_override = _with_persistent_user_override()
+    try:
+        response = client.get("/api/company/")
+        assert response.status_code == 200, response.text
+        assert response.json()["currency_code"] == "INR"
+    finally:
+        _restore_user_override(old_override)

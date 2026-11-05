@@ -150,7 +150,8 @@ def get_dashboard_metrics(
             partial_count += 1
         else:
             unpaid_count += 1
-        if remaining > 0 and invoice.due_date is not None and invoice.due_date.date() < today:
+        # An invoice with no due date counts as due on its invoice date, as on Dues.
+        if remaining > 0 and (invoice.due_date or invoice.invoice_date).date() < today:
             overdue_amount += remaining
             overdue_count += 1
     receivables = ReceivablesMetrics(
@@ -268,7 +269,7 @@ def get_dashboard_metrics(
     ]
 
     return DashboardMetrics(
-        currency_code=active_company.currency_code or "USD",
+        currency_code=active_company.currency_code or "INR",
         catalog=catalog,
         inventory=inventory,
         sales=sales,

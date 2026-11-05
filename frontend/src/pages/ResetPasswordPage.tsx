@@ -3,11 +3,10 @@ import { Link } from 'react-router-dom';
 import { readUrlSecret } from '../lib/urlSecrets';
 import { resetPassword } from '../api/auth';
 import { authErrorMessage } from '../utils/authFlow';
+import { MIN_PASSWORD_LENGTH, passwordClientError } from '../utils/verifyEmailForm';
 import AuthLayout from '../components/AuthLayout';
 import PasswordInput from '../components/PasswordInput';
 import StatusToasts from '../components/StatusToasts';
-
-const MIN_PASSWORD_LENGTH = 8;
 
 export default function ResetPasswordPage() {
   const [token] = useState(() => readUrlSecret('token'));
@@ -20,8 +19,9 @@ export default function ResetPasswordPage() {
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     if (!token) return;
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long`);
+    const clientError = passwordClientError(password);
+    if (clientError) {
+      setError(clientError);
       return;
     }
     if (password !== confirm) {
@@ -44,9 +44,14 @@ export default function ResetPasswordPage() {
     <AuthLayout title="Reset password">
       <div>
         <p className="eyebrow">Account recovery</p>
-        <h2 className="page-title">Choose a new password</h2>
+        <h2 className="page-title">{token ? 'Choose a new password' : 'Open the link from your email'}</h2>
         {done ? <p className="section-copy">Your password has been changed. You can sign in with it now.</p> : null}
-        {!token ? <p className="section-copy" role="alert">This reset link is missing its token.</p> : null}
+        {!token ? (
+          <p className="section-copy" role="alert">
+            For your security, this page cannot keep your link after a refresh. Open the reset link in your email
+            again: it keeps working until you change your password or it expires.
+          </p>
+        ) : null}
       </div>
 
       {token && !done ? (

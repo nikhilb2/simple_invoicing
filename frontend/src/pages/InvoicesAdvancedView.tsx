@@ -9,6 +9,7 @@ import InvoicesTable from '../components/InvoicesTable';
 import InvoicesCompactCard from '../components/InvoicesCompactCard';
 import InvoicesTotalBreakdown from '../components/InvoicesTotalBreakdown';
 import InvoicePreview from '../components/InvoicePreview';
+import ReceiptModal from '../components/ReceiptModal';
 import StatusToasts from '../components/StatusToasts';
 import type { Product } from '../types/api';
 import { useInvoiceFeedViewStore } from '../store/useInvoiceFeedViewStore';
@@ -80,6 +81,7 @@ export default function InvoicesAdvancedView() {
   const [actionSuccess, setActionSuccess] = useState('');
   const [exporting, setExporting] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
 
   const restoreMutation = useMutation({
     mutationFn: (invoiceId: number) => api.post(`/invoices/${invoiceId}/restore`),
@@ -89,6 +91,12 @@ export default function InvoicesAdvancedView() {
     },
     onError: (err) => setActionError(getApiErrorMessage(err, 'Unable to restore invoice')),
   });
+
+  function handlePaymentRecorded(message: string) {
+    setPaymentInvoice(null);
+    setActionSuccess(message);
+    void queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
+  }
 
   function handleEdit(invoice: Invoice) {
     navigate(`/invoices?edit=${invoice.id}`);
@@ -664,6 +672,7 @@ export default function InvoicesAdvancedView() {
                   onRestore={handleRestore}
                   onCreditNote={handleCreditNote}
                   onDuplicate={handleDuplicate}
+                  onRecordPayment={setPaymentInvoice}
                 />
               ))}
           </div>
@@ -722,8 +731,22 @@ export default function InvoicesAdvancedView() {
         <InvoicePreview
           invoice={previewInvoice}
           onClose={closePreview}
+          onError={setActionError}
+          onPaymentRecorded={handlePaymentRecorded}
         />
       )}
+
+      {paymentInvoice && paymentInvoice.ledger_id ? (
+        <ReceiptModal
+          ledgerId={paymentInvoice.ledger_id}
+          ledgerName={paymentInvoice.ledger?.name || paymentInvoice.ledger_name || 'customer'}
+          currencyCode={paymentInvoice.company_currency_code || 'INR'}
+          invoiceId={paymentInvoice.id}
+          onClose={() => setPaymentInvoice(null)}
+          onSuccess={handlePaymentRecorded}
+          onError={setActionError}
+        />
+      ) : null}
 
       <StatusToasts
         success={actionSuccess}

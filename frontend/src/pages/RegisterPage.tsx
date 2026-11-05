@@ -54,8 +54,8 @@ export default function RegisterPage() {
           <p className="eyebrow">Almost there</p>
           <h2 className="page-title">Check your email</h2>
           <p className="section-copy">
-            If {submittedEmail} can be registered, we have sent a link to it. Open the link to confirm
-            your address and choose your password.
+            If {submittedEmail} is new to us, we have sent a link to it. Open the link to confirm your
+            address and choose your password.
           </p>
         </div>
         {toasts}
@@ -63,7 +63,9 @@ export default function RegisterPage() {
           Resend verification email
         </button>
         <p className="muted-text" style={{ margin: 0 }}>
-          <Link to="/login">Back to sign in</Link>
+          Already have an account with this address? We will not send a new link, so{' '}
+          <Link to="/login" style={{ textDecoration: 'underline' }}>sign in</Link> or{' '}
+          <Link to="/forgot-password" style={{ textDecoration: 'underline' }}>reset your password</Link>.
         </p>
       </AuthLayout>
     );

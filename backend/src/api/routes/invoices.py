@@ -468,11 +468,13 @@ def _outstanding_due_invoices(
 ):
     """Shared dues query for the list and the ageing summary.
 
-    Returns the outstanding sales invoices with a due date, after dropping
-    invoices with nothing remaining and ledgers whose receivable is fully
-    offset by payables. Both surfaces read the same rows, so the tiles and
-    the list can never disagree about which invoices count.
+    Returns the outstanding sales invoices, after dropping invoices with
+    nothing remaining and ledgers whose receivable is fully offset by payables.
+    An invoice with no due date counts as due on its invoice date. Both surfaces
+    read the same rows, so the tiles and the list can never disagree about which
+    invoices count.
     """
+    effective_due_date = func.coalesce(Invoice.due_date, Invoice.invoice_date)
     base = (
         db.query(Invoice)
         .options(joinedload(Invoice.ledger), joinedload(Invoice.items))
@@ -480,7 +482,6 @@ def _outstanding_due_invoices(
             Invoice.company_id == company_id,
             Invoice.voucher_type == "sales",
             Invoice.status == "active",
-            Invoice.due_date.isnot(None),
         )
     )
 
@@ -489,11 +490,11 @@ def _outstanding_due_invoices(
     if search.strip():
         base = base.filter(Invoice.ledger_name.ilike(f"%{search.strip()}%"))
     if due_date_from is not None:
-        base = base.filter(Invoice.due_date >= datetime.combine(due_date_from, datetime.min.time()))
+        base = base.filter(effective_due_date >= datetime.combine(due_date_from, datetime.min.time()))
     if due_date_to is not None:
-        base = base.filter(Invoice.due_date <= datetime.combine(due_date_to, datetime.max.time()))
+        base = base.filter(effective_due_date <= datetime.combine(due_date_to, datetime.max.time()))
 
-    invoices = base.order_by(Invoice.due_date.asc(), Invoice.invoice_date.asc(), Invoice.id.asc()).all()
+    invoices = base.order_by(effective_due_date.asc(), Invoice.invoice_date.asc(), Invoice.id.asc()).all()
     payment_summaries = build_invoice_payment_summaries(db, invoices)
     outstanding_invoices = [
         invoice
@@ -565,7 +566,7 @@ def dues_ageing_summary(
         totals: dict[str, Decimal] = {key: Decimal("0") for key, _ in _AGEING_BUCKETS}
         counts: dict[str, int] = {key: 0 for key, _ in _AGEING_BUCKETS}
         for invoice in outstanding_invoices:
-            days_overdue = (today - invoice.due_date.date()).days
+            days_overdue = (today - (invoice.due_date or invoice.invoice_date).date()).days
             key = _ageing_bucket_key(days_overdue)
             totals[key] += Decimal(str(payment_summaries[invoice.id].remaining_amount or 0))
             counts[key] += 1
@@ -598,7 +599,11 @@ def _sort_due_invoices(invoices: list[Invoice], payment_summaries, sort: _Invoic
     if sort == "amount-desc":
         return sorted(invoices, key=lambda invoice: (-payment_summaries[invoice.id].remaining_amount, invoice.id))
     if sort == "due-date-asc":
-        return sorted(invoices, key=lambda invoice: (invoice.due_date is None, invoice.due_date, invoice.id))
+        def due_date_key(invoice):
+            effective_due_date = invoice.due_date or invoice.invoice_date
+            return (effective_due_date is None, effective_due_date, invoice.id)
+
+        return sorted(invoices, key=due_date_key)
 
     def customer_key(invoice):
         name = (invoice.ledger_name or "").strip().casefold()
@@ -639,7 +644,13 @@ def list_due_invoices(
         _enrich_items_with_serials(paged_invoices, db)
         items = [_to_invoice_out(invoice, payment_summary=payment_summaries.get(invoice.id)) for invoice in paged_invoices]
 
+        today = date.today()
         for item in items:
+            # The Dues page, its overdue badge and the reminder read these two
+            # fields, so an invoice with no due date shows as due on its invoice date.
+            if item.due_date is None:
+                item.due_date = item.invoice_date
+                item.due_in_days = (item.invoice_date.date() - today).days
             receivable, payable = open_amounts.get(item.ledger_id, (0.0, 0.0))
             item.ledger_payable_amount = payable
             item.ledger_net_receivable = round(receivable - payable, 2)

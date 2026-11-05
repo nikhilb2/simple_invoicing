@@ -1,11 +1,12 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr
 from src.models.user import UserRole
+from src.schemas.auth import NewPassword
 
 
 class UserCreate(BaseModel):
     email: EmailStr
     full_name: str
-    password: str = Field(min_length=8)
+    password: NewPassword
     role: UserRole = UserRole.staff
 
 

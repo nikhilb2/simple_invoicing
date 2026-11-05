@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import ProductFormModal from './ProductFormModal';
+import { HSN_ERROR, errorAfterHsnEdit } from './productFormRules';
 import type { CatalogueRow } from './types';
 
 function row(overrides: Partial<CatalogueRow> = {}): CatalogueRow {
@@ -58,7 +59,7 @@ describe('ProductFormModal duplicate', () => {
     expect(value('product-name')).toBe('Cotton tee, red, M');
     expect(value('product-price')).toBe('349');
     expect(value('product-purchase-price')).toBe('180');
-    expect(value('product-gst')).toBe('5');
+    expect(html).toMatch(/<option value="5" selected="">/);
     expect(value('product-hsn')).toBe('6109');
     expect(value('product-reorder')).toBe('5');
     expect(html).toMatch(/<textarea id="product-description"[^>]*>Combed cotton<\/textarea>/);
@@ -105,5 +106,43 @@ describe('ProductFormModal duplicate', () => {
     const create = render({});
     expect(create.html).toContain('Add a product');
     expect(create.value('product-name')).toBe('');
+  });
+
+  test('a new product starts with no GST rate chosen, and a 0% choice shows a note', () => {
+    const create = render({});
+    expect(create.html).toMatch(/<option value="" disabled="" selected="">Choose a rate<\/option>/);
+    expect(create.html).not.toContain('You are charging no GST');
+    expect(create.html).toContain('Item code (SKU)');
+    expect(create.html).toContain('class="required-mark"');
+
+    const zero = render({ row: row({ gst_rate: 0 }) });
+    expect(zero.html).toContain('You are charging no GST on this product');
+  });
+
+  test('an unusual existing rate opens under Other rate with its own value', () => {
+    const odd = render({ row: row({ gst_rate: 0.25 }) });
+    expect(odd.html).toMatch(/<option value="__other__" selected="">/);
+    expect(odd.value('product-gst-other')).toBe('0.25');
+  });
+
+  test('warns that a new tracked product with no opening stock cannot be sold yet', () => {
+    const create = render({});
+    expect(create.html).toContain('data-testid="product-no-stock-warning"');
+    expect(create.html).toContain('Stop tracking stock for this item');
+
+    // Editing never shows opening stock, and an untracked product has nothing to warn about.
+    expect(render({ row: row() }).html).not.toContain('product-no-stock-warning');
+    expect(render({ template: row({ maintain_inventory: false }) }).html).not.toContain('product-no-stock-warning');
+  });
+});
+
+describe('editing the HSN code', () => {
+  test('withdraws the HSN complaint once the field changes', () => {
+    expect(errorAfterHsnEdit(HSN_ERROR)).toBe('');
+  });
+
+  test('leaves any other error on screen', () => {
+    expect(errorAfterHsnEdit('Choose a GST rate.')).toBe('Choose a GST rate.');
+    expect(errorAfterHsnEdit('')).toBe('');
   });
 });

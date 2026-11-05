@@ -73,7 +73,7 @@ def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> Compa
         address=payload.address.strip(),
         gst=payload.gst.strip().upper(),
         phone_number=payload.phone_number.strip(),
-        currency_code=payload.currency_code.strip().upper() if payload.currency_code else "USD",
+        currency_code=payload.currency_code.strip().upper() if payload.currency_code else "INR",
         email=payload.email.strip() if payload.email else None,
         website=payload.website.strip() if payload.website else None,
         bank_name=payload.bank_name.strip() if payload.bank_name else None,
@@ -130,7 +130,7 @@ def _create_blank_company_profile(db: Session) -> CompanyProfile:
         address="",
         gst="",
         phone_number="",
-        currency_code="USD",
+        currency_code="INR",
         email="",
         website="",
         bank_name="",
@@ -377,7 +377,7 @@ def upsert_company_profile(
     profile.address = payload.address.strip()
     profile.gst = payload.gst.strip().upper()
     profile.phone_number = payload.phone_number.strip()
-    profile.currency_code = payload.currency_code.strip().upper() if payload.currency_code else "USD"
+    profile.currency_code = payload.currency_code.strip().upper() if payload.currency_code else "INR"
     profile.email = payload.email.strip() if payload.email else None
     profile.website = payload.website.strip() if payload.website else None
     profile.bank_name = payload.bank_name.strip() if payload.bank_name else None

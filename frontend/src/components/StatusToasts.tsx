@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 type ToastKind = 'success' | 'error';
 
@@ -56,6 +56,19 @@ export default function StatusToasts({
 
     return () => window.clearTimeout(timeoutId);
   }, [success, successDurationMs, onClearSuccess]);
+
+  // An error that was already showing belongs to an earlier action, so a new success replaces
+  // it instead of stacking beside it. An error that arrives together with the success stays.
+  const errorBeforeRender = useRef(false);
+  useEffect(() => {
+    if (success && errorBeforeRender.current) {
+      onClearError();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a newly shown success should clear
+  }, [success]);
+  useEffect(() => {
+    errorBeforeRender.current = Boolean(error);
+  });
 
   if (!error && !success) {
     return null;

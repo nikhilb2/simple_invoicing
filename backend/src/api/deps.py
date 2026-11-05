@@ -251,7 +251,7 @@ def _resolve_active_company(
             address="",
             gst="",
             phone_number="",
-            currency_code="USD",
+            currency_code="INR",
             email="",
             website="",
             bank_name="",

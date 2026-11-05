@@ -15,7 +15,7 @@ Everyone can view ledgers and statements. Only admins and managers can create, e
    |---|---|
    | **Ledger name** | Required. |
    | **Phone number** | Required. Used for the call and WhatsApp links. |
-   | **GST** | Optional. Spaces are removed and letters capitalised. Once valid, it shows the PAN and state code. |
+   | **GSTIN** | Optional. Spaces are removed and letters capitalised. Once valid, it shows the PAN and state code. |
    | **Opening balance** and **Type** | Optional. **Debit** means they owe you; **Credit** means you owe them. |
    | **Address** | Required. |
    | **Email**, **Website** | Optional. The email is used for sending documents. |

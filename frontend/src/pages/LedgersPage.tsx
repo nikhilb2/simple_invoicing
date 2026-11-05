@@ -208,7 +208,7 @@ export default function LedgersPage() {
         <div>
           <p className="eyebrow">Ledgers</p>
           <h1 className="page-title">Ledger master</h1>
-          <p className="section-copy">A minimal Tally-style ledger registry with period-wise view of sales and purchase postings.</p>
+          <p className="section-copy">Your customers and suppliers live here, one ledger each. Open a ledger to see what they owe you (or what you owe them), their invoices and payments.</p>
         </div>
         <div className="page-hero__actions">
           <div className="status-chip">{plural(total, 'ledger')} listed</div>

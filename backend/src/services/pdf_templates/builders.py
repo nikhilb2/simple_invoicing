@@ -319,7 +319,8 @@ def _build_pdf_payment_details_html(
 ) -> str:
     """Build bank payment details section for invoice PDF."""
     if not invoice_bank_accounts and not pay_qr_html:
-        return '<p class="muted-text">No bank account marked to display on invoice.</p>'
+        # The customer's copy has nothing to say about this; the app tells the owner instead.
+        return ""
 
     accounts = "".join(
         '<div class="invoice-sheet__bank-account">'

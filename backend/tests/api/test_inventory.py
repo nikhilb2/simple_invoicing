@@ -326,3 +326,32 @@ def test_produce_without_notes_field_still_works(client, db_session):
     assert len(items) == 1
     assert items[0]["notes"] is None
     assert items[0]["quantity_produced"] == 2
+
+
+def test_sale_with_no_stock_says_how_much_is_short_and_names_the_product(client):
+    product = client.post(
+        "/api/products/",
+        json={"sku": "NOSTOCK1", "name": "Cordless Drill 500W", "price": 100, "gst_rate": 18,
+              "maintain_inventory": True, "initial_quantity": 0},
+    ).json()
+    ledger = client.post(
+        "/api/ledgers/",
+        json={"name": "Walk-in", "address": "1 Main St", "gst": "27AADCB2230M1ZT",
+              "phone_number": "9876543210", "email": "a@example.com", "website": "",
+              "bank_name": "", "branch_name": "", "account_name": "", "account_number": "",
+              "ifsc_code": "", "opening_balance": 0},
+    ).json()
+
+    response = client.post(
+        "/api/invoices/",
+        json={"ledger_id": ledger["id"], "voucher_type": "sales", "tax_inclusive": False,
+              "apply_round_off": False,
+              "items": [{"product_id": product["id"], "quantity": 3, "unit_price": 100}]},
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert "Cordless Drill 500W: only 0 in stock, and this invoice needs 3" in body["detail"]
+    assert body["code"] == "insufficient_stock"
+    assert body["product_id"] == product["id"]
+    assert (body["available"], body["required"]) == ("0", "3")

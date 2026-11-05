@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { addDaysToIsoDate, buildDueWindow, createDueDateFormState, isOverdueInvoice, overdueLabel, resolveDueDate } from './invoiceDueDate.ts';
+import { DEFAULT_DUE_MODE, addDaysToIsoDate, buildDueWindow, createDueDateFormState, isOverdueInvoice, overdueLabel, resolveDueDate } from './invoiceDueDate.ts';
 
 describe('addDaysToIsoDate — calendar arithmetic on ISO dates', () => {
   test('same-day addition is a no-op', () => {
@@ -242,5 +242,12 @@ describe('buildDueWindow — local calendar dates, not UTC', () => {
       dueDateFrom: '2026-12-29',
       dueDateTo: '2027-01-13',
     });
+  });
+});
+
+describe('DEFAULT_DUE_MODE', () => {
+  test('opens on all dues, so an invoice due today is not hidden by an Overdue-only window', () => {
+    expect(DEFAULT_DUE_MODE).toBe('all');
+    expect(buildDueWindow(DEFAULT_DUE_MODE, 30, '')).toEqual({});
   });
 });

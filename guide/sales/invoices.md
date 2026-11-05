@@ -17,7 +17,7 @@ Everyone, including staff, can create, edit and cancel invoices.
    | **Quotation**, **Proforma invoice** | [An offer](./quotations) | No change | `QT-…`, `PI-…` |
    | **Payment**, **Receipt** | [Money in or out](./cash-bank) | No change | `PAY-…` |
 
-2. Choose the **Ledger**. Type to search, or click **New ledger** to add one on the spot. The first ledger is already selected when the page loads, so check it.
+2. Choose the **Ledger**. Type to search, or click **New ledger** to add one on the spot. Nothing is selected when the page loads, and **Create invoice** stays disabled until you choose one.
 3. Check the **Place of supply** (sales only). See [below](#how-gst-is-split).
 4. Check the **Invoice date**. It defaults to today.
 5. Add your products. For each line, choose the product and enter **Qty**. The price and tax come from the product.
@@ -25,7 +25,7 @@ Everyone, including staff, can create, edit and cancel invoices.
 
 The invoice number is assigned when you save, and the preview opens so you can [send it](./sending).
 
-A sale is refused with "Insufficient inventory" if you do not have enough stock. Either correct the stock or [record the purchase](#record-a-purchase) first.
+If you do not have enough stock, the sale is refused with a message such as "Only 0 of Assam Tea in stock, and this invoice needs 3". Click **Add stock for** *your product* to add it without losing the invoice, then click **Create invoice** again. If the goods came from a supplier, [record the purchase](#record-a-purchase) instead.
 
 ### Line options
 

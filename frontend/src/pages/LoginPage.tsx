@@ -69,9 +69,9 @@ export default function LoginPage() {
   return (
     <AuthLayout title="Login">
       <div>
-        <p className="eyebrow">Sign in</p>
-        <h2 className="page-title">Access the workspace</h2>
-        <p className="section-copy">Sign in to load your invoicing workspace.</p>
+        <p className="eyebrow">Welcome back</p>
+        <h2 className="page-title">Sign in</h2>
+        <p className="section-copy">Enter your email and password to see your invoices, stock and payments.</p>
       </div>
 
       <OAuthButtons providers={config.providers} next={next} />
@@ -115,8 +115,8 @@ export default function LoginPage() {
           </button>
         ) : null}
 
-        <button className="button button--primary" disabled={submitting} title="Open dashboard" aria-label="Open dashboard">
-          {submitting ? 'Signing in...' : 'Open dashboard'}
+        <button className="button button--primary" disabled={submitting} title="Sign in" aria-label="Sign in">
+          {submitting ? 'Signing in...' : 'Sign in'}
         </button>
       </form>
 

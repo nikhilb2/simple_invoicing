@@ -53,7 +53,7 @@ def _join(parts: list[str]) -> str:
 def _party_details(gst: str | None, phone: str | None) -> str:
     parts = []
     if gst:
-        parts.append(f"GST: {_e(gst)}")
+        parts.append(f"GSTIN: {_e(gst)}")
         pan = _extract_pan_from_gstin(gst)
         if pan:
             parts.append(f"PAN: {_e(pan)}")

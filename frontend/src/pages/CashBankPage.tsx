@@ -72,7 +72,7 @@ export default function CashBankPage() {
     description: '',
   });
 
-  const activeCurrencyCode = company?.currency_code || 'USD';
+  const activeCurrencyCode = company?.currency_code || 'INR';
 
   useEffect(() => {
     if (deepLinkPinned) return;

@@ -5,6 +5,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import { useAuthStore } from '../store/useAuthStore';
 import StatusToasts from '../components/StatusToasts';
 import type { ChangePasswordRequest, ChangePasswordResponse } from '../types/api';
+import { COMMON_PASSWORD_MESSAGE, isCommonPassword } from '../utils/verifyEmailForm';
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -54,6 +55,12 @@ export default function ChangePasswordPage() {
 
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       setError(`New password must be at least ${MIN_PASSWORD_LENGTH} characters long`);
+      setSuccess(undefined);
+      return;
+    }
+
+    if (isCommonPassword(newPassword)) {
+      setError(COMMON_PASSWORD_MESSAGE);
       setSuccess(undefined);
       return;
     }

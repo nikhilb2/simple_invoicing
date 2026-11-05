@@ -165,13 +165,13 @@ def test_short_password_is_rejected_by_the_schema(client, db_session):
 
 
 def test_password_at_minimum_length_is_accepted(client, db_session):
-    response = _create_user(client, password="12345678")
+    response = _create_user(client, password="kX9#mQ2v")
     assert response.status_code == 200, response.text
 
     stored = (
         db_session.query(User).filter(User.email == "new@example.com").one()
     )
-    assert verify_password("12345678", stored.hashed_password)
+    assert verify_password("kX9#mQ2v", stored.hashed_password)
 
 
 def test_unauthenticated_request_gets_401():

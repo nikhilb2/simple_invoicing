@@ -30,7 +30,10 @@ from src.schemas.auth import (
     RegisterRequest,
     ResetPasswordRequest,
     Token,
+    VerifyEmailDetailsOut,
+    VerifyEmailDetailsRequest,
     VerifyEmailRequest,
+    VerifyEmailResponse,
 )
 from src.schemas.user import UserOut
 from src.core.config import settings
@@ -196,6 +199,40 @@ def _user_from_purpose_token(db: Session, token: str, token_type: str) -> tuple[
     return user, payload
 
 
+def _user_for_verify_link(db: Session, token: str) -> User:
+    user, claims = _user_from_purpose_token(db, token, VERIFY_EMAIL_TOKEN_TYPE)
+    # Refused once verified, not just skipped: this link sets a password, so an old
+    # one replayed from a mailbox must not be able to change it.
+    if (
+        user.email_verified
+        or not user.is_active
+        or not fingerprint_matches(claims.get("pwd"), user.hashed_password)
+    ):
+        raise _error(400, "invalid_token", "This link is invalid or has expired.")
+    return user
+
+
+# sha256 of the address a verification link was last requested for, kept in the same
+# browser's session cookie. The link proves control of a mailbox but not that the
+# person holding it owns that mailbox: an attacker can register their own address and
+# send the link to a victim. Signing the victim straight in would leave them entering
+# customers and bank details in an account the attacker can reset their way into, the
+# attack _OAUTH_CODE_SESSION_KEY stops for Google sign-in. So only the browser that
+# asked for the link is signed in; any other is sent to the sign-in page, where the
+# victim's own address will not open the attacker's account.
+_VERIFY_LINK_SESSION_KEY = "verify_link_email"
+
+
+def _note_link_asked_for_here(request: Request, email: str) -> None:
+    # Whether or not the address has an account, so the cookie says nothing about that.
+    request.session[_VERIFY_LINK_SESSION_KEY] = _hash_code(email)
+
+
+def _asked_for_link_here(request: Request, user: User) -> bool:
+    expected = request.session.pop(_VERIFY_LINK_SESSION_KEY, None)
+    return isinstance(expected, str) and hmac.compare_digest(expected, _hash_code(normalize_email(user.email)))
+
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -291,6 +328,7 @@ def register(
 
     email = normalize_email(payload.email)
     _limit_mail_request(request, email)
+    _note_link_asked_for_here(request, email)
     accepted = {"detail": "Check your inbox for a link to confirm your email address."}
 
     existing = find_user_by_email(db, email)
@@ -331,17 +369,22 @@ def register(
     return accepted
 
 
-@router.post("/verify-email", response_model=DetailResponse, include_in_schema=False)
-def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)):
-    user, claims = _user_from_purpose_token(db, payload.token, VERIFY_EMAIL_TOKEN_TYPE)
-    # Refused once verified, not just skipped: this request sets a password, so an old
-    # link replayed from a mailbox must not be able to change it.
-    if (
-        user.email_verified
-        or not user.is_active
-        or not fingerprint_matches(claims.get("pwd"), user.hashed_password)
-    ):
-        raise _error(400, "invalid_token", "This link is invalid or has expired.")
+@router.post("/verify-email/details", response_model=VerifyEmailDetailsOut, include_in_schema=False)
+def verify_email_details(payload: VerifyEmailDetailsRequest, db: Session = Depends(get_db)):
+    """The name to start the set-password form with. Reads only, so a mail scanner
+    running the page changes nothing, and a POST so the token stays out of the URL.
+
+    Registration's name is still only a claim: anyone can register anyone's address.
+    The owner sees it in the form and /verify-email takes what they submit, so it
+    becomes the account's name only if they keep it.
+    """
+    user = _user_for_verify_link(db, payload.token)
+    return {"full_name": "" if user.full_name == user.email else user.full_name}
+
+
+@router.post("/verify-email", response_model=VerifyEmailResponse, include_in_schema=False)
+def verify_email(payload: VerifyEmailRequest, request: Request, db: Session = Depends(get_db)):
+    user = _user_for_verify_link(db, payload.token)
 
     user.full_name = payload.full_name
     user.hashed_password = get_password_hash(payload.new_password)
@@ -349,7 +392,23 @@ def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)):
     user.sessions_valid_after = _now()
     db.commit()
     track("email_verified", distinct_id_for(user), {"method": "link"})
-    return {"detail": "Your email address is confirmed and your password is set. You can sign in now."}
+
+    response = {"detail": "Your email address is confirmed and your password is set. You can sign in now."}
+    if _asked_for_link_here(request, user):
+        track(
+            "user_logged_in",
+            distinct_id_for(user),
+            {
+                "method": "email_link",
+                "$set": {
+                    "email": user.email,
+                    "role": getattr(user.role, "value", user.role),
+                    "active_company_id": user.active_company_id,
+                },
+            },
+        )
+        response.update(_issue_tokens(user))
+    return response
 
 
 @router.post("/resend-verification", status_code=202, response_model=DetailResponse, include_in_schema=False)
@@ -364,6 +423,7 @@ def resend_verification(
 
     email = normalize_email(payload.email)
     _limit_mail_request(request, email)
+    _note_link_asked_for_here(request, email)
     user = find_user_by_email(db, email)
     if user is not None and user.is_active and not user.email_verified:
         background_tasks.add_task(platform_mail.send_verification_email, user.email, _verify_token_for(user))
