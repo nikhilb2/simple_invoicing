@@ -375,6 +375,32 @@ class TestProductPurchasePriceAndReorderLevel:
         assert items[0]["selling_price"] == 150.0
         assert items[0]["current_stock"] == 20
 
+
+    def test_import_csv_accepts_gst_rate_and_tax_rate_headers(self, client):
+        """GST Rate, Tax Rate and their variants are accepted as the tax column."""
+        cases = [
+            ("Item Name,Item Code,Selling Price,GST Rate\nWidget GST,WID-GST,100,18\n", "WID-GST", 18),
+            ("Item Name,Item Code,Selling Price,Tax Rate\nWidget Tax,WID-TAX,200,12\n", "WID-TAX", 12),
+            ("Item Name,Item Code,Selling Price,gst_rate\nWidget Lower,WID-LOW,50,5\n", "WID-LOW", 5),
+            ("Item Name,Item Code,Selling Price,TAX RATE\nWidget Upper,WID-UP,75,28\n", "WID-UP", 28),
+            ("Item Name,Item Code,Selling Price,GST Rate\nWidget Pct,WID-PCT,10,18%\n", "WID-PCT", 18),
+        ]
+        for content, sku, expected_rate in cases:
+            res = client.post(
+                "/api/products/import-csv",
+                files={"file": ("test.csv", content.encode("utf-8"), "text/csv")},
+            )
+            assert res.status_code == 200, res.text
+            data = res.json()
+            assert data["created"] == 1, data
+            assert data["errors"] == []
+
+            list_res = client.get(f"/api/products/with-inventory?search={sku}")
+            items = list_res.json()["items"]
+            assert len(items) == 1
+            assert items[0]["sku"] == sku
+            assert items[0]["gst_rate"] == expected_rate
+
     def test_default_purchase_price_and_reorder_level_are_zero(self, client):
         """Products created without purchase_price/reorder_level default to 0."""
         res = client.post("/api/products/", json={
