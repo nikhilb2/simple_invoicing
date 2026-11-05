@@ -356,10 +356,14 @@ class TestCSVImport:
 
     def test_import_csv_accepts_gst_rate_and_tax_rate_headers(self, client):
         """'GST Rate' / 'Tax Rate' are tax columns, not extra ones (Issue #731)."""
-        for header, sku in (("GST Rate", "IMP031"), ("Tax Rate", "IMP032")):
+        for header, sku, cell in (
+            ("GST Rate", "IMP031", "18"),
+            ("Tax Rate", "IMP032", "18"),
+            ("GST", "IMP033", "18%"),
+        ):
             csv_content = (
                 f"Item Name,Item Code,Selling Price,{header}\n"
-                f"Rate {sku},{sku},100,18\n"
+                f"Rate {sku},{sku},100,{cell}\n"
             )
             res = client.post(
                 "/api/products/import-csv",
@@ -372,6 +376,7 @@ class TestCSVImport:
         items = {i["sku"]: i for i in client.get("/api/products/with-inventory?search=Rate IMP").json()["items"]}
         assert items["IMP031"]["gst_rate"] == 18
         assert items["IMP032"]["gst_rate"] == 18
+        assert items["IMP033"]["gst_rate"] == 18
 
     def test_import_csv_mixed_rows_partial_failure(self, client):
         """Rows without errors in the same file still import (Issue #556)."""
