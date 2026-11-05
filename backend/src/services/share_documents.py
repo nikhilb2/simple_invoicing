@@ -668,8 +668,13 @@ def _safe_ledger_slug(name: str | None) -> str:
 
 
 def _reminder_statement_window(db: Session, ledger_id: int, company_id: int | None) -> tuple[date, date]:
-    """The reminder's all-time period, evaluated when its link is opened."""
-    today = date.today()
+    """The period a reminder's open-ended statement link covers when opened.
+
+    The reminder shows the all-time balance, but a statement needs a period.
+    Starting at the ledger's earliest invoice and ending today keeps the
+    statement's closing balance and pay button amount aligned with the reminder.
+    """
+    today = india_today()
     query = db.query(func.min(Invoice.invoice_date)).filter(
         Invoice.ledger_id == ledger_id, Invoice.status == "active"
     )

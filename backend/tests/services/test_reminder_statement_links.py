@@ -78,14 +78,7 @@ def invoice(case, when, amount=100, company_id=None, status='active'):
 
 
 def today(monkeypatch, value):
-    class ClockDate(date):
-        @classmethod
-        def today(cls):
-            return value
-
-    # Patch both the old location and the shared service after the helper moves.
-    monkeypatch.setattr(email, 'date', ClockDate)
-    monkeypatch.setattr(shares, 'date', ClockDate)
+    monkeypatch.setattr(shares, 'india_today', lambda: value)
 
 
 def remind(case, bulk=False):
