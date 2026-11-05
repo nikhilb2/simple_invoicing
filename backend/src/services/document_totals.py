@@ -11,8 +11,20 @@ below for reporting, so any change here must be mirrored there.
 
 from decimal import Decimal, ROUND_HALF_UP
 
+from fastapi import HTTPException
+
+from src.core.document_limits import MONEY_LIMIT
 from src.models.company import CompanyProfile
 from src.services.gst_tax_service import money as _money
+
+
+def require_money_fits(subject: str, *amounts: Decimal) -> None:
+    """Check NUMERIC(10, 2) after accounting for rounding at storage."""
+    if any(abs(amount) >= Decimal(MONEY_LIMIT) - Decimal("0.005") for amount in amounts):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{subject} is too large. Amounts must stay below {MONEY_LIMIT:,} after rounding.",
+        )
 
 
 def snapshot_company_fields(document, company: CompanyProfile | None) -> None:
