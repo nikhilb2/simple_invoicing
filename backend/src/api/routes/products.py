@@ -827,7 +827,13 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             continue
 
         try:
-            tax_cell = values.get("tax") or values.get("gst") or ""
+            tax_cell = (
+                values.get("tax")
+                or values.get("gst")
+                or values.get("gst_rate")
+                or values.get("tax_rate")
+                or ""
+            )
             gst_rate = _csv_number(tax_cell.removesuffix("%"))
             if gst_rate < 0 or gst_rate > 100:
                 raise ValueError(gst_rate)
