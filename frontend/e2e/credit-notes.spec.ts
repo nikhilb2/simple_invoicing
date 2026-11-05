@@ -116,10 +116,10 @@ test.describe('Credit notes', () => {
     await selectComboboxOption(page, 'credit-note-ledger', ledgerName);
 
     // Sales tab: one invoice, the sale.
-    await expect(page.getByText(/1 active sales invoices for this ledger/)).toBeVisible({ timeout });
+    await expect(page.getByText(/1 active sales invoice for this ledger/)).toBeVisible({ timeout });
 
     await page.selectOption('#credit-note-direction', 'inward');
-    await expect(page.getByText(/1 active purchase invoices for this ledger/)).toBeVisible({ timeout });
+    await expect(page.getByText(/1 active purchase invoice for this ledger/)).toBeVisible({ timeout });
   });
 
   test('the supplier fields only exist on the purchase tab', async ({ authedPage: page }) => {
