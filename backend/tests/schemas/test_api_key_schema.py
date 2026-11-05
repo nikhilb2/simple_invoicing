@@ -4,6 +4,8 @@ The API-level regression lives in tests/api/test_api_keys.py; these run the
 validator directly so they execute without the app stack.
 """
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from pydantic import ValidationError
 
@@ -11,7 +13,10 @@ from src.schemas.api_key import ApiKeyCreate
 
 
 def _create(name: str) -> ApiKeyCreate:
-    return ApiKeyCreate(name=name, expires_at="2027-06-01T00:00:00Z")
+    return ApiKeyCreate(
+        name=name,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+    )
 
 
 def test_name_with_surrounding_spaces_is_stripped():
