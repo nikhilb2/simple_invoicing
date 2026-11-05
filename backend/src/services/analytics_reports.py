@@ -12,6 +12,8 @@ this precedent.
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
+from itertools import groupby
+from operator import attrgetter
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -346,7 +348,7 @@ class ProfitLossData:
     totals: dict
 
 
-def _apportioned_invoice_rows(query, *, gst_inclusive=False):
+def apportioned_invoice_rows(query, *, gst_inclusive=False):
     """Yield ``(row, share of the invoice discount)`` for every invoice line.
 
     Every row must carry the invoice header totals under the names
@@ -362,11 +364,9 @@ def _apportioned_invoice_rows(query, *, gst_inclusive=False):
     ``line_taxable``. With ``gst_inclusive`` it is the line's share of the whole
     discount, to take off ``line_total``, which already includes the GST.
     """
-    by_invoice: dict[int, list] = {}
-    for row in query.order_by(Invoice.id, InvoiceItem.id).all():
-        by_invoice.setdefault(row.id, []).append(row)
-
-    for invoice_rows in by_invoice.values():
+    rows = query.order_by(Invoice.id, InvoiceItem.id).yield_per(1000)
+    for _, invoice_group in groupby(rows, key=attrgetter("id")):
+        invoice_rows = list(invoice_group)
         header = invoice_rows[0]  # every row repeats the invoice's own columns
         weights = [
             Decimal(str((row.line_total if gst_inclusive else row.line_taxable) or 0))
@@ -422,7 +422,7 @@ def _discounted_line_totals(
         query = query.filter(Invoice.id.in_(containing))
 
     revenue: dict[int, Decimal] = {}
-    for row, share in _apportioned_invoice_rows(query, gst_inclusive=True):
+    for row, share in apportioned_invoice_rows(query, gst_inclusive=True):
         if product_id is not None and row.product_id != product_id:
             continue
         net_total = Decimal(str(row.line_total or 0)) - share
@@ -468,7 +468,7 @@ def build_profit_loss_report(
             Product.sku,
             Product.purchase_price,
             # Header totals, carried under the names invoice_discount_amount
-            # reads so the row goes straight to it in _apportioned_invoice_rows.
+            # reads so the row goes straight to it in apportioned_invoice_rows.
             Invoice.taxable_amount,
             Invoice.total_tax_amount,
             Invoice.round_off_amount,
@@ -508,7 +508,7 @@ def build_profit_loss_report(
     # are skipped only after apportioning, so the filtered product never takes
     # the whole discount.
     discounted_rows: list[tuple] = []
-    for row, share in _apportioned_invoice_rows(query):
+    for row, share in apportioned_invoice_rows(query):
         if product_id is not None and row.product_id != product_id:
             continue
         discounted_rows.append((row, Decimal(str(row.line_taxable or 0)) - share))
@@ -741,7 +741,7 @@ def _dated_discounted_invoice_lines(
         query = query.filter(Invoice.id.in_(containing))
 
     lines: list[tuple[int, Decimal, Decimal, datetime]] = []
-    for row, share in _apportioned_invoice_rows(query):
+    for row, share in apportioned_invoice_rows(query):
         if product_id is not None and row.product_id != product_id:
             continue
         lines.append((
