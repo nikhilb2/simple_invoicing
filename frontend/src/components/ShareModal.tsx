@@ -6,6 +6,7 @@ import ConfirmDialog from './ConfirmDialog';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { getApiErrorMessage } from '../api/client';
 import { ensureShareLink, revokeShareLink } from '../features/share/api';
+import { describeViews } from '../features/share/describe';
 import { shareQueryKeys } from '../features/share/queryKeys';
 import type { ShareResourceType } from '../types/api';
 import { copyTextToClipboard } from '../utils/clipboard';
@@ -31,42 +32,8 @@ type ShareModalProps = {
   onClose: () => void;
 };
 
-/** "2 hours ago" for the last-opened line. Intl does the pluralising. */
-function formatRelativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) {
-    return 'recently';
-  }
-
-  const seconds = Math.round((then - Date.now()) / 1000);
-  const units: [Intl.RelativeTimeFormatUnit, number][] = [
-    ['second', 60],
-    ['minute', 60],
-    ['hour', 24],
-    ['day', 30],
-    ['month', 12],
-    ['year', Number.POSITIVE_INFINITY],
-  ];
-
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-  let value = seconds;
-  for (const [unit, step] of units) {
-    if (Math.abs(value) < step) {
-      return formatter.format(Math.round(value), unit);
-    }
-    value /= step;
-  }
-  return formatter.format(Math.round(value), 'year');
-}
-
-function describeViews(viewCount: number, lastViewedAt: string | null): string {
-  if (viewCount <= 0) {
-    return 'Not opened yet';
-  }
-
-  const opened = viewCount === 1 ? 'Opened once' : `Opened ${viewCount} times`;
-  return lastViewedAt ? `${opened} · last ${formatRelativeTime(lastViewedAt)}` : opened;
-}
+/* describeViews lives in features/share/describe.ts so the public-links dialog
+   can use the same wording; it is unchanged from here. */
 
 export default function ShareModal({
   resourceType,
