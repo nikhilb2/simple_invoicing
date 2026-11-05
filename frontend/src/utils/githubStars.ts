@@ -1,5 +1,5 @@
-export const GITHUB_REPO_URL = 'https://github.com/nikhilb2/simple_invoicing';
-export const GITHUB_REPO_API_URL = 'https://api.github.com/repos/nikhilb2/simple_invoicing';
+export const GITHUB_REPO_URL = 'https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software';
+export const GITHUB_REPO_API_URL = 'https://api.github.com/repos/nikhilb2/simple-invoicing-free-gst-billing-software';
 
 const STORAGE_KEY = 'github_stars';
 const CACHE_TTL_MS = 60 * 60 * 1000;

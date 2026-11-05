@@ -89,4 +89,4 @@ Check [Email History](../settings/email#email-history). The dialog simply closes
 
 ## Still stuck?
 
-Click **Request a feature or report a bug** at the top of any page, or [open an issue on GitHub](https://github.com/nikhilb2/simple_invoicing/issues). Please describe what you did and what you saw, and do not post customer details in the issue, because issues are public.
+Click **Request a feature or report a bug** at the top of any page, or [open an issue on GitHub](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/issues). Please describe what you did and what you saw, and do not post customer details in the issue, because issues are public.

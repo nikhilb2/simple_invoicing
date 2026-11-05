@@ -15,7 +15,7 @@ Under s.34 CGST only the supplier issues a credit or debit note against their ta
 
 One note covers one voucher type; mixing sales and purchase invoices is rejected with a 400.
 
-Implementation is tracked under [Epic #259](https://github.com/nikhilb2/simple_invoicing/issues/259) across four phases.
+Implementation is tracked under [Epic #259](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/issues/259) across four phases.
 
 ---
 

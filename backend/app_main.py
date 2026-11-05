@@ -144,11 +144,11 @@ app = FastAPI(
     ),
     contact={
         "name": "Simple Invoicing",
-        "url": "https://github.com/nikhilb2/simple_invoicing",
+        "url": "https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software",
     },
     license_info={
         "name": "MIT",
-        "url": "https://github.com/nikhilb2/simple_invoicing/blob/main/LICENSE",
+        "url": "https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/blob/main/LICENSE",
     },
     openapi_tags=[
         {"name": "auth", "description": "Sign-in, sign-out, and current-user endpoints."},

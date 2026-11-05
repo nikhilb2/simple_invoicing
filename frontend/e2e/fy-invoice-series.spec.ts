@@ -224,7 +224,7 @@ test.describe('Invoice series — correct FY used based on invoice date', () => 
   );
 
   // Known to fail intermittently because of the app bug in
-  // https://github.com/nikhilb2/simple_invoicing/issues/687 (the Invoice series
+  // https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/issues/687 (the Invoice series
   // card can stay on every FY's series). Left active, not test.fail/fixme: the
   // failure is intermittent, so test.fail would break the run whenever it passes.
   test(
