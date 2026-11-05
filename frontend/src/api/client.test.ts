@@ -152,7 +152,21 @@ describe('reading API errors', () => {
 
     it('reads a FastAPI validation list, naming the field', () => {
       expect(getApiErrorMessage(failure(422, fastApiBody), 'x')).toBe(
-        'Distance km must be a whole number. Transporter gstin: Transporter GSTIN must be 15 characters. JSON decode error',
+        'Distance km must be a whole number. Transporter GSTIN must be 15 characters. JSON decode error',
+      );
+    });
+
+    it('does not print raw field names before messages that already name the field', () => {
+      const body = {
+        detail: [
+          { type: 'value_error', loc: ['body', 'gst'], msg: 'Value error, Invalid GSTIN format. Expected 15 characters' },
+          { type: 'value_error', loc: ['body', 'hsn_sac'], msg: 'Value error, HSN/SAC must be 4, 6 or 8 digits' },
+          { type: 'value_error', loc: ['body', 'phone_number'], msg: 'Value error, Too short' },
+          { type: 'missing', loc: ['body', 'gst'], msg: 'Field required' },
+        ],
+      };
+      expect(getApiErrorMessage(failure(422, body), 'x')).toBe(
+        'Invalid GSTIN format. Expected 15 characters HSN/SAC must be 4, 6 or 8 digits Phone number: Too short GSTIN is required.',
       );
     });
 
@@ -182,7 +196,7 @@ describe('reading API errors', () => {
       const { fieldErrors } = await getApiErrorDetails(failure(422, asBlob(fastApiBody)), 'x');
       expect(fieldErrors).toEqual([
         { field: 'distance_km', message: 'Distance km must be a whole number.' },
-        { field: 'transporter_gstin', message: 'Transporter gstin: Transporter GSTIN must be 15 characters.' },
+        { field: 'transporter_gstin', message: 'Transporter GSTIN must be 15 characters.' },
         { field: '', message: 'JSON decode error' },
       ]);
     });

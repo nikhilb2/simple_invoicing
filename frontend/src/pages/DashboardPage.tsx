@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import EmptyState from '../components/EmptyState';
+import GetStartedChecklist from '../components/GetStartedChecklist';
 import InvoicePreview from '../components/InvoicePreview';
 import { MonthlyTrendChart, PaymentStatusDonut, TopProductsBars } from '../components/DashboardCharts';
 import type { DashboardMetrics, InventoryRow, Invoice, PaginatedInventoryOut } from '../types/api';
@@ -39,7 +40,7 @@ export default function DashboardPage() {
   // Kept apart from `error`: dismissing the toast clears the error string,
   // but a failed load must still not look like an empty business.
   const [loadFailed, setLoadFailed] = useState(false);
-  const currencyCode = metrics?.currency_code || 'USD';
+  const currencyCode = metrics?.currency_code || 'INR';
 
   useEffect(() => {
     let active = true;
@@ -182,6 +183,7 @@ export default function DashboardPage() {
       </section>
 
       <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
+      <GetStartedChecklist metrics={metrics} />
       <section className="stats-grid stats-grid--dense">
         {statCards.map((card) => {
           const body = (

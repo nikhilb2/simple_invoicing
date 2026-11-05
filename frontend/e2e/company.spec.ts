@@ -13,6 +13,26 @@ test.describe('Company Profile', () => {
     await expect(page.locator('h1')).toContainText('Billing identity');
   });
 
+  test('shows a bad GSTIN against the field, in view on a phone', async ({ authedPage: page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/settings/company');
+    await expect(page.locator('#company-name')).toBeVisible({ timeout: 5_000 });
+
+    await page.fill('#company-name', 'Bad GSTIN Co');
+    await page.fill('#company-address', '1 Check Digit Road');
+    // A correct format with the wrong check digit, so only the server can refuse it.
+    await page.fill('#company-gst', '29ABCDE1234F1Z0');
+    await page.click('button:has-text("Save company details")');
+
+    const error = page.locator('#company-gst-error');
+    await expect(error).toContainText('15th character');
+    await expect(page.locator('#company-gst')).toBeFocused();
+    await expect(page.locator('#company-gst')).toBeInViewport();
+
+    await page.fill('#company-gst', uniqueGstin('29'));
+    await expect(error).toHaveCount(0);
+  });
+
   test('saves company profile', async ({ authedPage: page }) => {
     await page.goto('/settings/company');
 

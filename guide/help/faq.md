@@ -3,7 +3,10 @@
 ## Signing in
 
 **I did not get the verification email.**
-Check your spam folder, then use **Resend verification email**. The link lasts 24 hours.
+Check your spam folder, then use **Resend verification email**. The link lasts 24 hours. If you already have an account with that address, no new link is sent, so sign in or use **Forgot password?**.
+
+**"This password is too common and easy to guess".**
+Choose a less obvious one, such as three unrelated words.
 
 **"Invalid credentials".**
 The email or password is wrong. Use **Forgot password?**. If you signed up with Google, use **Continue with Google**.
@@ -22,8 +25,8 @@ Your role does not allow that page. See [Roles](../getting-started/team#roles). 
 **The total or tax split looks wrong.**
 Check the [Place of supply](../sales/invoices#how-gst-is-split). An unregistered customer defaults to your own state. Also check **Prices include GST**, which your browser remembers from the last invoice.
 
-**"Insufficient inventory".**
-You have less stock than the invoice needs. Record the purchase or [adjust the stock](../catalogue/products#adjust-stock).
+**"Only 0 of *your product* in stock, and this invoice needs 3".**
+You have less stock than the invoice needs. Click **Add stock for** *your product* below the message, which keeps the invoice filled in. Or record the purchase or [adjust the stock](../catalogue/products#adjust-stock).
 
 **An invoice shows as overdue the day after I made it.**
 It has no real credit period, because **No due date** saves the invoice date as the due date. [Edit it](../sales/invoices#edit-pencil) and set the days under **Advanced options**.

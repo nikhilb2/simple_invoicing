@@ -108,7 +108,7 @@ def _company_payload(name: str) -> dict:
     return {
         "name": name,
         "address": "",
-        "gst": "",
+        "gst": "27ABCDE1234F1Z0",
         "phone_number": "",
         "currency_code": "INR",
         "email": "",

@@ -17,6 +17,7 @@ from sqlalchemy import text
 from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes
 from src.api.routes import auth, users, products, inventory, invoices, ledgers, company, payments, smtp, email as email_routes, shortcuts, invoice_series as invoice_series_routes, financial_years as financial_years_routes, credit_notes as credit_notes_routes, backups as backups_routes, company_accounts as company_accounts_routes, bom as bom_routes, email_logs as email_logs_routes, api_keys as api_keys_routes, dashboard as dashboard_routes, analytics as analytics_routes, marketplace as marketplace_routes, serials as serials_routes, oauth as oauth_routes, well_known as well_known_routes, share as share_routes, public_share as public_share_routes, eway_bill as eway_bill_routes, quotations as quotations_routes, gstr3b as gstr3b_routes
 from src.mcp_server import register_mcp
+from src.services.inventory_service import InsufficientStockError
 from src.core.analytics import (
     bind_request,
     client_ip_from_request,
@@ -207,6 +208,15 @@ async def request_validation_error(
         status_code=422,
         content={"detail": _json_safe(jsonable_encoder(exc.errors()))},
     )
+
+
+@app.exception_handler(InsufficientStockError)
+async def insufficient_stock_error(
+    request: Request, exc: InsufficientStockError
+) -> JSONResponse:
+    # Same status and `detail` string as any other 400, plus the fields a client needs
+    # to offer "add stock" for the product that fell short.
+    return JSONResponse(status_code=exc.status_code, content=exc.body())
 
 
 def get_cors_origins() -> list[str]:

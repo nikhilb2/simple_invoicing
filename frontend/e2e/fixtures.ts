@@ -14,7 +14,7 @@ export const test = base.extend<{ authedPage: Page }>({
     await page.goto('/login');
     await page.fill('#email', ADMIN_EMAIL);
     await page.fill('#password', ADMIN_PASSWORD);
-    await page.click('button:has-text("Open dashboard")');
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(page).toHaveURL('/', { timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
     await use(page);
   },
@@ -67,7 +67,14 @@ export async function createProduct(page: Page, product: NewProduct) {
   await modal.locator('#product-sku').fill(product.sku);
   await modal.locator('#product-name').fill(product.name);
   await modal.locator('#product-price').fill(product.price);
-  if (product.gstRate !== undefined) await modal.locator('#product-gst').fill(product.gstRate);
+  // The rate is a choice the form insists on; a test that does not care takes 0%, as the old default did.
+  const gstRate = product.gstRate ?? '0';
+  if (['0', '5', '12', '18', '28', '40'].includes(gstRate)) {
+    await modal.locator('#product-gst').selectOption(gstRate);
+  } else {
+    await modal.locator('#product-gst').selectOption({ label: 'Other rate…' });
+    await modal.locator('#product-gst-other').fill(gstRate);
+  }
   if (product.purchasePrice !== undefined) {
     await modal.locator('#product-purchase-price').fill(product.purchasePrice);
   }

@@ -179,7 +179,7 @@ export default function LedgerCombobox({ id, ledgers, value, onChange, onClear, 
         onChange={handleInputChange}
         onFocus={() => { setOpen(true); setSearching(false); inputRef.current?.select(); }}
         onKeyDown={handleKeyDown}
-        placeholder={ledgers.length === 0 ? 'No ledgers available' : 'Search by name or GST…'}
+        placeholder={ledgers.length === 0 ? 'No ledgers available' : 'Search by name or GSTIN…'}
         required={required}
         disabled={disabled || ledgers.length === 0}
       />

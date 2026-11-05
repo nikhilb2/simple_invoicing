@@ -17,7 +17,7 @@ Everyone can view the catalogue. Only admins and managers can add, change or del
    | **Product name** | Required. This is what appears on invoices. |
    | **Selling price** | Required. Zero or more. |
    | **Purchase price** | Optional. Analytics uses it to work out cost and profit. |
-   | **GST rate (%)** | From 0 to 100. Defaults to 0, so remember to set it. |
+   | **GST rate** | Required. Choose from the list, or **Other rate…** for anything else from 0 to 100. Choose **0% (no GST)** only for items that are exempt or nil-rated. |
    | **HSN / SAC** | Optional, but if you fill it in it must have 4, 6 or 8 digits. |
    | **Unit** | Pieces, Kg, g, m, l, Ounce, or **Custom...** for your own, such as Dozen. |
    | **Reorder level** | Stock at or below this is flagged as low. Leave at 0 to never flag. |
@@ -28,7 +28,7 @@ Everyone can view the catalogue. Only admins and managers can add, change or del
    - **Allow fractional quantities**: for weights and lengths, such as 2.5 Kg.
    - **Track individual serial numbers / IMEIs**: see [Serial numbers](./serials).
    - **This product is manufactured in-house**: see [Manufacturing](./manufacturing).
-4. Under **What is on the shelf today**, enter the **Opening quantity**.
+4. Under **What is on the shelf today**, enter how many you have now. If you leave it at 0 while maintaining stock, the app warns you that you cannot sell the product until you add stock, but you can still save it.
 5. Click **Create product**.
 
 ::: warning HSN codes the GST portal will reject

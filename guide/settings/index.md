@@ -24,7 +24,7 @@ Click **Settings** at the bottom of the sidebar. You only see the items your rol
 1. Enter your **Current password**, then the **New password** twice.
 2. Click **Update password**.
 
-The new password needs at least 8 characters. The other items on the checklist are advice, so a longer passphrase is a good option. Changing your password signs you out on other devices but keeps you signed in on this one.
+The new password needs at least 8 characters, and common passwords such as `password123` are refused. The other items on the checklist are advice, so a longer passphrase is a good option. Changing your password signs you out on other devices but keeps you signed in on this one.
 
 If you signed up with Google, you have no password yet. This page offers **Set a password** so you can also sign in with email.
 

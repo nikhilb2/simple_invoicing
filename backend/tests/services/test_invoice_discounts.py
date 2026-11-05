@@ -35,7 +35,7 @@ def processor(db_session):
 def _seed(db_session):
     user = User(email="admin@test.com", full_name="Admin", hashed_password="x", role=UserRole.admin)
     ledger = Buyer(name="Test Buyer", address="Addr", gst="07AABB1234C1Z5", phone_number="9999999999")
-    company = CompanyProfile(name="Test Co", address="HQ", gst="07AAMPB1274B1Z8", phone_number="8888888888", currency_code="INR")
+    company = CompanyProfile(name="Test Co", address="HQ", gst="07ZZZZZ9999Z1ZA", phone_number="8888888888", currency_code="INR")
     db_session.add_all([user, ledger, company])
     db_session.flush()
     return user, ledger

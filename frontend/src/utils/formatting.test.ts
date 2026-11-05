@@ -2,8 +2,12 @@ import { expect, test } from 'vitest';
 import formatCurrency, { formatDate, formatDateTime, plural } from './formatting.ts';
 import { formatInvoiceDateLabel } from './invoiceDueDate.ts';
 
-test('formatCurrency(1000) → $1,000.00', () => {
-  expect(formatCurrency(1000)).toBe('$1,000.00');
+test('formatCurrency(1000, USD) → $1,000.00', () => {
+  expect(formatCurrency(1000, 'USD')).toBe('$1,000.00');
+});
+
+test('defaults to rupees when no currency is given', () => {
+  expect(formatCurrency(1000)).toBe('₹1,000.00');
 });
 
 test('formatCurrency(1000) → ₹1,000.00', () => {
@@ -11,22 +15,22 @@ test('formatCurrency(1000) → ₹1,000.00', () => {
 });
 
 test('zero value', () => {
-  expect(formatCurrency(0)).toBe('$0.00');
+  expect(formatCurrency(0, 'USD')).toBe('$0.00');
 });
 
 test('negative value', () => {
-  expect(formatCurrency(-1000)).toBe('-$1,000.00');
+  expect(formatCurrency(-1000, 'USD')).toBe('-$1,000.00');
 });
 
 //loop through different invalid and unsupported currency code
 const testValues = ['ER', '', undefined];
 test.each(testValues)('invalid/unsupported currency: %s', (currency) => {
   const result = formatCurrency(1000, currency);
-  expect(result).toBe('$1,000.00');
+  expect(result).toBe('₹1,000.00');
 });
 
 test('large value', () => {
-  expect(formatCurrency(100000000)).toBe('$100,000,000.00');
+  expect(formatCurrency(100000000, 'USD')).toBe('$100,000,000.00');
 });
 
 test.each([

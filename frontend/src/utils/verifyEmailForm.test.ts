@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  COMMON_PASSWORD_MESSAGE,
+  isCommonPassword,
   isDeadVerificationLink,
   MAX_PASSWORD_BYTES,
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
   passwordClientError,
+  verifiedSession,
 } from './verifyEmailForm';
 
 describe('passwordClientError', () => {
@@ -29,8 +32,30 @@ describe('passwordClientError', () => {
     );
   });
 
+  it('rejects a very common password, whatever its case', () => {
+    expect(passwordClientError('password')).toBe(COMMON_PASSWORD_MESSAGE);
+    expect(passwordClientError('PassWord123')).toBe(COMMON_PASSWORD_MESSAGE);
+    expect(isCommonPassword('12345678')).toBe(true);
+  });
+
   it('accepts a normal password', () => {
-    expect(passwordClientError('password1')).toBeNull();
+    expect(passwordClientError('mango-river-42')).toBeNull();
+    expect(isCommonPassword('mango-river-42')).toBe(false);
+  });
+});
+
+describe('verifiedSession', () => {
+  it('is the token pair when the server signed this browser in', () => {
+    expect(verifiedSession({ detail: 'ok', access_token: 'a', refresh_token: 'r', token_type: 'bearer' })).toEqual({
+      access_token: 'a',
+      refresh_token: 'r',
+      token_type: 'bearer',
+    });
+  });
+
+  it('is null when this browser has to sign in itself', () => {
+    expect(verifiedSession({ detail: 'ok' })).toBeNull();
+    expect(verifiedSession({ detail: 'ok', access_token: null, refresh_token: null, token_type: null })).toBeNull();
   });
 });
 

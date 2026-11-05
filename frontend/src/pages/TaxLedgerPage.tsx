@@ -117,12 +117,29 @@ export default function TaxLedgerPage() {
     };
   }, [period.fromDate, period.toDate, voucherType, numericGstRate]);
 
+  /* Follow the financial year by its dates, not its object, so a refetch of
+     the same year changes nothing. Dates picked before the year first arrives
+     are the owner's; only a real switch to another year replaces them. */
+  const fyKey = activeFY ? `${activeFY.start_date}|${activeFY.end_date}` : '';
+  const appliedFyKey = useRef(fyKey);
+  const periodEditedByUser = useRef(false);
+
   useEffect(() => {
+    if (appliedFyKey.current === fyKey) return;
+    const firstArrival = appliedFyKey.current === '';
+    appliedFyKey.current = fyKey;
+    if (firstArrival && periodEditedByUser.current) return;
+    periodEditedByUser.current = false;
     setPeriod({
       fromDate: activeFY?.start_date ?? defaultDateRange().fromDate,
       toDate: activeFY?.end_date ?? defaultDateRange().toDate,
     });
-  }, [activeFY]);
+  }, [fyKey, activeFY]);
+
+  const setPeriodByUser: typeof setPeriod = (value) => {
+    periodEditedByUser.current = true;
+    setPeriod(value);
+  };
 
   async function handleTaxLedgerDownload(format: 'pdf' | 'csv') {
     try {
@@ -183,7 +200,7 @@ export default function TaxLedgerPage() {
 
       <TaxLedgerFilters
         period={period}
-        setPeriod={setPeriod}
+        setPeriod={setPeriodByUser}
         voucherType={voucherType}
         setVoucherType={setVoucherType}
         gstRate={gstRate}

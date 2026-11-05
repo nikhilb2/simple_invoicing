@@ -10,7 +10,7 @@ from src.models.global_settings import GlobalSettings
 import pytest
 
 
-def _company_payload(name: str, gst: str = ""):
+def _company_payload(name: str, gst: str = "27ABCDE1234F1Z0"):
     return {
         "name": name,
         "address": "",
@@ -80,7 +80,7 @@ def _headers(company_id: int) -> dict[str, str]:
     return {"X-Company-Id": str(company_id)}
 
 
-def _create_company(client, name: str, gst: str = "") -> int:
+def _create_company(client, name: str, gst: str = "27ABCDE1234F1Z0") -> int:
     response = client.post("/api/company/companies", json=_company_payload(name, gst))
     assert response.status_code == 200, response.text
     return response.json()["id"]

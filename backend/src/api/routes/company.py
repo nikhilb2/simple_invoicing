@@ -45,6 +45,8 @@ from src.schemas.company import (
 
 router = APIRouter()
 
+GSTIN_REQUIRED_MESSAGE = "Enter your GSTIN, the 15-character number on your GST registration."
+
 
 def _get_max_companies(db: Session) -> int:
     settings_row = db.query(GlobalSettings).filter(GlobalSettings.id == 1).first()
@@ -67,13 +69,20 @@ def _get_company_creation_capability(db: Session, user: User) -> CompanyCreation
     )
 
 
+def _require_gstin() -> None:
+    raise HTTPException(
+        status_code=422,
+        detail={"message": GSTIN_REQUIRED_MESSAGE, "errors": [{"field": "gst", "message": GSTIN_REQUIRED_MESSAGE}]},
+    )
+
+
 def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> CompanyProfile:
     profile = CompanyProfile(
         name=payload.name.strip(),
         address=payload.address.strip(),
         gst=payload.gst.strip().upper(),
         phone_number=payload.phone_number.strip(),
-        currency_code=payload.currency_code.strip().upper() if payload.currency_code else "USD",
+        currency_code=payload.currency_code.strip().upper() if payload.currency_code else "INR",
         email=payload.email.strip() if payload.email else None,
         website=payload.website.strip() if payload.website else None,
         bank_name=payload.bank_name.strip() if payload.bank_name else None,
@@ -130,7 +139,7 @@ def _create_blank_company_profile(db: Session) -> CompanyProfile:
         address="",
         gst="",
         phone_number="",
-        currency_code="USD",
+        currency_code="INR",
         email="",
         website="",
         bank_name="",
@@ -249,6 +258,9 @@ def create_company_profile(
             raise HTTPException(status_code=403, detail="Insufficient permissions")
     elif current_user.role not in (UserRole.admin, UserRole.manager):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    if not payload.gst:
+        _require_gstin()
 
     cap = _get_company_creation_capability(db, current_user)
     if not cap.can_create_company:
@@ -373,11 +385,20 @@ def upsert_company_profile(
     # browser event drew with `is_initial_setup`.
     is_initial_setup = not (profile.name or "").strip()
 
+    # A company set up before GSTIN became mandatory can still save without one, so
+    # nobody is locked out of their settings. Anything else needs it, and once on
+    # record it cannot be blanked.
+    set_up_without_gstin = bool(
+        (profile.name or "").strip() and (profile.address or "").strip() and not (profile.gst or "").strip()
+    )
+    if not payload.gst and not set_up_without_gstin:
+        _require_gstin()
+
     profile.name = payload.name.strip()
     profile.address = payload.address.strip()
     profile.gst = payload.gst.strip().upper()
     profile.phone_number = payload.phone_number.strip()
-    profile.currency_code = payload.currency_code.strip().upper() if payload.currency_code else "USD"
+    profile.currency_code = payload.currency_code.strip().upper() if payload.currency_code else "INR"
     profile.email = payload.email.strip() if payload.email else None
     profile.website = payload.website.strip() if payload.website else None
     profile.bank_name = payload.bank_name.strip() if payload.bank_name else None

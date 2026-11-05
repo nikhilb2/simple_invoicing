@@ -65,6 +65,7 @@ test.describe('Catalogue', () => {
     await modal.locator('#product-sku').fill(sku);
     await modal.locator('#product-name').fill('Duplicate Attempt');
     await modal.locator('#product-price').fill('20');
+    await modal.locator('#product-gst').selectOption('5');
     await modal.getByRole('button', { name: 'Create product' }).click();
 
     // Reported inside the form, and the form keeps everything that was typed.
@@ -82,13 +83,14 @@ test.describe('Catalogue', () => {
     await modal.locator('#product-sku').fill(sku);
     await modal.locator('#product-name').fill(`GST Test ${sku}`);
     await modal.locator('#product-price').fill('100');
-    await modal.locator('#product-gst').fill('150');
+    await modal.locator('#product-gst').selectOption({ label: 'Other rate…' });
+    await modal.locator('#product-gst-other').fill('150');
     await modal.getByRole('button', { name: 'Create product' }).click();
 
     // max="100" makes this a constraint violation, so the submit never leaves
     // the browser and the modal stays put with nothing created.
     const gstValid = await modal
-      .locator('#product-gst')
+      .locator('#product-gst-other')
       .evaluate((input) => (input as HTMLInputElement).checkValidity());
     expect(gstValid).toBe(false);
     await expect(modal).toBeVisible();

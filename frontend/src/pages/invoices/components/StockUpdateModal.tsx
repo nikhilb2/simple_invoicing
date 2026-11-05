@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import ModalCloseButton from '../../../components/ModalCloseButton';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api, { getApiErrorMessage } from '../../../api/client';
@@ -20,17 +20,37 @@ function createInitialStockForm(): StockFormState {
 export default function StockUpdateModal() {
   const queryClient = useQueryClient();
   const showStockUpdateModal = useInvoiceComposerStore((state) => state.showStockUpdateModal);
+  const stockUpdateStart = useInvoiceComposerStore((state) => state.stockUpdateStart);
+  const setStockShortage = useInvoiceComposerStore((state) => state.setStockShortage);
   const closeStockUpdateModal = useInvoiceComposerStore((state) => state.closeStockUpdateModal);
   const setFeedbackError = useInvoiceComposerStore((state) => state.setFeedbackError);
   const setFeedbackSuccess = useInvoiceComposerStore((state) => state.setFeedbackSuccess);
   const [stockForm, setStockForm] = useState<StockFormState>(createInitialStockForm());
   const [stockSubmitting, setStockSubmitting] = useState(false);
+  // Shown inside the dialog, because the page toast sits behind the overlay.
+  const [stockError, setStockError] = useState('');
   const productsQuery = useQuery({
     queryKey: invoiceQueryKeys.products,
     queryFn: fetchProducts,
     enabled: showStockUpdateModal,
   });
   const products = productsQuery.data ?? [];
+
+  /* Opened from a "not enough stock" error: start on that product, asking for
+     the units that were missing. */
+  useEffect(() => {
+    if (showStockUpdateModal && stockUpdateStart) {
+      setStockForm({
+        ...createInitialStockForm(),
+        productId: String(stockUpdateStart.productId),
+        adjustment: String(stockUpdateStart.quantity),
+      });
+    }
+  }, [showStockUpdateModal, stockUpdateStart]);
+
+  useEffect(() => {
+    setStockError('');
+  }, [showStockUpdateModal]);
 
   useEscapeClose(() => {
     if (showStockUpdateModal) {
@@ -44,9 +64,15 @@ export default function StockUpdateModal() {
     try {
       setStockSubmitting(true);
       setFeedbackError('');
+      setStockError('');
 
       const productId = Number(stockForm.productId);
       const quantity = Number(stockForm.adjustment);
+
+      if (quantity === 0) {
+        setStockError('Enter how many units to add or remove. 0 does not change your stock.');
+        return;
+      }
 
       const selectedProduct = products.find((product) => product.id === productId);
       if (selectedProduct && !selectedProduct.maintain_inventory) {
@@ -71,7 +97,12 @@ export default function StockUpdateModal() {
       await api.post('/inventory/adjust', payload);
       setStockForm(createInitialStockForm());
       closeStockUpdateModal();
-      setFeedbackSuccess('Stock updated successfully.');
+      setStockShortage(null);
+      setFeedbackSuccess(
+        stockUpdateStart
+          ? 'Stock added. Your invoice is still filled in, so you can create it now.'
+          : 'Stock updated successfully.',
+      );
       await queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
     } catch (err) {
       setFeedbackError(getApiErrorMessage(err, 'Unable to update stock'));
@@ -138,6 +169,7 @@ export default function StockUpdateModal() {
               required
             />
           </div>
+          {stockError ? <div className="form-error" role="alert">{stockError}</div> : null}
           <div className="field-hint">
             Use positive numbers to increase stock, negative numbers (like -5) to decrease stock.
           </div>

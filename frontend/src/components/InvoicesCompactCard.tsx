@@ -1,8 +1,9 @@
-import { Eye, Pencil, RotateCcw, Trash2, FileText, Copy } from 'lucide-react';
+import { Eye, Pencil, RotateCcw, Trash2, FileMinus, Copy } from 'lucide-react';
 import type { Invoice } from '../types/api';
 import formatCurrency, { plural } from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import OverdueBadge from './OverdueBadge';
+import { canRecordPayment } from '../utils/invoicePayment';
 
 interface InvoicesCompactCardProps {
   invoice: Invoice;
@@ -13,9 +14,10 @@ interface InvoicesCompactCardProps {
   onRestore?: (invoice: Invoice) => void;
   onCreditNote?: (invoice: Invoice) => void;
   onDuplicate?: (invoice: Invoice) => void;
+  onRecordPayment?: (invoice: Invoice) => void;
 }
 
-  export default function InvoicesCompactCard({ invoice, currencyCode, onPreview, onEdit, onCancel, onRestore, onCreditNote, onDuplicate }: InvoicesCompactCardProps) {
+  export default function InvoicesCompactCard({ invoice, currencyCode, onPreview, onEdit, onCancel, onRestore, onCreditNote, onDuplicate, onRecordPayment }: InvoicesCompactCardProps) {
   const isCredit = invoice.voucher_type === 'purchase';
   const isCancelled = invoice.status === 'cancelled';
 
@@ -88,7 +90,7 @@ interface InvoicesCompactCardProps {
           <div className="invoice-compact-card__side">
             <div>
               <div className="invoice-compact-card__meta">
-              {isCredit ? 'Credit' : 'Debit'}
+              {isCredit ? 'Credit (Purchase)' : 'Debit (Sales)'}
             </div>
               <div className={`invoice-compact-card__amount invoice-compact-card__amount--${invoice.voucher_type}`}>
               {formatCurrency(invoice.total_amount, invoice.company_currency_code || currencyCode)}
@@ -102,31 +104,44 @@ interface InvoicesCompactCardProps {
 
           {/* Action Buttons */}
             <div className="invoice-compact-card__actions">
+            {onRecordPayment && canRecordPayment(invoice) ? (
+              <button
+                type="button"
+                className="button button--secondary button--small"
+                onClick={() => onRecordPayment(invoice)}
+                aria-label={`Record payment for invoice ${invoice.invoice_number || `#${invoice.id}`}`}
+              >
+                Record payment
+              </button>
+            ) : null}
             <button
                 type="button"
               onClick={() => onPreview(invoice)}
                 className="button button--ghost button--icon"
               title="Preview"
+              aria-label={`Preview invoice ${invoice.invoice_number}`}
             >
-              <Eye size={16} />
+              <Eye size={16} aria-hidden="true" />
             </button>
             {!isCancelled && (
               <>
                 <button
                     type="button"
                     className="button button--ghost button--icon"
-                  title="Create credit note"
+                  title="Create credit note (reduce this invoice, for a return or correction)"
+                  aria-label={`Create credit note for invoice ${invoice.invoice_number}`}
                   onClick={() => onCreditNote?.(invoice)}
                 >
-                  <FileText size={16} />
+                  <FileMinus size={16} aria-hidden="true" />
                 </button>
                 <button
                     type="button"
                     className="button button--ghost button--icon"
                   title="Edit"
+              aria-label={`Edit invoice ${invoice.invoice_number}`}
                   onClick={() => onEdit?.(invoice)}
                 >
-                  <Pencil size={16} />
+                  <Pencil size={16} aria-hidden="true" />
                 </button>
               </>
             )}
@@ -135,9 +150,10 @@ interface InvoicesCompactCardProps {
                   type="button"
                   className="button button--ghost button--icon"
                 title="Restore"
+              aria-label={`Restore invoice ${invoice.invoice_number}`}
                 onClick={() => onRestore?.(invoice)}
               >
-                <RotateCcw size={16} />
+                <RotateCcw size={16} aria-hidden="true" />
               </button>
             )}
             {!isCancelled && (
@@ -146,17 +162,19 @@ interface InvoicesCompactCardProps {
                     type="button"
                     className="button button--ghost button--icon"
                   title="Duplicate invoice"
+                  aria-label={`Duplicate invoice ${invoice.invoice_number}`}
                   onClick={() => onDuplicate?.(invoice)}
                 >
-                  <Copy size={16} />
+                  <Copy size={16} aria-hidden="true" />
                 </button>
                 <button
                     type="button"
                     className="button button--ghost button--icon"
                   title="Cancel"
+              aria-label={`Cancel invoice ${invoice.invoice_number}`}
                   onClick={() => onCancel?.(invoice)}
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={16} aria-hidden="true" />
                 </button>
               </>
             )}

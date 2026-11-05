@@ -129,3 +129,16 @@ def test_due_date_sort_handles_missing_dates_last_with_stable_ids():
     ]
     ordered = _sort_due_invoices(invoices, {}, "due-date-asc")
     assert [invoice.id for invoice in ordered] == [2, 1, 4]
+
+
+def test_due_date_sort_uses_the_invoice_date_when_there_is_no_due_date():
+    from src.api.routes.invoices import _sort_due_invoices
+
+    invoices = [
+        Invoice(id=1, due_date=datetime(2026, 3, 10), invoice_date=datetime(2026, 1, 1)),
+        Invoice(id=2, due_date=None, invoice_date=datetime(2026, 3, 5)),
+        Invoice(id=3, due_date=datetime(2026, 3, 1), invoice_date=datetime(2026, 1, 1)),
+        Invoice(id=4, due_date=None, invoice_date=None),
+    ]
+    ordered = _sort_due_invoices(invoices, {}, "due-date-asc")
+    assert [invoice.id for invoice in ordered] == [3, 2, 1, 4]

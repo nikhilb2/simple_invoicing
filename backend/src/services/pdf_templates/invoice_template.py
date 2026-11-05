@@ -133,7 +133,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
 
     company_detail_parts = []
     if invoice.company_gst:
-        company_detail_parts.append(f"GST: {_e(invoice.company_gst)}")
+        company_detail_parts.append(f"GSTIN: {_e(invoice.company_gst)}")
         company_pan = _extract_pan_from_gstin(invoice.company_gst)
         if company_pan:
             company_detail_parts.append(f"PAN: {_e(company_pan)}")
@@ -151,7 +151,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     # Bill-to details
     billto_parts = []
     if invoice.ledger_gst:
-        billto_parts.append(f"GST: {_e(invoice.ledger_gst)}")
+        billto_parts.append(f"GSTIN: {_e(invoice.ledger_gst)}")
         billto_pan = _extract_pan_from_gstin(invoice.ledger_gst)
         if billto_pan:
             billto_parts.append(f"PAN: {_e(billto_pan)}")
@@ -193,6 +193,14 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     invoice_discount_label = _build_invoice_discount_html(invoice, currency)
     tax_breakup_rows = _build_pdf_tax_breakup_rows(invoice, currency)
     payment_details_html = _build_pdf_payment_details_html(invoice_bank_accounts, pay_qr_html)
+    payment_section_html = (
+        f"""<div class="invoice-sheet__payment">
+      <p class="eyebrow">Payment details</p>
+      {payment_details_html}
+    </div>"""
+        if payment_details_html
+        else ""
+    )
     reference_notes_html = ""
     if invoice.reference_notes:
         reference_notes_html = f"""
@@ -462,6 +470,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     line-height: 1.35;
   }}
   .invoice-sheet__totals {{
+    margin-left: auto;
     flex: 0 0 230px;
     text-align: right;
   }}
@@ -589,10 +598,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
   </section>
 
   <section class="invoice-sheet__footer">
-    <div class="invoice-sheet__payment">
-      <p class="eyebrow">Payment details</p>
-      {payment_details_html}
-    </div>
+    {payment_section_html}
     <div class="invoice-sheet__totals">
       <p class="eyebrow">Tax breakup</p>
       <p>Taxable: {_fmt_currency(float(invoice.taxable_amount or 0), currency)}</p>

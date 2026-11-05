@@ -299,7 +299,7 @@ test.describe('E-Way Bill file and rules', () => {
       await staff.goto('/login');
       await staff.fill('#email', email);
       await staff.fill('#password', 'Staff@12345');
-      await staff.click('button:has-text("Open dashboard")');
+      await staff.getByRole('button', { name: 'Sign in', exact: true }).click();
       await expect(staff).toHaveURL('/');
       const modal = await openForm(staff, invoice.invoice_number);
       await expect(modal.getByRole('button', { name: 'Generate JSON' })).toBeVisible();

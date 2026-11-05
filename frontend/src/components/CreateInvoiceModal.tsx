@@ -16,6 +16,7 @@ import PlaceOfSupplyField from './PlaceOfSupplyField';
 import { invoiceDraftSnapshot } from '../utils/invoiceDraft';
 import ProductCombobox from './ProductCombobox';
 import LedgerCombobox from './LedgerCombobox';
+import { readStockShortage, type StockShortage } from '../features/invoices/stockShortage';
 import SerialChips from '../pages/invoices/components/SerialChips';
 
 type ModalInvoiceFormItem = {
@@ -68,6 +69,7 @@ export default function CreateInvoiceModal({
   const [nextItemId, setNextItemId] = useState(2);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [stockShortage, setStockShortage] = useState<StockShortage | null>(null);
   const [currencyCode, setCurrencyCode] = useState('INR');
   const [companyGst, setCompanyGst] = useState<string | null>(null);
   const [pristineSnapshot, setPristineSnapshot] = useState<string | null>(null);
@@ -89,14 +91,6 @@ export default function CreateInvoiceModal({
         setCurrencyCode(companyRes.data.currency_code || 'INR');
         setCompanyGst(companyRes.data.gst || null);
 
-        if (!preselectedLedgerId && ledgersRes.data.items.length > 0) {
-          setSelectedLedgerId(String(ledgersRes.data.items[0].id));
-        }
-
-        const defaultProduct = productsRes.data.items[0];
-        if (defaultProduct) {
-          setItems([createItem(1, String(defaultProduct.id), String(defaultProduct.price))]);
-        }
       } catch (err) {
         onError(getApiErrorMessage(err, 'Unable to load form data'));
       } finally {
@@ -128,8 +122,7 @@ export default function CreateInvoiceModal({
   });
 
   function addItem() {
-    const defaultProduct = products[0];
-    setItems((c) => [...c, createItem(nextItemId, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))]);
+    setItems((c) => [...c, createItem(nextItemId)]);
     setNextItemId((c) => c + 1);
   }
 
@@ -164,6 +157,7 @@ export default function CreateInvoiceModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setStockShortage(null);
     try {
       setSubmitting(true);
       const payload: InvoiceCreate = {
@@ -197,6 +191,7 @@ export default function CreateInvoiceModal({
           : undefined;
       onCreated(msg, warningMsg, res.data);
     } catch (err) {
+      setStockShortage(readStockShortage(err));
       onError(getApiErrorMessage(err, 'Unable to create invoice'));
     } finally {
       setSubmitting(false);
@@ -498,6 +493,20 @@ export default function CreateInvoiceModal({
                   );
                 })}
               </div>
+
+              {stockShortage ? (
+                <div className="form-error stock-shortage" role="alert" data-testid="stock-shortage">
+                  <p style={{ margin: 0 }}>
+                    Only {stockShortage.available} of {stockShortage.productName} in stock, and this invoice needs {stockShortage.required}.
+                  </p>
+                  <p style={{ margin: '4px 0 0' }}>
+                    <a href="/catalogue" target="_blank" rel="noopener" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
+                      Open catalogue to add stock
+                    </a>
+                    . Then come back here and press Create invoice again; your form stays as it is.
+                  </p>
+                </div>
+              ) : null}
 
               <div className="button-row">
                 <button type="button" className="button button--ghost" onClick={addItem} disabled={products.length === 0} title="Add line item" aria-label="Add line item">

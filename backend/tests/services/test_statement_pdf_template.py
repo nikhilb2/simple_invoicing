@@ -100,18 +100,18 @@ class TestLedgerDetailsLine:
     def test_appends_the_ledger_email(self):
         html = render()
         assert (
-            "GST: 29ABCDE1234F1ZW &middot; Phone: 9899001009 &middot; books@acme.in"
+            "GSTIN: 29ABCDE1234F1ZW &middot; Phone: 9899001009 &middot; books@acme.in"
             in html
         )
 
     def test_omits_a_stray_separator_when_the_email_is_unset(self):
         html = render(ledger=make_ledger(email=None))
-        assert "GST: 29ABCDE1234F1ZW &middot; Phone: 9899001009" in html
+        assert "GSTIN: 29ABCDE1234F1ZW &middot; Phone: 9899001009" in html
         assert "9899001009 &middot; </p>" not in html
 
-    def test_email_alone_carries_no_bare_gst_label(self):
+    def test_email_alone_carries_no_bare_gstin_label(self):
         html = render(ledger=make_ledger(gst=None, phone_number=None))
-        # The whole paragraph is the email — no leftover "GST: " or "Phone: ".
+        # The whole paragraph is the email — no leftover "GSTIN: " or "Phone: ".
         assert ">books@acme.in</p>" in html
 
 

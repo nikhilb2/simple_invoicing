@@ -10,6 +10,8 @@ Active sales invoices with money still owing. Purchases, cancelled invoices and 
 
 The remaining amount is the invoice total, less credit notes, less payments **allocated to that invoice**.
 
+An invoice with no due date, such as a marketplace sale, counts as due on its invoice date. Each row shows the invoice in its own currency, even if you have since changed your company's currency.
+
 ::: warning Allocate your receipts
 A receipt recorded without [allocating it to an invoice](./cash-bank#record-a-receipt-against-invoices) does not reduce the amount here, even though the customer has paid.
 :::
@@ -18,16 +20,17 @@ If a party owes you and you also owe them on purchase invoices, the row notes th
 
 ## Choose what to see
 
-The page opens on **Overdue**, which means due before today. Also available are **Next 7 days**, **Next 15 days**, **Custom days**, **Exact date** and **All dues**.
+The page opens on **All dues**. Also available are **Overdue**, which means due before today, **Next 7 days**, **Next 15 days**, **Custom days** and **Exact date**.
 
 You can narrow by **Ledger**, search, and sort by amount, oldest due date or customer name. **Reset filters** clears everything.
 
-The **Receivables ageing** strip groups the money into not yet due, 1 to 30, 31 to 60, 61 to 90 and over 90 days overdue. It follows your filters, so choose **All dues** to see the complete picture.
+The **Receivables ageing** strip groups the money into not yet due, 1 to 30, 31 to 60, 61 to 90 and over 90 days overdue. It follows your **Ledger** and search filters, but not the choice of period, so it always covers everything still owing.
 
 ## Chase a payment
 
 Each row has these buttons:
 
+- **Record payment**: records money received against this invoice.
 - **WhatsApp**: opens a chat with a polite reminder ready to send. It appears when the ledger has a usable phone number.
 - **Ledger**: opens the party's statement, where **Send Reminder** emails one party.
 - **View**: previews the invoice.

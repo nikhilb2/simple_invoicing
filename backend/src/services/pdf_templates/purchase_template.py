@@ -102,7 +102,7 @@ def _build_purchase_invoice_html(
     # Supplier details are stored as ledger_* (buyer_* in DB) on purchase invoices
     supplier_detail_parts = []
     if invoice.ledger_gst:
-        supplier_detail_parts.append(f"GST: {_e(invoice.ledger_gst)}")
+        supplier_detail_parts.append(f"GSTIN: {_e(invoice.ledger_gst)}")
         supplier_pan = _extract_pan_from_gstin(invoice.ledger_gst)
         if supplier_pan:
             supplier_detail_parts.append(f"PAN: {_e(supplier_pan)}")
@@ -123,7 +123,7 @@ def _build_purchase_invoice_html(
 
     company_detail_parts = []
     if invoice.company_gst:
-        company_detail_parts.append(f"GST: {_e(invoice.company_gst)}")
+        company_detail_parts.append(f"GSTIN: {_e(invoice.company_gst)}")
         company_pan = _extract_pan_from_gstin(invoice.company_gst)
         if company_pan:
             company_detail_parts.append(f"PAN: {_e(company_pan)}")

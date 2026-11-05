@@ -171,7 +171,7 @@ export default function CataloguePage() {
       .catch(() => setCompany(null));
   }, []);
 
-  const currencyCode = company?.currency_code || 'USD';
+  const currencyCode = company?.currency_code || 'INR';
 
   function setParams(next: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams);

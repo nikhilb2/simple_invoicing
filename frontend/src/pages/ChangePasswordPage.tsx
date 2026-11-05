@@ -5,6 +5,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import { useAuthStore } from '../store/useAuthStore';
 import StatusToasts from '../components/StatusToasts';
 import type { ChangePasswordRequest, ChangePasswordResponse } from '../types/api';
+import { COMMON_PASSWORD_MESSAGE, isCommonPassword } from '../utils/verifyEmailForm';
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -31,7 +32,10 @@ export default function ChangePasswordPage() {
     numberOrSymbol: /[0-9\W_]/.test(newPassword),
   };
 
-  const completedChecks = Object.values(checks).filter(Boolean).length;
+  // A password on the common list is refused whatever it contains, so the
+  // meter scores it as the weakest.
+  const tooCommon = isCommonPassword(newPassword);
+  const completedChecks = tooCommon ? 0 : Object.values(checks).filter(Boolean).length;
   const strengthLabels = ['Very weak', 'Weak', 'Fair', 'Strong', 'Very strong'];
   const strengthClassByScore = [
     'change-password-strength__fill--very-weak',
@@ -54,6 +58,12 @@ export default function ChangePasswordPage() {
 
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       setError(`New password must be at least ${MIN_PASSWORD_LENGTH} characters long`);
+      setSuccess(undefined);
+      return;
+    }
+
+    if (isCommonPassword(newPassword)) {
+      setError(COMMON_PASSWORD_MESSAGE);
       setSuccess(undefined);
       return;
     }
@@ -182,6 +192,7 @@ export default function ChangePasswordPage() {
                   </div>
                   <span className="change-password-strength__label">Strength: {strengthLabel}</span>
                 </div>
+                {tooCommon ? <small className="field-error" role="alert">{COMMON_PASSWORD_MESSAGE}</small> : null}
                 <small className="field-hint">Minimum {MIN_PASSWORD_LENGTH} characters.</small>
               </div>
 

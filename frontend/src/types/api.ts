@@ -911,6 +911,17 @@ export type DetailResponse = {
   detail: string;
 };
 
+export type VerifyEmailDetails = {
+  full_name: string;
+};
+
+export type VerifyEmailResponse = {
+  detail: string;
+  access_token?: string | null;
+  refresh_token?: string | null;
+  token_type?: string | null;
+};
+
 export type ChangePasswordRequest = {
   current_password?: string;
   new_password: string;

@@ -10,8 +10,8 @@
 |---|---|
 | **Company name** | Required. |
 | **Address** | Required. |
-| **GST** | Your GSTIN. Optional, but needed to export GSTR-1 and join the marketplace. Format, state code and check digit are checked. |
-| **Currency** | Starts on USD. Choose **INR - Indian Rupee**. USD, EUR, GBP and AED are also available. |
+| **GSTIN** | Required. A company set up before this became mandatory can keep saving without one, but needs it to export GSTR-1 and join the marketplace. Once saved, it cannot be blanked. Format, state code and check digit are checked. |
+| **Currency** | Starts on **INR - Indian Rupee**. USD, EUR, GBP and AED are also available. If you change it after creating invoices, the app asks you to confirm. Those invoices stay in the old currency and their amounts are not converted. Only new invoices use the new one. |
 | **Phone number**, **Email**, **Website** | Optional, shown on your documents. |
 
 Options below the form:
@@ -35,6 +35,8 @@ This text appears below the logo on all PDFs. Use it for taglines, registration 
 ## Bank details
 
 Bank details live with your accounts, not on this page. Go to **Sales → Cash & Bank → Manage Account**, or click **Manage cash & bank accounts** here. Only accounts with **Display on invoice PDF** ticked appear on invoices. See [Cash and bank](../sales/cash-bank#bank-and-cash-accounts).
+
+If no account is displayed, the invoice preview tells you that customers cannot see where to pay. That note does not appear on the PDF.
 
 ## Invoice Terms
 

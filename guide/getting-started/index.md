@@ -9,27 +9,25 @@ Simple Invoicing runs in your browser on a laptop or phone, with nothing to inst
 1. Open the [sign-up page](https://app.simpleinvoicings.com/register).
 2. Enter your **Full name** and **Email**, then click **Create account**. Or click **Sign up with Google** and skip to step 2.
 3. Open the link we email you. It is valid for 24 hours.
-4. Enter **Your name** and a **Password** of at least 8 characters, then click **Confirm email and set password**.
-5. Sign in.
+4. Check **Your name**, which is filled in from sign-up, and choose a **Password** of at least 8 characters. Common passwords are refused. Click **Confirm email and set password**.
+5. If you opened the link in the browser you signed up with, within 10 minutes, you are signed in straight away. Otherwise click **Continue to sign in**.
 
 ![The sign-up page](/screens/register.webp)
 
-If no email arrives, check your spam folder. The **Resend verification email** button sends another link.
+If no email arrives, check your spam folder. The **Resend verification email** button sends another link. If you already have an account with this address, no new link is sent, so sign in or reset your password.
 
 ## 2. Set up your company
 
-The first time you sign in, the app asks for your company details. Enter at least the **Company name** and **Address**. Add your **GST** number if you have one, and:
-
-::: warning Change the currency to INR
-**Currency** starts on USD. Choose **INR - Indian Rupee** before you save.
-:::
+The first time you sign in, the app asks for your company details. Enter at least the **Company name**, **Address** and **GSTIN**. **Currency** starts on **INR - Indian Rupee**.
 
 Click **Save company details**. You can then adjust how invoices are numbered, or choose **Skip for now**. [Company setup](./company-setup) covers every option, including your logo, bank details and terms.
+
+The dashboard then shows a **Get started** checklist with the next steps below. It goes away once you have created an invoice, or you can hide it.
 
 ## 3. Add a customer
 
 1. Click **Ledgers** in the sidebar, then **Create ledger**.
-2. Enter the **Ledger name**, **Phone number** and **Address**, and the customer's **GST** number if they have one.
+2. Enter the **Ledger name**, **Phone number** and **Address**, and the customer's **GSTIN** if they have one.
 3. Click **Create ledger**.
 
 The GSTIN decides how tax is split, so enter it carefully. See [Ledgers](../ledgers/).
@@ -37,8 +35,8 @@ The GSTIN decides how tax is split, so enter it carefully. See [Ledgers](../ledg
 ## 4. Add a product
 
 1. Go to **Catalogue → Products & Stock** and click **New product**.
-2. Enter the **SKU**, **Product name**, **Selling price**, **GST rate (%)** and **HSN / SAC**.
-3. Enter the **Opening quantity**. For a service, untick **Maintain stock for this product**.
+2. Enter the **SKU**, **Product name**, **Selling price**, **GST rate** and **HSN / SAC**.
+3. Enter how many you have now. For a service, untick **Maintain stock for this product**.
 4. Click **Create product**.
 
 See [Products and stock](../catalogue/products).
@@ -56,7 +54,7 @@ Stock falls and the amount appears on the customer's ledger straight away. See [
 
 From the invoice preview, download the PDF, email it, or share a link on WhatsApp. See [Send and share](../sales/sending).
 
-When the money arrives, record it from the customer's ledger with **Record Receipt / Payment**. See [Cash and bank](../sales/cash-bank).
+When the money arrives, click **Record payment** on the invoice. See [Cash and bank](../sales/cash-bank).
 
 ## What to read next
 

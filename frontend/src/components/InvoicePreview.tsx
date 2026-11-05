@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Copy, Download, FileJson, Mail, Printer, Share2 } from 'lucide-react';
+import { Check, Copy, Download, FileJson, IndianRupee, Mail, Printer, Share2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
-import type { EwayBillSettings, Invoice } from '../types/api';
+import type { CompanyAccount, EwayBillSettings, Invoice } from '../types/api';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import { copyTextToClipboard } from '../utils/clipboard';
 import formatCurrency from '../utils/formatting';
@@ -12,17 +12,29 @@ import EwayBillModal from './EwayBillModal';
 import ShareModal from './ShareModal';
 import PreviewToolbar from './PreviewToolbar';
 import CopiesStepper from './CopiesStepper';
+import ReceiptModal from './ReceiptModal';
+import { canRecordPayment } from '../utils/invoicePayment';
+import { lacksInvoiceBankDetails } from '../utils/invoiceBankNotice';
+import BankDetailsNotice from './BankDetailsNotice';
+import { useAuth } from '../context/AuthContext';
 
 type InvoicePreviewProps = {
   invoice: Invoice;
   onClose: () => void;
   onError?: (message: string) => void;
+  /**
+   * Offers "Record payment" on unpaid sales invoices. Saving closes the preview
+   * and calls this so the page behind can reload; without it the action is
+   * left out, since the figures behind the preview would go stale.
+   */
+  onPaymentRecorded?: (message: string) => void;
 };
 
-export default function InvoicePreview({ invoice, onClose, onError }: InvoicePreviewProps) {
+export default function InvoicePreview({ invoice, onClose, onError, onPaymentRecorded }: InvoicePreviewProps) {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showEwayBillModal, setShowEwayBillModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copies, setCopies] = useState(1);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -50,8 +62,8 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
     // Escape closes the open menu first, then the preview -- otherwise opening
     // the menu and hitting Escape would dismiss the whole dialog underneath it.
     if (menuOpen) { setMenuOpen(false); return; }
-    if (!showEmailModal && !showShareModal && !showEwayBillModal) onClose();
-  }, [menuOpen, showEmailModal, showShareModal, showEwayBillModal, onClose]));
+    if (!showEmailModal && !showShareModal && !showEwayBillModal && !showPaymentModal) onClose();
+  }, [menuOpen, showEmailModal, showShareModal, showEwayBillModal, showPaymentModal, onClose]));
 
   // Only sales invoices get a bill, so nothing else needs these settings.
   const ewayEligible = invoice.voucher_type === 'sales' && invoice.status === 'active';
@@ -63,6 +75,17 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
       .catch(() => {});
     return () => { isMounted = false; };
   }, [ewayEligible]);
+  const { isAdmin } = useAuth();
+  const [missingBank, setMissingBank] = useState(false);
+  useEffect(() => {
+    setMissingBank(false);
+    if (!ewayEligible || !isAdmin) return;
+    let isMounted = true;
+    api.get<CompanyAccount[]>('/company-accounts/')
+      .then((res) => { if (isMounted) setMissingBank(lacksInvoiceBankDetails(res.data)); })
+      .catch(() => {});
+    return () => { isMounted = false; };
+  }, [ewayEligible, isAdmin, invoice.id]);
   const ewayThreshold = Number(invoice.igst_amount) > 0
     ? ewaySettings?.eway_interstate_threshold
     : ewaySettings?.eway_local_threshold;
@@ -155,6 +178,7 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
   };
   // The backend reads voucher_type off the invoice, so one share button covers
   // both books — only the wording the customer reads has to change.
+  const showRecordPayment = Boolean(onPaymentRecorded) && canRecordPayment(invoice);
   const documentNoun = invoice.voucher_type === 'purchase' ? 'Purchase invoice' : 'Invoice';
 
   return (
@@ -224,6 +248,12 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
               onClick: handleDownloadPdf,
               title: 'Download invoice PDF',
             },
+            ...(showRecordPayment ? [{
+              label: 'Record payment',
+              icon: <IndianRupee size={16} aria-hidden="true" />,
+              onClick: () => setShowPaymentModal(true),
+              title: 'Record a payment received for this invoice',
+            }] : []),
             // A fourth button, past PreviewToolbar's usual three: people open the
             // preview to do this, and nobody found it behind the "…".
             ...(showEwayBill ? [{
@@ -239,6 +269,8 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
           onClose={onClose}
           closeLabel="Close invoice preview"
         />
+
+        {missingBank ? <BankDetailsNotice /> : null}
 
         <div className="invoice-pdf-viewer" aria-live="polite">
           {loadingPdf ? <p className="muted-text">Loading PDF preview...</p> : null}
@@ -293,6 +325,22 @@ export default function InvoicePreview({ invoice, onClose, onError }: InvoicePre
           onError={(message) => onError?.(message)}
         />
       )}
+
+      {showPaymentModal && invoice.ledger_id ? (
+        <ReceiptModal
+          ledgerId={invoice.ledger_id}
+          ledgerName={invoice.ledger?.name || invoice.ledger_name || 'customer'}
+          currencyCode={invoice.company_currency_code || 'INR'}
+          invoiceId={invoice.id}
+          onClose={() => setShowPaymentModal(false)}
+          onSuccess={(message) => {
+            setShowPaymentModal(false);
+            onClose();
+            onPaymentRecorded?.(message);
+          }}
+          onError={(message) => onError?.(message)}
+        />
+      ) : null}
 
       {showShareModal && (
         <ShareModal

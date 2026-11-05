@@ -199,6 +199,7 @@ def test_signup_routes_are_not_in_the_openapi_schema(client):
         "/api/auth/config",
         "/api/auth/register",
         "/api/auth/verify-email",
+        "/api/auth/verify-email/details",
         "/api/auth/resend-verification",
         "/api/auth/forgot-password",
         "/api/auth/reset-password",
@@ -396,8 +397,225 @@ def test_verify_validates_password_length(client, db_session, shared, outbox):
 
 
 # ---------------------------------------------------------------------------
+# Common passwords
+# ---------------------------------------------------------------------------
+
+COMMON_PASSWORD_MESSAGE = "too common"
+
+
+@pytest.mark.parametrize("password", ["password", "PASSWORD", "Password123", "12345678", "Admin@123"])
+def test_verify_refuses_a_common_password(client, db_session, shared, outbox, password):
+    _register(client)
+
+    response = _verify(client, _link_token(outbox[0], "/verify-email"), password)
+
+    assert response.status_code == 422
+    assert COMMON_PASSWORD_MESSAGE in response.json()["detail"][0]["msg"]
+    user = db_session.query(User).one()
+    assert user.email_verified_at is None
+    assert user.hashed_password is None
+
+
+def test_a_refused_common_password_leaves_the_link_usable(client, db_session, shared, outbox):
+    _register(client)
+    token = _link_token(outbox[0], "/verify-email")
+
+    assert _verify(client, token, "password").status_code == 422
+    assert _verify(client, token, "Chosen@1234").status_code == 200
+
+
+def test_reset_refuses_a_common_password(client, db_session, shared, outbox):
+    user = _user(db_session, password="OldPass@123")
+    client.post("/api/auth/forgot-password", json={"email": user.email})
+
+    response = client.post("/api/auth/reset-password", json={
+        "token": _link_token(outbox[-1], "/reset-password"), "new_password": "password123",
+    })
+
+    assert response.status_code == 422
+    assert COMMON_PASSWORD_MESSAGE in response.json()["detail"][0]["msg"]
+    db_session.refresh(user)
+    assert verify_password("OldPass@123", user.hashed_password)
+
+
+def test_change_password_refuses_a_common_password(client, db_session):
+    # conftest's current user is test@example.com.
+    user = _user(db_session, email="test@example.com", password="OldPass@123")
+
+    response = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "OldPass@123", "new_password": "Password1"},
+    )
+
+    assert response.status_code == 422
+    assert COMMON_PASSWORD_MESSAGE in response.json()["detail"][0]["msg"]
+    db_session.refresh(user)
+    assert verify_password("OldPass@123", user.hashed_password)
+
+
+def test_creating_a_user_refuses_a_common_password(client, db_session):
+    response = client.post("/api/users/", json={
+        "email": "staff@example.com", "full_name": "Staff", "password": "welcome123", "role": "staff",
+    })
+
+    assert response.status_code == 422
+    assert COMMON_PASSWORD_MESSAGE in response.json()["detail"][0]["msg"]
+    assert db_session.query(User).filter(User.email == "staff@example.com").count() == 0
+
+
+def test_an_account_with_a_common_password_can_still_sign_in(client, db_session):
+    _user(db_session, password="password123")
+
+    response = client.post("/api/auth/login", json={"email": "owner@example.com", "password": "password123"})
+
+    assert response.status_code == 200
+
+
+def test_common_password_lists_match_and_can_all_pass_the_length_check():
+    from pathlib import Path
+
+    from src.schemas.auth import COMMON_PASSWORDS
+
+    assert all(len(password) >= 8 and password == password.lower() for password in COMMON_PASSWORDS)
+
+    # Only in a checkout: the backend image does not carry the frontend.
+    form = Path(__file__).parents[3] / "frontend/src/utils/verifyEmailForm.ts"
+    if form.exists():
+        block = re.search(r"COMMON_PASSWORDS = new Set\(\[(.*?)\]\)", form.read_text(), re.S).group(1)
+        assert set(re.findall(r"'([^']+)'", block)) == COMMON_PASSWORDS
+
+
+# ---------------------------------------------------------------------------
 # Verify / resend
 # ---------------------------------------------------------------------------
+
+def _details(client, token):
+    return client.post("/api/auth/verify-email/details", json={"token": token})
+
+
+def test_link_details_offer_the_registered_name_and_change_nothing(client, db_session, shared, outbox):
+    _register(client, name="New Person")
+    token = _link_token(outbox[0], "/verify-email")
+
+    response = _details(client, token)
+
+    assert response.status_code == 200
+    assert response.json() == {"full_name": "New Person"}
+    user = db_session.query(User).one()
+    assert user.email_verified_at is None
+    assert user.hashed_password is None
+    # Reading it did not spend the link.
+    assert _verify(client, token).status_code == 200
+
+
+def test_link_details_offer_no_name_when_registration_gave_none(client, db_session, shared, outbox):
+    # A name of only spaces passes the length check and is stored as the address.
+    _register(client, name="   ")
+
+    response = _details(client, _link_token(outbox[0], "/verify-email"))
+
+    assert response.json() == {"full_name": ""}
+
+
+def test_link_details_refuse_a_dead_link(client, db_session, shared, outbox):
+    _register(client)
+    token = _link_token(outbox[0], "/verify-email")
+    assert _verify(client, token).status_code == 200
+
+    for dead in (token, "not-a-jwt"):
+        response = _details(client, dead)
+        assert response.status_code == 400
+        assert response.json()["detail"]["code"] == "invalid_token"
+
+
+def test_link_details_refuse_a_reset_token(client, db_session, shared, outbox):
+    user = _user(db_session, verified=False)
+    client.post("/api/auth/forgot-password", json={"email": user.email})
+
+    response = _details(client, _link_token(outbox[-1], "/reset-password"))
+
+    assert response.status_code == 400
+
+
+def test_the_browser_that_registered_is_signed_in(client, db_session, shared, outbox, events, real_auth):
+    _register(client)
+
+    response = _verify(client, _link_token(outbox[0], "/verify-email"))
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["token_type"] == "bearer"
+    # sessions_valid_after was set by this same request; the new pair must survive it.
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {body['access_token']}"})
+    assert me.status_code == 200
+    assert me.json()["email"] == "new@example.com"
+    assert me.json()["email_verified"] is True
+    assert client.post("/api/auth/refresh", json={"refresh_token": body["refresh_token"]}).status_code == 200
+    logged_in = _find(events, "user_logged_in")
+    assert len(logged_in) == 1
+    assert logged_in[0][2]["method"] == "email_link"
+
+
+def test_the_browser_that_asked_for_a_new_link_is_signed_in(client, db_session, shared, outbox):
+    _register(client)
+    client.cookies.clear()
+    client.post("/api/auth/resend-verification", json={"email": "NEW@example.com"})
+
+    response = _verify(client, _link_token(outbox[-1], "/verify-email"))
+
+    assert response.json()["access_token"]
+
+
+def test_a_link_opened_in_another_browser_does_not_sign_in(client, db_session, shared, outbox, events):
+    # Also the attack: someone registers their own address and sends a victim the link.
+    # The victim must not end up working inside an account the sender can reset.
+    _register(client)
+    client.cookies.clear()
+
+    response = _verify(client, _link_token(outbox[0], "/verify-email"))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "sign in" in body["detail"]
+    assert body["access_token"] is None
+    assert body["refresh_token"] is None
+    assert db_session.query(User).one().email_verified_at is not None
+    assert _find(events, "user_logged_in") == []
+
+
+def test_asking_for_a_link_for_one_address_does_not_sign_in_another(client, db_session, shared, outbox):
+    _register(client, email="sender@example.com")
+    senders_link = _link_token(outbox[-1], "/verify-email")
+    client.cookies.clear()
+    _register(client, email="victim@example.com")
+
+    response = _verify(client, senders_link)
+
+    assert response.status_code == 200
+    assert response.json()["access_token"] is None
+
+
+def test_the_browser_mark_is_spent_with_the_link(client, db_session, shared, outbox):
+    _register(client)
+    assert _verify(client, _link_token(outbox[0], "/verify-email")).json()["access_token"]
+
+    assert "si_oauth_state" not in client.cookies
+
+
+def test_registering_sets_the_same_cookie_for_a_known_or_new_address(client, db_session, shared, outbox):
+    _user(db_session, email="known@example.com")
+
+    known = _register(client, email="known@example.com")
+    client.cookies.clear()
+    new = _register(client, email="new@example.com")
+
+    assert known.status_code == new.status_code == 202
+    assert known.json() == new.json()
+    assert "si_oauth_state" in known.cookies
+    assert "si_oauth_state" in new.cookies
+    # The two values differ only in the hash of the address the caller typed.
+    assert len(known.cookies["si_oauth_state"]) == len(new.cookies["si_oauth_state"])
+
 
 def test_verify_email_link_verifies(client, db_session, shared, outbox, events):
     _register(client)

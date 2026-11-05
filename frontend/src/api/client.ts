@@ -199,9 +199,34 @@ const PLAIN_VALIDATION_MESSAGES: Record<string, string> = {
   date_from_datetime_parsing: 'must be a valid date',
 };
 
+// Field names that read badly when only capitalised ("Gst", "Hsn sac").
+const FIELD_WORDS: Record<string, string> = {
+  gst: 'GSTIN',
+  gstin: 'GSTIN',
+  hsn_sac: 'HSN/SAC',
+  pan: 'PAN',
+  ifsc: 'IFSC',
+  upi: 'UPI',
+  pincode: 'PIN code',
+  pin: 'PIN',
+  id: 'ID',
+};
+
 function fieldLabel(field: string) {
-  const words = field.replace(/_/g, ' ').trim();
+  const known = FIELD_WORDS[field];
+  if (known) return known;
+  const words = field
+    .split('_')
+    .map((word) => FIELD_WORDS[word] ?? word)
+    .join(' ')
+    .trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** "Invalid GSTIN format" already names the field; "Gst: Invalid GSTIN format" says it twice. */
+function describeFieldError(field: string, text: string) {
+  const label = fieldLabel(field);
+  return text.toLowerCase().includes(label.toLowerCase()) ? text : `${label}: ${text}`;
 }
 
 /** FastAPI's own 422: `detail` is a list of {loc, msg, type}. */
@@ -215,7 +240,7 @@ function readValidationList(detail: unknown[]): ApiFieldError[] {
     const text = item.msg.replace(/^Value error, /, '');
     const plain = typeof item.type === 'string' ? PLAIN_VALIDATION_MESSAGES[item.type] : undefined;
     if (!field) return [{ field: '', message: text }];
-    return [{ field, message: plain ? `${fieldLabel(field)} ${plain}.` : `${fieldLabel(field)}: ${text}` }];
+    return [{ field, message: plain ? `${fieldLabel(field)} ${plain}.` : describeFieldError(field, text) }];
   });
 }
 

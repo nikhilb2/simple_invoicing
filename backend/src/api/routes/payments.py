@@ -439,7 +439,7 @@ def _build_receipt_html(
     # Company detail line
     company_details_parts = []
     if company_gst:
-        company_details_parts.append(f"GST: {company_gst}")
+        company_details_parts.append(f"GSTIN: {company_gst}")
     if company_phone:
         company_details_parts.append(f"Ph: {company_phone}")
     if company_email:
@@ -449,7 +449,7 @@ def _build_receipt_html(
     # Ledger detail line
     ledger_details_parts = []
     if ledger_gst:
-        ledger_details_parts.append(f"GST: {ledger_gst}")
+        ledger_details_parts.append(f"GSTIN: {ledger_gst}")
     if ledger_phone:
         ledger_details_parts.append(f"Ph: {ledger_phone}")
     ledger_details = " &middot; ".join(ledger_details_parts)

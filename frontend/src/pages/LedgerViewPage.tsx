@@ -643,7 +643,7 @@ export default function LedgerViewPage() {
           <p className="eyebrow">Ledger statement</p>
           <h1 className="page-title">{ledger.name}</h1>
           <p className="section-copy">
-            {ledger.gst ? `GST: ${ledger.gst}` : null}
+            {ledger.gst ? `GSTIN: ${ledger.gst}` : null}
             {ledger.gst && ledger.phone_number?.trim() ? ' · ' : null}
             <LedgerPhoneLinks phone={ledger.phone_number} />
             {ledger.email ? ` · ${ledger.email}` : ''}

@@ -48,7 +48,7 @@ Only admins and managers can send email. On a self-hosted copy, it needs [mail s
 3. Edit the **Subject** and add a **Message** if you like.
 4. Click **Send Email**. The PDF is attached.
 
-When the send succeeds, the dialog just closes. To confirm, check [Email History](../settings/email#email-history).
+When the send succeeds, the dialog says **Invoice emailed to** *the address*. Click **Done**. Sent emails are also listed in [Email History](../settings/email#email-history).
 
 On the hosted version, emails come from "*Your company* via Simple Invoicings", replies go to your company email, and each company can send 50 emails in any 24 hours.
 
