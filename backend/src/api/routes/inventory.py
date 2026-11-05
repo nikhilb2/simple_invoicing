@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 from typing import Literal
 from decimal import Decimal
@@ -118,7 +118,7 @@ def adjust_inventory(
 def list_inventory(
     search: str = Query(""),
     maintain_inventory: bool | None = Query(None),
-    sort_by: Literal["name", "quantity", "date_added", "last_sold"] = Query("name"),
+    sort_by: Literal["name", "quantity", "date_added", "last_sold", "attention"] = Query("name"),
     sort_order: Literal["asc", "desc"] = Query("asc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=500),
@@ -166,7 +166,7 @@ def list_inventory(
 
     if sort_by == "name":
         order_col = Product.name
-    elif sort_by == "quantity":
+    elif sort_by in ("quantity", "attention"):
         order_col = quantity_expr
     elif sort_by == "date_added":
         order_col = Product.created_at
@@ -175,10 +175,25 @@ def list_inventory(
 
     total = query.count()
 
+    if sort_by == "attention":
+        # Match the dashboard metrics. Direction only changes quantity order
+        # within each group, so products needing attention always come first.
+        needs_attention = and_(
+            Product.maintain_inventory.is_(True),
+            or_(
+                quantity_expr <= 0,
+                and_(Product.reorder_level > 0, quantity_expr <= Product.reorder_level),
+            ),
+        )
+        query = query.order_by(case((needs_attention, 0), else_=1))
+
     if sort_order == "desc":
         query = query.order_by(order_col.desc().nulls_last())
     else:
         query = query.order_by(order_col.asc().nulls_last())
+
+    if sort_by == "attention":
+        query = query.order_by(Product.id)
 
     rows = query.offset((page - 1) * page_size).limit(page_size).all()
     items = [
