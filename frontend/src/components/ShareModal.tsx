@@ -32,9 +32,6 @@ type ShareModalProps = {
   onClose: () => void;
 };
 
-/* describeViews lives in features/share/describe.ts so the public-links dialog
-   can use the same wording; it is unchanged from here. */
-
 export default function ShareModal({
   resourceType,
   resourceId,

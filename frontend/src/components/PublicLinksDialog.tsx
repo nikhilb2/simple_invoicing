@@ -50,6 +50,7 @@ export default function PublicLinksDialog({ ledgerId, ledgerName, onClose }: Pub
       // share dialog's create-or-fetch POST again and mint a replacement.
       void queryClient.invalidateQueries({ queryKey: listKey });
     },
+    onError: () => setConfirmingRevoke(null),
   });
 
   useEffect(() => {
@@ -158,7 +159,7 @@ export default function PublicLinksDialog({ ledgerId, ledgerName, onClose }: Pub
           })}
 
           {copyError ? <p className="error-text share-link__error">{copyError}</p> : null}
-          {revokeError ? <p className="error-text share-link__error">{revokeError}</p> : null}
+          {revokeError ? <p className="error-text share-link__error" role="alert">{revokeError}</p> : null}
         </div>
       </div>
 

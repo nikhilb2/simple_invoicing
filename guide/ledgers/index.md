@@ -68,7 +68,7 @@ Receipts and payments show which invoices they settled, marked **Full**, **Parti
 
 The **Record Receipt / Payment** button records money in or out. See [Cash and bank](../sales/cash-bank).
 
-Its arrow opens **Send Reminder**, **Create Invoice**, **Create Credit Note** and **Share Statement**.
+Its arrow opens **Send Reminder**, **Create Invoice**, **Create Credit Note**, **Share Statement** and **Public Links**.
 
 ### Share or export a statement
 
@@ -78,6 +78,10 @@ Click **Preview / PDF**, which appears when the period has entries. You can then
 - **Export CSV**, with date, type, reference, debit, credit and running balance
 - **Email** the PDF for the period shown
 - **Share** a public link limited to that period, and send it on WhatsApp. You can revoke the link later
+
+### See or revoke public links
+
+**Public Links** lists every live statement link for this ledger, including links sent in payment reminders. You can copy or revoke a link. A revoked link stops opening for anyone who has it, including customers with an old reminder email.
 
 ### Send a payment reminder
 
