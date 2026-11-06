@@ -5,11 +5,17 @@ import { MotionConfig } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { FYProvider } from './context/FYContext';
 import { ShortcutsProvider } from './context/ShortcutsContext';
+import axios from 'axios';
 import api from './api/client';
 import type { CompanyProfile } from './types/api';
 import { isCompanyConfigured } from './utils/companySetup';
 import { loginPathWithNext, sanitizeNextPath } from './utils/nextPath';
 import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import VerifyEmailPage from './pages/VerifyEmailPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import OAuthCallbackPage from './pages/OAuthCallbackPage';
 import DashboardPage from './pages/DashboardPage';
 import CataloguePage from './pages/CataloguePage';
 import ProduceItemsPage from './pages/ProduceItemsPage';
@@ -17,12 +23,14 @@ import InvoicesPage from './pages/InvoicesPage';
 import InvoiceDuesPage from './pages/InvoiceDuesPage';
 import InvoicesAdvancedView from './pages/InvoicesAdvancedView';
 import CreditNotesPage from './pages/CreditNotesPage';
+import QuotationsPage from './pages/QuotationsPage';
 import LedgersPage from './pages/LedgersPage';
 import LedgerCreatePage from './pages/LedgerCreatePage';
 import LedgerViewPage from './pages/LedgerViewPage';
 import DayBookPage from './pages/DayBookPage';
 import TaxLedgerPage from './pages/TaxLedgerPage';
 import Gstr1FilingPage from './pages/Gstr1FilingPage';
+import Gstr3bWorksheetPage from './pages/Gstr3bWorksheetPage';
 import CashBankPage from './pages/CashBankPage';
 import CashBankAccountsPage from './pages/CashBankAccountsPage';
 import CompanyPage from './pages/CompanyPage';
@@ -84,14 +92,22 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
   return children;
 }
 
-function AdminOnly({ children }: { children: React.ReactNode }) {
-  const { isAdmin } = useAuth();
+function AdminOnly({ platform = false, children }: { platform?: boolean; children: React.ReactNode }) {
+  const { isAdmin, canManagePlatform } = useAuth();
 
-  if (!isAdmin) {
+  if (platform ? !canManagePlatform : !isAdmin) {
     return <Navigate to="/" replace />;
   }
 
   return children;
+}
+
+function isCompanyRequiredError(error: unknown): boolean {
+  return (
+    axios.isAxiosError(error) &&
+    error.response?.status === 409 &&
+    error.response.data?.detail?.code === 'company_required'
+  );
 }
 
 function CompanyRequired({ children }: { children: React.ReactNode }) {
@@ -106,6 +122,13 @@ function CompanyRequired({ children }: { children: React.ReactNode }) {
 
   if (companyQuery.isLoading) {
     return <div className="empty-state">Loading company profile...</div>;
+  }
+
+  // A 409 company_required is the server saying this user has no company yet
+  // (shared hosting never auto-creates one). Any other failure still lets the
+  // user through, as before.
+  if (isCompanyRequiredError(companyQuery.error)) {
+    return <Navigate to="/settings/company?setup=required" replace />;
   }
 
   if (companyQuery.error) {
@@ -123,17 +146,18 @@ function CompanyRequired({ children }: { children: React.ReactNode }) {
  * A settings page, framed by the settings sub-navigation.
  *
  * The guard combination is passed as props rather than nested by hand at each
- * call site: nine settings routes composing up to four guards each is where the
- * inline style stopped paying for itself. `requireCompany` is false for exactly
- * one page — /settings/company is where CompanyRequired *sends* people, so
- * guarding it with CompanyRequired would be a redirect loop.
+ * call site keeps the route list readable. Platform settings do not need a
+ * company; onboarding and personal preferences can also opt out of that guard.
  */
 function SettingsRoute({
   admin = false,
-  requireCompany = true,
+  platform = false,
+  requireCompany = !platform,
   children,
 }: {
   admin?: boolean;
+  /** Uses the platform capability rather than the active company's admin role. */
+  platform?: boolean;
   requireCompany?: boolean;
   children: React.ReactNode;
 }) {
@@ -142,7 +166,7 @@ function SettingsRoute({
       <SettingsLayout>{children}</SettingsLayout>
     </Layout>
   );
-  if (admin) node = <AdminOnly>{node}</AdminOnly>;
+  if (admin || platform) node = <AdminOnly platform={platform}>{node}</AdminOnly>;
   if (requireCompany) node = <CompanyRequired>{node}</CompanyRequired>;
   return <Protected>{node}</Protected>;
 }
@@ -195,6 +219,14 @@ function AppRoutes() {
           </PublicOnly>
         }
       />
+      <Route path="/register" element={<PublicOnly><RegisterPage /></PublicOnly>} />
+      {/* Outside PublicOnly: these carry a one-time link or code, and a browser that
+          still holds some session, even an expired one, must not be redirected away
+          from it. */}
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
+      <Route path="/forgot-password" element={<PublicOnly><ForgotPasswordPage /></PublicOnly>} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/auth/callback" element={<OAuthCallbackPage />} />
       {/* Mid-flow from an external MCP client. Deliberately outside Layout and
           CompanyRequired: the visitor is answering one question, and a company
           setup redirect here would strand the pending authorization request. */}
@@ -217,9 +249,11 @@ function AppRoutes() {
       <Route path="/day-book" element={<Protected><CompanyRequired><Layout><DayBookPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/tax-ledger" element={<Protected><CompanyRequired><Layout><TaxLedgerPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/gstr1" element={<Protected><CompanyRequired><Layout><Gstr1FilingPage /></Layout></CompanyRequired></Protected>} />
+      <Route path="/gstr3b" element={<Protected><CompanyRequired><Layout><Gstr3bWorksheetPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/cash-bank" element={<Protected><CompanyRequired><Layout><CashBankPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/cash-bank/accounts" element={<Protected><CompanyRequired><Layout><CashBankAccountsPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/invoices" element={<Protected><CompanyRequired><Layout><InvoicesPage /></Layout></CompanyRequired></Protected>} />
+      <Route path="/quotations" element={<Protected><CompanyRequired><Layout><QuotationsPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/invoice-dues" element={<Protected><CompanyRequired><Layout><InvoiceDuesPage /></Layout></CompanyRequired></Protected>} />
       <Route path="/invoices-view" element={<Protected><CompanyRequired><Layout><InvoicesAdvancedView /></Layout></CompanyRequired></Protected>} />
       <Route path="/credit-notes" element={<Protected><CompanyRequired><Layout><CreditNotesPage /></Layout></CompanyRequired></Protected>} />
@@ -230,7 +264,7 @@ function AppRoutes() {
       <Route path="/settings" element={<SettingsRoute requireCompany={false}><SettingsOverviewPage /></SettingsRoute>} />
       <Route path="/settings/company" element={<SettingsRoute requireCompany={false}><CompanyPage /></SettingsRoute>} />
       <Route path="/settings/marketplace" element={<SettingsRoute admin><MarketplaceSettingsPage /></SettingsRoute>} />
-      <Route path="/settings/email" element={<SettingsRoute admin><SmtpSettingsPage /></SettingsRoute>} />
+      <Route path="/settings/email" element={<SettingsRoute platform><SmtpSettingsPage /></SettingsRoute>} />
       <Route path="/settings/email-history" element={<SettingsRoute admin><EmailHistoryPage /></SettingsRoute>} />
       <Route path="/settings/security" element={<SettingsRoute><ChangePasswordPage /></SettingsRoute>} />
       <Route path="/settings/shortcuts" element={<SettingsRoute><KeyboardShortcutsPage /></SettingsRoute>} />
@@ -238,7 +272,7 @@ function AppRoutes() {
       <Route path="/settings/api-keys"element={<SettingsRoute admin><ApiKeysPage /></SettingsRoute>} />
       {/* Per-user, not admin-only: a user manages the connectors they themselves consented to. */}
       <Route path="/settings/connected-apps" element={<SettingsRoute><ConnectedAppsPage /></SettingsRoute>} />
-      <Route path="/settings/backups" element={<SettingsRoute admin><BackupsPage /></SettingsRoute>} />
+      <Route path="/settings/backups" element={<SettingsRoute platform><BackupsPage /></SettingsRoute>} />
 
       {/* Where those pages used to live. */}
       {Object.entries(LEGACY_REDIRECTS).map(([from, to]) => (

@@ -8,21 +8,16 @@ import { useEscapeClose } from '../hooks/useEscapeClose';
 import ModalCloseButton from '../components/ModalCloseButton';
 import { formatDate } from '../utils/formatting';
 import { copyTextToClipboard } from '../utils/clipboard';
+import { localDateInputToIso, maxApiKeyExpiryDate, toIsoDate } from '../utils/dateRanges';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function maxExpiryDate(): string {
-  const d = new Date();
-  d.setFullYear(d.getFullYear() + 1);
-  return d.toISOString().split('T')[0];
-}
-
 function minExpiryDate(): string {
   const d = new Date();
   d.setDate(d.getDate() + 1);
-  return d.toISOString().split('T')[0];
+  return toIsoDate(d);
 }
 
 function formatExpiry(iso: string): string {
@@ -60,7 +55,7 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
       setError(null);
       const payload: ApiKeyCreate = {
         name: name.trim(),
-        expires_at: new Date(expiresAt).toISOString(),
+        expires_at: localDateInputToIso(expiresAt),
       };
       const { data } = await api.post<ApiKeyCreateResponse>('/api-keys/', payload);
       onCreated(data);
@@ -112,7 +107,7 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
               type="date"
               value={expiresAt}
               min={minExpiryDate()}
-              max={maxExpiryDate()}
+              max={maxApiKeyExpiryDate()}
               onChange={(e) => setExpiresAt(e.target.value)}
               required
             />

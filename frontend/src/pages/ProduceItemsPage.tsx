@@ -88,7 +88,12 @@ export default function ProduceItemsPage() {
       setProducing(true);
       setError('');
       setSuccess('');
-      await produceBatch({ product_id: selectedProduct.id, quantity: qty });
+      await produceBatch({
+        product_id: selectedProduct.id,
+        quantity: qty,
+        notes: notes.trim() ? notes.trim() : undefined,
+      });
+      setNotes('');
       setSuccess(`Produced ${qty} × ${selectedProduct.name} successfully.`);
       // Refresh BOM requirements display (available qty may have changed)
       const components = await fetchBOM(selectedProduct.id);

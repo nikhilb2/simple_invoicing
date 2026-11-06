@@ -1,11 +1,12 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
 class InventoryAdjust(BaseModel):
     product_id: int
-    quantity: float
+    # Non-finite values become NaN in stock arithmetic and break list/dashboard JSON.
+    quantity: float = Field(allow_inf_nan=False)
     # Required on a serial-tracked product: which units came in, or which ones
     # are being written off.
     serial_numbers: Optional[list[str]] = None
@@ -20,6 +21,7 @@ class InventoryOut(BaseModel):
     allow_decimal: bool
     price: float
     maintain_inventory: bool
+    reorder_level: float = 0
     track_serials: bool = False
     quantity: float
     date_added: Optional[datetime] = None

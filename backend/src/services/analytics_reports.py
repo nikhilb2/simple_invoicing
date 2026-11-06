@@ -12,6 +12,8 @@ this precedent.
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
+from itertools import groupby
+from operator import attrgetter
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -241,10 +243,37 @@ def build_product_sales_report(
         )
         stock_map = {pid: Decimal(str(qty or 0)) for pid, qty in stock_rows}
 
+    # Sales amount is taxable net of the invoice-level discount, apportioned
+    # across all of an invoice's lines first (same rule as Product Performance).
+    # The helper fetches every line of in-scope invoices even under a product
+    # filter, so a filtered product only takes its own share of the discount.
+    discounted_sales: dict[int, Decimal] = {}
+    for line_pid, _qty, discounted_taxable, _date in _dated_discounted_invoice_lines(
+        db,
+        company_id=company_id,
+        voucher_type=voucher_type,
+        from_date=from_date,
+        to_date=to_date,
+        ledger_id=ledger_id,
+        product_id=product_id,
+    ):
+        discounted_sales[line_pid] = discounted_sales.get(line_pid, Decimal("0")) + discounted_taxable
+
+    # Total revenue includes GST, so the whole invoice discount comes off it.
+    discounted_revenue = _discounted_line_totals(
+        db,
+        company_id=company_id,
+        voucher_type=voucher_type,
+        from_date=from_date,
+        to_date=to_date,
+        ledger_id=ledger_id,
+        product_id=product_id,
+    )
+
     rows: list[dict] = []
     for pid, name, sku, maintain_inventory, quantity, taxable, tax, revenue, invoice_count in grouped:
         qty = Decimal(str(quantity or 0))
-        sales_amount = Decimal(str(taxable or 0))
+        sales_amount = discounted_sales.get(pid, Decimal(str(taxable or 0)))
         rows.append({
             "product_id": pid,
             "name": name,
@@ -252,7 +281,7 @@ def build_product_sales_report(
             "quantity_sold": qty,
             "sales_amount": sales_amount,
             "average_selling_price": average_of(sales_amount, qty),
-            "total_revenue": Decimal(str(revenue or 0)),
+            "total_revenue": discounted_revenue.get(pid, Decimal(str(revenue or 0))),
             "total_gst": Decimal(str(tax or 0)),
             "invoice_count": int(invoice_count or 0),
             "current_stock": stock_map.get(pid, Decimal("0")) if maintain_inventory else None,
@@ -319,6 +348,88 @@ class ProfitLossData:
     totals: dict
 
 
+def apportioned_invoice_rows(query, *, gst_inclusive=False):
+    """Yield ``(row, share of the invoice discount)`` for every invoice line.
+
+    Every row must carry the invoice header totals under the names
+    :func:`invoice_discount_amount` reads (``taxable_amount``,
+    ``total_tax_amount``, ``round_off_amount``, ``total_amount``), the invoice
+    id as ``row.id``, and the line's weight: ``line_taxable``, or ``line_total``
+    with ``gst_inclusive``. Rows are grouped by invoice in
+    ``Invoice.id, InvoiceItem.id`` order and the discount is apportioned
+    across *all* of an invoice's lines before the caller filters any out, so
+    a filtered product never takes the whole discount.
+
+    By default each share is the ex-GST part of the discount, to take off
+    ``line_taxable``. With ``gst_inclusive`` it is the line's share of the whole
+    discount, to take off ``line_total``, which already includes the GST.
+    """
+    rows = query.order_by(Invoice.id, InvoiceItem.id).yield_per(1000)
+    for _, invoice_group in groupby(rows, key=attrgetter("id")):
+        invoice_rows = list(invoice_group)
+        header = invoice_rows[0]  # every row repeats the invoice's own columns
+        weights = [
+            Decimal(str((row.line_total if gst_inclusive else row.line_taxable) or 0))
+            for row in invoice_rows
+        ]
+        shares = apportion_invoice_discount(
+            weights,
+            # invoice_discount_amount only reads the four total columns, all
+            # of which the row carries under the same names.
+            invoice_discount=invoice_discount_amount(header),
+            invoice_tax=Decimal("0") if gst_inclusive else Decimal(str(header.total_tax_amount or 0)),
+        )
+        yield from zip(invoice_rows, shares)
+
+
+def _discounted_line_totals(
+    db: Session,
+    *,
+    company_id: int,
+    voucher_type: str,
+    from_date: date,
+    to_date: date,
+    ledger_id: int | None,
+    product_id: int | None,
+) -> dict[int, Decimal]:
+    """Per-product revenue: ``line_total`` (incl. GST) net of the invoice discount."""
+    start, end = _date_bounds(from_date, to_date)
+    query = (
+        db.query(
+            Invoice.id,
+            InvoiceItem.product_id,
+            InvoiceItem.line_total,
+            Invoice.taxable_amount,
+            Invoice.total_tax_amount,
+            Invoice.round_off_amount,
+            Invoice.total_amount,
+        )
+        .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
+        .filter(
+            Invoice.company_id == company_id,
+            Invoice.status == "active",
+            Invoice.voucher_type == voucher_type,
+            Invoice.invoice_date >= start,
+            Invoice.invoice_date <= end,
+        )
+    )
+    if ledger_id is not None:
+        query = query.filter(Invoice.ledger_id == ledger_id)
+    if product_id is not None:
+        # Fetch every line of invoices containing the product; the discount
+        # is apportioned across all of them before the other lines are skipped.
+        containing = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id)
+        query = query.filter(Invoice.id.in_(containing))
+
+    revenue: dict[int, Decimal] = {}
+    for row, share in apportioned_invoice_rows(query, gst_inclusive=True):
+        if product_id is not None and row.product_id != product_id:
+            continue
+        net_total = Decimal(str(row.line_total or 0)) - share
+        revenue[row.product_id] = revenue.get(row.product_id, Decimal("0")) + net_total
+    return revenue
+
+
 def build_profit_loss_report(
     db: Session,
     *,
@@ -334,7 +445,9 @@ def build_profit_loss_report(
     Cost basis is the product's *current* ``purchase_price`` — invoice lines
     carry no cost snapshot, so a historical period is priced at today's cost and
     its margin shifts if the cost is later edited. Revenue is ``taxable_amount``
-    (ex-GST); GST is pass-through and never counted as profit.
+    net of the invoice-level discount (ex-GST), apportioned across an invoice's
+    lines the same way Product Performance does; GST is pass-through and never
+    counted as profit.
 
     All three breakdowns come from one line-level scan so the numbers can't
     diverge. When ``product_id`` is set, ``monthly_rows`` narrows to that
@@ -350,10 +463,16 @@ def build_profit_loss_report(
             Invoice.ledger_name,
             InvoiceItem.product_id,
             InvoiceItem.quantity,
-            InvoiceItem.taxable_amount,
+            InvoiceItem.taxable_amount.label("line_taxable"),
             Product.name,
             Product.sku,
             Product.purchase_price,
+            # Header totals, carried under the names invoice_discount_amount
+            # reads so the row goes straight to it in apportioned_invoice_rows.
+            Invoice.taxable_amount,
+            Invoice.total_tax_amount,
+            Invoice.round_off_amount,
+            Invoice.total_amount,
         )
         .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
         .join(Product, Product.id == InvoiceItem.product_id)
@@ -368,7 +487,10 @@ def build_profit_loss_report(
     if ledger_id is not None:
         query = query.filter(Invoice.ledger_id == ledger_id)
     if product_id is not None:
-        query = query.filter(Product.id == product_id)
+        # Fetch every line of invoices containing the product; the discount
+        # is apportioned across all of them before the other lines are skipped.
+        containing = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id)
+        query = query.filter(Invoice.id.in_(containing))
 
     # Per-product, per-month, and per-customer accumulators, all built in one pass.
     products: dict[int, dict] = {}
@@ -379,29 +501,34 @@ def build_profit_loss_report(
     customers: dict[int | None, dict] = {}
     total_invoice_ids: set[int] = set()
 
-    for (
-        invoice_id,
-        invoice_date,
-        row_ledger_id,
-        ledger_name,
-        pid,
-        quantity,
-        taxable,
-        name,
-        sku,
-        purchase_price,
-    ) in query.all():
-        qty = Decimal(str(quantity or 0))
-        revenue = Decimal(str(taxable or 0))
-        cost = Decimal(str(purchase_price or 0))
+    # Revenue is each line's taxable amount net of its share of the invoice-level
+    # discount, apportioned across all of an invoice's lines first — the same
+    # rule as Product Performance. Under a product filter the query narrows to
+    # invoices containing that product (in the query above) and the other lines
+    # are skipped only after apportioning, so the filtered product never takes
+    # the whole discount.
+    discounted_rows: list[tuple] = []
+    for row, share in apportioned_invoice_rows(query):
+        if product_id is not None and row.product_id != product_id:
+            continue
+        discounted_rows.append((row, Decimal(str(row.line_taxable or 0)) - share))
+
+    for row, revenue in discounted_rows:
+        invoice_id = row.id
+        invoice_date = row.invoice_date
+        row_ledger_id = row.ledger_id
+        ledger_name = row.ledger_name
+        pid = row.product_id
+        qty = Decimal(str(row.quantity or 0))
+        cost = Decimal(str(row.purchase_price or 0))
         line_cogs = qty * cost
 
         product = products.get(pid)
         if product is None:
             product = {
                 "product_id": pid,
-                "name": name,
-                "sku": sku,
+                "name": row.name,
+                "sku": row.sku,
                 "purchase_price": cost,
                 "quantity_sold": Decimal("0"),
                 "revenue": Decimal("0"),
@@ -613,25 +740,16 @@ def _dated_discounted_invoice_lines(
         containing = db.query(InvoiceItem.invoice_id).filter(InvoiceItem.product_id == product_id)
         query = query.filter(Invoice.id.in_(containing))
 
-    by_invoice: dict[int, list] = {}
-    for row in query.order_by(Invoice.id, InvoiceItem.id).all():
-        by_invoice.setdefault(row.id, []).append(row)
-
     lines: list[tuple[int, Decimal, Decimal, datetime]] = []
-    for invoice_rows in by_invoice.values():
-        header = invoice_rows[0]  # every row repeats the invoice's own columns
-        taxables = [Decimal(str(row.line_taxable or 0)) for row in invoice_rows]
-        shares = apportion_invoice_discount(
-            taxables,
-            # invoice_discount_amount only reads the four total columns, all
-            # of which the row carries under the same names.
-            invoice_discount=invoice_discount_amount(header),
-            invoice_tax=Decimal(str(header.total_tax_amount or 0)),
-        )
-        for row, taxable, share in zip(invoice_rows, taxables, shares):
-            if product_id is not None and row.product_id != product_id:
-                continue
-            lines.append((row.product_id, Decimal(str(row.quantity or 0)), taxable - share, header.invoice_date))
+    for row, share in apportioned_invoice_rows(query):
+        if product_id is not None and row.product_id != product_id:
+            continue
+        lines.append((
+            row.product_id,
+            Decimal(str(row.quantity or 0)),
+            Decimal(str(row.line_taxable or 0)) - share,
+            row.invoice_date,
+        ))
     return lines
 
 
@@ -644,7 +762,7 @@ def _credit_note_lines(
     ledger_id: int | None,
     product_id: int | None,
 ):
-    """Active credit/debit note lines in the period, dated by ``created_at``.
+    """Active credit/debit note lines in the period, dated by ``credit_note_date``.
 
     Strict company equality on the note header: unlike
     :mod:`src.services.credit_note_reporting`, a NULL-company note must not
@@ -658,14 +776,14 @@ def _credit_note_lines(
             CreditNoteItem.product_id,
             CreditNoteItem.quantity,
             CreditNoteItem.taxable_amount,
-            CreditNote.created_at,
+            CreditNote.credit_note_date,
         )
         .join(CreditNote, CreditNoteItem.credit_note_id == CreditNote.id)
         .filter(
             CreditNote.company_id == company_id,
             CreditNote.status == "active",
-            CreditNote.created_at >= start,
-            CreditNote.created_at <= end,
+            CreditNote.credit_note_date >= start,
+            CreditNote.credit_note_date <= end,
             CreditNoteItem.product_id.isnot(None),
         )
     )
@@ -851,7 +969,7 @@ def build_product_performance_report(
         entry = bucket(pid)
         entry["units_bought"] += qty
         entry["purchase_value"] += taxable
-    for direction, note_type, pid, qty, taxable, _created_at in note_lines:
+    for direction, note_type, pid, qty, taxable, _note_date in note_lines:
         _add_note_line(bucket(pid), direction, note_type, qty, taxable)
 
     if not acc:
@@ -972,7 +1090,7 @@ def build_product_performance_detail(
     twice, which is cheap next to the risk of two copies of the rules.
 
     The months bucket the same lines the period report uses — invoices by
-    ``invoice_date``, credit notes by ``created_at`` — through the same
+    ``invoice_date``, credit notes by ``credit_note_date`` — through the same
     :func:`_performance_figures`, and every month is costed at the *period's*
     unit cost, so units, revenue, spend, COGS and profit sum exactly to the
     summary. A month's ``average_buying_price`` is different on purpose: it is
@@ -1026,8 +1144,8 @@ def build_product_performance_detail(
     for _, qty, taxable, when in cost_lines:
         paid[(when.year, when.month)][0] += taxable
         paid[(when.year, when.month)][1] += qty
-    for direction, note_type, _, qty, taxable, created_at in note_lines:
-        _add_note_line(buckets[(created_at.year, created_at.month)], direction, note_type, qty, taxable)
+    for direction, note_type, _, qty, taxable, note_date in note_lines:
+        _add_note_line(buckets[(note_date.year, note_date.month)], direction, note_type, qty, taxable)
 
     # COGS is booked as the change in the rounded running total rather than
     # rounded month by month: per-month rounding of units x an unrounded cost

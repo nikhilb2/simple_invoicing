@@ -12,15 +12,61 @@ from collections import defaultdict
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import case, or_
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice
 from src.models.product import Product
 from src.schemas.invoice import InvoiceCreate
+from src.services.company_access import company_scope
 
 logger = logging.getLogger(__name__)
+
+
+def _plain_quantity(value: Decimal) -> str:
+    """3 rather than 3.000, so a shop owner reads the number they typed."""
+    return format(value.normalize(), "f")
+
+
+class InsufficientStockError(HTTPException):
+    """HTTP 400 for a sale that needs more stock than is on hand.
+
+    ``detail`` stays a plain string, so every caller that reads it keeps working.
+    The app's handler also puts the fields below in the response body, so the
+    invoice composer can offer to add the missing stock.
+    """
+
+    def __init__(
+        self,
+        *,
+        product_id: int,
+        product_name: str,
+        available: Decimal,
+        required: Decimal,
+    ) -> None:
+        self.product_id = product_id
+        self.product_name = product_name
+        self.available = available
+        self.required = required
+        super().__init__(
+            status_code=400,
+            detail=(
+                f"Insufficient inventory for {product_name}: only "
+                f"{_plain_quantity(available)} in stock, and this invoice needs "
+                f"{_plain_quantity(required)}. Add stock for this product and try again."
+            ),
+        )
+
+    def body(self) -> dict:
+        return {
+            "detail": self.detail,
+            "code": "insufficient_stock",
+            "product_id": self.product_id,
+            "product_name": self.product_name,
+            "available": _plain_quantity(self.available),
+            "required": _plain_quantity(self.required),
+        }
 
 
 class InventoryManager:
@@ -64,10 +110,7 @@ class InventoryManager:
             query = (
                 query
                 .filter(
-                    or_(
-                        Inventory.company_id == company_id,
-                        Inventory.company_id.is_(None),
-                    )
+                    company_scope(Inventory.company_id, company_id)
                 )
                 # Prefer the tenant-scoped row; fall back to global (NULL) only
                 # when no company-specific row exists.
@@ -130,10 +173,7 @@ class InventoryManager:
             inventory_query = (
                 inventory_query
                 .filter(
-                    or_(
-                        Inventory.company_id == company_id,
-                        Inventory.company_id.is_(None),
-                    )
+                    company_scope(Inventory.company_id, company_id)
                 )
                 # Prefer the tenant-scoped row over the global fallback row.
                 .order_by(
@@ -141,7 +181,8 @@ class InventoryManager:
                 )
             )
         inventory = inventory_query.first()
-        if not inventory or Decimal(str(inventory.quantity or 0)) < quantity:
+        on_hand = Decimal(str(inventory.quantity or 0)) if inventory else Decimal("0")
+        if on_hand < quantity:
             logger.warning(
                 "inventory: insufficient stock for product_id=%s "
                 "(available=%s required=%s)",
@@ -149,9 +190,11 @@ class InventoryManager:
                 inventory.quantity if inventory else 0,
                 quantity,
             )
-            raise HTTPException(
-                status_code=400,
-                detail=f"Insufficient inventory for {product_name}",
+            raise InsufficientStockError(
+                product_id=product_id,
+                product_name=product_name,
+                available=on_hand,
+                required=quantity,
             )
 
     # ------------------------------------------------------------------
@@ -165,10 +208,7 @@ class InventoryManager:
         query = self.db.query(Product).filter(Product.id == product_id)
         if company_id is not None:
             query = query.filter(
-                or_(
-                    Product.company_id == company_id,
-                    Product.company_id.is_(None),
-                )
+                company_scope(Product.company_id, company_id)
             )
         product = query.first()
         if not product:

@@ -9,18 +9,15 @@ import DateRangePresets from '../components/DateRangePresets';
 import EmptyState from '../components/EmptyState';
 import LoadingState from '../components/LoadingState';
 import PageSizeSelect, { readStoredPageSize, storePageSize } from '../components/PageSizeSelect';
-import { formatDateTime } from '../utils/formatting';
+import { formatDateTime, plural } from '../utils/formatting';
+import { toIsoDate } from '../utils/dateRanges';
+import { EMAIL_TYPE_LABELS, emailTypeLabel } from '../utils/emailTypes';
 import { downloadCsv } from '../utils/csv';
 
-const EMAIL_TYPE_LABELS: Record<string, string> = {
-  invoice: 'Invoice',
-  ledger_statement: 'Ledger Statement',
-  payment_reminder: 'Payment Reminder',
-  other: 'Other',
-};
-
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  // Local date, not UTC: toISOString() would still be yesterday between
+  // 00:00 and 05:30 IST, hiding today's emails from the default range.
+  return toIsoDate(new Date());
 }
 
 function monthStart() {
@@ -66,7 +63,7 @@ export default function EmailHistoryPage() {
   function handleExportEmailCsv() {
     if (!data) return;
     downloadCsv(
-      `email_history_${new Date().toISOString().slice(0, 10)}.csv`,
+      `email_history_${toIsoDate(new Date())}.csv`,
       ['Date', 'Recipient', 'Subject', 'Status'],
       data.items.map((log) => [
         formatDateTime(log.sent_at),
@@ -85,7 +82,7 @@ export default function EmailHistoryPage() {
           <h1 className="page-title">Email history</h1>
           <p className="section-copy">A log of all outbound emails sent from this company.</p>
         </div>
-        {data && <div className="status-chip">{data.total} emails</div>}
+        {data && <div className="status-chip">{plural(data.total, 'email')}</div>}
       </section>
 
       <StatusToasts error={error ? getApiErrorMessage(error) : ''} onClearError={() => {}} onClearSuccess={() => {}} />
@@ -144,10 +141,9 @@ export default function EmailHistoryPage() {
             onChange={e => { setEmailType(e.target.value); handleFilterChange(); }}
           >
             <option value="">All types</option>
-            <option value="invoice">Invoice</option>
-            <option value="ledger_statement">Ledger Statement</option>
-            <option value="payment_reminder">Payment Reminder</option>
-            <option value="other">Other</option>
+            {Object.entries(EMAIL_TYPE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
           </select>
         </div>
         <div className="field">
@@ -205,14 +201,14 @@ export default function EmailHistoryPage() {
                       {log.cc ? ` · CC: ${log.cc}` : ''}
                     </span>
                     <span className="table-subtext">
-                      {formatDateTime(log.sent_at)} · {EMAIL_TYPE_LABELS[log.email_type] ?? log.email_type}
+                      {formatDateTime(log.sent_at)} · {emailTypeLabel(log.email_type)}
                     </span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
                     <span
                       className={`status-chip ${log.status === 'sent' ? 'status-chip--active' : 'status-chip--cancelled'}`}
                     >
-                      {log.status === 'sent' ? 'Sent' : 'Failed'}
+                      {log.status === 'sent' ? 'Sent' : log.status === 'sending' ? 'Sending' : 'Failed'}
                     </span>
                     {log.error_message && (
                       <span className="table-subtext">tap to {expandedError === log.id ? 'hide' : 'show'} error</span>

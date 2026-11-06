@@ -2,22 +2,43 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Boxes, Lock, Plus, Trash2 } from 'lucide-react';
-import api, { getApiErrorMessage } from '../../api/client';
-import type { CompanyAccount, CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerAddress, Payment, PaymentCreate, Product } from '../../types/api';
+import api, { getApiErrorCode, getApiErrorMessage } from '../../api/client';
+import type { CompanyAccount, CompanyProfile, Invoice, InvoiceCreate, Ledger, LedgerAddress, Payment, PaymentCreate, Product, Quotation, QuotationConversionDraft, QuotationFields } from '../../types/api';
 import InvoicePreview from '../../components/InvoicePreview';
+import QuotationPreview from '../../components/QuotationPreview';
 import ScanBar, { type ScanOutcome, type ScanResolution } from '../../components/ScanBar';
 import StatusToasts from '../../components/StatusToasts';
 import ProductCombobox from '../../components/ProductCombobox';
 import LedgerCombobox from '../../components/LedgerCombobox';
-import formatCurrency from '../../utils/formatting';
+import formatCurrency, { plural } from '../../utils/formatting';
+import { computeInvoiceTotals, computeLineTotal, type InvoiceTotalLine } from '../../utils/invoiceTotals';
 import { toIsoDate } from '../../utils/dateRanges';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../../utils/invoiceTax';
+import { isInterstatePlaceOfSupply, resolvePlaceOfSupply, stalePlaceOfSupplyWarning, type PlaceOfSupplyChoice } from '../../utils/gstStates';
+import PlaceOfSupplyField from '../../components/PlaceOfSupplyField';
 import { createDueDateFormState, formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../../utils/invoiceDueDate.ts';
 import { readInvoiceComposerPrefs, updateInvoiceComposerPrefs } from '../../utils/invoiceComposerPrefs.ts';
 import { useFY } from '../../context/FYContext';
 import { useShortcuts } from '../../context/ShortcutsContext';
 import { fetchInvoiceById, fetchInvoiceComposerData, fetchLedgerAddresses } from '../../features/invoices/api';
+import { createQuotation, fetchConversionDraft, fetchQuotationById, updateQuotation } from '../../features/quotations/api';
+import { quotationQueryKeys } from '../../features/quotations/queryKeys';
+import {
+  composerDocumentName,
+  conversionDateDefaults,
+  conversionDraftToFormItems,
+  conversionLineShortfalls,
+  conversionPayload,
+  defaultValidUntil,
+  formItemToQuotationLine,
+  isQuotationVoucher,
+  isSaleLikeVoucher,
+  quotationToFormItems,
+  type ComposerVoucherType,
+} from '../../utils/quotationDraft';
 import { invoiceQueryKeys } from '../../features/invoices/queryKeys';
+import { missingQuantity, readStockShortage } from '../../features/invoices/stockShortage';
+import { useFirstInvoiceTourStore } from '../../store/useFirstInvoiceTourStore';
 import { useInvoiceComposerStore } from '../../store/useInvoiceComposerStore';
 import LedgerQuickCreateModal from './components/LedgerQuickCreateModal';
 import ProductQuickCreateModal from './components/ProductQuickCreateModal';
@@ -36,9 +57,12 @@ export default function InvoicesPage() {
   const openLedgerCreateModal = useInvoiceComposerStore((state) => state.openLedgerCreateModal);
   const openProductCreateModal = useInvoiceComposerStore((state) => state.openProductCreateModal);
   const openStockUpdateModal = useInvoiceComposerStore((state) => state.openStockUpdateModal);
+  const stockShortage = useInvoiceComposerStore((state) => state.stockShortage);
+  const setStockShortage = useInvoiceComposerStore((state) => state.setStockShortage);
   const feedbackError = useInvoiceComposerStore((state) => state.feedbackError);
   const feedbackSuccess = useInvoiceComposerStore((state) => state.feedbackSuccess);
-  const clearFeedback = useInvoiceComposerStore((state) => state.clearFeedback);
+  const clearFeedbackError = useInvoiceComposerStore((state) => state.clearFeedbackError);
+  const clearFeedbackSuccess = useInvoiceComposerStore((state) => state.clearFeedbackSuccess);
   /* Settings the user picks the same way on most invoices are restored here.
      Read in an initializer rather than an effect so a remembered choice is
      already applied on first paint instead of flipping in after it. */
@@ -47,7 +71,9 @@ export default function InvoicesPage() {
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [companyAccounts, setCompanyAccounts] = useState<CompanyAccount[]>([]);
-  const [voucherType, setVoucherType] = useState<'sales' | 'purchase' | 'payment' | 'receipt'>('sales');
+  const [voucherType, setVoucherType] = useState<ComposerVoucherType>('sales');
+  const isQuote = isQuotationVoucher(voucherType);
+  const isSaleLike = isSaleLikeVoucher(voucherType);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [taxInclusive, setTaxInclusive] = useState(initialPrefs.taxInclusive);
   const [applyRoundOff, setApplyRoundOff] = useState(initialPrefs.applyRoundOff);
@@ -60,6 +86,9 @@ export default function InvoicesPage() {
   const [selectedPaymentAccountId, setSelectedPaymentAccountId] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(toIsoDate(new Date()));
+  const [placeOfSupplyChoice, setPlaceOfSupplyChoice] = useState<PlaceOfSupplyChoice | null>(null);
+  // What the invoice being edited or duplicated was saved with.
+  const [savedPlaceOfSupply, setSavedPlaceOfSupply] = useState<PlaceOfSupplyChoice | null>(null);
   const [dueDateMode, setDueDateMode] = useState<DueDateMode>(initialPrefs.dueDateMode);
   const [dueDate, setDueDate] = useState('');
   const [dueDateDays, setDueDateDays] = useState(initialPrefs.dueDateDays);
@@ -72,6 +101,20 @@ export default function InvoicesPage() {
   const [serialBlockIds, setSerialBlockIds] = useState<number[]>([]);
   const [scanTargetItemId, setScanTargetItemId] = useState<number | null>(null);
   const [editingInvoiceId, setEditingInvoiceId] = useState<number | null>(null);
+  /* Quotation and proforma modes. The voucher select is locked in both of these:
+     a saved document's type is fixed, and a conversion can only make a sale. */
+  const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
+  const [conversion, setConversion] = useState<QuotationConversionDraft | null>(null);
+  const [alreadyConverted, setAlreadyConverted] = useState<{ message: string; invoiceNumber: string | null } | null>(null);
+  /** The quotation changed after this conversion opened, and the save was refused. */
+  const [conversionOutOfDate, setConversionOutOfDate] = useState(false);
+  const [validUntil, setValidUntil] = useState(() => defaultValidUntil(toIsoDate(new Date())));
+  /** Follows the document date until someone sets it by hand. */
+  const validUntilEditedRef = useRef(false);
+  const [previewQuotation, setPreviewQuotation] = useState<Quotation | null>(null);
+  /* The shipping reset below runs after a prefill that changes the ledger, and
+     would wipe what the prefill just set. This hands it what to restore. */
+  const pendingShippingRef = useRef<{ id: number | null; label: string; address: string } | null>(null);
   /** Everything that is not needed to write an ordinary invoice lives behind
    *  this. It opens itself when a value inside it is actually in use — editing
    *  an invoice that carries a discount must not hide the discount. */
@@ -86,6 +129,11 @@ export default function InvoicesPage() {
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  /* Adding stock from the "not enough stock" notice is the answer to that error,
+     so it should not sit beside the confirmation. */
+  useEffect(() => {
+    if (feedbackSuccess) setError('');
+  }, [feedbackSuccess]);
   const [success, setSuccess] = useState('');
   const invoicePage = 1;
   const [invoiceTotal, setInvoiceTotal] = useState(0);
@@ -161,6 +209,14 @@ export default function InvoicesPage() {
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
   }, []);
 
+  // A fresh composer starts with nobody chosen, even if the last session left a ledger in the
+  // store. Opening a saved invoice or quotation sets its own ledger once it loads.
+  useEffect(() => {
+    const opensSavedDocument = ['edit', 'duplicate', 'edit_quotation', 'from_quotation'].some((key) => searchParams.has(key));
+    if (!opensSavedDocument) setSelectedLedgerId('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount only
+  }, []);
+
   useEffect(() => {
     if (!composerQuery.data) {
       return;
@@ -170,22 +226,8 @@ export default function InvoicesPage() {
     setLedgers(composerQuery.data.ledgers);
     setInvoiceTotal(composerQuery.data.invoiceTotal);
     setCompany(composerQuery.data.company);
-    if (!selectedLedgerId) {
-      setSelectedLedgerId(String(composerQuery.data.ledgers[0]?.id ?? ''));
-    }
-    setItems((current) =>
-      current.map((item, index) => {
-        const defaultProduct = composerQuery.data.products[index] ?? composerQuery.data.products[0];
-        return {
-          ...item,
-          productId: item.productId || String(defaultProduct?.id ?? ''),
-          unit_price: item.unit_price || String(defaultProduct?.price ?? ''),
-          // Filled by the composer, so a scan may still take this line over.
-          autoFilled: item.productId ? item.autoFilled : true,
-        };
-      })
-    );
-  }, [composerQuery.data, selectedLedgerId, setSelectedLedgerId]);
+    // No customer or product is chosen for the user: a pre-picked first ledger could be invoiced unnoticed.
+  }, [composerQuery.data]);
 
   // Fetch ledger addresses when ledger selection changes (for shipping address UI)
   useEffect(() => {
@@ -202,10 +244,12 @@ export default function InvoicesPage() {
 
   // Reset shipping selection when ledger changes
   useEffect(() => {
-    setShippingSameAsBilling(true);
-    setSelectedShippingAddressId(null);
-    setNewShippingLabel('');
-    setNewShippingAddress('');
+    const pending = pendingShippingRef.current;
+    pendingShippingRef.current = null;
+    setShippingSameAsBilling(pending === null);
+    setSelectedShippingAddressId(pending?.id ?? null);
+    setNewShippingLabel(pending?.label ?? '');
+    setNewShippingAddress(pending?.address ?? '');
   }, [selectedLedgerId]);
 
   // Handle ?edit=<id> query param — triggered from invoice feed or any other page
@@ -228,6 +272,38 @@ export default function InvoicesPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  // Handle ?new=quotation|proforma — start a fresh document of that type
+  useEffect(() => {
+    const documentType = searchParams.get('new');
+    if (documentType !== 'quotation' && documentType !== 'proforma') return;
+    changeVoucherType(documentType);
+    setSearchParams((prev) => { prev.delete('new'); return prev; }, { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // Handle ?edit_quotation=<id>
+  useEffect(() => {
+    const quotationId = searchParams.get('edit_quotation');
+    if (!quotationId || editingQuotation) return;
+    fetchQuotationById(Number(quotationId))
+      .then(startEditingQuotation)
+      .catch((err) => setError(getApiErrorMessage(err, 'Unable to load this document for editing.')));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // Handle ?from_quotation=<id> — convert it through this same composer
+  useEffect(() => {
+    const quotationId = searchParams.get('from_quotation');
+    if (!quotationId || conversion) return;
+    fetchConversionDraft(Number(quotationId))
+      .then(startConverting)
+      .catch((err) => {
+        setError(getApiErrorMessage(err, 'Unable to load this document for conversion.'));
+        setSearchParams((prev) => { prev.delete('from_quotation'); return prev; }, { replace: true });
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   useEffect(() => {
     if (!composerQuery.error) {
       return;
@@ -235,67 +311,41 @@ export default function InvoicesPage() {
     setError(getApiErrorMessage(composerQuery.error, 'Unable to load invoice data'));
   }, [composerQuery.error]);
 
-  const totalAmount = items.reduce((sum, item) => {
-    const product = products.find((entry) => entry.id === Number(item.productId));
-    /* A tracked line is worth exactly as many units as it has serials — there
-       is no state in which the two can disagree. */
-    const quantity = product?.track_serials ? item.serials.length : Number(item.quantity);
-    const unitPrice = item.unit_price ? Number(item.unit_price) : (product?.price || 0);
-    const gstRate = product?.gst_rate || 0;
-
-    if (!product || Number.isNaN(quantity)) {
-      return sum;
-    }
-
-    let lineTotal: number;
-    let taxableAmount: number;
-    if (taxInclusive) {
-      lineTotal = unitPrice * quantity;
-      taxableAmount = lineTotal / (1 + gstRate / 100);
-    } else {
-      taxableAmount = unitPrice * quantity;
-      lineTotal = taxableAmount + taxableAmount * gstRate / 100;
-    }
-
-    // Apply item-level discount
-    if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
-      const discVal = Number(item.discount_value);
-      let discAmount = 0;
-      if (item.discount_type === 'percentage') {
-        discAmount = taxableAmount * discVal / 100;
-      } else {
-        discAmount = Math.min(discVal, taxableAmount);
-      }
-      const discountedTaxable = taxableAmount - discAmount;
-      if (taxInclusive) {
-        lineTotal = discountedTaxable * (1 + gstRate / 100);
-      } else {
-        lineTotal = discountedTaxable + discountedTaxable * gstRate / 100;
-      }
-    }
-
-    return sum + lineTotal;
-  }, 0);
-
-  // Apply invoice-level discount
-  let invoiceDiscountAmount = 0;
-  if (invoiceDiscountType && invoiceDiscountValue && Number(invoiceDiscountValue) > 0) {
-    const discVal = Number(invoiceDiscountValue);
-    if (invoiceDiscountType === 'percentage') {
-      invoiceDiscountAmount = totalAmount * discVal / 100;
-    } else {
-      invoiceDiscountAmount = Math.min(discVal, totalAmount);
-    }
-  }
-  const afterDiscountTotal = totalAmount - invoiceDiscountAmount;
-
-  const roundedTotalAmount = Math.round(afterDiscountTotal);
-  const roundOffPreviewAmount = applyRoundOff ? roundedTotalAmount - afterDiscountTotal : 0;
-  const projectedTotalAmount = applyRoundOff ? roundedTotalAmount : afterDiscountTotal;
-
-  const activeCurrencyCode = company?.currency_code || 'USD';
+  const activeCurrencyCode = company?.currency_code || 'INR';
   const selectedLedger = ledgers.find((entry) => entry.id === Number(selectedLedgerId));
-  const composerInterstateSupply = isInterstateSupply(company?.gst, selectedLedger?.gst);
+  const placeOfSupply = resolvePlaceOfSupply(placeOfSupplyChoice, selectedLedgerId, company?.gst, selectedLedger?.gst);
+  const placeOfSupplyWarning = stalePlaceOfSupplyWarning(
+    savedPlaceOfSupply?.ledgerId === selectedLedgerId ? savedPlaceOfSupply.code : null,
+    placeOfSupply,
+    selectedLedger?.gst,
+  );
+  const composerInterstateSupply = voucherType === 'sales' && placeOfSupply
+    ? isInterstatePlaceOfSupply(placeOfSupply, company?.gst)
+    : isInterstateSupply(company?.gst, selectedLedger?.gst);
+
+  const totalLines = items.flatMap((item): InvoiceTotalLine[] => {
+    const product = products.find((entry) => entry.id === Number(item.productId));
+    if (!product) return [];
+    // A quote names no physical units yet; an invoice uses its selected serials.
+    const quantity = !isQuote && product.track_serials ? item.serials.length : Number(item.quantity);
+    return [{
+      quantity,
+      unitPrice: item.unit_price ? Number(item.unit_price) : product.price || 0,
+      gstRate: product.gst_rate || 0,
+      discountType: item.discount_type,
+      discountValue: Number(item.discount_value),
+    }];
+  });
+  const {
+    invoiceDiscountAmount, afterDiscountTotal,
+    roundOffAmount: roundOffPreviewAmount, total: projectedTotalAmount,
+  } = computeInvoiceTotals(totalLines, {
+    taxInclusive,
+    invoiceDiscount: { type: invoiceDiscountType, value: Number(invoiceDiscountValue) },
+    applyRoundOff,
+    interstateSupply: composerInterstateSupply,
+  });
+
   const resolvedDueDate = resolveDueDate({
     mode: dueDateMode,
     invoiceDate,
@@ -306,15 +356,15 @@ export default function InvoicesPage() {
   /* Which advanced settings this invoice actually uses. It names them on the
      closed row, so the disclosure is worth reading before opening it. */
   const advancedInUse = [
-    dueDateMode !== 'none' ? 'due date' : '',
+    !isQuote && dueDateMode !== 'none' ? 'due date' : '',
     supplierInvoiceNumber.trim() || referenceNotes.trim() ? 'reference' : '',
-    voucherType === 'sales' && !shippingSameAsBilling ? 'shipping address' : '',
+    isSaleLike && !shippingSameAsBilling ? 'shipping address' : '',
     Number(invoiceDiscountValue) > 0 ? 'discount' : '',
     applyRoundOff ? 'round off' : '',
   ].filter(Boolean);
   const advancedSummary = advancedInUse.length > 0
     ? `In use: ${advancedInUse.join(' · ')}`
-    : 'Due date, reference, shipping address, discount, round off';
+    : isQuote ? 'Reference, shipping address, discount, round off' : 'Due date, reference, shipping address, discount, round off';
 
   /* Never hide a setting that is in use: an invoice opened for editing can
      carry any of these, and a closed disclosure would put them out of sight
@@ -325,8 +375,7 @@ export default function InvoicesPage() {
   }, [advancedCount]);
 
   function addItem() {
-    const defaultProduct = products[0];
-    setItems((current) => [...current, createItem(nextItemId, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))]);
+    setItems((current) => [...current, createItem(nextItemId)]);
     setNextItemId((current) => current + 1);
   }
 
@@ -347,7 +396,7 @@ export default function InvoicesPage() {
   }
 
   function isTrackedLine(item: InvoiceFormItem) {
-    return Boolean(findProduct(Number(item.productId))?.track_serials);
+    return !isQuote && Boolean(findProduct(Number(item.productId))?.track_serials);
   }
 
   function lineQuantity(item: InvoiceFormItem) {
@@ -565,6 +614,13 @@ export default function InvoicesPage() {
     const prefs = readInvoiceComposerPrefs();
     setShowAdvanced(prefs.showAdvanced);
     setEditingInvoiceId(null);
+    setEditingQuotation(null);
+    setConversion(null);
+    setConversionOutOfDate(false);
+    setAlreadyConverted(null);
+    setValidUntil(defaultValidUntil(toIsoDate(new Date())));
+    validUntilEditedRef.current = false;
+    pendingShippingRef.current = null;
     setSupplierInvoiceNumber('');
     setReferenceNotes('');
     setTaxInclusive(prefs.taxInclusive);
@@ -573,12 +629,12 @@ export default function InvoicesPage() {
     // Per-invoice, never remembered: a carried-over discount would silently
     // reduce the next invoice's total.
     setInvoiceDiscountValue('');
+    setStockShortage(null);
     setPaymentMode('cash');
     setPaymentReference('');
     setSelectedPaymentAccountId('');
     setPaymentAmount('');
-    const defaultProduct = products[0];
-    itemsRef.current = [createItem(1, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))];
+    itemsRef.current = [createItem(1)];
     setItems(itemsRef.current);
     setNextItemId(2);
     setSerialBlockIds([]);
@@ -586,6 +642,8 @@ export default function InvoicesPage() {
     scanTargetRef.current = null;
     setPickerItemId(null);
     setInvoiceDate(toIsoDate(new Date()));
+    setPlaceOfSupplyChoice(null);
+    setSavedPlaceOfSupply(null);
     setDueDateMode(prefs.dueDateMode);
     setDueDate('');
     setDueDateDays(prefs.dueDateDays);
@@ -593,6 +651,146 @@ export default function InvoicesPage() {
     setSelectedShippingAddressId(null);
     setNewShippingLabel('');
     setNewShippingAddress('');
+  }
+
+  function changeVoucherType(next: ComposerVoucherType) {
+    setVoucherType(next);
+    if (isQuotationVoucher(next) && !validUntilEditedRef.current) {
+      setValidUntil(defaultValidUntil(invoiceDate));
+    }
+  }
+
+  function changeDocumentDate(next: string) {
+    setInvoiceDate(next);
+    if (isQuote && !validUntilEditedRef.current) {
+      setValidUntil(defaultValidUntil(next));
+    }
+  }
+
+  /** The saved address by id: anything in the new-address fields adds a ledger row. */
+  function prefillShipping(ledgerId: number, id: number | null, label: string, address: string) {
+    const usesShipping = id !== null || Boolean(address);
+    if (String(ledgerId) !== useInvoiceComposerStore.getState().selectedLedgerId) {
+      pendingShippingRef.current = usesShipping ? { id, label, address } : null;
+    }
+    setShippingSameAsBilling(!usesShipping);
+    setSelectedShippingAddressId(id);
+    setNewShippingLabel(label);
+    setNewShippingAddress(address);
+  }
+
+  function startEditingQuotation(quotation: Quotation) {
+    setError('');
+    setSuccess('');
+    setEditingInvoiceId(null);
+    setConversion(null);
+    setConversionOutOfDate(false);
+    setEditingQuotation(quotation);
+    setVoucherType(quotation.document_type);
+    setReferenceNotes(quotation.reference_notes ?? '');
+    setTaxInclusive(quotation.tax_inclusive);
+    setApplyRoundOff(quotation.apply_round_off);
+    setInvoiceDiscountType((quotation.discount_type as 'percentage' | 'net') || 'percentage');
+    setInvoiceDiscountValue(quotation.discount_value != null ? String(quotation.discount_value) : '');
+    setInvoiceDate(quotation.quotation_date);
+    setValidUntil(quotation.valid_until ?? '');
+    validUntilEditedRef.current = true;
+    const nextItems = quotationToFormItems(quotation);
+    itemsRef.current = nextItems;
+    setItems(nextItems);
+    setNextItemId(nextItems.length + 1);
+    /* A snapshot whose saved row has since gone falls back to the new-address
+       fields, so saving the edit does not quietly drop the shipping address. */
+    prefillShipping(
+      quotation.ledger_id,
+      quotation.shipping_address_id,
+      quotation.shipping_address_id === null ? (quotation.shipping_address_label ?? '') : '',
+      quotation.shipping_address_id === null ? (quotation.shipping_address ?? '') : '',
+    );
+    setSelectedLedgerId(String(quotation.ledger_id));
+  }
+
+  function startConverting(draft: QuotationConversionDraft) {
+    const invoice = draft.invoice;
+    setError('');
+    setSuccess('');
+    setAlreadyConverted(null);
+    setConversionOutOfDate(false);
+    setEditingInvoiceId(null);
+    setEditingQuotation(null);
+    setConversion(draft);
+    setVoucherType('sales');
+    setSupplierInvoiceNumber('');
+    setReferenceNotes(invoice.reference_notes ?? '');
+    setTaxInclusive(invoice.tax_inclusive ?? false);
+    setApplyRoundOff(invoice.apply_round_off ?? false);
+    setInvoiceDiscountType(invoice.discount_type || 'percentage');
+    setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
+    const dates = conversionDateDefaults(readInvoiceComposerPrefs());
+    setInvoiceDate(dates.invoiceDate);
+    setDueDateMode(dates.dueDateMode);
+    setDueDate(dates.dueDate);
+    setDueDateDays(dates.dueDateDays);
+    const nextItems = conversionDraftToFormItems(invoice);
+    itemsRef.current = nextItems;
+    setItems(nextItems);
+    setNextItemId(nextItems.length + 1);
+    prefillShipping(invoice.ledger_id, invoice.shipping_address_id ?? null, '', '');
+    setSelectedLedgerId(String(invoice.ledger_id));
+  }
+
+  /** Replaces the form with the quotation as it now stands. */
+  async function reloadConversion(quotationId: number) {
+    try {
+      startConverting(await fetchConversionDraft(quotationId));
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to load this document for conversion.'));
+    }
+  }
+
+  /** Leave a quotation edit or a conversion: the URL is what would bring it back. */
+  function clearQuotationParams() {
+    if (searchParams.has('edit_quotation') || searchParams.has('from_quotation')) {
+      setSearchParams((prev) => { prev.delete('edit_quotation'); prev.delete('from_quotation'); return prev; }, { replace: true });
+    }
+  }
+
+  async function submitQuotation() {
+    try {
+      setSubmitting(true);
+      setError('');
+      setSuccess('');
+      const fields: QuotationFields = {
+        ledger_id: Number(selectedLedgerId),
+        quotation_date: invoiceDate,
+        valid_until: validUntil || null,
+        reference_notes: referenceNotes.trim() || null,
+        tax_inclusive: taxInclusive,
+        apply_round_off: applyRoundOff,
+        discount_type: invoiceDiscountType || null,
+        discount_value: invoiceDiscountValue ? Number(invoiceDiscountValue) : null,
+        shipping_address_same_as_billing: shippingSameAsBilling,
+        shipping_address_id: (!shippingSameAsBilling && selectedShippingAddressId !== null) ? selectedShippingAddressId : null,
+        new_shipping_address: (!shippingSameAsBilling && selectedShippingAddressId === null && newShippingAddress.trim())
+          ? { label: newShippingLabel.trim() || 'Shipping', address: newShippingAddress.trim() }
+          : null,
+        items: items.map(formItemToQuotationLine),
+      };
+      const saved = editingQuotation
+        ? await updateQuotation(editingQuotation.id, fields)
+        : await createQuotation({ ...fields, document_type: voucherType as Quotation['document_type'] });
+      setSuccess(
+        `${saved.quotation_number} ${editingQuotation ? 'updated' : 'created'}. Stock and the books are unchanged.`,
+      );
+      setPreviewQuotation(saved);
+      resetInvoiceForm();
+      clearQuotationParams();
+      await queryClient.invalidateQueries({ queryKey: quotationQueryKeys.all });
+    } catch (err) {
+      setError(getApiErrorMessage(err, `Unable to save this ${composerDocumentName(voucherType)}`));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function startEditingInvoice(invoice: Invoice) {
@@ -617,6 +815,8 @@ export default function InvoicesPage() {
     setInvoiceDiscountType((invoice.discount_type as 'percentage' | 'net') || 'percentage');
     setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
     setSelectedLedgerId(String(invoice.ledger_id));
+    setPlaceOfSupplyChoice(invoice.place_of_supply ? { ledgerId: String(invoice.ledger_id), code: invoice.place_of_supply } : null);
+    setSavedPlaceOfSupply(invoice.place_of_supply ? { ledgerId: String(invoice.ledger_id), code: invoice.place_of_supply } : null);
     setInvoiceDate(invoice.invoice_date ? invoice.invoice_date.slice(0, 10) : toIsoDate(new Date()));
     const dueDateState = createDueDateFormState(invoice.due_date);
     setDueDateMode(dueDateState.mode);
@@ -675,6 +875,8 @@ export default function InvoicesPage() {
     setInvoiceDiscountType((invoice.discount_type as 'percentage' | 'net') || 'percentage');
     setInvoiceDiscountValue(invoice.discount_value != null ? String(invoice.discount_value) : '');
     setSelectedLedgerId(String(invoice.ledger_id));
+    setPlaceOfSupplyChoice(invoice.place_of_supply ? { ledgerId: String(invoice.ledger_id), code: invoice.place_of_supply } : null);
+    setSavedPlaceOfSupply(invoice.place_of_supply ? { ledgerId: String(invoice.ledger_id), code: invoice.place_of_supply } : null);
     setInvoiceDate(toIsoDate(new Date()));
     setDueDateMode('none');
     setDueDate('');
@@ -756,6 +958,11 @@ export default function InvoicesPage() {
       return;
     }
 
+    if (isQuote) {
+      await submitQuotation();
+      return;
+    }
+
     /* A tracked line with no serials is not an incomplete form, it is an
        invoice for units nobody has identified. The block is stated on the line
        itself — a toast at the top of a six-line invoice does not say which. */
@@ -771,19 +978,21 @@ export default function InvoicesPage() {
       setSubmitting(true);
       setError('');
       setSuccess('');
+      setStockShortage(null);
 
       const payload: InvoiceCreate = {
         ledger_id: Number(selectedLedgerId),
-        voucher_type: voucherType,
+        voucher_type: voucherType as InvoiceCreate['voucher_type'],
         invoice_date: invoiceDate,
         due_date: resolvedDueDate ?? invoiceDate,
         supplier_invoice_number: voucherType === 'purchase' ? (supplierInvoiceNumber.trim() || null) : null,
-        reference_notes: voucherType === 'sales' ? (referenceNotes.trim() || null) : null,
+        reference_notes: isSaleLike ? (referenceNotes.trim() || null) : null,
         tax_inclusive: taxInclusive,
         apply_round_off: applyRoundOff,
         discount_type: invoiceDiscountType || null,
         discount_value: invoiceDiscountValue ? Number(invoiceDiscountValue) : null,
         ...(voucherType === 'sales' ? {
+          place_of_supply: placeOfSupply || null,
           shipping_address_same_as_billing: shippingSameAsBilling,
           shipping_address_id: (!shippingSameAsBilling && selectedShippingAddressId !== null) ? selectedShippingAddressId : null,
           new_shipping_address: (!shippingSameAsBilling && selectedShippingAddressId === null && newShippingAddress.trim())
@@ -808,6 +1017,12 @@ export default function InvoicesPage() {
         if (searchParams.has('edit')) {
           setSearchParams((prev) => { prev.delete('edit'); return prev; }, { replace: true });
         }
+      } else if (conversion) {
+        const res = await api.post<Invoice>(`/quotations/${conversion.quotation_id}/convert`, conversionPayload(payload, conversion));
+        setSuccess(`Invoice ${res.data.invoice_number} created from ${conversion.quotation_number}. Inventory has been reduced.`);
+        setPreviewInvoice(res.data);
+        clearQuotationParams();
+        await queryClient.invalidateQueries({ queryKey: quotationQueryKeys.all });
       } else {
         const res = await api.post<Invoice>('/invoices/', payload);
         const baseMsg =
@@ -820,11 +1035,32 @@ export default function InvoicesPage() {
             : '';
         setSuccess(baseMsg + warningNote);
         setPreviewInvoice(res.data);
+        if (voucherType === 'sales') useFirstInvoiceTourStore.getState().invoiceCreated();
       }
 
       resetInvoiceForm();
       await refreshInvoicesAfterMutation();
     } catch (err) {
+      if (conversion && getApiErrorCode(err) === 'quotation_already_converted') {
+        /* Someone got there first, or this is a stale tab. Nothing went wrong and
+           there is nothing to fix on this form: say where the invoice is. */
+        const detail = (err as { response?: { data?: { detail?: { invoice_number?: string | null } } } }).response?.data?.detail;
+        /* In this order: resetting the form clears the banner. */
+        resetInvoiceForm();
+        setAlreadyConverted({
+          message: getApiErrorMessage(err, 'This was already converted to an invoice.'),
+          invoiceNumber: detail?.invoice_number ?? null,
+        });
+        clearQuotationParams();
+        await queryClient.invalidateQueries({ queryKey: quotationQueryKeys.all });
+        return;
+      }
+      if (conversion && getApiErrorCode(err) === 'quotation_changed') {
+        /* Keep the form: what is on it may be worth comparing before it is replaced. */
+        setConversionOutOfDate(true);
+      }
+      /* Keep the form as it is; the notice beside the button offers the fix. */
+      setStockShortage(readStockShortage(err));
       setError(getApiErrorMessage(err, editingInvoiceId ? 'Unable to update invoice' : 'Unable to create invoice'));
     } finally {
       setSubmitting(false);
@@ -836,7 +1072,35 @@ export default function InvoicesPage() {
     .filter((entry) => isTrackedLine(entry.item));
   const scanTargetEntry =
     trackedEntries.find((entry) => entry.item.id === scanTargetItemId) ?? trackedEntries[trackedEntries.length - 1] ?? null;
-  const hasTrackedProducts = products.some((product) => product.track_serials);
+  const hasTrackedProducts = !isQuote && products.some((product) => product.track_serials);
+  /* Tells the first-invoice walkthrough what is on the page. It only ever reads this. */
+  const reportToTour = useFirstInvoiceTourStore((state) => state.report);
+  const ledgerFormOpen = useInvoiceComposerStore((state) => state.showLedgerCreateModal);
+  const productFormOpen = useInvoiceComposerStore((state) => state.showProductCreateModal);
+  const stockFormOpen = useInvoiceComposerStore((state) => state.showStockUpdateModal);
+  const composerLoaded = Boolean(composerQuery.data);
+  const productChosen = items.some((item) => Boolean(item.productId));
+  useEffect(() => {
+    if (!composerLoaded) return;
+    reportToTour({
+      ledgerCount: ledgers.length,
+      productCount: products.length,
+      ledgerChosen: Boolean(selectedLedgerId),
+      productChosen,
+      isSales: voucherType === 'sales',
+      stockShortage: Boolean(stockShortage),
+      ledgerFormOpen,
+      productFormOpen,
+      stockFormOpen,
+    });
+  }, [composerLoaded, ledgers.length, products.length, selectedLedgerId, productChosen, voucherType, stockShortage, ledgerFormOpen, productFormOpen, stockFormOpen, reportToTour]);
+  useEffect(() => () => reportToTour(null), [reportToTour]);
+
+  const documentName = composerDocumentName(voucherType);
+  const conversionLedgerChanged = conversion !== null && Number(selectedLedgerId) !== conversion.invoice.ledger_id;
+  const conversionShortfalls = conversion
+    ? conversionLineShortfalls(conversion.invoice.items, items.map((item) => ({ productId: Number(item.productId), quantity: lineQuantity(item) })))
+    : [];
   const pickerItem = pickerItemId !== null ? items.find((item) => item.id === pickerItemId) ?? null : null;
   const pickerProduct = pickerItem ? findProduct(Number(pickerItem.productId)) : undefined;
 
@@ -844,23 +1108,27 @@ export default function InvoicesPage() {
     <div className="page-grid">
       <section className="page-hero">
         <div>
-          <p className="eyebrow">Invoices</p>
-          <h1 className="page-title">Invoice composer</h1>
-          <p className="section-copy">Build multi-line invoices against live product pricing and submit directly to the API.</p>
+          <p className="eyebrow">{isQuote ? 'Quotations' : 'Invoices'}</p>
+          <h1 className="page-title">{isQuote ? (voucherType === 'proforma' ? 'Proforma composer' : 'Quotation composer') : 'Invoice composer'}</h1>
+          <p className="section-copy">
+            {isQuote
+              ? 'An offer, not a tax invoice. Saving this moves no stock and reaches no report.'
+              : 'Pick who you are billing, add the items they bought, and save. Prices and tax come from your product list.'}
+          </p>
         </div>
-        <div className="status-chip">{invoiceTotal} invoices listed</div>
+        <div className="status-chip">{plural(invoiceTotal, 'invoice')} listed</div>
       </section>
 
       <StatusToasts
-        error={error || feedbackError}
+        error={feedbackError || error}
         success={success || feedbackSuccess}
         onClearError={() => {
           setError('');
-          clearFeedback();
+          clearFeedbackError();
         }}
         onClearSuccess={() => {
           setSuccess('');
-          clearFeedback();
+          clearFeedbackSuccess();
         }}
       />
 
@@ -868,12 +1136,16 @@ export default function InvoicesPage() {
         <article className="panel stack">
           <div className="panel__header">
             <div>
-              <p className="eyebrow">Create invoice</p>
-              <h2 className="nav-panel__title">{editingInvoiceId ? `Editing invoice #${editingInvoiceId}` : 'Order entry'}</h2>
+              <p className="eyebrow">Create {documentName}</p>
+              <h2 className="nav-panel__title">
+                {editingInvoiceId ? `Editing invoice #${editingInvoiceId}`
+                  : editingQuotation ? `Editing ${editingQuotation.quotation_number}`
+                    : conversion ? `Converting ${conversion.quotation_number}` : 'Order entry'}
+              </h2>
             </div>
             <div className="button-row" style={{ justifyContent: 'flex-end' }}>
               <div className="status-chip">Projected total {formatCurrency(projectedTotalAmount, activeCurrencyCode)}</div>
-              <Link className="button button--secondary" to="/invoices-view">Open invoice view</Link>
+              <Link className="button button--secondary" to={isQuote ? '/quotations' : '/invoices-view'}>{isQuote ? 'Open quotations' : 'Open invoice view'}</Link>
             </div>
           </div>
 
@@ -883,7 +1155,7 @@ export default function InvoicesPage() {
               {company?.name?.trim() ? company.name : 'Company not configured'}
             </p>
             <p className="muted-text">
-              {company?.gst ? `GST: ${company.gst} · ` : ''}
+              {company?.gst ? `GSTIN: ${company.gst} · ` : ''}
               {company?.phone_number ? `Phone: ${company.phone_number}` : 'Set details in Company page'}
             </p>
             <p className="muted-text">Currency: {activeCurrencyCode}</p>
@@ -904,6 +1176,79 @@ export default function InvoicesPage() {
             ) : null}
           </div>
 
+          {composerQuery.data && (ledgers.length === 0 || products.length === 0) ? (
+            <div className="empty-state stack" data-testid="invoice-first-run" style={{ marginBottom: '1rem' }}>
+              <strong>Add your first customer / product</strong>
+              <p className="muted-text" style={{ margin: 0 }}>
+                An invoice needs a customer ledger and at least one product. Add what is missing to get started.
+              </p>
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                {ledgers.length === 0 ? (
+                  <button type="button" className="button button--primary" data-tour="add-customer" onClick={openLedgerCreateModal}>
+                    <Plus size={13} />
+                    Add a customer
+                  </button>
+                ) : null}
+                {products.length === 0 ? (
+                  <button type="button" className="button button--primary" data-tour="add-product" onClick={openProductCreateModal}>
+                    <Plus size={13} />
+                    Add a product
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          {alreadyConverted ? (
+            <div className="summary-box" data-testid="quotation-already-converted">
+              <p className="eyebrow">Already invoiced</p>
+              <p>{alreadyConverted.message}</p>
+              {alreadyConverted.invoiceNumber ? (
+                <Link to={`/invoices-view?search=${encodeURIComponent(alreadyConverted.invoiceNumber)}`}>Open invoice</Link>
+              ) : null}
+            </div>
+          ) : null}
+
+          {conversion ? (
+            <div className="summary-box" data-testid="quotation-conversion-banner">
+              <p className="eyebrow">Creating a tax invoice from {conversion.quotation_number}</p>
+              <p className="muted-text">
+                Review it, scan any serials and save. This takes stock out, uses the next invoice number and closes the {conversion.document_type === 'proforma' ? 'proforma' : 'quotation'}.
+              </p>
+              {conversionOutOfDate ? (
+                <div data-testid="quotation-conversion-out-of-date">
+                  <p className="field-warning" data-warning="quotation_changed">
+                    ⚠️ {conversion.quotation_number} was changed after this was opened, so it cannot be saved from here. Loading the latest version replaces what is on this form.
+                  </p>
+                  <button type="button" className="button button--secondary" onClick={() => void reloadConversion(conversion.quotation_id)}>
+                    Load the latest version
+                  </button>
+                </div>
+              ) : null}
+              {conversion.warnings.map((warning) => (
+                <p key={`${warning.code}-${warning.message}`} className="field-warning" data-warning={warning.code}>
+                  ⚠️ {warning.message}
+                </p>
+              ))}
+              {conversionShortfalls.map((line) => (
+                <p key={line.productId} className="field-warning" data-warning="quantity_reduced">
+                  ⚠️ {findProduct(line.productId)?.name ?? `Product ${line.productId}`}: {line.onInvoice} of {line.quoted} on this invoice. The rest will not stay open on the {conversion.document_type === 'proforma' ? 'proforma' : 'quotation'}.
+                </p>
+              ))}
+              {conversionLedgerChanged ? (
+                <p className="field-warning" data-warning="ledger_changed">
+                  ⚠️ This invoice is going to a different ledger than the one it was quoted to.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {editingQuotation?.status === 'accepted' ? (
+            <p className="field-warning" data-testid="quotation-accepted-edit-warning">
+              ⚠️ The customer accepted this version. Editing keeps it marked accepted, so reopen it first if they need to agree to the changes.
+            </p>
+          ) : null}
+
           <form className="stack" onSubmit={handleSubmitInvoice}>
             <div className="field-grid">
               <div className="field">
@@ -912,12 +1257,19 @@ export default function InvoicesPage() {
                   id="invoice-voucher-type"
                   className="select"
                   value={voucherType}
-                  onChange={(event) => setVoucherType(event.target.value as 'sales' | 'purchase' | 'payment' | 'receipt')}
+                  disabled={conversion !== null || editingQuotation !== null}
+                  onChange={(event) => changeVoucherType(event.target.value as ComposerVoucherType)}
                 >
                   <option value="sales">Sales</option>
                   <option value="purchase">Purchase</option>
                   <option value="payment">Payment</option>
                   <option value="receipt">Receipt</option>
+                  {!editingInvoiceId && !conversion ? (
+                    <>
+                      <option value="quotation">Quotation</option>
+                      <option value="proforma">Proforma invoice</option>
+                    </>
+                  ) : null}
                 </select>
               </div>
 
@@ -938,24 +1290,51 @@ export default function InvoicesPage() {
                 />
               </div>
 
+              {voucherType === 'sales' && company?.gst?.trim() ? (
+                <PlaceOfSupplyField
+                  id="invoice-place-of-supply"
+                  value={placeOfSupply}
+                  onChange={(code) => setPlaceOfSupplyChoice({ ledgerId: selectedLedgerId, code })}
+                  warning={placeOfSupplyWarning}
+                />
+              ) : null}
+
               <div className="field">
-                <label htmlFor="invoice-date">Invoice date</label>
+                <label htmlFor="invoice-date">{isQuote ? (voucherType === 'proforma' ? 'Proforma date' : 'Quotation date') : 'Invoice date'}</label>
                 <input
                   id="invoice-date"
                   className="input"
                   type="date"
                   value={invoiceDate}
-                  onChange={(event) => setInvoiceDate(event.target.value)}
+                  onChange={(event) => changeDocumentDate(event.target.value)}
                   required
                 />
                 {activeFY !== null &&
                   invoiceDate !== '' &&
                   (invoiceDate < activeFY.start_date || invoiceDate > activeFY.end_date) ? (
                   <p className="field-warning">
-                    ⚠️ This date is outside the active financial year ({activeFY.label}). The invoice will still be created.
+                    ⚠️ This date is outside the active financial year ({activeFY.label}). The {documentName} will still be created.
                   </p>
                 ) : null}
               </div>
+
+              {isQuote ? (
+                <div className="field">
+                  <label htmlFor="quotation-valid-until">Valid until</label>
+                  <input
+                    id="quotation-valid-until"
+                    className="input"
+                    type="date"
+                    value={validUntil}
+                    min={invoiceDate || undefined}
+                    onChange={(event) => {
+                      validUntilEditedRef.current = true;
+                      setValidUntil(event.target.value);
+                    }}
+                  />
+                  <p className="muted-text" style={{ marginBottom: 0 }}>Leave blank if it does not expire.</p>
+                </div>
+              ) : null}
             </div>
 
             <label className="form-advanced-toggle">
@@ -973,7 +1352,7 @@ export default function InvoicesPage() {
 
             {showAdvanced ? (
               <div className="field-grid">
-              {voucherType !== 'payment' && voucherType !== 'receipt' ? (
+              {voucherType !== 'payment' && voucherType !== 'receipt' && !isQuote ? (
                 <>
                   <div className="field">
                     <label htmlFor="invoice-due-mode">Due date</label>
@@ -1052,7 +1431,7 @@ export default function InvoicesPage() {
                 </div>
               ) : null}
 
-              {voucherType === 'sales' ? (
+              {isSaleLike ? (
                 <div className="field">
                   <label htmlFor="invoice-reference-notes">Reference Notes</label>
                   <input
@@ -1069,7 +1448,7 @@ export default function InvoicesPage() {
                 </div>
               ) : null}
 
-              {voucherType === 'sales' ? (
+              {isSaleLike ? (
                 <div className="field" style={{ gridColumn: '1 / -1' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
                     <input
@@ -1319,7 +1698,7 @@ export default function InvoicesPage() {
                       <Plus size={13} />
                       New product
                     </button>
-                    <button type="button" className="link-button" onClick={openStockUpdateModal}>
+                    <button type="button" className="link-button" onClick={() => openStockUpdateModal()}>
                       <Boxes size={13} />
                       Update stock
                     </button>
@@ -1344,20 +1723,19 @@ export default function InvoicesPage() {
                   const selectedProduct = products.find((product) => product.id === Number(item.productId));
                   const selectedUnit = selectedProduct?.unit || 'Pieces';
                   const allowDecimalQuantity = Boolean(selectedProduct?.allow_decimal);
-                  const tracked = Boolean(selectedProduct?.track_serials);
+                  const tracked = !isQuote && Boolean(selectedProduct?.track_serials);
                   const quantityValue = tracked ? String(item.serials.length) : item.quantity;
                   const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
                   const gstRate = selectedProduct?.gst_rate || 0;
-                  let lineTotal: number;
-                  let taxAmount: number;
-                  if (taxInclusive) {
-                    lineTotal = unitPrice * Number(quantityValue || 0);
-                    taxAmount = lineTotal - lineTotal / (1 + gstRate / 100);
-                  } else {
-                    const taxableAmount = unitPrice * Number(quantityValue || 0);
-                    taxAmount = taxableAmount * gstRate / 100;
-                    lineTotal = taxableAmount + taxAmount;
-                  }
+                  const { lineTotal, taxAmount } = computeLineTotal({
+                    unitPrice,
+                    quantity: Number(quantityValue || 0),
+                    gstRate,
+                    taxInclusive,
+                    discountType: item.discount_type,
+                    discountValue: Number(item.discount_value),
+                    interstateSupply: composerInterstateSupply,
+                  });
 
                   return (
                     <div
@@ -1510,6 +1888,27 @@ export default function InvoicesPage() {
               </div>
             ) : null}
 
+            {stockShortage ? (
+              <div className="form-error stock-shortage" role="alert" data-testid="stock-shortage">
+                <p style={{ margin: 0 }}>
+                  Only {stockShortage.available} of {stockShortage.productName} in stock, and this invoice needs {stockShortage.required}.
+                  Add the missing stock and your invoice stays as you filled it in.
+                </p>
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  data-tour="add-stock"
+                  onClick={() => {
+                    setError('');
+                    openStockUpdateModal({ productId: stockShortage.productId, quantity: missingQuantity(stockShortage) });
+                  }}
+                >
+                  <Boxes size={15} aria-hidden="true" />
+                  Add stock for {stockShortage.productName}
+                </button>
+              </div>
+            ) : null}
+
             <div className="button-row">
               {voucherType !== 'payment' && voucherType !== 'receipt' ? (
                 <button type="button" className="button button--ghost" onClick={addItem} disabled={products.length === 0} title="Add line item" aria-label="Add line item">
@@ -1521,6 +1920,19 @@ export default function InvoicesPage() {
                   Cancel edit
                 </button>
               ) : null}
+              {editingQuotation || conversion ? (
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  onClick={() => {
+                    resetInvoiceForm();
+                    clearQuotationParams();
+                    setVoucherType('sales');
+                  }}
+                >
+                  {conversion ? 'Cancel conversion' : 'Cancel edit'}
+                </button>
+              ) : null}
               {voucherType === 'payment' ? (
                 <button className="button button--primary" disabled={submitting || !selectedLedgerId || !paymentAmount} title="Create payment voucher" aria-label="Create payment voucher">
                   {submitting ? 'Creating payment...' : 'Create payment voucher'}
@@ -1529,8 +1941,12 @@ export default function InvoicesPage() {
                 <button className="button button--primary" disabled={!selectedLedgerId} title="Record receipt" aria-label="Record receipt">
                   Record receipt
                 </button>
+              ) : isQuote ? (
+                <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId}>
+                  {submitting ? 'Saving...' : `${editingQuotation ? 'Update' : 'Create'} ${documentName}`}
+                </button>
               ) : (
-                <button className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId} title={editingInvoiceId ? 'Update invoice' : 'Create invoice'} aria-label={editingInvoiceId ? 'Update invoice' : 'Create invoice'}>
+                <button data-tour="create-invoice" className="button button--primary" disabled={submitting || products.length === 0 || !selectedLedgerId} title={!selectedLedgerId ? 'Choose who you are billing first' : editingInvoiceId ? 'Update invoice' : 'Create invoice'} aria-label={editingInvoiceId ? 'Update invoice' : 'Create invoice'}>
                   {submitting ? (editingInvoiceId ? 'Updating invoice...' : 'Creating invoice...') : editingInvoiceId ? 'Update invoice' : 'Create invoice'}
                 </button>
               )}
@@ -1546,6 +1962,18 @@ export default function InvoicesPage() {
         <InvoicePreview
           invoice={previewInvoice}
           onClose={() => setPreviewInvoice(null)}
+          onError={(msg) => setError(msg)}
+          onPaymentRecorded={(message) => {
+            setSuccess(message);
+            refreshInvoicesAfterMutation();
+          }}
+        />
+      ) : null}
+
+      {previewQuotation ? (
+        <QuotationPreview
+          quotation={previewQuotation}
+          onClose={() => setPreviewQuotation(null)}
           onError={(msg) => setError(msg)}
         />
       ) : null}

@@ -65,7 +65,7 @@ def _build_day_book_html(
 
     company_name = _e(company.name) if company else "Company"
     company_address = _e(company.address) if company else ""
-    company_gst = f"GST: {_e(company.gst)}" if company and company.gst else ""
+    company_gst = f"GSTIN: {_e(company.gst)}" if company and company.gst else ""
     company_phone = f"Phone: {_e(company.phone_number)}" if company and company.phone_number else ""
     company_details = " &middot; ".join(p for p in [company_gst, company_phone] if p)
 
@@ -310,13 +310,13 @@ def _build_statement_html(
 
     company_name = _e(company.name) if company else "Company"
     company_address = _e(company.address) if company else ""
-    company_gst = f"GST: {_e(company.gst)}" if company and company.gst else ""
+    company_gst = f"GSTIN: {_e(company.gst)}" if company and company.gst else ""
     company_phone = f"Phone: {_e(company.phone_number)}" if company and company.phone_number else ""
     company_details = " &middot; ".join(p for p in [company_gst, company_phone] if p)
     company_email = f"Email: {_e(company.email)}" if company and company.email else ""
     company_website = f"Web: {_e(company.website)}" if company and company.website else ""
     company_contact = " &middot; ".join(p for p in [company_email, company_website] if p)
-    ledger_gst = f"GST: {_e(ledger.gst)}" if ledger.gst else ""
+    ledger_gst = f"GSTIN: {_e(ledger.gst)}" if ledger.gst else ""
     ledger_phone = f"Phone: {_e(ledger.phone_number)}" if ledger.phone_number else ""
     ledger_email = _e(ledger.email) if ledger.email else ""
     ledger_details = " &middot; ".join(p for p in [ledger_gst, ledger_phone, ledger_email] if p)

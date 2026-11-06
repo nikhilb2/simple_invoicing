@@ -99,8 +99,12 @@ def _iter_dependants(dependant) -> Iterable[Any]:
         yield from _iter_dependants(sub)
 
 
+# Factories in src.api.deps whose closures carry the roles a route requires.
+_ROLE_GUARDS = ("require_roles.", "require_company_role.", "require_platform_admin.")
+
+
 def _roles_for_route(route) -> set[str] | None:
-    """Roles enforced by ``require_roles`` on this route, or None if unguarded."""
+    """Roles enforced by a role guard on this route, or None if unguarded."""
     dependant = getattr(route, "dependant", None)
     if dependant is None:
         return None
@@ -110,7 +114,7 @@ def _roles_for_route(route) -> set[str] | None:
         call = getattr(dep, "call", None)
         if call is None:
             continue
-        if getattr(call, "__qualname__", "").startswith("require_roles."):
+        if getattr(call, "__qualname__", "").startswith(_ROLE_GUARDS):
             found = True
             for cell in getattr(call, "__closure__", None) or ():
                 try:

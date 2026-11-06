@@ -48,6 +48,9 @@ gstr1_export_json	GET	/api/ledgers/tax-ledger/gstr1/export-json
 gstr1_export_pdf	GET	/api/ledgers/tax-ledger/gstr1/export-pdf
 gstr1_summary	GET	/api/ledgers/tax-ledger/gstr1/summary
 gstr1_validate	GET	/api/ledgers/tax-ledger/gstr1/validate
+gstr3b_export_csv	GET	/api/ledgers/tax-ledger/gstr3b/export-csv
+gstr3b_export_pdf	GET	/api/ledgers/tax-ledger/gstr3b/export-pdf
+gstr3b_worksheet	GET	/api/ledgers/tax-ledger/gstr3b/worksheet
 health_check	GET	/api/health
 inventory_adjust	POST	/api/inventory/adjust
 inventory_list	GET	/api/inventory/
@@ -118,6 +121,16 @@ products_list	GET	/api/products/
 products_list_with_inventory	GET	/api/products/with-inventory
 products_update	PUT	/api/products/{product_id}
 products_update_with_inventory	PUT	/api/products/{product_id}/with-inventory
+quotations_cancel	POST	/api/quotations/{quotation_id}/cancel
+quotations_conversion_draft	GET	/api/quotations/{quotation_id}/conversion-draft
+quotations_convert	POST	/api/quotations/{quotation_id}/convert
+quotations_create	POST	/api/quotations/
+quotations_download_pdf	GET	/api/quotations/{quotation_id}/pdf
+quotations_duplicate	POST	/api/quotations/{quotation_id}/duplicate
+quotations_get	GET	/api/quotations/{quotation_id}
+quotations_list	GET	/api/quotations/
+quotations_set_status	POST	/api/quotations/{quotation_id}/status
+quotations_update	PUT	/api/quotations/{quotation_id}
 serials_list	GET	/api/serials/
 serials_scan	GET	/api/serials/scan
 shortcuts_delete	DELETE	/api/shortcuts/{action_key}

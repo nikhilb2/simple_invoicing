@@ -4,6 +4,9 @@ from src.models.company_account import CompanyAccount
 from src.models.invoice import Invoice
 from src.models.product import Product
 
+from src.core.validation import GST_STATE_NAMES
+from src.services.gst_tax_service import invoice_is_interstate
+
 from .builders import (
     _build_invoice_discount_html,
     _build_item_discount_html,
@@ -48,7 +51,17 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     voucher_label = "Sales" if invoice.voucher_type == "sales" else "Purchase"
     inv_number = invoice.invoice_number or f"#{invoice.id}"
     inv_date = invoice.invoice_date.strftime("%d %b %Y") if invoice.invoice_date else (invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A")
-    interstate_supply = _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
+    place_of_supply = getattr(invoice, "place_of_supply", None)
+    # A buyer with no GSTIN gives nothing to compare, so the place of supply decides.
+    interstate_supply = (
+        invoice_is_interstate(invoice) if place_of_supply
+        else _is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
+    )
+    place_of_supply_line = (
+        f"<p>Place of supply: {_e(GST_STATE_NAMES.get(place_of_supply, place_of_supply))} ({_e(place_of_supply)})</p>"
+        if place_of_supply
+        else ""
+    )
     tax_header_cells = _build_pdf_tax_header_cells(interstate_supply)
     table_colgroup = _build_pdf_table_colgroup(interstate_supply, show_sku=show_sku)
 
@@ -108,7 +121,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     if invoice.company_logo_data and invoice.company_logo_mime_type:
         company_header_html += f"""
     <div class="invoice-sheet__logo">
-      <img src="data:{_e(invoice.company_logo_mime_type)};base64,{invoice.company_logo_data}" alt="Company logo" class="invoice-sheet__logo-img" />
+      <img src="data:{_e(invoice.company_logo_mime_type)};base64,{_e(invoice.company_logo_data)}" alt="Company logo" class="invoice-sheet__logo-img" />
     </div>"""
     if invoice.company_additional_info:
         lines = invoice.company_additional_info.split("\n")
@@ -120,7 +133,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
 
     company_detail_parts = []
     if invoice.company_gst:
-        company_detail_parts.append(f"GST: {_e(invoice.company_gst)}")
+        company_detail_parts.append(f"GSTIN: {_e(invoice.company_gst)}")
         company_pan = _extract_pan_from_gstin(invoice.company_gst)
         if company_pan:
             company_detail_parts.append(f"PAN: {_e(company_pan)}")
@@ -138,7 +151,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     # Bill-to details
     billto_parts = []
     if invoice.ledger_gst:
-        billto_parts.append(f"GST: {_e(invoice.ledger_gst)}")
+        billto_parts.append(f"GSTIN: {_e(invoice.ledger_gst)}")
         billto_pan = _extract_pan_from_gstin(invoice.ledger_gst)
         if billto_pan:
             billto_parts.append(f"PAN: {_e(billto_pan)}")
@@ -180,6 +193,14 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     invoice_discount_label = _build_invoice_discount_html(invoice, currency)
     tax_breakup_rows = _build_pdf_tax_breakup_rows(invoice, currency)
     payment_details_html = _build_pdf_payment_details_html(invoice_bank_accounts, pay_qr_html)
+    payment_section_html = (
+        f"""<div class="invoice-sheet__payment">
+      <p class="eyebrow">Payment details</p>
+      {payment_details_html}
+    </div>"""
+        if payment_details_html
+        else ""
+    )
     reference_notes_html = ""
     if invoice.reference_notes:
         reference_notes_html = f"""
@@ -449,6 +470,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
     line-height: 1.35;
   }}
   .invoice-sheet__totals {{
+    margin-left: auto;
     flex: 0 0 230px;
     text-align: right;
   }}
@@ -544,6 +566,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
       <span class="invoice-badge">{voucher_label}</span>
       <h2>Invoice {_e(inv_number)}</h2>
       <p>Date: {inv_date}</p>
+      {place_of_supply_line}
       <p>Currency: {_e(currency)}</p>
     </div>
   </header>
@@ -575,10 +598,7 @@ def _build_invoice_html(invoice: Invoice, products: list[Product], invoice_bank_
   </section>
 
   <section class="invoice-sheet__footer">
-    <div class="invoice-sheet__payment">
-      <p class="eyebrow">Payment details</p>
-      {payment_details_html}
-    </div>
+    {payment_section_html}
     <div class="invoice-sheet__totals">
       <p class="eyebrow">Tax breakup</p>
       <p>Taxable: {_fmt_currency(float(invoice.taxable_amount or 0), currency)}</p>

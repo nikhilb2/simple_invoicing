@@ -6,6 +6,15 @@ import { useEscapeClose } from '../../hooks/useEscapeClose';
 import type { Product, ProductCreate } from '../../types/api';
 import SerialChips from '../invoices/components/SerialChips';
 import type { CatalogueRow } from './types';
+import GstRateSelect from './GstRateSelect';
+import {
+  NO_STOCK_SAVED_NOTE,
+  NO_STOCK_WARNING,
+  hsnProblem,
+  errorAfterHsnEdit,
+  plainProductError,
+  startsWithNoStock,
+} from './productFormRules';
 
 const UNIT_OPTIONS = ['Pieces', 'Kg', 'g', 'm', 'l', 'Ounce'];
 const CUSTOM_UNIT_VALUE = '__custom__';
@@ -71,7 +80,9 @@ function emptyForm(): FormState {
     hsn_sac: '',
     price: '',
     purchase_price: '',
-    gst_rate: '0',
+    /* Left unchosen on a new product: 0% is a real rate, and a default of 0 is how
+       products got created with no GST by accident. */
+    gst_rate: '',
     reorder_level: '0',
     unit: 'Pieces',
     allow_decimal: false,
@@ -121,6 +132,14 @@ function duplicateForm(source: CatalogueRow): FormState {
   };
 }
 
+function RequiredMark() {
+  return (
+    <span className="required-mark" aria-hidden="true" title="Required">
+      *
+    </span>
+  );
+}
+
 export default function ProductFormModal({
   row,
   template = null,
@@ -165,14 +184,13 @@ export default function ProductFormModal({
     }));
   }
 
+  const openingQuantity = form.track_serials ? form.serial_numbers.length : Number(form.initial_quantity || 0);
+  const noOpeningStock = !isEdit && startsWithNoStock(form.maintain_inventory, openingQuantity);
+
   const unitIsCustom = !UNIT_OPTIONS.includes(form.unit) || form.unit === CUSTOM_UNIT_VALUE;
   const resolvedUnit = unitIsCustom ? customUnit.trim() : form.unit;
 
   function buildPayload(): ProductCreate {
-    const openingQuantity = form.track_serials
-      ? form.serial_numbers.length
-      : Number(form.initial_quantity || 0);
-
     return {
       sku: form.sku.trim(),
       name: form.name.trim(),
@@ -195,17 +213,28 @@ export default function ProductFormModal({
     };
   }
 
+  /** A code GST doesn't list still saves, but the owner should hear it now, not at filing. */
+  function savedMessage(message: string, product: Product): string {
+    const notes = [product.hsn_warning, !isEdit && noOpeningStock ? NO_STOCK_SAVED_NOTE : null].filter(Boolean);
+    return notes.length ? `${message} ${notes.join(' ')}` : message;
+  }
+
   /** Everything the server would reject, said inline before a round trip. */
   function validate(): string {
-    if (!form.sku.trim()) return 'SKU is required.';
+    if (!form.sku.trim()) return 'Enter an item code (SKU) for this product.';
     if (!form.name.trim()) return 'Product name is required.';
     if (form.price === '' || Number.isNaN(Number(form.price))) return 'Enter a selling price.';
     if (Number(form.price) < 0) return 'Selling price cannot be negative.';
     if (form.purchase_price !== '' && Number(form.purchase_price) < 0) {
       return 'Purchase price cannot be negative.';
     }
+    if (form.gst_rate.trim() === '') {
+      return 'Choose a GST rate. Pick 0% only if you charge no GST on this product.';
+    }
     const gst = Number(form.gst_rate);
     if (Number.isNaN(gst) || gst < 0 || gst > 100) return 'GST rate must be between 0 and 100.';
+    const hsn = hsnProblem(form.hsn_sac);
+    if (hsn) return hsn;
     if (unitIsCustom && !customUnit.trim()) return 'Enter a unit name.';
     if (form.is_producable && form.production_cost !== '' && Number(form.production_cost) < 0) {
       return 'Production cost cannot be negative.';
@@ -241,14 +270,14 @@ export default function ProductFormModal({
       setError('');
 
       if (isEdit && row) {
-        await api.put<Product>(`/products/${row.id}`, payload);
+        const updated = await api.put<Product>(`/products/${row.id}`, payload);
         // The attribute endpoint does not carry these two, so they follow in the
         // catalogue update that owns them.
         await api.put(`/products/${row.id}/with-inventory`, {
           purchase_price: form.purchase_price === '' ? 0 : Number(form.purchase_price),
           reorder_level: form.reorder_level === '' ? 0 : Number(form.reorder_level),
         });
-        onSaved(`${payload.name} updated.`);
+        onSaved(savedMessage(`${payload.name} updated.`, updated.data));
       } else {
         const created = await api.post<Product>('/products/', payload);
         if (form.purchase_price !== '' || form.reorder_level !== '0') {
@@ -257,11 +286,13 @@ export default function ProductFormModal({
             reorder_level: form.reorder_level === '' ? 0 : Number(form.reorder_level),
           });
         }
-        onSaved(`${payload.name} created.`);
+        onSaved(savedMessage(`${payload.name} created.`, created.data));
       }
     } catch (err) {
       setError(
-        getApiErrorMessage(err, isEdit ? 'Unable to update product' : 'Unable to create product'),
+        plainProductError(
+          getApiErrorMessage(err, isEdit ? 'Unable to update product' : 'Unable to create product'),
+        ),
       );
     } finally {
       setSubmitting(false);
@@ -293,7 +324,9 @@ export default function ProductFormModal({
         <form className="stack" onSubmit={handleSubmit}>
           <div className="field-grid">
             <label className="field" htmlFor="product-sku">
-              <span>SKU</span>
+              <span>
+                Item code (SKU) <RequiredMark />
+              </span>
               <input
                 id="product-sku"
                 ref={firstFieldRef}
@@ -301,12 +334,16 @@ export default function ProductFormModal({
                 value={form.sku}
                 onChange={(e) => update('sku', e.target.value)}
                 placeholder="WID-001"
+                aria-describedby="product-sku-hint"
                 required
               />
+              <p className="field-hint" id="product-sku-hint">Your own code for this item. Each product needs a different one.</p>
             </label>
 
             <label className="field" htmlFor="product-name">
-              <span>Product name</span>
+              <span>
+                Product name <RequiredMark />
+              </span>
               <input
                 id="product-name"
                 className="input"
@@ -318,7 +355,9 @@ export default function ProductFormModal({
             </label>
 
             <label className="field" htmlFor="product-price">
-              <span>Selling price</span>
+              <span>
+                Selling price (₹) <RequiredMark />
+              </span>
               <input
                 id="product-price"
                 className="input"
@@ -332,7 +371,7 @@ export default function ProductFormModal({
             </label>
 
             <label className="field" htmlFor="product-purchase-price">
-              <span>Purchase price</span>
+              <span>Purchase price (₹)</span>
               <input
                 id="product-purchase-price"
                 className="input"
@@ -344,28 +383,28 @@ export default function ProductFormModal({
               />
             </label>
 
-            <label className="field" htmlFor="product-gst">
-              <span>GST rate (%)</span>
-              <input
-                id="product-gst"
-                className="input"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                value={form.gst_rate}
-                onChange={(e) => update('gst_rate', e.target.value)}
-              />
-            </label>
+            <div className="field">
+              <label htmlFor="product-gst">
+                <span>
+                  GST rate <RequiredMark />
+                </span>
+              </label>
+              <GstRateSelect id="product-gst" value={form.gst_rate} onChange={(rate) => update('gst_rate', rate)} />
+            </div>
 
             <label className="field" htmlFor="product-hsn">
-              <span>HSN / SAC</span>
+              <span>HSN / SAC code (optional)</span>
               <input
                 id="product-hsn"
                 className="input"
+                inputMode="numeric"
                 value={form.hsn_sac}
-                onChange={(e) => update('hsn_sac', e.target.value)}
+                onChange={(e) => {
+                  update('hsn_sac', e.target.value);
+                  setError(errorAfterHsnEdit);
+                }}
               />
+              <p className="field-hint">4, 6 or 8 digits. Needed for GST returns; you can add it later.</p>
             </label>
 
             <label className="field" htmlFor="product-unit">
@@ -449,12 +488,12 @@ export default function ProductFormModal({
                   disabled={form.track_serials}
                   onChange={(e) => update('maintain_inventory', e.target.checked)}
                 />
-                <span>Maintain stock for this product</span>
+                <span>Keep count of stock for this product</span>
               </label>
               <p className="field-hint">
                 {form.track_serials
                   ? 'Required while serial tracking is on.'
-                  : 'Off for services and anything you do not count.'}
+                  : 'Turn off for services and anything you do not count. If it is on, you can only sell what you have in stock.'}
               </p>
 
               <label className="inline-check">
@@ -550,7 +589,7 @@ export default function ProductFormModal({
                 </>
               ) : (
                 <label className="field" htmlFor="product-initial-qty">
-                  <span>Opening quantity</span>
+                  <span>How many do you have now? (opening quantity)</span>
                   <input
                     id="product-initial-qty"
                     className="input"
@@ -565,6 +604,20 @@ export default function ProductFormModal({
                   </p>
                 </label>
               )}
+              {noOpeningStock ? (
+                <div className="field-warning field-warning--action" role="status" data-testid="product-no-stock-warning">
+                  <p style={{ margin: 0 }}>{NO_STOCK_WARNING}</p>
+                  {!form.track_serials ? (
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={() => update('maintain_inventory', false)}
+                    >
+                      Stop tracking stock for this item
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
 

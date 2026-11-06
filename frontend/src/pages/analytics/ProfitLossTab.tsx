@@ -6,7 +6,7 @@ import StatusToasts from '../../components/StatusToasts';
 import { downloadProfitLossCsv, fetchProfitLoss } from '../../features/analytics/api';
 import { analyticsQueryKeys } from '../../features/analytics/queryKeys';
 import type { AnalyticsFilters, ProfitLossProductRow } from '../../features/analytics/types';
-import formatCurrency, { formatCompactCurrency } from '../../utils/formatting';
+import formatCurrency, { formatCompactCurrency, plural } from '../../utils/formatting';
 import MonthlyProfitChart from './charts/MonthlyProfitChart';
 import ProfitByProductChart from './charts/ProfitByProductChart';
 
@@ -238,7 +238,7 @@ export default function ProfitLossTab({ filters }: { filters: AnalyticsFilters }
                   </tbody>
                   <tfoot>
                     <tr>
-                      <th scope="row">{totals.product_count} products</th>
+                      <th scope="row">{plural(totals.product_count, 'product')}</th>
                       <th scope="col" className="text-right">{totals.quantity_sold}</th>
                       <th scope="col" className="text-right">—</th>
                       <th scope="col" className="text-right">—</th>

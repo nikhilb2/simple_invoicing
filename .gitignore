@@ -54,3 +54,6 @@ k8s
 
 backups
 desktop
+
+# TypeScript incremental build output
+*.tsbuildinfo

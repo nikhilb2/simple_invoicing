@@ -766,7 +766,7 @@ def test_untracked_product_lines_carry_an_empty_serial_list(client, db_session):
 # Duplicating an invoice
 # ---------------------------------------------------------------------------
 
-def test_duplicating_an_invoice_does_not_copy_serials(client, db_session):
+def test_duplicating_a_serial_tracked_invoice_is_rejected(client, db_session):
     supplier_id = _create_ledger(client, name="Dup Supplier")
     customer_id = _create_ledger(client, name="Dup Customer", gst="27ABCDE9999F1ZW")
     product_id = _create_product(client, db_session, sku="SER-DUP")
@@ -775,19 +775,13 @@ def test_duplicating_an_invoice_does_not_copy_serials(client, db_session):
     sale = _create_invoice(client, customer_id, "sales", product_id, 1, ["A1"])
 
     response = client.post(f"/api/invoices/{sale['id']}/duplicate")
-    assert response.status_code == 200, response.text
-    duplicate_id = response.json()["id"]
+    assert response.status_code == 400, response.text
+    assert "pick serials" in response.json()["detail"]
 
-    duplicate = client.get(f"/api/invoices/{duplicate_id}")
-    assert duplicate.status_code == 200, duplicate.text
-    body = duplicate.json()
-    assert len(body["items"]) == 1
-    assert body["items"][0]["product_id"] == product_id
-    # Every unit is unique, so the duplicate starts empty and the shopkeeper
-    # scans the handsets actually going out on it.
-    assert _line_serials(body) == []
-
-    # The original keeps its unit, and no row moved to the duplicate.
+    # The original keeps its unit; no active invoice without serials is created.
+    original = client.get(f"/api/invoices/{sale['id']}")
+    assert original.status_code == 200, original.text
+    assert _line_serials(original.json()) == ["A1"]
     assert _serial_row(db_session, "A1").sales_invoice_id == sale["id"]
     assert assert_serial_invariant(db_session, product_id) == 1
 

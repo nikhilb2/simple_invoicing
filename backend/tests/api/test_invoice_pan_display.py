@@ -54,38 +54,47 @@ def _line_item(product_id: int = 1, quantity: float = 2):
 
 
 def test_extract_pan_from_gstin_returns_pan_for_valid_gstin():
-    assert _extract_pan_from_gstin("07AAMPB1274B1Z8") == "AAMPB1274B"
+    assert _extract_pan_from_gstin("07ZZZZZ9999Z1ZA") == "ZZZZZ9999Z"
 
 
 def test_extract_pan_from_gstin_returns_none_for_missing_or_invalid_gstin():
     assert _extract_pan_from_gstin(None) is None
     assert _extract_pan_from_gstin("") is None
-    assert _extract_pan_from_gstin("07AAMPB1274B1Z") is None
+    assert _extract_pan_from_gstin("07ZZZZZ9999Z1Z") is None
 
 
 def test_sales_html_shows_pan_only_when_corresponding_gst_exists():
     invoice = _invoice_base("sales")
-    invoice.company_gst = "07AAMPB1274B1Z8"
+    invoice.company_gst = "07ZZZZZ9999Z1ZA"
     invoice.ledger_gst = None
 
     html = _build_invoice_html(invoice, [])
 
-    assert "GST: 07AAMPB1274B1Z8" in html
-    assert "PAN: AAMPB1274B" in html
+    assert "GSTIN: 07ZZZZZ9999Z1ZA" in html
+    assert "PAN: ZZZZZ9999Z" in html
     assert "PAN:" not in html.split("Bill to", 1)[1]
+
+
+def test_sales_html_omits_payment_section_when_no_bank_account_is_marked():
+    html = _build_invoice_html(_invoice_base("sales"), [])
+
+    # The customer's copy has nothing useful to say about an unmarked bank account.
+    assert "No bank account marked" not in html
+    assert ">Payment details<" not in html
+    assert "Tax breakup" in html
 
 
 def test_purchase_html_shows_supplier_and_company_pan_when_gst_present():
     invoice = _invoice_base("purchase")
     invoice.ledger_gst = "29ABCDE1234F1ZW"
-    invoice.company_gst = "07AAMPB1274B1Z8"
+    invoice.company_gst = "07ZZZZZ9999Z1ZA"
 
     html = _build_purchase_invoice_html(invoice, [])
 
-    assert "GST: 29ABCDE1234F1ZW" in html
+    assert "GSTIN: 29ABCDE1234F1ZW" in html
     assert "PAN: ABCDE1234F" in html
-    assert "GST: 07AAMPB1274B1Z8" in html
-    assert "PAN: AAMPB1274B" in html
+    assert "GSTIN: 07ZZZZZ9999Z1ZA" in html
+    assert "PAN: ZZZZZ9999Z" in html
 
 
 def test_sales_pdf_tax_breakup_shows_only_igst_for_interstate_case():

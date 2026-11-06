@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from decimal import Decimal
+import json
 
 import pytest
 
@@ -15,6 +16,51 @@ from src.models.user import User, UserRole
 from src.schemas.invoice import InvoiceCreate, InvoiceItemCreate
 
 
+@pytest.mark.parametrize("method", ["POST", "PUT"])
+@pytest.mark.parametrize("field", ["quantity", "unit_price", "item_discount", "invoice_discount"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_invoice_rejects_nonfinite_values(client, method, field, value):
+    ledger = client.post("/api/ledgers/", json={
+        "name": "Finite Values Ledger", "address": "Mumbai", "gst": "27ABCDE1234F1Z0",
+        "phone_number": "9999999999", "email": "ledger@example.com",
+    })
+    assert ledger.status_code == 200, ledger.text
+    product = client.post("/api/products/", json={
+        "sku": "FINITE-INVOICE", "name": "Finite Invoice Product", "price": 100,
+        "gst_rate": 0, "initial_quantity": 10,
+    })
+    assert product.status_code == 200, product.text
+    payload = {
+        "ledger_id": ledger.json()["id"],
+        "discount_type": "net", "discount_value": 5,
+        "items": [{"product_id": product.json()["id"], "quantity": 1,
+                   "unit_price": 100, "discount_type": "net", "discount_value": 5}],
+    }
+    original = client.post("/api/invoices/", json=payload)
+    assert original.status_code == 200, original.text
+    invoice_id = original.json()["id"]
+
+    if field == "invoice_discount":
+        payload["discount_value"] = value
+    elif field == "item_discount":
+        payload["items"][0]["discount_value"] = value
+    else:
+        payload["items"][0][field] = value
+    url = "/api/invoices/" if method == "POST" else f"/api/invoices/{invoice_id}"
+    response = client.request(method, url, content=json.dumps(payload),
+                              headers={"Content-Type": "application/json"})
+    assert response.status_code == 422, response.text
+
+    listing = client.get("/api/invoices/")
+    assert listing.status_code == 200, listing.text
+    assert [invoice["id"] for invoice in listing.json()["items"]] == [invoice_id]
+    unchanged = client.get(f"/api/invoices/{invoice_id}")
+    assert unchanged.status_code == 200, unchanged.text
+    assert unchanged.json() == original.json()
+    stock = client.get("/api/products/with-inventory?search=Finite Invoice Product")
+    assert stock.json()["items"][0]["current_stock"] == 9
+
+
 @pytest.fixture
 def processor(db_session):
     return InvoiceProcessor(db_session)
@@ -23,7 +69,7 @@ def processor(db_session):
 def _seed(db_session):
     user = User(email="admin@test.com", full_name="Admin", hashed_password="x", role=UserRole.admin)
     ledger = Buyer(name="Test Buyer", address="Addr", gst="07AABB1234C1Z5", phone_number="9999999999")
-    company = CompanyProfile(name="Test Co", address="HQ", gst="07AAMPB1274B1Z8", phone_number="8888888888", currency_code="INR")
+    company = CompanyProfile(name="Test Co", address="HQ", gst="07ZZZZZ9999Z1ZA", phone_number="8888888888", currency_code="INR")
     db_session.add_all([user, ledger, company])
     db_session.flush()
     return user, ledger

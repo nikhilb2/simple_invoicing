@@ -3,7 +3,8 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator
 from typing import List, Literal, Optional
 from src.schemas.ledger import LedgerOut
 from src.schemas.ledger_address import ShippingAddressInline
-from src.core.validation import normalize_hsn_sac
+from src.core.document_limits import MONEY_LIMIT, QUANTITY_LIMIT
+from src.core.validation import normalize_hsn_sac, normalize_place_of_supply
 
 
 def _validate_discount_value(
@@ -30,11 +31,11 @@ def _validate_discount_value(
 
 class InvoiceItemCreate(BaseModel):
     product_id: int
-    quantity: float
-    unit_price: float | None = Field(default=None, ge=0)
+    quantity: float = Field(lt=QUANTITY_LIMIT, allow_inf_nan=False)
+    unit_price: float | None = Field(default=None, ge=0, lt=MONEY_LIMIT, allow_inf_nan=False)
     description: str | None = None
     discount_type: Literal["percentage", "net"] | None = None
-    discount_value: float | None = None
+    discount_value: float | None = Field(default=None, lt=MONEY_LIMIT, allow_inf_nan=False)
 
     @field_validator("discount_value", mode="after")
     @classmethod
@@ -67,11 +68,19 @@ class InvoiceCreate(BaseModel):
     tax_inclusive: bool = False
     apply_round_off: bool = False
     discount_type: Literal["percentage", "net"] | None = None
-    discount_value: float | None = None
+    discount_value: float | None = Field(default=None, lt=MONEY_LIMIT, allow_inf_nan=False)
     shipping_address_same_as_billing: bool = True
     shipping_address_id: int | None = None
     new_shipping_address: ShippingAddressInline | None = None
+    # Two-digit GST state code of a sale. None takes the buyer's GSTIN state, or
+    # the seller's own state for a buyer with no GSTIN.
+    place_of_supply: str | None = None
     items: List[InvoiceItemCreate]
+
+    @field_validator("place_of_supply")
+    @classmethod
+    def _check_place_of_supply(cls, value: str | None) -> str | None:
+        return normalize_place_of_supply(value)
 
     @field_validator("discount_value", mode="after")
     @classmethod
@@ -129,6 +138,7 @@ class InvoiceOut(BaseModel):
     company_additional_info: str | None = None
     company_terms_text: str | None = None
     voucher_type: str
+    place_of_supply: str | None = None
     supplier_invoice_number: str | None = None
     reference_notes: str | None = None
     status: str = "active"
@@ -159,6 +169,8 @@ class InvoiceOut(BaseModel):
     financial_year_id: Optional[int] = None
     shipping_address: str | None = None
     shipping_address_label: str | None = None
+    source_quotation_id: int | None = None
+    source_quotation_number: str | None = None
     warnings: List[str] = Field(default_factory=list)
     created_at: datetime
     items: list[InvoiceItemOut] = Field(default_factory=list)

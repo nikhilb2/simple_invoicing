@@ -7,12 +7,16 @@ import api, { getApiErrorMessage } from '../api/client';
 import type { InvoiceCreate, Invoice, Ledger, Product } from '../types/api';
 import { useFY } from '../context/FYContext';
 import formatCurrency from '../utils/formatting';
+import { computeInvoiceTotals, computeLineTotal, type InvoiceTotalLine } from '../utils/invoiceTotals';
 import { toIsoDate } from '../utils/dateRanges';
 import { formatInvoiceDateLabel, resolveDueDate, type DueDateMode } from '../utils/invoiceDueDate.ts';
 import { formatInvoiceTaxBreakdown, isInterstateSupply } from '../utils/invoiceTax';
+import { isInterstatePlaceOfSupply, resolvePlaceOfSupply, type PlaceOfSupplyChoice } from '../utils/gstStates';
+import PlaceOfSupplyField from './PlaceOfSupplyField';
 import { invoiceDraftSnapshot } from '../utils/invoiceDraft';
 import ProductCombobox from './ProductCombobox';
 import LedgerCombobox from './LedgerCombobox';
+import { readStockShortage, type StockShortage } from '../features/invoices/stockShortage';
 import SerialChips from '../pages/invoices/components/SerialChips';
 
 type ModalInvoiceFormItem = {
@@ -60,10 +64,12 @@ export default function CreateInvoiceModal({
   const [dueDate, setDueDate] = useState('');
   const [dueDateDays, setDueDateDays] = useState('');
   const [referenceNotes, setReferenceNotes] = useState('');
+  const [placeOfSupplyChoice, setPlaceOfSupplyChoice] = useState<PlaceOfSupplyChoice | null>(null);
   const [items, setItems] = useState<ModalInvoiceFormItem[]>([createItem(1)]);
   const [nextItemId, setNextItemId] = useState(2);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [stockShortage, setStockShortage] = useState<StockShortage | null>(null);
   const [currencyCode, setCurrencyCode] = useState('INR');
   const [companyGst, setCompanyGst] = useState<string | null>(null);
   const [pristineSnapshot, setPristineSnapshot] = useState<string | null>(null);
@@ -85,14 +91,6 @@ export default function CreateInvoiceModal({
         setCurrencyCode(companyRes.data.currency_code || 'INR');
         setCompanyGst(companyRes.data.gst || null);
 
-        if (!preselectedLedgerId && ledgersRes.data.items.length > 0) {
-          setSelectedLedgerId(String(ledgersRes.data.items[0].id));
-        }
-
-        const defaultProduct = productsRes.data.items[0];
-        if (defaultProduct) {
-          setItems([createItem(1, String(defaultProduct.id), String(defaultProduct.price))]);
-        }
       } catch (err) {
         onError(getApiErrorMessage(err, 'Unable to load form data'));
       } finally {
@@ -102,46 +100,29 @@ export default function CreateInvoiceModal({
     return () => { cancelled = true; };
   }, []);
 
-  const totalAmount = items.reduce((sum, item) => {
+  const selectedLedger = ledgers.find((ledger) => ledger.id === Number(selectedLedgerId));
+  const placeOfSupply = resolvePlaceOfSupply(placeOfSupplyChoice, selectedLedgerId, companyGst, selectedLedger?.gst);
+  const composerInterstateSupply = voucherType === 'sales' && placeOfSupply
+    ? isInterstatePlaceOfSupply(placeOfSupply, companyGst)
+    : isInterstateSupply(companyGst, selectedLedger?.gst);
+
+  const totalLines = items.flatMap((item): InvoiceTotalLine[] => {
     const product = products.find((p) => p.id === Number(item.productId));
-    const quantity = product?.track_serials ? item.serials.length : Number(item.quantity);
-    const unitPrice = item.unit_price ? Number(item.unit_price) : (product?.price || 0);
-    const gstRate = product?.gst_rate || 0;
-    if (!product || Number.isNaN(quantity)) return sum;
-
-    let taxableAmount: number;
-    let lineTotal: number;
-    if (taxInclusive) {
-      lineTotal = unitPrice * quantity;
-      taxableAmount = lineTotal / (1 + gstRate / 100);
-    } else {
-      taxableAmount = unitPrice * quantity;
-      lineTotal = taxableAmount + taxableAmount * gstRate / 100;
-    }
-
-    // Apply item-level discount
-    if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
-      const discVal = Number(item.discount_value);
-      let discAmount = 0;
-      if (item.discount_type === 'percentage') {
-        discAmount = taxableAmount * discVal / 100;
-      } else {
-        discAmount = Math.min(discVal, taxableAmount);
-      }
-      const discountedTaxable = taxableAmount - discAmount;
-      if (taxInclusive) {
-        lineTotal = discountedTaxable * (1 + gstRate / 100);
-      } else {
-        lineTotal = discountedTaxable + discountedTaxable * gstRate / 100;
-      }
-    }
-
-    return sum + lineTotal;
-  }, 0);
+    if (!product) return [];
+    return [{
+      quantity: product.track_serials ? item.serials.length : Number(item.quantity),
+      unitPrice: item.unit_price ? Number(item.unit_price) : product.price || 0,
+      gstRate: product.gst_rate || 0,
+      discountType: item.discount_type,
+      discountValue: Number(item.discount_value),
+    }];
+  });
+  const { total: totalAmount } = computeInvoiceTotals(totalLines, {
+    taxInclusive, interstateSupply: composerInterstateSupply,
+  });
 
   function addItem() {
-    const defaultProduct = products[0];
-    setItems((c) => [...c, createItem(nextItemId, String(defaultProduct?.id ?? ''), String(defaultProduct?.price ?? ''))]);
+    setItems((c) => [...c, createItem(nextItemId)]);
     setNextItemId((c) => c + 1);
   }
 
@@ -167,8 +148,6 @@ export default function CreateInvoiceModal({
     activeFY !== null &&
     invoiceDate !== '' &&
     (invoiceDate < activeFY.start_date || invoiceDate > activeFY.end_date);
-  const selectedLedger = ledgers.find((ledger) => ledger.id === Number(selectedLedgerId));
-  const composerInterstateSupply = isInterstateSupply(companyGst, selectedLedger?.gst);
   const resolvedDueDate = resolveDueDate({
     mode: dueDateMode,
     invoiceDate,
@@ -178,6 +157,7 @@ export default function CreateInvoiceModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setStockShortage(null);
     try {
       setSubmitting(true);
       const payload: InvoiceCreate = {
@@ -187,6 +167,7 @@ export default function CreateInvoiceModal({
         due_date: resolvedDueDate ?? invoiceDate,
         reference_notes: voucherType === 'sales' ? (referenceNotes.trim() || null) : null,
         tax_inclusive: taxInclusive,
+        place_of_supply: voucherType === 'sales' ? (placeOfSupply || null) : null,
         items: items.map((item) => {
           const product = products.find((p) => p.id === Number(item.productId));
           return {
@@ -210,6 +191,7 @@ export default function CreateInvoiceModal({
           : undefined;
       onCreated(msg, warningMsg, res.data);
     } catch (err) {
+      setStockShortage(readStockShortage(err));
       onError(getApiErrorMessage(err, 'Unable to create invoice'));
     } finally {
       setSubmitting(false);
@@ -225,6 +207,7 @@ export default function CreateInvoiceModal({
     dueDate,
     dueDateDays,
     referenceNotes,
+    placeOfSupplyChoice: placeOfSupplyChoice?.code ?? '',
     items,
   });
 
@@ -294,6 +277,14 @@ export default function CreateInvoiceModal({
                     disabled={!!preselectedLedgerId}
                   />
                 </div>
+
+                {voucherType === 'sales' && companyGst?.trim() ? (
+                  <PlaceOfSupplyField
+                    id="modal-inv-place-of-supply"
+                    value={placeOfSupply}
+                    onChange={(code) => setPlaceOfSupplyChoice({ ledgerId: selectedLedgerId, code })}
+                  />
+                ) : null}
 
                 <div className="field">
                   <label htmlFor="modal-inv-date">Invoice date</label>
@@ -400,46 +391,15 @@ export default function CreateInvoiceModal({
                   const quantityValue = tracked ? String(item.serials.length) : item.quantity;
                   const unitPrice = item.unit_price ? Number(item.unit_price) : (selectedProduct?.price || 0);
                   const gstRate = selectedProduct?.gst_rate || 0;
-                  let lineTotal: number;
-                  let taxAmount: number;
-                  if (taxInclusive) {
-                    let baseLineTotal = unitPrice * Number(quantityValue || 0);
-                    let baseTaxableAmount = baseLineTotal / (1 + gstRate / 100);
-                    // Apply item-level discount
-                    if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
-                      const discVal = Number(item.discount_value);
-                      let discAmount = 0;
-                      if (item.discount_type === 'percentage') {
-                        discAmount = baseTaxableAmount * discVal / 100;
-                      } else {
-                        discAmount = Math.min(discVal, baseTaxableAmount);
-                      }
-                      const discountedTaxable = baseTaxableAmount - discAmount;
-                      lineTotal = discountedTaxable * (1 + gstRate / 100);
-                      taxAmount = lineTotal - discountedTaxable;
-                    } else {
-                      lineTotal = baseLineTotal;
-                      taxAmount = lineTotal - baseTaxableAmount;
-                    }
-                  } else {
-                    const baseTaxableAmount = unitPrice * Number(quantityValue || 0);
-                    // Apply item-level discount
-                    if (item.discount_type && item.discount_value && Number(item.discount_value) > 0) {
-                      const discVal = Number(item.discount_value);
-                      let discAmount = 0;
-                      if (item.discount_type === 'percentage') {
-                        discAmount = baseTaxableAmount * discVal / 100;
-                      } else {
-                        discAmount = Math.min(discVal, baseTaxableAmount);
-                      }
-                      const discountedTaxable = baseTaxableAmount - discAmount;
-                      taxAmount = discountedTaxable * gstRate / 100;
-                      lineTotal = discountedTaxable + taxAmount;
-                    } else {
-                      taxAmount = baseTaxableAmount * gstRate / 100;
-                      lineTotal = baseTaxableAmount + taxAmount;
-                    }
-                  }
+                  const { lineTotal, taxAmount } = computeLineTotal({
+                    unitPrice,
+                    quantity: Number(quantityValue || 0),
+                    gstRate,
+                    taxInclusive,
+                    discountType: item.discount_type,
+                    discountValue: Number(item.discount_value),
+                    interstateSupply: composerInterstateSupply,
+                  });
 
                   return (
                     <div key={item.id} className="line-item">
@@ -533,6 +493,20 @@ export default function CreateInvoiceModal({
                   );
                 })}
               </div>
+
+              {stockShortage ? (
+                <div className="form-error stock-shortage" role="alert" data-testid="stock-shortage">
+                  <p style={{ margin: 0 }}>
+                    Only {stockShortage.available} of {stockShortage.productName} in stock, and this invoice needs {stockShortage.required}.
+                  </p>
+                  <p style={{ margin: '4px 0 0' }}>
+                    <a href="/catalogue" target="_blank" rel="noopener" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
+                      Open catalogue to add stock
+                    </a>
+                    . Then come back here and press Create invoice again; your form stays as it is.
+                  </p>
+                </div>
+              ) : null}
 
               <div className="button-row">
                 <button type="button" className="button button--ghost" onClick={addItem} disabled={products.length === 0} title="Add line item" aria-label="Add line item">

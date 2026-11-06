@@ -8,7 +8,7 @@ type FYState = {
   clearFYList: () => void;
   refreshFYList: () => Promise<void>;
   switchFY: (id: number) => Promise<void>;
-  createFY: (label: string, startDate: string, endDate: string) => Promise<void>;
+  createFY: (label: string, startDate: string, endDate: string) => Promise<string[]>;
 };
 
 export const useFYStore = create<FYState>((set, get) => ({
@@ -43,7 +43,8 @@ export const useFYStore = create<FYState>((set, get) => ({
   },
 
   createFY: async (label, startDate, endDate) => {
-    await createFinancialYear({ label, start_date: startDate, end_date: endDate });
+    const created = await createFinancialYear({ label, start_date: startDate, end_date: endDate });
     await get().refreshFYList();
+    return created.warnings ?? [];
   },
 }));

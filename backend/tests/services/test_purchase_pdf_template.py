@@ -30,7 +30,7 @@ def make_purchase_invoice(*, discount_type=None, discount_value=None, item_disco
         invoice_number="PINV-TEST-1",
         voucher_type="purchase",
         company_currency_code="INR",
-        company_gst="07AAMPB1274B1Z8",
+        company_gst="07ZZZZZ9999Z1ZA",
         ledger_gst="24AAHCD0395H1ZQ",
         invoice_date=datetime(2026, 9, 24),
         tax_inclusive=False,

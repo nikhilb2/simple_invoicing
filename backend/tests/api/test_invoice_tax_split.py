@@ -60,7 +60,7 @@ def _seed_common(db_session, ledger_gst: str = "07ABCDE1234F1Z2"):
     company = CompanyProfile(
         name="Respawn",
         address="HQ",
-        gst="07AAMPB1274B1Z8",
+        gst="07ZZZZZ9999Z1ZA",
         phone_number="8888888888",
         currency_code="INR",
     )

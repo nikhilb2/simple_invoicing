@@ -20,10 +20,10 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
 from src.core.config import settings
-from src.db.session import SessionLocal
-from src.models.company import CompanyProfile
+from src.db.session import OwnerSessionLocal, SessionLocal
 from src.models.smtp_config import SMTPConfig
 from src.models.user import User, UserRole
+from src.services.company_access import legacy_default_company
 from src.services.mail import send_email
 
 logger = logging.getLogger(__name__)
@@ -63,6 +63,10 @@ def resolve_recipients(db) -> list[str]:
     override = settings.AUTO_BACKUP_EMAIL_TO.strip()
     if override:
         addresses = [part.strip() for part in override.split(",")]
+    elif settings.is_shared_hosting:
+        # The archive holds every tenant's data. A tenant's own admin is not
+        # one of the people it is entrusted to; the platform operators are.
+        addresses = [part.strip() for part in settings.PLATFORM_ADMIN_EMAILS.split(",")]
     else:
         addresses = [
             user.email
@@ -78,8 +82,12 @@ def _company_context(db) -> dict:
     Falls back to empty values rather than failing: an install with no company
     profile yet still gets its backup mailed, just with a bare header.
     """
-    company = db.query(CompanyProfile).order_by(CompanyProfile.id.asc()).first()
+    # In shared hosting there is no "the" company -- the first one is just one
+    # tenant -- so the mail goes out under the platform's name instead.
+    company = legacy_default_company(db)
     if company is None:
+        if settings.is_shared_hosting:
+            return {"company_name": settings.PLATFORM_SMTP_FROM_NAME}
         return {"company_name": "Simple Invoicing"}
     return {
         "company_name": company.name,
@@ -103,7 +111,11 @@ async def email_backup_archive(
     if not settings.AUTO_BACKUP_EMAIL_ENABLED:
         return EmailOutcome("skipped", "Backup email is turned off (AUTO_BACKUP_EMAIL_ENABLED).")
 
-    db = SessionLocal()
+    # Shared hosting reads through the owner: this platform job acts for no
+    # tenant, and the email_logs row it writes has no company, which row-level
+    # security would refuse for the app role. It already mails the whole-database
+    # archive, so the owner connection grants it nothing new.
+    db = OwnerSessionLocal() if settings.is_shared_hosting else SessionLocal()
     try:
         # Checked directly rather than by catching send_email's RuntimeError: an
         # install with no mail set up is an expected state, not a failure, and it
@@ -159,6 +171,7 @@ async def email_backup_archive(
                 attachments=attachments,
                 cc=recipients[1:] or None,
                 email_type=EMAIL_TYPE,
+                use_smtp_config=True,
             )
         except Exception as exc:  # noqa: BLE001 -- a failed email must not fail the backup
             logger.exception("Could not email the automatic backup")

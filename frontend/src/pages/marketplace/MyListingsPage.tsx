@@ -6,6 +6,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import EmptyState from '../../components/EmptyState';
 import StatusToasts from '../../components/StatusToasts';
 import { createListing, fetchMyListings, updateListing, withdrawListing } from '../../features/marketplace/api';
+import { plural } from '../../utils/formatting';
 import { marketplaceQueryKeys } from '../../features/marketplace/queryKeys';
 import { useMarketplaceConnection } from '../../features/marketplace/useMarketplaceSync';
 import { formatMoney, formatQuantity, inclusiveFromExclusive } from '../../features/marketplace/decimal';
@@ -145,7 +146,7 @@ export default function MyListingsPage() {
             <div className="panel__header">
               <div>
                 <p className="eyebrow">Published</p>
-                <h2 className="nav-panel__title">{listings.length} listings</h2>
+                <h2 className="nav-panel__title">{plural(listings.length, 'listing')}</h2>
               </div>
               <button
                 type="button"

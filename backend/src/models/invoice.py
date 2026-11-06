@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, ForeignKey, DateTime, Numeric, String, Text
+from sqlalchemy import Boolean, Column, Index, Integer, ForeignKey, DateTime, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.db.base import Base
@@ -6,9 +6,26 @@ from src.db.base import Base
 
 class Invoice(Base):
     __tablename__ = "invoices"
+    # Numbers are unique per company, not per database: every company's series
+    # starts at -001, and a global constraint would make one tenant's numbers
+    # collide with (and reveal the volume of) another's.
+    __table_args__ = (
+        UniqueConstraint("company_id", "invoice_number", name="uq_invoices_company_invoice_number"),
+        # At most one live invoice per quotation. Cancelled invoices stay behind as
+        # history, and restoring one while a newer invoice is live hits this too.
+        # Declared for both dialects: with postgresql_where alone, the SQLite test
+        # schema would make the index fully unique and refuse a re-conversion.
+        Index(
+            "ux_invoices_active_source_quotation",
+            "source_quotation_id",
+            unique=True,
+            postgresql_where=text("source_quotation_id IS NOT NULL AND status = 'active'"),
+            sqlite_where=text("source_quotation_id IS NOT NULL AND status = 'active'"),
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    invoice_number = Column(String, nullable=True, unique=True, index=True)
+    invoice_number = Column(String, nullable=True, index=True)
     company_id = Column(Integer, ForeignKey("company_profiles.id"), nullable=True, index=True)
     ledger_id = Column("buyer_id", Integer, ForeignKey("buyers.id"), nullable=True)
     ledger_name = Column("buyer_name", String, nullable=True)
@@ -28,6 +45,10 @@ class Invoice(Base):
     company_account_number = Column(String, nullable=True)
     company_ifsc_code = Column(String, nullable=True)
     voucher_type = Column(String, nullable=False, default="sales")
+    # Two-digit GST state code. Decides CGST/SGST or IGST on a sale. NULL on
+    # purchases and on sales made before the column existed, which read the
+    # state from the two GSTINs (see gst_tax_service.invoice_is_interstate).
+    place_of_supply = Column(String(2), nullable=True)
     supplier_invoice_number = Column(String, nullable=True)
     reference_notes = Column(String, nullable=True)
     status = Column(String, nullable=False, default="active")
@@ -57,9 +78,21 @@ class Invoice(Base):
     company_additional_info = Column(Text, nullable=True)
     company_terms_text = Column(Text, nullable=True)
 
+    # The quotation or proforma this invoice was converted from. Kept for life, unless
+    # the invoice is cancelled and the quotation is then edited: it no longer describes
+    # this invoice, so update_quotation clears the link.
+    source_quotation_id = Column(Integer, ForeignKey("quotations.id"), nullable=True)
+
     ledger = relationship("Buyer", back_populates="invoices")
+    # selectin: an invoice list reads the number off every row, and most rows have
+    # none, so one IN query for the few that do rather than one query each.
+    source_quotation = relationship("Quotation", lazy="selectin")
     items = relationship("InvoiceItem", back_populates="invoice", cascade="all, delete-orphan")
     payment_allocations = relationship("PaymentInvoiceAllocation", back_populates="invoice", cascade="all, delete-orphan")
+
+    @property
+    def source_quotation_number(self) -> str | None:
+        return self.source_quotation.quotation_number if self.source_quotation else None
 
 
 class InvoiceItem(Base):

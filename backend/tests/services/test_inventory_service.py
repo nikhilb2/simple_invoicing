@@ -257,6 +257,10 @@ class TestCheckAvailability:
             )
         assert exc_info.value.status_code == 400
         assert "Insufficient inventory" in exc_info.value.detail
+        assert "only 2 in stock, and this invoice needs 5" in exc_info.value.detail
+        assert exc_info.value.product_id == product.id
+        assert exc_info.value.available == Decimal("2")
+        assert exc_info.value.required == Decimal("5")
 
     def test_raises_when_no_inventory_row(self, db_session):
         company = make_company(db_session)

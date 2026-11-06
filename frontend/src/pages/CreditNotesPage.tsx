@@ -22,7 +22,9 @@ import type {
   Ledger,
   Product,
 } from '../types/api';
-import formatCurrency, { formatDate } from '../utils/formatting';
+import formatCurrency, { formatDate, plural } from '../utils/formatting';
+import { backdatedNoteWarning, creditNoteDateChoice as nextCreditNoteDateChoice, shownCreditNoteDate } from '../utils/creditNoteDate';
+import { toIsoDate } from '../utils/dateRanges';
 import { downloadCsv } from '../utils/csv';
 import { deepLinkClass, numericParam, useDeepLinkScroll } from '../utils/deepLink';
 
@@ -71,6 +73,11 @@ export default function CreditNotesPage() {
   const [direction, setDirection] = useState<CreditNoteDirection>('outward');
   const [supplierNoteNumber, setSupplierNoteNumber] = useState('');
   const [supplierNoteDate, setSupplierNoteDate] = useState('');
+  // The date stays null until the user picks one, so the form sends none and the
+  // server dates the note today in India. What it shows follows the clock.
+  const [today, setToday] = useState(() => toIsoDate(new Date()));
+  const [creditNoteDateChoice, setCreditNoteDateChoice] = useState<string | null>(null);
+  const creditNoteDate = shownCreditNoteDate(creditNoteDateChoice, today);
   const [reason, setReason] = useState('');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [discountAmounts, setDiscountAmounts] = useState<Record<string, string>>({});
@@ -100,6 +107,17 @@ export default function CreditNotesPage() {
   // and whatever the other filters were left on.
   const deepLinkCreditNoteId = numericParam(searchParams, 'cn_id');
   const [highlightCreditNoteId, setHighlightCreditNoteId] = useState<number | null>(null);
+
+  // A form left open overnight would otherwise still offer yesterday.
+  useEffect(() => {
+    const refreshToday = () => setToday(toIsoDate(new Date()));
+    window.addEventListener('focus', refreshToday);
+    document.addEventListener('visibilitychange', refreshToday);
+    return () => {
+      window.removeEventListener('focus', refreshToday);
+      document.removeEventListener('visibilitychange', refreshToday);
+    };
+  }, []);
 
   const currencyCode = company?.currency_code || 'INR';
 
@@ -382,6 +400,9 @@ export default function CreditNotesPage() {
     }, { taxable: 0, tax: 0 });
   }, [creditNoteType, discountAmounts, selectedLineItems]);
 
+  // Nothing is filed for an inward note, so its date moves no return.
+  const backdatedWarning = direction === 'outward' ? backdatedNoteWarning(creditNoteDate, today) : null;
+
   function handleLedgerChange(nextLedgerId: string) {
     setSelectedLedgerId(nextLedgerId);
     setSelectedInvoiceIds([]);
@@ -440,6 +461,7 @@ export default function CreditNotesPage() {
       direction,
       supplier_credit_note_number: direction === 'inward' ? supplierNoteNumber.trim() : null,
       supplier_credit_note_date: direction === 'inward' ? supplierNoteDate : null,
+      credit_note_date: creditNoteDateChoice,
       reason: reason.trim() || null,
       items: payloadItems,
     };
@@ -458,6 +480,7 @@ export default function CreditNotesPage() {
       setDiscountAmounts({});
       setSupplierNoteNumber('');
       setSupplierNoteDate('');
+      setCreditNoteDateChoice(null);
       setRefreshKey((value) => value + 1);
 
       const [creditNotesRes, invoicesRes] = await Promise.all([
@@ -517,13 +540,13 @@ export default function CreditNotesPage() {
 
   function handleExportCreditNotesCsv() {
     downloadCsv(
-      `credit_notes_${new Date().toISOString().slice(0, 10)}.csv`,
+      `credit_notes_${toIsoDate(new Date())}.csv`,
       ['Number', 'Date', 'Ledger', 'Original invoice', 'Total'],
       creditNotes.map((creditNote) => {
         const ledger = ledgers.find((entry) => entry.id === creditNote.ledger_id);
         return [
           creditNote.credit_note_number,
-          formatDate(creditNote.created_at),
+          formatDate(creditNote.credit_note_date ?? creditNote.created_at),
           ledger?.name || `Ledger #${creditNote.ledger_id}`,
           creditNote.invoice_ids.join(', '),
           creditNote.total_amount,
@@ -605,7 +628,20 @@ export default function CreditNotesPage() {
                     ))}
                   </select>
                 </label>
+                <label>
+                  <span>Credit note date</span>
+                  <input
+                    id="credit-note-date"
+                    className="input"
+                    type="date"
+                    required
+                    max={today}
+                    value={creditNoteDate}
+                    onChange={(event) => setCreditNoteDateChoice(nextCreditNoteDateChoice(event.target.value, today))}
+                  />
+                </label>
               </div>
+              {backdatedWarning ? <p className="field-warning" role="alert">{backdatedWarning}</p> : null}
 
               {direction === 'inward' ? (
                 <>
@@ -659,7 +695,7 @@ export default function CreditNotesPage() {
                       <h3 className="nav-panel__title" style={{ fontSize: '1rem' }}>Select invoice set</h3>
                     </div>
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                      {filteredInvoices.length} active {expectedVoucherType} invoices for this ledger
+                      {filteredInvoices.length} active {expectedVoucherType} {filteredInvoices.length === 1 ? 'invoice' : 'invoices'} for this ledger
                     </span>
                   </div>
 
@@ -694,7 +730,7 @@ export default function CreditNotesPage() {
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
                               <div>
                                 <strong>{invoice.invoice_number || `#${invoice.id}`}</strong>
-                                <p style={{ margin: '4px 0 0', color: 'var(--text-muted)' }}>Date {formatDate(invoice.invoice_date)} • {invoice.items.length} items</p>
+                                <p style={{ margin: '4px 0 0', color: 'var(--text-muted)' }}>Date {formatDate(invoice.invoice_date)} • {plural(invoice.items.length, 'item')}</p>
                               </div>
                               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ padding: '4px 10px', borderRadius: '999px', background: creditStatus.background, color: creditStatus.color, fontSize: '0.8rem', fontWeight: 600 }}>
@@ -725,7 +761,7 @@ export default function CreditNotesPage() {
                         {creditNoteType === 'discount' ? 'Enter discount amount (tax inclusive)' : 'Choose credited quantities'}
                       </h3>
                     </div>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{payloadItems.length} lines selected</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{plural(payloadItems.length, 'line')} selected</span>
                   </div>
 
                   {creditNoteType === 'discount' ? (
@@ -779,7 +815,7 @@ export default function CreditNotesPage() {
                             className="input"
                             type="number"
                             min={0}
-                            max={creditNoteType === 'discount' ? undefined : line.item.quantity}
+                            max={creditNoteType === 'discount' ? line.item.line_total : line.item.quantity}
                             step={creditNoteType === 'discount' ? '0.01' : '1'}
                             value={creditNoteType === 'discount' ? (discountAmounts[line.quantityKey] || '') : (quantities[line.quantityKey] || '')}
                             onChange={(event) => {
@@ -825,6 +861,7 @@ export default function CreditNotesPage() {
                     setDirection('outward');
                     setSupplierNoteNumber('');
                     setSupplierNoteDate('');
+                    setCreditNoteDateChoice(null);
                   }}
                 >
                   Reset form
@@ -957,7 +994,7 @@ export default function CreditNotesPage() {
                   </div>
 
                   <p style={{ margin: '0 0 10px', color: 'var(--text-muted)' }}>
-                    {ledger?.name || `Ledger #${creditNote.ledger_id}`} • Created {formatDate(creditNote.created_at)} • Invoices {creditNote.invoice_ids.join(', ')}
+                    {ledger?.name || `Ledger #${creditNote.ledger_id}`} • Dated {formatDate(creditNote.credit_note_date ?? creditNote.created_at)} • Invoices {creditNote.invoice_ids.join(', ')}
                   </p>
 
                   {creditNote.direction === 'inward' && creditNote.supplier_credit_note_number ? (

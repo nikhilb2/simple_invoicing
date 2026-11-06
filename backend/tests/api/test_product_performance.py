@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 from src.models.company import CompanyProfile
 from src.models.credit_note import CreditNote, CreditNoteItem
 from src.models.invoice import Invoice, InvoiceItem
+from src.services.gst_tax_service import india_today
 
 MARCH = {"from_date": "2026-03-01", "to_date": "2026-03-31"}
 IN_MARCH = datetime(2026, 3, 10, 12, 0)
@@ -41,7 +42,7 @@ def _line(product_id, quantity, unit_price, gst_rate=18):
 
 def _create_invoice(client, ledger_id, items, *, voucher_type="sales", invoice_date=IN_MARCH, **extra):
     """invoice_date=None leaves the column default (now), which credit-note
-    tests need: a note is dated by its created_at, i.e. today."""
+    tests need: a note is dated by its credit_note_date, by default today."""
     payload = {"voucher_type": voucher_type, "ledger_id": ledger_id, "items": items, **extra}
     if invoice_date is not None:
         payload["invoice_date"] = invoice_date.date().isoformat()
@@ -87,9 +88,10 @@ def _rows(data):
 
 
 def _today_window():
-    # Credit notes are stamped with utcnow; a wide window keeps the test
-    # independent of the day of the month it runs on.
-    today = datetime.utcnow().date()
+    # A credit note is dated today in India, which is a day ahead of UTC for
+    # part of every day; a wide window keeps the test independent of the day of
+    # the month it runs on.
+    today = india_today()
     return {"from_date": (today - timedelta(days=400)).isoformat(), "to_date": today.isoformat()}
 
 

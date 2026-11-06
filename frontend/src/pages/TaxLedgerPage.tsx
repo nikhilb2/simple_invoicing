@@ -14,14 +14,14 @@ import type {
   TaxLiability,
   TaxLiabilityBucket,
 } from '../types/api';
-import formatCurrency, { formatDate } from '../utils/formatting';
+import formatCurrency, { formatDate, plural } from '../utils/formatting';
 import { parseGstRate } from '../utils/gstRate';
+import { toIsoDate } from '../utils/dateRanges';
 
 function defaultDateRange() {
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-  const toIso = (date: Date) => date.toISOString().slice(0, 10);
-  return { fromDate: toIso(firstDay), toDate: toIso(today) };
+  return { fromDate: toIsoDate(firstDay), toDate: toIsoDate(today) };
 }
 
 export default function TaxLedgerPage() {
@@ -117,12 +117,29 @@ export default function TaxLedgerPage() {
     };
   }, [period.fromDate, period.toDate, voucherType, numericGstRate]);
 
+  /* Follow the financial year by its dates, not its object, so a refetch of
+     the same year changes nothing. Dates picked before the year first arrives
+     are the owner's; only a real switch to another year replaces them. */
+  const fyKey = activeFY ? `${activeFY.start_date}|${activeFY.end_date}` : '';
+  const appliedFyKey = useRef(fyKey);
+  const periodEditedByUser = useRef(false);
+
   useEffect(() => {
+    if (appliedFyKey.current === fyKey) return;
+    const firstArrival = appliedFyKey.current === '';
+    appliedFyKey.current = fyKey;
+    if (firstArrival && periodEditedByUser.current) return;
+    periodEditedByUser.current = false;
     setPeriod({
       fromDate: activeFY?.start_date ?? defaultDateRange().fromDate,
       toDate: activeFY?.end_date ?? defaultDateRange().toDate,
     });
-  }, [activeFY]);
+  }, [fyKey, activeFY]);
+
+  const setPeriodByUser: typeof setPeriod = (value) => {
+    periodEditedByUser.current = true;
+    setPeriod(value);
+  };
 
   async function handleTaxLedgerDownload(format: 'pdf' | 'csv') {
     try {
@@ -165,7 +182,7 @@ export default function TaxLedgerPage() {
           </p>
         </div>
         <div className="page-hero__aside">
-          <div className="status-chip">{entries.length} rows</div>
+          <div className="status-chip">{plural(entries.length, 'row')}</div>
           {/* Filing used to be the second half of this page. It has its own
               route now, so the ledger keeps the link that the tab bar was. */}
           <Link className="button button--ghost button--small" to="/gstr1">
@@ -183,7 +200,7 @@ export default function TaxLedgerPage() {
 
       <TaxLedgerFilters
         period={period}
-        setPeriod={setPeriod}
+        setPeriod={setPeriodByUser}
         voucherType={voucherType}
         setVoucherType={setVoucherType}
         gstRate={gstRate}

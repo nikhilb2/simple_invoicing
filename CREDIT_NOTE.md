@@ -8,14 +8,14 @@ Notes run in two **directions**:
 
 | Direction | Against | What it is |
 |-----------|---------|------------|
-| `outward` | a sales invoice | A note **we issue**. Lowers our output tax and is filed in GSTR-1 (CDNR/CDNUR, and its series in Table 13). |
+| `outward` | a sales invoice | A note **we issue**. Lowers our output tax and is filed in GSTR-1 (CDNR, CDNUR or a reduced B2CS row, net in Table 12, and its series in Table 13). |
 | `inward` | a purchase invoice | The **supplier's own** credit note, recorded on our side. Tally calls this voucher a Debit Note. |
 
 Under s.34 CGST only the supplier issues a credit or debit note against their tax invoice, so there is **nothing for us to file** on an inward note: the supplier declares it in their GSTR-1 and it reaches us through GSTR-2B as a reduction of input credit. What we record is *their* document — their number and date are what reconcile against GSTR-2B — plus our own `DN-` number for the audit trail.
 
 One note covers one voucher type; mixing sales and purchase invoices is rejected with a 400.
 
-Implementation is tracked under [Epic #259](https://github.com/nikhilb2/simple_invoicing/issues/259) across four phases.
+Implementation is tracked under [Epic #259](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/issues/259) across four phases.
 
 ---
 
@@ -50,10 +50,11 @@ credit_notes
 | `direction` | `outward\|inward` | Default `outward`; derived from the referenced invoices' `voucher_type` |
 | `supplier_credit_note_number` | string nullable | The supplier's own number. Required on `inward`, rejected on `outward` |
 | `supplier_credit_note_date` | date nullable | The supplier's own date. Same rule |
+| `credit_note_date` | timestamp | The date on the document, at midnight. Defaults to today in India. Every report and return dates a note by this |
 | `reason` | text nullable | |
 | `status` | `active\|cancelled` | Default `active` |
 | `taxable_amount`, `cgst_amount`, `sgst_amount`, `igst_amount`, `total_amount` | Decimal(10,2) | Aggregated from items |
-| `created_at` | timestamp | |
+| `created_at` | timestamp | When the row was written, in UTC. Not the date of the note |
 | `cancelled_at` | timestamp nullable | |
 
 **`credit_note_invoice_refs`**
@@ -77,7 +78,7 @@ No `applied_amount` column — amounts are derived from item-level data.
 | `invoice_item_id` | FK → invoice_items NOT NULL | Required for both return and discount CNs |
 | `product_id` | FK → products | Snapshot reference |
 | `quantity` | numeric | |
-| `unit_price`, `gst_rate` | Decimal | |
+| `unit_price`, `gst_rate` | Decimal | `unit_price` is per-unit taxable value, so printed lines add up on a tax-inclusive or discounted invoice |
 | `taxable_amount`, `tax_amount`, `line_total` | Decimal(10,2) | |
 | `created_at` | timestamp | |
 
@@ -125,7 +126,7 @@ POST /api/credit-notes/{id}/cancel — Cancel
 | `status` | string | `active` or `cancelled` |
 | `direction` | string | `outward` or `inward` (`outward` also matches rows predating the column) |
 | `search` | string | ilike on credit_note_number **or** supplier_credit_note_number |
-| `date_from`, `date_to` | date | CN creation date range |
+| `date_from`, `date_to` | date | Range of `credit_note_date` |
 | `page`, `page_size` | int | Pagination |
 
 ### Create Payload
@@ -168,8 +169,12 @@ An inward note carries the supplier's document instead of a reason alone:
 **Validation rules:**
 - All `invoice_ids` must belong to `ledger_id` → 400 if mismatch
 - Each item's `invoice_id` must be in `invoice_ids` → 400 if mismatch
-- Sum of existing active CN items + new quantity ≤ original item quantity per `invoice_item_id`
+- Units returned or adjusted by active CNs + new quantity ≤ original item quantity per `invoice_item_id`
+- `line_total` of an item's active CNs of every type + the new credit ≤ that item's `line_total` → 400
 - All referenced invoices must share one `voucher_type` → 400 on a mix
+- All referenced invoices must share one place of supply → 400 on a mix
+- Outward: all referenced invoices must sit in one GSTR-1 table (B2B, B2CL or B2CS) → 400 on a mix
+- `credit_note_date`, when given, cannot be in the future or before a referenced invoice's date → 400
 - The declared `direction` must match what those invoices imply → 400 otherwise
 - On `inward`, the same `supplier_credit_note_number` cannot already be active for that ledger → 400 (a duplicate would reverse the input credit twice)
 - An invoice's `voucher_type` cannot be changed while active credit notes reference it → 400
@@ -237,7 +242,7 @@ Serials are voided rather than deleted: the unit existed and the note is the rec
 |---------|---------|--------|
 | Party ledger / day book | Credits the ledger (receivable falls) | **Debits** the ledger (payable falls), labelled `Debit Note` and naming the supplier's number |
 | Tax ledger | Reduces output tax | Reduces input credit, so GST payable rises |
-| GSTR-1 | CDNR/CDNUR + Table 13 nature 5 | **Excluded entirely** |
+| GSTR-1 | CDNR; CDNUR when unregistered and it belongs with a B2CL invoice, otherwise a reduced B2CS row; net in Table 12; Table 13 nature 5 | **Excluded entirely** |
 | Invoice dues / reminders | Reduces the sales invoice's outstanding | Untouched — only ever touches a purchase invoice |
 
 ## Immutability & Cancellation

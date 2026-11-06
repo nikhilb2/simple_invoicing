@@ -5,14 +5,21 @@ Handles extraction of GST state codes, tax splitting logic for CGST/SGST/IGST,
 and invoice-level tax aggregation.
 """
 
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
+from src.core.validation import is_place_of_supply
 from src.models.invoice import Invoice, InvoiceItem
 
 
 def money(value: Decimal) -> Decimal:
     """Round a Decimal value to 2 decimal places using ROUND_HALF_UP."""
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def india_today() -> date:
+    """Today's date in India, which is what a GST document is dated by."""
+    return datetime.now(timezone(timedelta(hours=5, minutes=30))).date()
 
 
 def is_interstate_supply(company_gst: str | None, ledger_gst: str | None) -> bool:
@@ -32,6 +39,84 @@ def is_interstate_supply(company_gst: str | None, ledger_gst: str | None) -> boo
     if not company_gst or not ledger_gst or len(company_gst) < 2 or len(ledger_gst) < 2:
         return False
     return company_gst[:2] != ledger_gst[:2]
+
+
+def _state_code(gstin: str | None) -> str | None:
+    state = (gstin or "").strip()[:2]
+    return state if len(state) == 2 and state.isdigit() else None
+
+
+def default_place_of_supply(company_gst: str | None, ledger_gst: str | None) -> str | None:
+    """Where a sale is taken to be made when nobody said otherwise.
+
+    The buyer's GSTIN state for a registered buyer, the seller's own state for
+    anyone else. None when the seller has no GSTIN, or when the buyer's GSTIN
+    starts with a code that is not a state (99), which leaves the two GSTINs to
+    decide the tax as they always did until somebody picks a state.
+    """
+    if not _state_code(company_gst):
+        return None
+    buyer_state = _state_code(ledger_gst)
+    if buyer_state:
+        return buyer_state if is_place_of_supply(buyer_state) else None
+    return _state_code(company_gst)
+
+
+def invoice_is_interstate(invoice: Invoice) -> bool:
+    """Whether an invoice is an interstate supply, so IGST rather than CGST/SGST."""
+    company_state = _state_code(invoice.company_gst)
+    if invoice.place_of_supply and company_state:
+        return invoice.place_of_supply != company_state
+    # Purchases and sales from before place_of_supply: the two GSTINs decide.
+    return is_interstate_supply(invoice.company_gst, invoice.ledger_gst)
+
+
+# An interstate sale to an unregistered buyer above this invoice value is filed
+# on its own in Table 5 (B2CL); every other such sale is summed in Table 7 (B2CS).
+# Notification 12/2024-CT cut the limit from 2.5 lakh for invoices from 1 Aug 2024.
+B2CL_LIMIT_CUT_ON = date(2024, 8, 1)
+
+
+def b2cl_limit(on: datetime | None) -> int:
+    return 250000 if on and on.date() < B2CL_LIMIT_CUT_ON else 100000
+
+
+def company_state_code(company_gst: str | None) -> str:
+    """The seller's state code, or "00" without a usable GSTIN."""
+    return _state_code(company_gst) or "00"
+
+
+def invoice_filing_pos(invoice: Invoice, company_pos: str) -> str:
+    """The state code a sale is filed under in GSTR-1."""
+    if invoice.place_of_supply:
+        return invoice.place_of_supply
+    # Sales from before the column: tax was decided by the two GSTINs.
+    buyer_state = _state_code(invoice.ledger_gst)
+    return buyer_state if is_place_of_supply(buyer_state) else company_pos
+
+
+def needs_place_of_supply(invoice: Invoice) -> bool:
+    """Whether a sale has no state to file under: its buyer's GSTIN starts 99 and nobody chose one."""
+    buyer_state = _state_code(invoice.ledger_gst)
+    return not invoice.place_of_supply and bool(buyer_state) and not is_place_of_supply(buyer_state)
+
+
+def is_interstate_pos(pos: str, company_pos: str) -> bool:
+    return company_pos != "00" and pos != company_pos
+
+
+def is_b2cl_invoice(invoice: Invoice, company_pos: str) -> bool:
+    return (
+        is_interstate_pos(invoice_filing_pos(invoice, company_pos), company_pos)
+        and float(invoice.total_amount or 0) > b2cl_limit(invoice.invoice_date)
+    )
+
+
+def gstr1_section(invoice: Invoice, company_pos: str) -> str:
+    """Which GSTR-1 table a sales invoice belongs to: B2B, B2CL or B2CS."""
+    if invoice.ledger_gst and invoice.ledger_gst.strip():
+        return "B2B"
+    return "B2CL" if is_b2cl_invoice(invoice, company_pos) else "B2CS"
 
 
 def assign_item_tax_split(

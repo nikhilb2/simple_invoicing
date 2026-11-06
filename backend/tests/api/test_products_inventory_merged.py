@@ -22,6 +22,34 @@ def _create_product(client: TestClient, sku: str, name: str, price: float = 99.0
 
 
 class TestProductsWithInventory:
+    @pytest.mark.parametrize(
+        "allow_decimal, quantity, status, expected_stock",
+        [(False, 2.5, 400, 10), (False, 3, 200, 3), (True, 2.5, 200, 2.5)],
+    )
+    def test_update_inventory_respects_whole_number_products(
+        self, client, allow_decimal, quantity, status, expected_stock
+    ):
+        response = client.post("/api/products/", json={
+            "sku": "WHOLE-STOCK",
+            "name": "Whole Stock",
+            "price": 99,
+            "initial_quantity": 10,
+            "allow_decimal": allow_decimal,
+        })
+        assert response.status_code == 200, response.text
+        product = response.json()
+
+        response = client.put(f"/api/products/{product['id']}/with-inventory", json={
+            "current_stock": quantity,
+        })
+        assert response.status_code == status, response.text
+        if status == 400:
+            assert response.json()["detail"] == "Quantity must be a whole number for this product"
+
+        listing = client.get("/api/products/with-inventory?search=Whole Stock")
+        assert listing.status_code == 200
+        assert listing.json()["items"][0]["current_stock"] == expected_stock
+
     def test_list_products_with_inventory(self, client):
         _create_product(client, "PI001", "Widget A", price=50, initial_quantity=10)
         _create_product(client, "PI002", "Widget B", price=75, initial_quantity=5)
@@ -170,6 +198,29 @@ class TestProductsWithInventory:
         assert res.status_code == 200
         assert res.json()["status"] == "active"
 
+    @pytest.mark.parametrize("body", [{"unit": "   "}, {"status": "archived"}])
+    def test_update_rejects_blank_unit_and_unknown_status(self, client, body):
+        # Issue #667: the update route must reject a blank unit and an
+        # unknown status with 422 and leave the stored product untouched.
+        res = client.post("/api/products/", json={
+            "sku": "VAL1",
+            "name": "Validate Me",
+            "price": 99.0,
+            "gst_rate": 18.0,
+            "maintain_inventory": True,
+            "initial_quantity": 0,
+            "unit": "Pieces",
+        })
+        assert res.status_code == 200, res.text
+        p = res.json()
+
+        res = client.put(f"/api/products/{p['id']}/with-inventory", json=body)
+        assert res.status_code == 422
+
+        item = client.get("/api/products/with-inventory?search=Validate Me").json()["items"][0]
+        assert item["unit"] == "Pieces"
+        assert item["status"] == "active"
+
     def test_update_nonexistent_product(self, client):
         res = client.put("/api/products/99999/with-inventory", json={"name": "Ghost"})
         assert res.status_code == 404
@@ -258,6 +309,61 @@ class TestCSVImport:
         assert items[0]["selling_price"] == 20
         assert items[0]["current_stock"] == 15
 
+    @pytest.mark.parametrize("extra_headers,extra_values,expected", [
+        ("", "", (500, 300, 18, 7, 40)),
+        (",Selling Price", ",600", (600, 300, 18, 7, 40)),
+        (",Selling Price,Purchase Price,GST,Reorder Level,Stock",
+         ",600,350,12%,9,20", (600, 350, 12, 9, 20)),
+        (",Current Stock", ",0", (500, 300, 18, 7, 0)),
+        (",Selling Price,Purchase Price,Tax,Reorder Level,Current Stock",
+         ",,,,,", (0, 0, 0, 0, 0)),
+    ])
+    def test_import_csv_updates_only_supplied_columns(
+        self, client, extra_headers, extra_values, expected,
+    ):
+        created = client.post("/api/products/", json={
+            "sku": "KEEP-1", "name": "Original", "price": 500,
+            "purchase_price": 300, "gst_rate": 18, "reorder_level": 7, "initial_quantity": 40,
+        })
+        assert created.status_code == 200, created.text
+
+        csv_content = f"Item Name,Item Code{extra_headers}\nRenamed,KEEP-1{extra_values}\n"
+        response = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == {"created": 0, "updated": 1, "errors": []}
+
+        products = client.get("/api/products/with-inventory", params={"search": "KEEP-1"})
+        assert products.status_code == 200, products.text
+        item, = products.json()["items"]
+        assert item["name"] == "Renamed"
+        assert tuple(item[key] for key in (
+            "selling_price", "purchase_price", "gst_rate", "reorder_level", "current_stock",
+        )) == expected
+
+    def test_import_csv_gst_rate_header_updates_existing_product(self, client):
+        """A file headed GST Rate (no Tax/GST column) counts as a tax column, so an
+        existing product's rate is replaced instead of silently kept."""
+        _create_product(client, "IMP010", "Rate Holder", price=10, gst_rate=18, initial_quantity=2)
+
+        csv_content = (
+            "Item Name,Item Code,Selling Price,GST Rate\n"
+            "Rate Holder,IMP010,10,12\n"
+        )
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200, res.text
+        assert res.json() == {"created": 0, "updated": 1, "errors": []}
+
+        products = client.get("/api/products/with-inventory", params={"search": "IMP010"})
+        assert products.status_code == 200, products.text
+        item, = products.json()["items"]
+        assert item["gst_rate"] == 12
+
     def test_import_csv_with_errors(self, client):
         csv_content = (
             "Item Name,Item Code,Selling Price\n"
@@ -333,6 +439,75 @@ class TestCSVImport:
         assert data["created"] == 0
         assert data["updated"] == 0
         assert data["errors"] == [{"row": 2, "message": message}]
+
+    @pytest.mark.parametrize("bad_hsn", ["402", "8471.30", "abcd"])
+    def test_import_csv_invalid_hsn_errors_and_creates_nothing(self, client, bad_hsn):
+        """A malformed HSN cell errors its row instead of saving the code (Issue #604)."""
+        csv_content = (
+            "Item Name,Item Code,Selling Price,HSN Code\n"
+            f"Bad HSN,IMP030,10,{bad_hsn}\n"
+        )
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 0
+        assert data["updated"] == 0
+        assert data["errors"] == [
+            {"row": 2, "message": "Invalid HSN Code for IMP030: must be 4, 6 or 8 digits"}
+        ]
+        assert client.get("/api/products/?search=Bad HSN").json()["items"] == []
+
+    @pytest.mark.parametrize(
+        "cell,stored",
+        [("0402", "0402"), ("847130", "847130"), ("84713000", "84713000"), (" 8482 ", "8482")],
+    )
+    def test_import_csv_valid_hsn_is_stored_normalized(self, client, cell, stored):
+        """Well-formed HSN codes import, with surrounding spaces stripped (Issue #604)."""
+        csv_content = (
+            "Item Name,Item Code,Selling Price,HSN Code\n"
+            f"HSN Keeper,IMP031,10,{cell}\n"
+        )
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 1
+        assert not any("Invalid HSN Code" in e["message"] for e in data["errors"])
+        items = client.get("/api/products/?search=HSN Keeper").json()["items"]
+        assert len(items) == 1
+        assert items[0]["hsn_sac"] == stored
+
+    def test_import_csv_invalid_hsn_leaves_existing_unchanged(self, client, db_session):
+        """Re-importing an existing SKU with a bad HSN must not overwrite its code (Issue #604)."""
+        from src.models.product import Product
+
+        created = _create_product(client, "IMP032", "HSN Keeper", price=10)
+        product = db_session.query(Product).filter(Product.id == created["id"]).first()
+        product.hsn_sac = "8471"
+        db_session.commit()
+
+        csv_content = (
+            "Item Name,Item Code,Selling Price,HSN Code\n"
+            "HSN Keeper,IMP032,12,abcd\n"
+            "Good Row,IMP033,10,8471\n"
+        )
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["created"] == 1
+        assert data["updated"] == 0
+        assert {"row": 2, "message": "Invalid HSN Code for IMP032: must be 4, 6 or 8 digits"} in data["errors"]
+
+        kept = db_session.query(Product).filter(Product.id == created["id"]).first()
+        assert kept.hsn_sac == "8471"
 
     def test_import_csv_tax_percent_and_empty_cells(self, client):
         """'18%' imports as 18; empty optional cells still mean 0 / defaults (Issue #556)."""

@@ -28,12 +28,12 @@ By participating in this project, you agree to follow our [Code of Conduct](CODE
 1. Fork the repository.
 2. Clone your fork:
    ```bash
-   git clone https://github.com/<your-username>/simple_invoicing.git
-   cd simple_invoicing
+   git clone https://github.com/<your-username>/simple-invoicing-free-gst-billing-software.git
+   cd simple-invoicing-free-gst-billing-software
    ```
 3. Add upstream remote:
    ```bash
-   git remote add upstream https://github.com/nikhilb2/simple_invoicing.git
+   git remote add upstream https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software.git
    ```
 4. Create a feature branch.
 
@@ -176,6 +176,8 @@ cd backend && python -m compileall .
 
 ## Pull Request Process
 
+Before you start on an issue, check its page for an open pull request, because someone may already be working on it. If there is one, pick another issue.
+
 1. Ensure your branch is up to date with `main`:
    ```bash
    git fetch upstream
@@ -193,9 +195,9 @@ cd backend && python -m compileall .
 New to the project? Start from the live list of open issues labelled
 `good first issue`, instead of a fixed table that can go stale:
 
-- [Open issues labelled `good first issue`](https://github.com/nikhilb2/simple_invoicing/issues?q=is%3Aopen+label%3A%22good+first+issue%22)
+- [Open issues labelled `good first issue`](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/issues?q=is%3Aopen+label%3A%22good+first+issue%22)
 
-For example, [issue #427](https://github.com/nikhilb2/simple_invoicing/issues/427)
+For example, [issue #427](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/issues/427)
 ([Frontend Easy] a11y: add scope to table headers on tax pages) covers
 `frontend/src/pages/TaxLedgerPage.tsx` and
 `frontend/src/pages/Gstr1FilingPage.tsx`.
@@ -205,7 +207,7 @@ or an open pull request, pick another issue from the live list.
 
 ### How to claim a task
 
-1. Check if there's already an open issue for it — if not, [create one](https://github.com/nikhilb2/simple_invoicing/issues/new)
+1. Check if there's already an open issue for it — if not, [create one](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/issues/new)
 2. Comment on the issue (or create it) saying you're working on it
 3. Follow the [Development Setup](#development-setup) guide above
 4. Open a PR referencing your issue

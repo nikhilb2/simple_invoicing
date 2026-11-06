@@ -100,18 +100,18 @@ export default function LedgerQuickCreateModal() {
 
         <form className="stack" onSubmit={handleSubmit}>
           <div className="field">
-            <label htmlFor="modal-ledger-name">Name</label>
+            <label htmlFor="modal-ledger-name">Name *</label>
             <input
               id="modal-ledger-name"
               className="input"
               value={ledgerForm.name}
               onChange={(event) => setLedgerForm((current) => ({ ...current, name: event.target.value }))}
-              placeholder="Acme Studio"
+              placeholder="Sharma Traders"
               required
             />
           </div>
           <div className="field">
-            <label htmlFor="modal-ledger-gst">GST</label>
+            <label htmlFor="modal-ledger-gst">GSTIN</label>
             <input
               id="modal-ledger-gst"
               className="input"
@@ -125,7 +125,7 @@ export default function LedgerQuickCreateModal() {
             <small className="field-hint">Optional. If entered, format must be 27ABCDE1234F1Z0.</small>
           </div>
           <div className="field">
-            <label htmlFor="modal-ledger-phone">Phone number</label>
+            <label htmlFor="modal-ledger-phone">Phone number *</label>
             <input
               id="modal-ledger-phone"
               className="input"
@@ -184,7 +184,7 @@ export default function LedgerQuickCreateModal() {
               className="input"
               value={ledgerForm.email}
               onChange={(event) => setLedgerForm((current) => ({ ...current, email: event.target.value }))}
-              placeholder="accounts@acme.com"
+              placeholder="accounts@example.com"
             />
           </div>
           <div className="field">
@@ -194,17 +194,17 @@ export default function LedgerQuickCreateModal() {
               className="input"
               value={ledgerForm.website}
               onChange={(event) => setLedgerForm((current) => ({ ...current, website: event.target.value }))}
-              placeholder="https://acme.com"
+              placeholder="https://www.example.com"
             />
           </div>
           <div className="field">
-            <label htmlFor="modal-ledger-address">Address</label>
+            <label htmlFor="modal-ledger-address">Address *</label>
             <textarea
               id="modal-ledger-address"
               className="textarea"
               value={ledgerForm.address}
               onChange={(event) => setLedgerForm((current) => ({ ...current, address: event.target.value }))}
-              placeholder="221B Baker Street, London"
+              placeholder="12 MG Road, Pune, Maharashtra 411001"
               required
             />
           </div>
@@ -235,7 +235,7 @@ export default function LedgerQuickCreateModal() {
               className="input"
               value={ledgerForm.account_name}
               onChange={(event) => setLedgerForm((current) => ({ ...current, account_name: event.target.value }))}
-              placeholder="Acme Traders"
+              placeholder="Sharma Traders"
             />
           </div>
           <div className="field">
@@ -263,7 +263,7 @@ export default function LedgerQuickCreateModal() {
             <button type="button" className="button button--ghost" onClick={closeLedgerCreateModal} title="Cancel ledger creation" aria-label="Cancel ledger creation">
               Cancel
             </button>
-            <button className="button button--primary" disabled={ledgerSubmitting} title="Save ledger" aria-label="Save ledger">
+            <button data-tour="save-customer" className="button button--primary" disabled={ledgerSubmitting} title="Save ledger" aria-label="Save ledger">
               {ledgerSubmitting ? 'Saving ledger...' : 'Save ledger'}
             </button>
           </div>

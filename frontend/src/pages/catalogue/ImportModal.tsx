@@ -190,7 +190,8 @@ export default function ImportModal({ onClose, onImported }: ImportModalProps) {
                 <p className="field-hint">
                   Item Name and Item Code are required on every row. Headers are matched without regard
                   to case or spacing, extra columns (including <code>Category</code>) are ignored, and
-                  any missing column falls back to its default. The tax column can also be headed{' '}
+                  missing columns use defaults for new items and keep the current values for existing
+                  items. The tax column can also be headed{' '}
                   <code>GST</code>, <code>GST Rate</code> or <code>Tax Rate</code>.
                 </p>
               </div>

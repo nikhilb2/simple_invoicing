@@ -8,13 +8,16 @@ import { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import ScopeBar, { Metric } from '../components/ScopeBar';
 import InvoicePreview from '../components/InvoicePreview';
+import ReceiptModal from '../components/ReceiptModal';
+import { canRecordPayment } from '../utils/invoicePayment';
 import ConfirmDialog from '../components/ConfirmDialog';
-import formatCurrency from '../utils/formatting';
+import formatCurrency, { plural } from '../utils/formatting';
 import { buildWhatsAppUrl, toWhatsAppNumber } from '../utils/phone';
 import { buildWhatsAppReminderMessage } from '../utils/whatsappReminder';
 import { downloadCsv } from '../utils/csv';
 import {
   buildDueWindow,
+  DEFAULT_DUE_MODE,
   formatInvoiceDateLabel,
   isOverdueInvoice,
   overdueLabel,
@@ -27,7 +30,6 @@ import EmptyState from '../components/EmptyState';
 import LoadingState from '../components/LoadingState';
 import {
   parseInvoiceDueSort,
-  sortDueInvoices,
   type InvoiceDueSort,
 } from '../utils/invoiceDuesSorting';
 
@@ -45,7 +47,7 @@ function dueBadgeLabel(dueInDays: number | null) {
   const overdue = overdueLabel(dueInDays);
   if (overdue !== null) return overdue;
   if (dueInDays === 0) return 'Due today';
-  return `Due in ${dueInDays} days`;
+  return `Due in ${plural(dueInDays, 'day')}`;
 }
 
 export default function InvoiceDuesPage() {
@@ -64,6 +66,7 @@ export default function InvoiceDuesPage() {
       nextParams.set('sort', value);
     }
 
+    setPage(1);
     setSearchParams(nextParams, { replace: true });
   }
   const [company, setCompany] = useState<CompanyProfile | null>(null);
@@ -76,7 +79,7 @@ export default function InvoiceDuesPage() {
   const [search, setSearch] = useState('');
   const [searchDraft, setSearchDraft] = useState('');
   const [ledgerId, setLedgerId] = useState<number | undefined>(undefined);
-  const [mode, setMode] = useState<DueFilterMode>('overdue');
+  const [mode, setMode] = useState<DueFilterMode>(DEFAULT_DUE_MODE);
   const [customDays, setCustomDays] = useState(30);
   const [exactDate, setExactDate] = useState('');
   const [loading, setLoading] = useState(true);
@@ -86,12 +89,11 @@ export default function InvoiceDuesPage() {
   const [showRemindersConfirm, setShowRemindersConfirm] = useState(false);
   const [remindersResult, setRemindersResult] = useState<string>('');
   const [remindersSuccess, setRemindersSuccess] = useState('');
+  const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
+  const [paymentSuccess, setPaymentSuccess] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const currencyCode = company?.currency_code || 'INR';
-  const sortedItems = useMemo(
-    () => sortDueInvoices(items, sortOrder),
-    [items, sortOrder],
-  );
   const dueWindow = useMemo(() => buildDueWindow(mode, customDays, exactDate), [mode, customDays, exactDate]);
 
   useEffect(() => {
@@ -129,6 +131,7 @@ export default function InvoiceDuesPage() {
           ledgerId,
           dueDateFrom: dueWindow.dueDateFrom,
           dueDateTo: dueWindow.dueDateTo,
+          sort: sortOrder,
         };
         const response = await fetchDueInvoicePage(filters);
         if (cancelled) return;
@@ -152,7 +155,7 @@ export default function InvoiceDuesPage() {
     return () => {
       cancelled = true;
     };
-  }, [dueWindow.dueDateFrom, dueWindow.dueDateTo, ledgerId, page, pageSize, search]);
+  }, [dueWindow.dueDateFrom, dueWindow.dueDateTo, ledgerId, page, pageSize, search, sortOrder, refreshKey]);
 
   async function handlePreviewInvoice(invoiceId: number) {
     try {
@@ -164,13 +167,21 @@ export default function InvoiceDuesPage() {
     }
   }
 
+  function handlePaymentRecorded(message: string) {
+    setPaymentInvoice(null);
+    setPreviewInvoice(null);
+    setRemindersSuccess('');
+    setPaymentSuccess(message);
+    setRefreshKey((key) => key + 1);
+  }
+
   const outstandingTotal = items.reduce((sum, invoice) => sum + invoice.outstanding_amount, 0);
 
   function handleExportCsv() {
     downloadCsv(
       `invoice_dues_${toIsoDate(new Date())}.csv`,
       ['Customer', 'Invoice number', 'Invoice date', 'Due date', 'Total', 'Amount due'],
-      sortedItems.map((invoice) => [
+      items.map((invoice) => [
         invoice.ledger_name ?? '',
         invoice.invoice_number ?? `#${invoice.id}`,
         invoice.invoice_date,
@@ -191,7 +202,7 @@ export default function InvoiceDuesPage() {
       const result: DueRemindersResponse = await sendDueReminders();
       const parts: string[] = [];
       if (result.sent.length > 0) {
-        parts.push(`Sent to ${result.sent.length} ledgers`);
+        parts.push(`Sent to ${plural(result.sent.length, 'ledger')}`);
       }
       const noEmail = result.skipped.filter((s) => s.reason_code !== 'net_payable_offset');
       if (noEmail.length > 0) {
@@ -224,10 +235,10 @@ export default function InvoiceDuesPage() {
           <h1 className="page-title">Dues</h1>
           <p className="section-copy">Track overdue and upcoming invoice dues, narrow by ledger, and preview invoices before following up.</p>
         </div>
-        <div className="status-chip">{total} invoices</div>
+        <div className="status-chip">{plural(total, 'invoice')}</div>
       </section>
 
-      <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
+      <StatusToasts success={paymentSuccess} error={error} onClearError={() => setError('')} onClearSuccess={() => setPaymentSuccess('')} />
 
       <ScopeBar
         presets={(
@@ -270,7 +281,7 @@ export default function InvoiceDuesPage() {
               type="button"
               className="button button--ghost button--small"
               onClick={() => {
-                setMode('overdue');
+                setMode(DEFAULT_DUE_MODE);
                 setLedgerId(undefined);
                 setSearch('');
                 setSearchDraft('');
@@ -286,7 +297,7 @@ export default function InvoiceDuesPage() {
         )}
       >
         <div className="field">
-          <label htmlFor="dues-sort">Sort this page</label>
+          <label htmlFor="dues-sort">Sort invoices</label>
           <select
             id="dues-sort"
             className="input"
@@ -377,9 +388,8 @@ export default function InvoiceDuesPage() {
       <DuesAgeingStrip
         search={search}
         ledgerId={ledgerId}
-        dueDateFrom={dueWindow.dueDateFrom}
-        dueDateTo={dueWindow.dueDateTo}
         currencyCode={currencyCode}
+        refreshKey={refreshKey}
       />
 
       <section className="content-grid content-grid--single">
@@ -424,7 +434,7 @@ export default function InvoiceDuesPage() {
               <EmptyState message="No invoices match your due filters. Try adjusting the due window or search." />
             ) : null}
             {!loading
-              ? sortedItems.map((invoice) => {
+              ? items.map((invoice) => {
                   const whatsappNumber = toWhatsAppNumber(invoice.ledger_phone);
                   const whatsappUrl = whatsappNumber
                     ? buildWhatsAppUrl(
@@ -433,7 +443,7 @@ export default function InvoiceDuesPage() {
                           customerName: invoice.ledger_name,
                           invoiceNumber: invoice.invoice_number || `#${invoice.id}`,
                           outstandingAmount: invoice.outstanding_amount,
-                          currencyCode,
+                          currencyCode: invoice.company_currency_code || currencyCode,
                           dueDate: invoice.due_date,
                           overdue: isOverdueInvoice(invoice),
                         }),
@@ -461,7 +471,7 @@ export default function InvoiceDuesPage() {
                         )}
                         Status {invoice.payment_status}
                         {' · '}
-                        Remaining {formatCurrency(invoice.outstanding_amount, currencyCode)}
+                        Remaining {formatCurrency(invoice.outstanding_amount, invoice.company_currency_code || currencyCode)}
                       </span>
                       {(invoice.ledger_payable_amount ?? 0) > 0 ? (
                         <span className="table-subtext">
@@ -471,12 +481,22 @@ export default function InvoiceDuesPage() {
                         </span>
                       ) : null}
                     </div>
-                    <span className="invoice-row__price">{formatCurrency(invoice.total_amount, currencyCode)}</span>
+                    <span className="invoice-row__price">{formatCurrency(invoice.total_amount, invoice.company_currency_code || currencyCode)}</span>
                     <div className="invoice-row__actions">
                       {invoice.ledger_id ? (
                         <Link className="button button--ghost button--small" to={`/ledgers/${invoice.ledger_id}`}>
                           Ledger
                         </Link>
+                      ) : null}
+                      {canRecordPayment(invoice) ? (
+                        <button
+                          type="button"
+                          className="button button--secondary button--small"
+                          onClick={() => setPaymentInvoice(invoice)}
+                          aria-label={`Record payment for invoice ${invoice.invoice_number || `#${invoice.id}`}`}
+                        >
+                          Record payment
+                        </button>
                       ) : null}
                       <button
                         type="button"
@@ -529,6 +549,19 @@ export default function InvoiceDuesPage() {
         <InvoicePreview
           invoice={previewInvoice}
           onClose={() => setPreviewInvoice(null)}
+          onError={(message) => setError(message)}
+          onPaymentRecorded={handlePaymentRecorded}
+        />
+      ) : null}
+
+      {paymentInvoice && paymentInvoice.ledger_id ? (
+        <ReceiptModal
+          ledgerId={paymentInvoice.ledger_id}
+          ledgerName={paymentInvoice.ledger_name || 'customer'}
+          currencyCode={paymentInvoice.company_currency_code || currencyCode}
+          invoiceId={paymentInvoice.id}
+          onClose={() => setPaymentInvoice(null)}
+          onSuccess={handlePaymentRecorded}
           onError={(message) => setError(message)}
         />
       ) : null}

@@ -13,6 +13,26 @@ test.describe('Company Profile', () => {
     await expect(page.locator('h1')).toContainText('Billing identity');
   });
 
+  test('shows a bad GSTIN against the field, in view on a phone', async ({ authedPage: page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/settings/company');
+    await expect(page.locator('#company-name')).toBeVisible({ timeout: 5_000 });
+
+    await page.fill('#company-name', 'Bad GSTIN Co');
+    await page.fill('#company-address', '1 Check Digit Road');
+    // A correct format with the wrong check digit, so only the server can refuse it.
+    await page.fill('#company-gst', '29ABCDE1234F1Z0');
+    await page.click('button:has-text("Save company details")');
+
+    const error = page.locator('#company-gst-error');
+    await expect(error).toContainText('15th character');
+    await expect(page.locator('#company-gst')).toBeFocused();
+    await expect(page.locator('#company-gst')).toBeInViewport();
+
+    await page.fill('#company-gst', uniqueGstin('29'));
+    await expect(error).toHaveCount(0);
+  });
+
   test('saves company profile', async ({ authedPage: page }) => {
     await page.goto('/settings/company');
 
@@ -59,7 +79,8 @@ test.describe('Company Profile', () => {
     // 'bank' is the default type, but set it explicitly — the bank-only fields
     // below are conditional on it.
     await page.selectOption('#new-account-type', 'bank');
-    await page.fill('#new-account-display', `ICICI ${Date.now().toString(36)}`);
+    const displayName = `ICICI ${Date.now().toString(36)}`;
+    await page.fill('#new-account-display', displayName);
     await page.fill('#new-account-bank', 'ICICI Bank');
     await page.fill('#new-account-branch', 'Andheri East');
     await page.fill('#new-account-accno', '987654321098');
@@ -77,10 +98,21 @@ test.describe('Company Profile', () => {
     // The UPI ID is what the pay-by-UPI QR on a shared invoice points at, so it has
     // to survive the round trip. Stored exactly as typed: UPI leaves resolving the
     // local part to each bank's own mapper, so unlike IFSC it must not be re-cased.
+    //
+    // The list is sorted by display name and the demo seed already owns an
+    // account with its own UPI ID, so `.first()` is not necessarily the account
+    // this test just created. Find it by its unique display name and read the
+    // UPI input that shares its id suffix.
     await page.reload();
-    await expect(
-      page.locator('input[id^="account-upi-"]').first(),
-    ).toHaveValue('bankdetailscorp@okicici', { timeout: 5_000 });
+    const createdName = page.locator(
+      `input[id^="account-display-"][value="${displayName}"]`,
+    );
+    await expect(createdName).toBeVisible({ timeout: 5_000 });
+    const accountId = (await createdName.getAttribute('id'))!.replace('account-display-', '');
+    await expect(page.locator(`#account-upi-${accountId}`)).toHaveValue(
+      'bankdetailscorp@okicici',
+      { timeout: 5_000 },
+    );
   });
 
   // Asserts the toggle round-trips in BOTH directions rather than that it starts

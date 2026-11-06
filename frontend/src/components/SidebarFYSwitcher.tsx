@@ -45,6 +45,7 @@ export default function SidebarFYSwitcher() {
   useEscapeClose(useCallback(() => setNewFYModalOpen(false), []));
   const [newFYStartYear, setNewFYStartYear] = useState('');
   const [newFYError, setNewFYError] = useState('');
+  const [newFYWarnings, setNewFYWarnings] = useState<string[]>([]);
   const [newFYSubmitting, setNewFYSubmitting] = useState(false);
   const fyDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -154,6 +155,7 @@ export default function SidebarFYSwitcher() {
                     setFyDropdownOpen(false);
                     setNewFYStartYear('');
                     setNewFYError('');
+                    setNewFYWarnings([]);
                     setNewFYModalOpen(true);
                   }}
                 >
@@ -208,8 +210,13 @@ export default function SidebarFYSwitcher() {
                   setNewFYError('');
                   setNewFYSubmitting(true);
                   try {
-                    await createFY(label, start_date, end_date);
-                    setNewFYModalOpen(false);
+                    const warnings = await createFY(label, start_date, end_date);
+                    // Created either way, but these need reading before the modal goes.
+                    if (warnings.length > 0) {
+                      setNewFYWarnings(warnings);
+                    } else {
+                      setNewFYModalOpen(false);
+                    }
                   } catch (err) {
                     if (axios.isAxiosError(err) && err.response?.status === 409) {
                       setNewFYError(`Financial year ${label} already exists.`);
@@ -247,13 +254,18 @@ export default function SidebarFYSwitcher() {
                     return null;
                   })()}
                   {newFYError && <p style={{ color: 'var(--error)', fontSize: '0.85rem' }}>{newFYError}</p>}
+                  {newFYWarnings.map((warning) => (
+                    <p key={warning} className="field-warning" role="alert">{warning}</p>
+                  ))}
                   <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
                     <button type="button" className="button button--ghost" onClick={() => setNewFYModalOpen(false)}>
-                      Cancel
+                      {newFYWarnings.length > 0 ? 'Close' : 'Cancel'}
                     </button>
-                    <button type="submit" className="button" disabled={newFYSubmitting}>
-                      {newFYSubmitting ? 'Creating…' : 'Create'}
-                    </button>
+                    {newFYWarnings.length === 0 ? (
+                      <button type="submit" className="button" disabled={newFYSubmitting}>
+                        {newFYSubmitting ? 'Creating…' : 'Create'}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </form>

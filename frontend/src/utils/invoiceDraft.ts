@@ -27,6 +27,8 @@ export type InvoiceDraft = {
   dueDate: string;
   dueDateDays: string;
   referenceNotes: string;
+  /** The user's own pick only; the default that follows the ledger is not an edit. */
+  placeOfSupplyChoice: string;
   items: InvoiceDraftItem[];
 };
 

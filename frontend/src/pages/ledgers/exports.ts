@@ -9,6 +9,7 @@
  * BOM are owned by the shared helper in utils/csv.ts, so this module only
  * maps ledgers to rows and owns the paging.
  */
+import { toIsoDate } from '../../utils/dateRanges';
 import api from '../../api/client';
 import type { Ledger, PaginatedLedgers } from '../../types/api';
 import { downloadCsv, toCsv, type CsvValue } from '../../utils/csv';
@@ -64,7 +65,7 @@ export async function fetchAllLedgers(search: string, sort: string): Promise<Led
 export async function exportLedgersCsv(search: string, sort: string): Promise<void> {
   const ledgers = await fetchAllLedgers(search, sort);
   downloadCsv(
-    `ledgers_${new Date().toISOString().slice(0, 10)}.csv`,
+    `ledgers_${toIsoDate(new Date())}.csv`,
     LEDGERS_CSV_HEADERS,
     ledgers.map((ledger) => ledgerToCsvRow(ledger)),
   );

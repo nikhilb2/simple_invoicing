@@ -1,18 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyAccount, OutstandingInvoice, Payment, PaymentCreate, PaymentInvoiceAllocation } from '../types/api';
 import { fetchOutstandingInvoices } from '../features/invoices/api';
 import formatCurrency from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate';
+import { remainingAmount } from '../utils/validateAllocations';
 import EmptyState from './EmptyState';
 import ModalCloseButton from './ModalCloseButton';
 import { useFY } from '../context/FYContext';
 import { useEscapeClose } from '../hooks/useEscapeClose';
+import { toLocalDateTimeInput } from '../utils/dateRanges';
 
 interface ReceiptModalProps {
   ledgerId: number;
   ledgerName: string;
   currencyCode?: string;
+  /** Opens with this invoice ticked and its remaining amount filled in. */
+  invoiceId?: number;
   onClose: () => void;
   onSuccess: (message: string) => void;
   onError: (message: string) => void;
@@ -65,6 +69,7 @@ export default function ReceiptModal({
   ledgerId,
   ledgerName,
   currencyCode = 'INR',
+  invoiceId,
   onClose,
   onSuccess,
   onError,
@@ -78,7 +83,7 @@ export default function ReceiptModal({
     voucher_type: 'receipt',
     amount: 0,
     account_id: null,
-    date: new Date().toISOString().slice(0, 16),
+    date: toLocalDateTimeInput(new Date()),
     mode: '',
     reference: '',
     notes: '',
@@ -89,6 +94,10 @@ export default function ReceiptModal({
   const [loadingOutstanding, setLoadingOutstanding] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const preselected = useRef(false);
+  // True while the only allocation is the preselected invoice and the owner has
+  // not touched allocations: it then follows min(amount, remaining).
+  const followAmount = useRef(false);
 
   // Load company accounts
   useEffect(() => {
@@ -126,6 +135,21 @@ export default function ReceiptModal({
     return () => { cancelled = true; };
   }, [ledgerId, form.amount]);
 
+  // Once the ledger's open invoices arrive, tick the one we were opened for and
+  // fill the amount with what is left on it. Done once, so later edits stick.
+  useEffect(() => {
+    if (invoiceId === undefined || preselected.current || outstandingInvoices.length === 0) return;
+    const target = outstandingInvoices.find((invoice) => invoice.id === invoiceId);
+    if (!target) return;
+    preselected.current = true;
+    followAmount.current = true;
+    setForm((f) => ({
+      ...f,
+      amount: target.remaining_amount,
+      invoice_allocations: upsertAllocation(f.invoice_allocations, target, target.remaining_amount),
+    }));
+  }, [invoiceId, outstandingInvoices]);
+
   // Reset search when closing
   useEffect(() => {
     return () => setSearchQuery('');
@@ -143,7 +167,7 @@ export default function ReceiptModal({
       const warningMsg = res.data.warnings?.includes('invoice_date_outside_fy') && activeFY
         ? ` ⚠️ This date is outside the active financial year (${activeFY.label}). The receipt was still recorded.`
         : '';
-      onSuccess(`Receipt recorded against ${ledgerName}` + warningMsg);
+      onSuccess(`${invoiceId !== undefined ? 'Payment' : 'Receipt'} recorded against ${ledgerName}` + warningMsg);
       onClose();
     } catch (err) {
       onError(getApiErrorMessage(err, 'Unable to record receipt'));
@@ -153,7 +177,7 @@ export default function ReceiptModal({
   }
 
   const allocatedTotal = sumAllocatedAmount(form.invoice_allocations);
-  const remainingUnallocated = form.amount - allocatedTotal;
+  const remainingUnallocated = remainingAmount(form.amount, allocatedTotal);
   const filteredInvoices = searchQuery.trim()
     ? outstandingInvoices.filter((inv) =>
         (inv.invoice_number ?? '').toLowerCase().includes(searchQuery.trim().toLowerCase())
@@ -167,7 +191,7 @@ export default function ReceiptModal({
           <div className="panel__header">
             <div>
               <p className="eyebrow">Receipt</p>
-              <h2 className="nav-panel__title">Record Receipt — {ledgerName}</h2>
+              <h2 className="nav-panel__title">{invoiceId !== undefined ? 'Record payment' : 'Record Receipt'} — {ledgerName}</h2>
             </div>
             <ModalCloseButton onClick={onClose} label="Close record receipt" />
           </div>
@@ -181,7 +205,21 @@ export default function ReceiptModal({
                 min="0.01"
                 step="0.01"
                 value={form.amount || ''}
-                onChange={(e) => setForm((f) => ({ ...f, amount: parseFloat(e.target.value) || 0 }))}
+                onChange={(e) => {
+                  const nextAmount = parseFloat(e.target.value) || 0;
+                  setForm((f) => {
+                    const only = f.invoice_allocations ?? [];
+                    const target = outstandingInvoices.find((invoice) => invoice.id === invoiceId);
+                    if (followAmount.current && target && only.length === 1 && only[0].invoice_id === target.id) {
+                      return {
+                        ...f,
+                        amount: nextAmount,
+                        invoice_allocations: upsertAllocation(only, target, Math.min(nextAmount, target.remaining_amount)),
+                      };
+                    }
+                    return { ...f, amount: nextAmount };
+                  });
+                }}
                 required
               />
             </div>
@@ -266,7 +304,7 @@ export default function ReceiptModal({
                 <button
                   type="button"
                   className="button button--secondary button--small"
-                  onClick={() => setForm((f) => ({ ...f, invoice_allocations: buildSuggestedAllocations(outstandingInvoices) }))}
+                  onClick={() => { followAmount.current = false; setForm((f) => ({ ...f, invoice_allocations: buildSuggestedAllocations(outstandingInvoices) })); }}
                   disabled={loadingOutstanding || outstandingInvoices.length === 0 || form.amount <= 0}
                 >
                   Auto Select Oldest
@@ -316,6 +354,7 @@ export default function ReceiptModal({
                               type="checkbox"
                               checked={isSelected}
                               onChange={(event) => {
+                                followAmount.current = false;
                                 if (!event.target.checked) {
                                   setForm((f) => ({ ...f, invoice_allocations: removeAllocation(f.invoice_allocations, invoice.id) }));
                                   return;
@@ -351,6 +390,7 @@ export default function ReceiptModal({
                                 step="0.01"
                                 value={existingAllocation?.allocated_amount || ''}
                                 onChange={(event) => {
+                                  followAmount.current = false;
                                   const nextAmount = parseFloat(event.target.value) || 0;
                                   setForm((f) => ({ ...f, invoice_allocations: upsertAllocation(f.invoice_allocations, invoice, nextAmount) }));
                                 }}

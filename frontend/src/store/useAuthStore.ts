@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import api from '../api/client';
 import { identifyUser, resetAnalyticsUser } from '../lib/analytics';
 import { postToNative } from '../lib/nativeBridge';
+import { queryClient } from '../lib/queryClient';
 import type { AuthToken, UserProfile } from '../types/api';
 
 function decodeEmailFromToken(token: string | null) {
@@ -22,9 +23,17 @@ type AuthState = {
   token: string | null;
   userEmail: string | null;
   userRole: UserProfile['role'] | null;
+  /** Role in the active company; null until /auth/me answers or without one. */
+  companyRole: UserProfile['role'] | null;
+  canManagePlatform: boolean;
+  /** Undefined until /auth/me answers, null if the user has not answered the walkthrough. */
+  firstInvoiceTourStatus: UserProfile['first_invoice_tour_status'] | undefined;
+  setFirstInvoiceTourStatus: (status: UserProfile['first_invoice_tour_status']) => void;
   setToken: (token: string | null) => void;
   setUserRole: (role: UserProfile['role'] | null) => void;
   hydrateUserRole: () => Promise<void>;
+  /** Stores a token pair however it was obtained (password login, OAuth exchange). */
+  setSession: (tokens: AuthToken) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 };
@@ -33,19 +42,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   token: localStorage.getItem('token'),
   userEmail: decodeEmailFromToken(localStorage.getItem('token')),
   userRole: null,
+  companyRole: null,
+  canManagePlatform: false,
+  firstInvoiceTourStatus: undefined,
+
+  setFirstInvoiceTourStatus: (status) => set({ firstInvoiceTourStatus: status }),
 
   setToken: (token) => {
     set({ token, userEmail: decodeEmailFromToken(token) });
   },
 
   setUserRole: (role) => {
-    set({ userRole: role });
+    set(role === null ? { userRole: null, companyRole: null, canManagePlatform: false, firstInvoiceTourStatus: undefined } : { userRole: role });
   },
 
   hydrateUserRole: async () => {
     const token = get().token;
     if (!token) {
-      set({ userRole: null });
+      set({ userRole: null, companyRole: null, canManagePlatform: false, firstInvoiceTourStatus: undefined });
       return;
     }
 
@@ -56,20 +70,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       } else {
         localStorage.removeItem('active_company_id');
       }
-      set({ userRole: res.data.role });
+      set({
+        userRole: res.data.role,
+        companyRole: res.data.company_role ?? null,
+        canManagePlatform: res.data.can_manage_platform ?? false,
+        firstInvoiceTourStatus: res.data.first_invoice_tour_status ?? null,
+      });
     } catch {
-      set({ userRole: null });
+      set({ userRole: null, companyRole: null, canManagePlatform: false, firstInvoiceTourStatus: undefined });
     }
   },
 
-  login: async (email: string, password: string) => {
-    const res = await api.post<AuthToken>('/auth/login', { email, password });
-    localStorage.setItem('token', res.data.access_token);
-    localStorage.setItem('refresh_token', res.data.refresh_token);
-    postToNative({ type: 'tokens', accessToken: res.data.access_token, refreshToken: res.data.refresh_token });
-    const identifiedEmail = decodeEmailFromToken(res.data.access_token);
+  setSession: async (tokens: AuthToken) => {
+    localStorage.setItem('token', tokens.access_token);
+    localStorage.setItem('refresh_token', tokens.refresh_token);
+    postToNative({ type: 'tokens', accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
+    const identifiedEmail = decodeEmailFromToken(tokens.access_token);
     set({
-      token: res.data.access_token,
+      token: tokens.access_token,
       userEmail: identifiedEmail,
     });
 
@@ -85,6 +103,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await get().hydrateUserRole();
   },
 
+  login: async (email: string, password: string) => {
+    const res = await api.post<AuthToken>('/auth/login', { email, password });
+    await get().setSession(res.data);
+  },
+
   logout: () => {
     // Fire-and-forget, and before the token is cleared: the endpoint exists so
     // that signing out is counted on the server like every other event. Nothing
@@ -98,6 +121,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // The mobile app holds its own copy of the tokens; this is what sends it
     // back to its native login screen instead of reloading us signed in.
     postToNative({ type: 'logout' });
-    set({ token: null, userEmail: null, userRole: null });
+    // Cached figures belong to the user who fetched them. The tab is not reloaded,
+    // so without this the next login would show them until they went stale.
+    queryClient.clear();
+    set({ token: null, userEmail: null, userRole: null, companyRole: null, canManagePlatform: false, firstInvoiceTourStatus: undefined });
   },
 }));

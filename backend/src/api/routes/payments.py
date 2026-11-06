@@ -3,15 +3,15 @@ from html import escape
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from src.api.deps import get_active_company, get_current_user, require_roles
+from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.core.analytics import distinct_id_for, track
 from src.db.session import get_db
 from src.models.buyer import Buyer as Ledger
 from src.models.company_account import CompanyAccount
 from src.models.company import CompanyProfile
+from src.models.financial_year import FinancialYear
 from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.user import User, UserRole
 from src.schemas.payment import PaymentCreate, PaymentOut, PaymentUpdate
@@ -19,6 +19,7 @@ from src.services.series import generate_next_number
 from src.services.financial_year import get_active_fy, get_fy_for_date
 from src.services.invoice_payments import sync_payment_allocations
 from src.services.share_documents import get_payment as get_shared_payment, render_receipt_pdf
+from src.services.company_access import company_scope
 
 router = APIRouter()
 
@@ -29,7 +30,7 @@ def _get_active_account(db: Session, account_id: int, company_id: int | None) ->
         CompanyAccount.is_active.is_(True),
     )
     if company_id is not None:
-        query = query.filter(or_(CompanyAccount.company_id == company_id, CompanyAccount.company_id.is_(None)))
+        query = query.filter(company_scope(CompanyAccount.company_id, company_id))
     account = query.first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -67,7 +68,7 @@ def _find_existing_opening_balance(
         Payment.status == "active",
     )
     if company_id is not None:
-      query = query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+      query = query.filter(company_scope(Payment.company_id, company_id))
     if exclude_payment_id is not None:
         query = query.filter(Payment.id != exclude_payment_id)
     return query.first()
@@ -101,7 +102,7 @@ def _ensure_single_opening_balance(
 def create_payment(
     payload: PaymentCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
@@ -110,7 +111,7 @@ def create_payment(
     if payload.ledger_id is not None:
         ledger_query = db.query(Ledger).filter(Ledger.id == payload.ledger_id)
         if company_id is not None:
-          ledger_query = ledger_query.filter(or_(Ledger.company_id == company_id, Ledger.company_id.is_(None)))
+          ledger_query = ledger_query.filter(company_scope(Ledger.company_id, company_id))
         ledger = ledger_query.first()
         if not ledger:
             raise HTTPException(status_code=404, detail="Ledger not found")
@@ -221,7 +222,7 @@ def list_payments(
         joinedload(Payment.invoice_allocations).joinedload(PaymentInvoiceAllocation.invoice),
     )
     if company_id is not None:
-      query = query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+      query = query.filter(company_scope(Payment.company_id, company_id))
     if ledger_id is not None:
         query = query.filter(Payment.ledger_id == ledger_id)
     if not include_cancelled:
@@ -239,7 +240,7 @@ def get_payment(
     company_id = getattr(active_company, "id", None)
     filter_args = [Payment.id == payment_id]
     if company_id is not None:
-      filter_args.append(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+      filter_args.append(company_scope(Payment.company_id, company_id))
     payment = (
         db.query(Payment)
         .options(
@@ -259,13 +260,13 @@ def update_payment(
     payment_id: int,
     payload: PaymentUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
     payment_filters = [Payment.id == payment_id, Payment.status == "active"]
     if company_id is not None:
-      payment_filters.append(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+      payment_filters.append(company_scope(Payment.company_id, company_id))
     payment = (
         db.query(Payment)
         .options(joinedload(Payment.invoice_allocations))
@@ -308,6 +309,32 @@ def update_payment(
     if payload.account_id is not None:
         selected_account = _get_active_account(db, payload.account_id, company_id)
 
+    # The payment's financial year and number series are fixed at creation
+    # and are not regenerated on edit, so a date change that would move the
+    # payment into a different financial year is blocked instead of leaving
+    # it filed under the old year (same rule as invoice date edits). A date
+    # that no financial year covers keeps the previous behaviour (allowed).
+    if payload.date is not None and getattr(payment, "financial_year_id", None) is not None:
+        new_day = payload.date.date() if hasattr(payload.date, "date") else payload.date
+        current_day = payment.date.date() if payment.date else None
+        date_fy = get_fy_for_date(db, new_day, company_id=company_id) if new_day != current_day else None
+        if date_fy is not None and date_fy.id != payment.financial_year_id:
+            current_fy = (
+                db.query(FinancialYear)
+                .filter(FinancialYear.id == payment.financial_year_id)
+                .first()
+            )
+            current_label = current_fy.label if current_fy else f"id {payment.financial_year_id}"
+            kind = "receipt" if payment.voucher_type == "receipt" else "payment"
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"This date is in {date_fy.label}, but the {kind} belongs to "
+                    f"{current_label}. Cancel it and record a new one in "
+                    f"{date_fy.label} instead."
+                ),
+            )
+
     payment.voucher_type = payload.voucher_type
     payment.amount = payload.amount
     payment.account_id = selected_account.id if selected_account else None
@@ -334,13 +361,13 @@ def update_payment(
 def delete_payment(
     payment_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)
     query = db.query(Payment).filter(Payment.id == payment_id, Payment.status == "active")
     if company_id is not None:
-      query = query.filter(or_(Payment.company_id == company_id, Payment.company_id.is_(None)))
+      query = query.filter(company_scope(Payment.company_id, company_id))
     payment = query.first()
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
@@ -412,7 +439,7 @@ def _build_receipt_html(
     # Company detail line
     company_details_parts = []
     if company_gst:
-        company_details_parts.append(f"GST: {company_gst}")
+        company_details_parts.append(f"GSTIN: {company_gst}")
     if company_phone:
         company_details_parts.append(f"Ph: {company_phone}")
     if company_email:
@@ -422,7 +449,7 @@ def _build_receipt_html(
     # Ledger detail line
     ledger_details_parts = []
     if ledger_gst:
-        ledger_details_parts.append(f"GST: {ledger_gst}")
+        ledger_details_parts.append(f"GSTIN: {ledger_gst}")
     if ledger_phone:
         ledger_details_parts.append(f"Ph: {ledger_phone}")
     ledger_details = " &middot; ".join(ledger_details_parts)

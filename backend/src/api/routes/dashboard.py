@@ -24,7 +24,7 @@ from src.schemas.dashboard import (
     SalesMetrics,
     TopProduct,
 )
-from src.services.analytics_reports import month_label, month_window
+from src.services.analytics_reports import apportioned_invoice_rows, month_label, month_window
 from src.services.invoice_payments import build_invoice_payment_summaries
 
 router = APIRouter()
@@ -150,7 +150,8 @@ def get_dashboard_metrics(
             partial_count += 1
         else:
             unpaid_count += 1
-        if remaining > 0 and invoice.due_date is not None and invoice.due_date.date() < today:
+        # An invoice with no due date counts as due on its invoice date, as on Dues.
+        if remaining > 0 and (invoice.due_date or invoice.invoice_date).date() < today:
             overdue_amount += remaining
             overdue_count += 1
     receivables = ReceivablesMetrics(
@@ -238,37 +239,50 @@ def get_dashboard_metrics(
     ]
 
     # --- Top products by revenue (active sales) --------------------------
-    top_rows = (
+    product_lines = (
         db.query(
-            Product.id,
-            Product.name,
-            func.coalesce(func.sum(InvoiceItem.quantity), 0),
-            func.coalesce(func.sum(InvoiceItem.line_total), 0),
+            Invoice.id,
+            InvoiceItem.product_id,
+            Product.name.label("product_name"),
+            InvoiceItem.quantity,
+            InvoiceItem.line_total,
+            Invoice.taxable_amount,
+            Invoice.total_tax_amount,
+            Invoice.round_off_amount,
+            Invoice.total_amount,
         )
-        .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
-        .join(Product, Product.id == InvoiceItem.product_id)
+        .join(InvoiceItem, InvoiceItem.invoice_id == Invoice.id)
+        .outerjoin(Product, Product.id == InvoiceItem.product_id)
         .filter(
             Invoice.company_id == company_id,
             Invoice.status == "active",
             Invoice.voucher_type == "sales",
         )
-        .group_by(Product.id, Product.name)
-        .order_by(func.coalesce(func.sum(InvoiceItem.line_total), 0).desc())
-        .limit(5)
-        .all()
     )
+    product_totals: dict[int, tuple[str, Decimal, Decimal]] = {}
+    for row, discount in apportioned_invoice_rows(product_lines, gst_inclusive=True):
+        if row.product_name is None:
+            continue
+        name, quantity, revenue = product_totals.get(
+            row.product_id, (row.product_name, Decimal("0"), Decimal("0")),
+        )
+        product_totals[row.product_id] = (
+            name, quantity + row.quantity, revenue + row.line_total - discount,
+        )
+
+    ranked = sorted(product_totals.items(), key=lambda entry: (-entry[1][2], entry[0]))
     top_products = [
         TopProduct(
             product_id=product_id,
             name=name,
-            quantity=float(Decimal(str(quantity or 0))),
-            revenue=float(Decimal(str(revenue or 0))),
+            quantity=float(quantity),
+            revenue=float(revenue),
         )
-        for product_id, name, quantity, revenue in top_rows
+        for product_id, (name, quantity, revenue) in ranked[:5]
     ]
 
     return DashboardMetrics(
-        currency_code=active_company.currency_code or "USD",
+        currency_code=active_company.currency_code or "INR",
         catalog=catalog,
         inventory=inventory,
         sales=sales,

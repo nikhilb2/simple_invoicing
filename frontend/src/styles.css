@@ -676,6 +676,61 @@ textarea {
   color: var(--text);
 }
 
+.page-header__github,
+.page-header__help,
+.page-header__feedback {
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.github-star__count {
+  padding-left: 6px;
+  border-left: 1px solid var(--line);
+}
+
+/* The first thing to go when the header runs short: it would wrap beside the sidebar. */
+@media (max-width: 959px) {
+  .page-header__shortcut-hint {
+    display: none;
+  }
+}
+
+/* Icon only on phones: the header also has to fit the menu. */
+@media (max-width: 767px) {
+  .page-header__github .github-star__label,
+  .page-header__help-label,
+  .page-header__feedback-label {
+    display: none;
+  }
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  margin-left: 12px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  background: rgb(var(--rgb-overlay) / 0.08);
+}
+
+@media (max-width: 767px) {
+  .theme-toggle {
+    width: 40px;
+    height: 40px;
+  }
+}
+
 .page-header__shortcut-hint kbd,
 .shortcut-cheat-sheet kbd {
   background: rgb(var(--rgb-overlay) / 0.08);
@@ -796,6 +851,24 @@ textarea {
   font-size: 0.84rem;
   line-height: 1.45;
   margin-top: 6px;
+}
+
+/* A warning that carries its own way out: the sentence, then the button beneath it. */
+.field-warning--action {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.required-mark {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.stock-shortage {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
 }
 
 .eyebrow {
@@ -2944,10 +3017,12 @@ a.invoice-row {
   padding: clamp(24px, 4vw, 40px);
   border-radius: 32px;
   border: 1px solid var(--line);
-  backdrop-filter: blur(18px);
 }
 
+/* A blur here would make the card the containing block of the fixed toast
+   stack, clipping error toasts to the card. */
 .login-hero {
+  backdrop-filter: blur(18px);
   background:
     radial-gradient(circle at top left, rgb(var(--rgb-accent) / 0.18), transparent 34%),
     linear-gradient(180deg, rgb(var(--rgb-hero-top) / 0.92) 0%, rgb(var(--rgb-hero-bottom) / 0.88) 100%);
@@ -2959,6 +3034,15 @@ a.invoice-row {
   width: min(460px, 100%);
   justify-self: end;
   align-self: start;
+}
+
+.login-card a:not(.button) {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.login-card__github {
+  justify-self: center;
 }
 
 .login-hero__title {
@@ -4152,7 +4236,10 @@ a.invoice-row {
     flex-direction: column;
   }
 
+  /* Stacked, the form comes before the benefits panel, so nobody has to scroll
+     past it to sign in. */
   .login-card {
+    order: -1;
     width: 100%;
     justify-self: stretch;
   }
@@ -5505,6 +5592,65 @@ a.invoice-row {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+/* Dashboard "Get started" checklist for companies with no invoices yet. */
+.get-started {
+  border-color: var(--line-strong);
+}
+
+.get-started__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.get-started__step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.get-started__mark {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bg-card-strong);
+}
+
+.get-started__step--done .get-started__mark {
+  background: var(--success-color);
+  border-color: var(--success-color);
+}
+
+.get-started__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.get-started a:not(.button) {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.get-started__optional {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.get-started__step--done .get-started__text strong {
+  color: var(--text-muted);
 }
 
 /* Tax-exclusive vs tax-inclusive price entry on the publish form. */
@@ -7232,6 +7378,49 @@ a.ledger-chip:focus-visible {
   }
 }
 
+/* ── Sign in with a provider ─────────────────────────────────────────────
+   Colours are the ones Google's branding rules set for each theme, so they are
+   literal values rather than tokens and do not follow the app's accent. The rules
+   also put the logo on white, hence the white tile on the dark button.
+   https://developers.google.com/identity/branding-guidelines */
+.oauth-button--google,
+:root[data-theme="dark"] .oauth-button--google {
+  background: #131314;
+  border: 1px solid #8e918f;
+  color: #e3e3e3;
+  font-weight: 500;
+  gap: 10px;
+}
+
+:root[data-theme="light"] .oauth-button--google {
+  background: #ffffff;
+  border-color: #747775;
+  color: #1f1f1f;
+}
+
+.oauth-button--google:hover,
+.oauth-button--google:focus-visible {
+  filter: brightness(1.15);
+}
+
+:root[data-theme="light"] .oauth-button--google:hover,
+:root[data-theme="light"] .oauth-button--google:focus-visible {
+  filter: none;
+  background: #f2f2f2;
+}
+
+.oauth-button__logo {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 3px;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.oauth-button__logo img {
+  display: block;
+}
+
 /* ── OAuth consent ──────────────────────────────────────────────────────────
    Reuses the login page's centering shell, but a single narrow column: the
    visitor arrives here from Claude or ChatGPT to answer one question, and the
@@ -8462,4 +8651,243 @@ a.ledger-chip:focus-visible {
 .dues-ageing-note {
   font-size: 0.78rem;
   margin-top: 10px;
+}
+/* ── GSTR-3B worksheet ──────────────────────────────────────────────────── */
+
+/* Stays above the figures, loaded or not. Solid enough to read as a statement
+   about the whole page and not as one more note. */
+.worksheet-notice {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgb(var(--rgb-warning) / 0.15);
+  border: 1px solid rgb(var(--rgb-warning) / 0.45);
+  color: var(--warning);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.worksheet-source {
+  display: inline-block;
+  white-space: nowrap;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.worksheet-source--from_books {
+  background: rgb(var(--rgb-accent) / 0.12);
+  color: var(--text-on-accent-tint);
+}
+
+.worksheet-source--not_tracked {
+  background: rgb(var(--rgb-overlay) / 0.06);
+  color: var(--muted);
+}
+
+.worksheet-warnings {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.worksheet-warning {
+  padding: 10px 14px;
+  border-left: 3px solid var(--warning);
+  border-radius: 6px;
+  background: rgb(var(--rgb-warning) / 0.08);
+}
+
+.worksheet-warning--info {
+  border-left-color: var(--muted);
+  background: rgb(var(--rgb-overlay) / 0.03);
+}
+
+.worksheet-warning__title {
+  margin: 0 0 2px;
+  font-weight: 700;
+}
+
+.worksheet-warning__count {
+  font-weight: 400;
+}
+
+.worksheet-warning__message {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.worksheet-warning__documents {
+  margin-top: 6px;
+  font-size: 0.84rem;
+}
+
+.worksheet-warning__documents summary {
+  cursor: pointer;
+}
+
+.worksheet-warning__documents ul {
+  display: grid;
+  gap: 2px;
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.worksheet-warning__detail {
+  color: var(--muted);
+}
+
+.worksheet-limits__title {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+}
+
+.worksheet-limits {
+  margin: 0;
+  padding-left: 18px;
+  list-style: disc;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+/* The feed table has a 760px minimum, so on a phone it scrolls inside its panel
+   and does not push the whole page sideways. */
+.worksheet-table-wrap {
+  overflow-x: auto;
+}
+
+.worksheet-row__table {
+  white-space: nowrap;
+}
+
+.worksheet-row__note {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.worksheet-row--component td {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.worksheet-row--untracked td {
+  color: var(--muted);
+}
+
+.worksheet-row--total td {
+  font-weight: 700;
+}
+
+/* First-invoice walkthrough. Above every dialog, because it guides what is inside
+   them, and never in the way: only the card itself takes clicks. */
+.tour-coach {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1300;
+  display: grid;
+  gap: 8px;
+  width: min(340px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgb(var(--rgb-panel-top) / 0.99) 0%, rgb(var(--rgb-panel) / 0.99) 100%);
+  box-shadow: var(--shadow);
+}
+
+.tour-coach--top {
+  top: 16px;
+  bottom: auto;
+}
+
+:root[data-tour-card] .modal-overlay,
+:root[data-tour-card] .page-frame {
+  padding-bottom: calc(var(--tour-card-height, 0px) + 32px);
+}
+
+/* A dialog scrolls inside its own panel, so the padding above can't lift what the
+   panel holds. Ending the panel above the card is what keeps its Save button clear. */
+:root[data-tour-card] .modal-panel {
+  max-height: calc(100vh - var(--tour-card-height, 0px) - 56px);
+  max-height: calc(100dvh - var(--tour-card-height, 0px) - 56px);
+}
+
+.tour-coach .eyebrow {
+  margin: 0;
+}
+
+.tour-coach__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.tour-coach__body {
+  margin: 4px 0 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.tour-coach__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.tour-coach__progress {
+  display: flex;
+  gap: 4px;
+}
+
+.tour-coach__dot {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+
+.tour-coach__dot--on {
+  background: rgb(var(--rgb-accent));
+}
+
+.tour-ring {
+  position: fixed;
+  z-index: 1290;
+  border: 2px solid rgb(var(--rgb-accent));
+  border-radius: 10px;
+  box-shadow: 0 0 0 4px rgb(var(--rgb-accent) / 0.25);
+  pointer-events: none;
+  animation: tour-ring-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes tour-ring-pulse {
+  50% {
+    box-shadow: 0 0 0 8px rgb(var(--rgb-accent) / 0.1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-ring {
+    animation: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .tour-coach {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+  }
+
+  .tour-coach--top {
+    top: 12px;
+    bottom: auto;
+  }
 }

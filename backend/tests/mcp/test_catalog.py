@@ -28,15 +28,19 @@ from src.mcp_server.schema import (
 )
 
 # Measured against the real spec on 2026-09-08.
-EXPECTED_OPERATIONS = 151  # 149 tagged + GET /api/health
-EXPECTED_TOOLS = 136  # generated only; `search` and `fetch` are added on top
+EXPECTED_OPERATIONS = 171  # 169 tagged + GET /api/health
+EXPECTED_TOOLS = 149  # generated only; `search` and `fetch` are added on top
+# The /api/quotations routes added ten operations and ten tools, and the GSTR-3B
+# worksheet three of each.
 # GET /api/invoices/dues/ageing added one operation and one tool.
+# The three GSTR-3B worksheet routes added three of each.
 # GET /api/analytics/product-performance added one operation and one tool, and
 # GET /api/analytics/product-performance/{product_id} one more of each.
 # GET /api/ledgers/{ledger_id}/statement/csv added one more of each.
 # GET /api/backups/schedule joined the excluded set when nightly automatic backups
 # landed; the whole /api/backups prefix is excluded, so tools stayed at 131.
-EXPECTED_EXCLUDED = 14
+# The seven e-way bill operations are excluded, so tools stayed at 136.
+EXPECTED_EXCLUDED = 21
 EXPECTED_MULTIPART_SKIPPED = 1
 
 
@@ -53,6 +57,13 @@ def test_tool_count_matches_measurement(registry):
     assert registry.measurements["tools"] == EXPECTED_TOOLS
     # …plus the two hand-written discovery tools.
     assert len(registry.specs) == EXPECTED_TOOLS + 2
+
+
+def test_eway_bill_routes_are_not_exposed_as_tools(registry):
+    spec = app.openapi()
+    eway_paths = {path for path in spec["paths"] if "eway-bill" in path}
+    assert len(eway_paths) == 5  # settings, transporters (x2), precheck, generate
+    assert not [tool.name for tool in registry.specs.values() if "eway-bill" in tool.path]
 
 
 def test_exclusion_counts(registry):

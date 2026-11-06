@@ -1,14 +1,21 @@
 from datetime import date, datetime
 from pydantic import BaseModel, Field, field_validator
 
+from src.core.document_limits import MONEY_LIMIT
 from src.core.validation import normalize_gstin, normalize_gstin_format
+
+# Opening balances are stored as signed NUMERIC(10, 2) payment amounts.
+# Half a paisa below the limit already rounds up to an unrepresentable value.
+_OPENING_BALANCE_LIMIT = MONEY_LIMIT - 0.005
 
 
 class LedgerCreate(BaseModel):
     name: str
     address: str
     gst: str | None = None
-    opening_balance: float | None = None
+    opening_balance: float | None = Field(
+        default=None, gt=-_OPENING_BALANCE_LIMIT, lt=_OPENING_BALANCE_LIMIT, allow_inf_nan=False,
+    )
     phone_number: str
     email: str | None = None
     website: str | None = None
@@ -279,6 +286,10 @@ class Gstr1Summary(BaseModel):
     nil_rated: Gstr1CategorySummary = Gstr1CategorySummary()
     exempt: Gstr1CategorySummary = Gstr1CategorySummary()
     non_gst: Gstr1CategorySummary = Gstr1CategorySummary()
+    # Invoices with lines at 0% and those lines' value. They are in the B2B, B2CL
+    # or B2CS figures above; the export files them at rate 0.
+    zero_rate_invoices: int = 0
+    zero_rate_value: float = 0.0
     hsn_summary: list[Gstr1HsnSummaryItem] = []
     doc_summary: Gstr1DocSummary = Gstr1DocSummary()
 

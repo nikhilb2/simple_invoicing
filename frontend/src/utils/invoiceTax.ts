@@ -1,4 +1,5 @@
 import formatCurrency from './formatting';
+import { roundMoney } from './invoiceTotals';
 
 type InvoiceTaxBreakdownArgs = {
   gstRate: number;
@@ -10,9 +11,6 @@ type InvoiceTaxBreakdownArgs = {
   interstateSupply?: boolean;
 };
 
-function roundCurrency(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
-}
 
 function formatRate(rate: number): string {
   return rate.toFixed(2).replace(/\.00$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
@@ -39,10 +37,10 @@ export function formatInvoiceTaxBreakdown({
   interstateSupply,
 }: InvoiceTaxBreakdownArgs): string {
   const normalizedGstRate = Number.isFinite(gstRate) ? gstRate : 0;
-  const normalizedTaxAmount = roundCurrency(Number.isFinite(taxAmount) ? taxAmount : 0);
-  const normalizedIgstAmount = roundCurrency(Number.isFinite(igstAmount ?? NaN) ? Number(igstAmount) : 0);
-  const normalizedCgstAmount = roundCurrency(Number.isFinite(cgstAmount ?? NaN) ? Number(cgstAmount) : 0);
-  const normalizedSgstAmount = roundCurrency(Number.isFinite(sgstAmount ?? NaN) ? Number(sgstAmount) : 0);
+  const normalizedTaxAmount = roundMoney(Number.isFinite(taxAmount) ? taxAmount : 0);
+  const normalizedIgstAmount = roundMoney(Number.isFinite(igstAmount ?? NaN) ? Number(igstAmount) : 0);
+  const normalizedCgstAmount = roundMoney(Number.isFinite(cgstAmount ?? NaN) ? Number(cgstAmount) : 0);
+  const normalizedSgstAmount = roundMoney(Number.isFinite(sgstAmount ?? NaN) ? Number(sgstAmount) : 0);
 
   if (normalizedIgstAmount > 0) {
     return `IGST ${formatRate(normalizedGstRate)}% (${formatCurrency(normalizedIgstAmount, currencyCode)})`;
@@ -60,7 +58,7 @@ export function formatInvoiceTaxBreakdown({
     return `IGST ${formatRate(normalizedGstRate)}% (${formatCurrency(normalizedTaxAmount, currencyCode)})`;
   }
 
-  const splitCgstAmount = roundCurrency(normalizedTaxAmount / 2);
+  const splitCgstAmount = roundMoney(normalizedTaxAmount / 2);
   const splitSgstAmount = splitCgstAmount;
   return `CGST ${formatRate(normalizedGstRate / 2)}% (${formatCurrency(splitCgstAmount, currencyCode)}) + SGST ${formatRate(normalizedGstRate / 2)}% (${formatCurrency(splitSgstAmount, currencyCode)})`;
 }

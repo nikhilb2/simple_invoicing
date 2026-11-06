@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from src.api.deps import get_active_company, require_roles
+from src.api.deps import get_active_company, require_company_role
 from src.db.session import get_db
 from src.models.company import CompanyProfile
 from src.models.email_log import EmailLog
@@ -49,7 +49,7 @@ def list_email_logs(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     company_id = getattr(active_company, "id", None)

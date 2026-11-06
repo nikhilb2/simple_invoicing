@@ -102,7 +102,7 @@ def _build_purchase_invoice_html(
     # Supplier details are stored as ledger_* (buyer_* in DB) on purchase invoices
     supplier_detail_parts = []
     if invoice.ledger_gst:
-        supplier_detail_parts.append(f"GST: {_e(invoice.ledger_gst)}")
+        supplier_detail_parts.append(f"GSTIN: {_e(invoice.ledger_gst)}")
         supplier_pan = _extract_pan_from_gstin(invoice.ledger_gst)
         if supplier_pan:
             supplier_detail_parts.append(f"PAN: {_e(supplier_pan)}")
@@ -115,7 +115,7 @@ def _build_purchase_invoice_html(
     company_header_html = ""
     if invoice.company_logo_data and invoice.company_logo_mime_type:
         company_header_html += f"""
-      <img src="data:{_e(invoice.company_logo_mime_type)};base64,{invoice.company_logo_data}" alt="Company logo" class="invoice-sheet__purchase-logo-img" />"""
+      <img src="data:{_e(invoice.company_logo_mime_type)};base64,{_e(invoice.company_logo_data)}" alt="Company logo" class="invoice-sheet__purchase-logo-img" />"""
     if invoice.company_additional_info:
         lines = invoice.company_additional_info.split("\n")
         info_html = "<br>".join(_e(line) for line in lines)
@@ -123,7 +123,7 @@ def _build_purchase_invoice_html(
 
     company_detail_parts = []
     if invoice.company_gst:
-        company_detail_parts.append(f"GST: {_e(invoice.company_gst)}")
+        company_detail_parts.append(f"GSTIN: {_e(invoice.company_gst)}")
         company_pan = _extract_pan_from_gstin(invoice.company_gst)
         if company_pan:
             company_detail_parts.append(f"PAN: {_e(company_pan)}")

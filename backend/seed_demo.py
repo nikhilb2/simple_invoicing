@@ -29,7 +29,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import text
 
 from src.db.base import Base
-from src.db.session import SessionLocal, engine
+from src.db.session import SessionLocal, migration_engine as engine
 from src.models.buyer import Buyer
 from src.models.company import CompanyProfile
 from src.models.company_account import CompanyAccount
@@ -161,8 +161,8 @@ PRODUCTS = [
     # left those two cards reading zero on a freshly seeded database.
     dict(sku="LAPTOP-01",   name='Business Laptop 15"',       description="Intel Core i7, 16 GB RAM, 512 GB SSD",   hsn_sac="84713010", price=65000.00, purchase_price=52000.00, gst_rate=18, reorder_level=15),
     dict(sku="LAPTOP-02",   name='Ultrabook 13"',              description="Ryzen 7, 16 GB RAM, 1 TB NVMe",          hsn_sac="84713010", price=72000.00, purchase_price=58500.00, gst_rate=18, reorder_level=12),
-    dict(sku="MONITOR-01",  name='27" 4K Monitor',             description="IPS, 144 Hz, USB-C",                     hsn_sac="84713040", price=28000.00, purchase_price=21500.00, gst_rate=18, reorder_level=20),
-    dict(sku="MONITOR-02",  name='24" FHD Monitor',            description="IPS, 75 Hz, HDMI+DP",                    hsn_sac="84713040", price=14500.00, purchase_price=11000.00, gst_rate=18, reorder_level=25),
+    dict(sku="MONITOR-01",  name='27" 4K Monitor',             description="IPS, 144 Hz, USB-C",                     hsn_sac="85285200", price=28000.00, purchase_price=21500.00, gst_rate=18, reorder_level=20),
+    dict(sku="MONITOR-02",  name='24" FHD Monitor',            description="IPS, 75 Hz, HDMI+DP",                    hsn_sac="85285200", price=14500.00, purchase_price=11000.00, gst_rate=18, reorder_level=25),
     dict(sku="KEYBOARD-01", name="Mechanical Keyboard",        description="Cherry MX Red switches, TKL layout",     hsn_sac="84716060", price=4500.00,  purchase_price=3100.00,  gst_rate=18, reorder_level=40),
     dict(sku="MOUSE-01",    name="Wireless Mouse",             description="2.4 GHz, 4000 DPI, ergonomic",           hsn_sac="84716060", price=1800.00,  purchase_price=1150.00,  gst_rate=18, reorder_level=50),
     dict(sku="HEADSET-01",  name="Over-ear Headset",           description="Noise-cancelling, USB, mic included",    hsn_sac="85183000", price=5500.00,  purchase_price=3900.00,  gst_rate=18, reorder_level=30),
@@ -170,24 +170,24 @@ PRODUCTS = [
     dict(sku="HDD-01",      name="1 TB External HDD",          description="USB 3.0, portable",                      hsn_sac="84717010", price=4200.00,  purchase_price=3050.00,  gst_rate=18, reorder_level=30),
     dict(sku="SSD-01",      name="512 GB SSD",                 description="SATA III, 2.5 inch",                     hsn_sac="84717010", price=5800.00,  purchase_price=4300.00,  gst_rate=12, reorder_level=30),
     dict(sku="RAM-01",      name="16 GB DDR4 RAM",             description="3200 MHz, single stick",                 hsn_sac="84717010", price=3500.00,  purchase_price=2450.00,  gst_rate=12, reorder_level=40),
-    dict(sku="ROUTER-01",   name="Wi-Fi 6 Router",             description="Dual-band, AX3000",                      hsn_sac="85176200", price=6800.00,  purchase_price=4900.00,  gst_rate=18, reorder_level=25),
-    dict(sku="SWITCH-01",   name="8-Port Network Switch",      description="Gigabit, unmanaged",                     hsn_sac="85176200", price=2400.00,  purchase_price=1600.00,  gst_rate=18, reorder_level=30),
+    dict(sku="ROUTER-01",   name="Wi-Fi 6 Router",             description="Dual-band, AX3000",                      hsn_sac="85176290", price=6800.00,  purchase_price=4900.00,  gst_rate=18, reorder_level=25),
+    dict(sku="SWITCH-01",   name="8-Port Network Switch",      description="Gigabit, unmanaged",                     hsn_sac="85176290", price=2400.00,  purchase_price=1600.00,  gst_rate=18, reorder_level=30),
     dict(sku="HDMI-01",     name="HDMI 2.0 Cable 2m",          description="4K@60Hz, gold-plated connectors",        hsn_sac="85444290", price=450.00,   purchase_price=240.00,   gst_rate=18, reorder_level=100),
     dict(sku="USBC-01",     name="USB-C Cable 1m",             description="100W PD, Gen 2",                         hsn_sac="85444290", price=650.00,   purchase_price=360.00,   gst_rate=18, reorder_level=100),
     dict(sku="CHARGER-01",  name="65W GaN Charger",            description="USB-C, 3-port",                          hsn_sac="85044030", price=2200.00,  purchase_price=1450.00,  gst_rate=18, reorder_level=45),
-    dict(sku="BAG-01",      name='15" Laptop Bag',             description="Water-resistant, multiple compartments", hsn_sac="42021200", price=1200.00,  purchase_price=720.00,   gst_rate=12, reorder_level=60),
+    dict(sku="BAG-01",      name='15" Laptop Bag',             description="Water-resistant, multiple compartments", hsn_sac="42021290", price=1200.00,  purchase_price=720.00,   gst_rate=12, reorder_level=60),
     dict(sku="STAND-01",    name="Adjustable Laptop Stand",    description="Aluminium, 6 heights",                   hsn_sac="94039000", price=2800.00,  purchase_price=1850.00,  gst_rate=18, reorder_level=35),
     dict(sku="DOCK-01",     name="USB-C Docking Station",      description="10-in-1, 4K60Hz dual display",           hsn_sac="84733020", price=8500.00,  purchase_price=6200.00,  gst_rate=18, reorder_level=20),
     dict(sku="UPS-01",      name="600 VA UPS",                 description="Line-interactive, 10 min backup",        hsn_sac="85044040", price=4600.00,  purchase_price=3300.00,  gst_rate=18, reorder_level=25),
-    dict(sku="PRINTER-01",  name="Laser Printer A4",           description="Mono, 30 ppm, network",                  hsn_sac="84433200", price=18000.00, purchase_price=13800.00, gst_rate=18, reorder_level=10),
-    dict(sku="TONER-01",    name="Laser Toner Cartridge",      description="Compatible, 5000 pages",                 hsn_sac="84439980", price=1800.00,  purchase_price=1050.00,  gst_rate=18, reorder_level=50),
+    dict(sku="PRINTER-01",  name="Laser Printer A4",           description="Mono, 30 ppm, network",                  hsn_sac="84433240", price=18000.00, purchase_price=13800.00, gst_rate=18, reorder_level=10),
+    dict(sku="TONER-01",    name="Laser Toner Cartridge",      description="Compatible, 5000 pages",                 hsn_sac="84439990", price=1800.00,  purchase_price=1050.00,  gst_rate=18, reorder_level=50),
     dict(sku="PAPER-01",    name="A4 Copier Paper (500 sheets)", description="80 gsm, bright white",                 hsn_sac="48025590", price=320.00,   purchase_price=195.00,   gst_rate=12, reorder_level=120),
     # Licence keys and pre-paid support packs. Stocked like any other line:
     # /api/inventory/ lists every product regardless of maintain_inventory, so a
     # non-stocked item shows up as "0 units" and sorts to the top of the
     # dashboard's low-stock panel as though it had run out.
-    dict(sku="AV-01",       name="Antivirus 1-Year License",   description="3 devices, cloud backup included",       hsn_sac="99831190", price=1200.00,  purchase_price=780.00,   gst_rate=18, reorder_level=40),
-    dict(sku="AMC-01",      name="Annual Maintenance Contract", description="On-site support, 4-hr SLA",             hsn_sac="99831190", price=12000.00, purchase_price=7500.00,  gst_rate=18, reorder_level=8),
+    dict(sku="AV-01",       name="Antivirus 1-Year License",   description="3 devices, cloud backup included",       hsn_sac="998319", price=1200.00,  purchase_price=780.00,   gst_rate=18, reorder_level=40),
+    dict(sku="AMC-01",      name="Annual Maintenance Contract", description="On-site support, 4-hr SLA",             hsn_sac="998713", price=12000.00, purchase_price=7500.00,  gst_rate=18, reorder_level=8),
 ]
 
 # ---------------------------------------------------------------------------
@@ -269,6 +269,8 @@ def _ensure_series_for_financial_year(db, fy: FinancialYear, company_id: int) ->
         "payment": "PAY",
         "credit_note": "CN",
         "debit_note": "DN",
+        "quotation": "QT",
+        "proforma": "PI",
     }
 
     for voucher_type, default_prefix in defaults.items():
@@ -355,8 +357,11 @@ _DEMO_TABLES = (
     "marketplace_connections",
     "share_links",
     "email_logs",
+    "eway_bill_transporters",
     "invoice_items",
     "invoices",
+    "quotation_items",
+    "quotations",
     "production_transactions",
     "bill_of_materials",
     "product_serials",
@@ -1233,6 +1238,12 @@ def seed_all(db) -> None:
 
 
 def main() -> None:
+    from src.core.config import settings
+
+    # Wipes and refills the whole database as one company: never on the shared
+    # instance, where the app role could not write it anyway (row-level security).
+    if settings.is_shared_hosting:
+        raise SystemExit("seed_demo.py is for single-tenant development databases only.")
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:

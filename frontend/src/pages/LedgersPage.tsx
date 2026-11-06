@@ -18,7 +18,7 @@ import api, { getApiErrorMessage } from '../api/client';
 import useDebouncedValue from '../hooks/useDebouncedValue';
 import StatusToasts from '../components/StatusToasts';
 import type { CompanyProfile, Ledger, PaginatedLedgers } from '../types/api';
-import formatCurrency from '../utils/formatting';
+import formatCurrency, { plural } from '../utils/formatting';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LedgerCardPhoneChips from '../components/LedgerCardPhoneChips';
 import EmptyState from '../components/EmptyState';
@@ -208,10 +208,10 @@ export default function LedgersPage() {
         <div>
           <p className="eyebrow">Ledgers</p>
           <h1 className="page-title">Ledger master</h1>
-          <p className="section-copy">A minimal Tally-style ledger registry with period-wise view of sales and purchase postings.</p>
+          <p className="section-copy">Your customers and suppliers live here, one ledger each. Open a ledger to see what they owe you (or what you owe them), their invoices and payments.</p>
         </div>
         <div className="page-hero__actions">
-          <div className="status-chip">{total} ledgers listed</div>
+          <div className="status-chip">{plural(total, 'ledger')} listed</div>
           <button
             type="button"
             className="button button--secondary"

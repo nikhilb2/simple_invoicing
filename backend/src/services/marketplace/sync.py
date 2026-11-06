@@ -23,6 +23,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from src.core.config import settings
+from src.db.tenant_context import get_tenant_context, set_tenant_context
+from src.models.company import CompanyProfile
 from src.models.marketplace import (
     MarketplaceConnection,
     MarketplaceListing,
@@ -722,16 +725,55 @@ def drain(
     return result
 
 
+_DRAINABLE_STATUSES = ("connected", "pending_approval", "suspended")
+
+
 def drain_all(db: Session, **kwargs) -> list[SyncResultOut]:
     """Drain every connected company. Backs the cron-driven ``/sync-all``, the
     only path that works when nobody has the app open."""
-    connections = (
-        db.query(MarketplaceConnection)
-        .filter(MarketplaceConnection.status.in_(["connected", "pending_approval", "suspended"]))
-        .order_by(MarketplaceConnection.id.asc())
-        .all()
-    )
-    return [drain(db, connection, **kwargs) for connection in connections]
+    if not settings.is_shared_hosting:
+        connections = (
+            db.query(MarketplaceConnection)
+            .filter(MarketplaceConnection.status.in_(_DRAINABLE_STATUSES))
+            .order_by(MarketplaceConnection.id.asc())
+            .all()
+        )
+        return [drain(db, connection, **kwargs) for connection in connections]
+
+    # Shared hosting: row-level security shows a session one company at a time,
+    # so walk the companies (company_profiles is not RLS'd) and act as each in
+    # turn. Least privilege on purpose -- no owner connection: every order this
+    # posts is written under the same policies a signed-in user's would be.
+    previous = get_tenant_context(db)
+    results: list[SyncResultOut] = []
+    try:
+        company_ids = [
+            company_id
+            for (company_id,) in db.query(CompanyProfile.id).order_by(CompanyProfile.id.asc()).all()
+        ]
+        for company_id in company_ids:
+            # Nothing of the previous company may be left pending: committed
+            # under the next company's context it would match no rows.
+            db.rollback()
+            set_tenant_context(db, company_id=company_id, user_id=None)
+            connections = (
+                db.query(MarketplaceConnection)
+                .filter(
+                    MarketplaceConnection.company_id == company_id,
+                    MarketplaceConnection.status.in_(_DRAINABLE_STATUSES),
+                )
+                .order_by(MarketplaceConnection.id.asc())
+                .all()
+            )
+            results.extend(drain(db, connection, **kwargs) for connection in connections)
+    finally:
+        db.rollback()
+        set_tenant_context(
+            db,
+            company_id=previous.get("company_id"),
+            user_id=previous.get("user_id"),
+        )
+    return results
 
 
 def maybe_drain(

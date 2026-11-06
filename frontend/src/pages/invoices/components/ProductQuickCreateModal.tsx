@@ -5,7 +5,16 @@ import api, { getApiErrorMessage } from '../../../api/client';
 import { useEscapeClose } from '../../../hooks/useEscapeClose';
 import { invoiceQueryKeys } from '../../../features/invoices/queryKeys';
 import { useInvoiceComposerStore } from '../../../store/useInvoiceComposerStore';
+import type { Product } from '../../../types/api';
 import type { ProductFormState } from '../types';
+import GstRateSelect from '../../catalogue/GstRateSelect';
+import {
+  NO_STOCK_SAVED_NOTE,
+  NO_STOCK_WARNING,
+  hsnProblem,
+  plainProductError,
+  startsWithNoStock,
+} from '../../catalogue/productFormRules';
 
 const UNIT_OPTIONS = ['Pieces', 'Kg', 'g', 'm', 'l', 'Ounce'];
 const CUSTOM_UNIT_VALUE = '__custom__';
@@ -14,7 +23,7 @@ const CUSTOM_UNIT_VALUE = '__custom__';
    rides along locally rather than widening the shared form state. */
 
 function createInitialProductForm(): ProductFormState {
-  return { name: '', sku: '', hsn_sac: '', price: '', gst_rate: '0', unit: 'Pieces', allow_decimal: false, maintain_inventory: true, track_serials: false };
+  return { name: '', sku: '', hsn_sac: '', price: '', gst_rate: '', unit: 'Pieces', allow_decimal: false, maintain_inventory: true, track_serials: false, initial_quantity: '0' };
 }
 
 export default function ProductQuickCreateModal() {
@@ -26,6 +35,12 @@ export default function ProductQuickCreateModal() {
   const [productForm, setProductForm] = useState<ProductFormState>(createInitialProductForm());
   const [productSubmitting, setProductSubmitting] = useState(false);
 
+  /* Stock is only counted here for a plain tracked product: serials are received
+     on a purchase entry, and an untracked product has no stock to open with. */
+  const asksOpeningStock = productForm.maintain_inventory && !productForm.track_serials;
+  const openingQuantity = asksOpeningStock ? Number(productForm.initial_quantity || 0) : 0;
+  const noOpeningStock = !productForm.track_serials && startsWithNoStock(productForm.maintain_inventory, openingQuantity);
+
   useEscapeClose(() => {
     if (showProductCreateModal) {
       closeProductCreateModal();
@@ -34,6 +49,16 @@ export default function ProductQuickCreateModal() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    const hsnError = hsnProblem(productForm.hsn_sac);
+    if (hsnError) {
+      setFeedbackError(hsnError);
+      return;
+    }
+    if (asksOpeningStock && (Number.isNaN(openingQuantity) || openingQuantity < 0)) {
+      setFeedbackError('Opening stock cannot be negative.');
+      return;
+    }
 
     try {
       setProductSubmitting(true);
@@ -49,16 +74,18 @@ export default function ProductQuickCreateModal() {
         allow_decimal: productForm.allow_decimal,
         maintain_inventory: productForm.maintain_inventory,
         track_serials: productForm.track_serials,
+        initial_quantity: openingQuantity,
       };
 
-      await api.post('/products/', payload);
+      const created = await api.post<Product>('/products/', payload);
       setProductForm(createInitialProductForm());
       closeProductCreateModal();
-      setFeedbackSuccess('Product created successfully.');
+      const notes = [created.data.hsn_warning, noOpeningStock ? NO_STOCK_SAVED_NOTE : null].filter(Boolean);
+      setFeedbackSuccess(`Product created successfully.${notes.length ? ` ${notes.join(' ')}` : ''}`);
       await queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
       await queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.products });
     } catch (err) {
-      setFeedbackError(getApiErrorMessage(err, 'Unable to create product'));
+      setFeedbackError(plainProductError(getApiErrorMessage(err, 'Unable to create product')));
     } finally {
       setProductSubmitting(false);
     }
@@ -128,18 +155,7 @@ export default function ProductQuickCreateModal() {
           </div>
           <div className="field">
             <label htmlFor="modal-product-gst-rate">GST %</label>
-            <input
-              id="modal-product-gst-rate"
-              className="input"
-              type="number"
-              min="0"
-              max="100"
-              step="0.01"
-              value={productForm.gst_rate}
-              onChange={(event) => setProductForm((current) => ({ ...current, gst_rate: event.target.value }))}
-              placeholder="18"
-              required
-            />
+            <GstRateSelect id="modal-product-gst-rate" value={productForm.gst_rate} onChange={(rate) => setProductForm((current) => ({ ...current, gst_rate: rate }))} />
           </div>
           <div className="field">
             <label htmlFor="modal-product-unit">Unit</label>
@@ -191,6 +207,21 @@ export default function ProductQuickCreateModal() {
                 : 'Disable this for service charges and other non-stock items.'}
             </small>
           </div>
+          {asksOpeningStock ? (
+            <div className="field">
+              <label htmlFor="modal-product-opening-stock">Opening stock</label>
+              <input
+                id="modal-product-opening-stock"
+                className="input"
+                type="number"
+                min="0"
+                step={productForm.allow_decimal ? '0.001' : '1'}
+                value={productForm.initial_quantity}
+                onChange={(event) => setProductForm((current) => ({ ...current, initial_quantity: event.target.value }))}
+              />
+              {noOpeningStock ? <small className="field-warning" role="status">{NO_STOCK_WARNING}</small> : null}
+            </div>
+          ) : null}
           <div className="field field--full" style={{ marginBottom: 0 }}>
             <label htmlFor="modal-product-allow-decimal" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 0 }}>
               <input
@@ -233,7 +264,7 @@ export default function ProductQuickCreateModal() {
             <button type="button" className="button button--ghost" onClick={closeProductCreateModal} title="Cancel product creation" aria-label="Cancel product creation">
               Cancel
             </button>
-            <button className="button button--primary" disabled={productSubmitting} title="Save product" aria-label="Save product">
+            <button data-tour="save-product" className="button button--primary" disabled={productSubmitting} title="Save product" aria-label="Save product">
               {productSubmitting ? 'Saving product...' : 'Save product'}
             </button>
           </div>

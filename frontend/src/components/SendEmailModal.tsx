@@ -26,6 +26,18 @@ type EmailPayload = {
   to_date?: string;
 };
 
+/** Only shown after the API call has returned success; the send itself is synchronous. */
+export function emailSentMessage(type: EmailType, recipient: string) {
+  switch (type) {
+    case 'invoice':
+      return `Invoice emailed to ${recipient}`;
+    case 'statement':
+      return `Statement emailed to ${recipient}`;
+    default:
+      return `Payment reminder emailed to ${recipient}`;
+  }
+}
+
 export default function SendEmailModal({
   type,
   entityId,
@@ -42,6 +54,8 @@ export default function SendEmailModal({
   const [subject, setSubject] = useState(defaultSubject);
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
+  // Set only once the API call has succeeded; the dialog then says so instead of vanishing.
+  const [sentTo, setSentTo] = useState<string | null>(null);
 
   useEscapeClose(onClose);
 
@@ -79,13 +93,19 @@ export default function SendEmailModal({
         payload.to_date = toDate;
       }
       await api.post(getEndpoint(), payload);
-      onSuccess('Email sent successfully');
-      onClose();
+      setSentTo(payload.to);
     } catch (err) {
       onError(getApiErrorMessage(err, 'Failed to send email'));
     } finally {
       setSending(false);
     }
+  };
+
+  const getSentMessage = (recipient: string) => emailSentMessage(type, recipient);
+
+  const handleDone = () => {
+    if (sentTo) onSuccess(getSentMessage(sentTo));
+    onClose();
   };
 
   const getTitle = () => {
@@ -109,9 +129,19 @@ export default function SendEmailModal({
             <p className="eyebrow">Compose email</p>
             <h2 id="send-email-title" className="nav-panel__title">{getTitle()}</h2>
           </div>
-          <ModalCloseButton onClick={onClose} label="Close compose email" />
+          <ModalCloseButton onClick={sentTo ? handleDone : onClose} label="Close compose email" />
         </div>
 
+        {sentTo ? (
+          <div className="stack">
+            <p role="status" style={{ color: 'var(--color-success-text)', fontWeight: 600 }}>{getSentMessage(sentTo)}</p>
+            <div className="button-row">
+              <button type="button" className="button button--primary" onClick={handleDone} autoFocus>
+                Done
+              </button>
+            </div>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="stack">
           <div className="field-grid">
             <div className="field">
@@ -185,6 +215,7 @@ export default function SendEmailModal({
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   );

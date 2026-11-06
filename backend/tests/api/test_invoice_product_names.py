@@ -19,6 +19,8 @@ if str(BACKEND_ROOT) not in sys.path:
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
 
+import re
+
 import pytest
 
 from src.api.routes.invoices import _enrich_items_with_product_names
@@ -151,7 +153,7 @@ def _pdf_test_invoice(voucher_type="sales"):
         ledger_gst="07AABB1234C1Z5",
         company_name="Seller One",
         company_address="Seller Address",
-        company_gst="07AAMPB1274B1Z8",
+        company_gst="07ZZZZZ9999Z1ZA",
         company_currency_code="INR",
         voucher_type=voucher_type,
         created_by=1,
@@ -202,14 +204,24 @@ class TestPdfSkuColumnVisibility:
     def test_item_description_wider_when_sku_hidden_intrastate(self):
         """Item description col gets extra width from SKU when hidden (intrastate)."""
         colgroup_without = _build_pdf_table_colgroup(interstate_supply=False, show_sku=False)
-        # Intrastate: Item col goes from 16% to 22% (SKU 6% redistributed)
-        assert "width: 22%" in colgroup_without
+        # Intrastate: Item col goes from 15% to 21% (SKU 6% redistributed)
+        assert "width: 21%" in colgroup_without
 
     def test_item_description_wider_when_sku_hidden_interstate(self):
         """Item description col gets extra width from SKU when hidden (interstate)."""
         colgroup_without = _build_pdf_table_colgroup(interstate_supply=True, show_sku=False)
         # Interstate: Item col goes from 20% to 27% (SKU 7% redistributed)
         assert "width: 27%" in colgroup_without
+
+    @pytest.mark.parametrize("interstate_supply", [False, True])
+    @pytest.mark.parametrize("show_sku", [False, True])
+    def test_hsn_column_fits_an_eight_digit_code(self, interstate_supply, show_sku):
+        """Below 8% an 8-digit HSN code breaks across two lines in the PDF."""
+        colgroup = _build_pdf_table_colgroup(interstate_supply=interstate_supply, show_sku=show_sku)
+        widths = [int(width) for width in re.findall(r"width: (\d+)%", colgroup)]
+        hsn_index = 3 if show_sku else 2
+        assert widths[hsn_index] >= 8
+        assert sum(widths) == 100
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -281,7 +293,7 @@ class TestCompanyShowSkuSetting:
         resp = client.put("/api/company/", json={
             "name": "My Company",
             "address": "123 Main St",
-            "gst": "",
+            "gst": "27ABCDE1234F1Z0",
             "phone_number": "",
             "currency_code": "INR",
             "email": "",
@@ -298,7 +310,7 @@ class TestCompanyShowSkuSetting:
         client.put("/api/company/", json={
             "name": "My Company",
             "address": "123 Main St",
-            "gst": "",
+            "gst": "27ABCDE1234F1Z0",
             "phone_number": "",
             "currency_code": "INR",
             "email": "",
@@ -309,7 +321,7 @@ class TestCompanyShowSkuSetting:
         resp = client.put("/api/company/", json={
             "name": "My Company",
             "address": "123 Main St",
-            "gst": "",
+            "gst": "27ABCDE1234F1Z0",
             "phone_number": "",
             "currency_code": "INR",
             "email": "",
@@ -324,7 +336,7 @@ class TestCompanyShowSkuSetting:
         client.put("/api/company/", json={
             "name": "My Company",
             "address": "123 Main St",
-            "gst": "",
+            "gst": "27ABCDE1234F1Z0",
             "phone_number": "",
             "currency_code": "INR",
             "email": "",

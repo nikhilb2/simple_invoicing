@@ -15,6 +15,9 @@ class InvoiceSeriesOut(BaseModel):
     next_sequence: int
     pad_digits: int
     created_at: Optional[datetime] = None
+    # Set when this series' numbers are about to break, or already break, the
+    # GSTR-1 number rule. Filled in by the route.
+    gstr1_warning: Optional[str] = None
 
     class Config:
         from_attributes = True

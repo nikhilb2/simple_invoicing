@@ -102,12 +102,19 @@ async function getSalesNextSequence(page: import('@playwright/test').Page): Prom
   await page.goto('/settings/company');
   await expect(page.locator('h2:has-text("Invoice series")')).toBeVisible({ timeout: Number((globalThis as any).process?.env?.E2E_EXPECT_TIMEOUT_MS || '5000') });
   const salesRow = page.locator('xpath=//strong[normalize-space()="Sales"]/ancestor::div[contains(@class,"panel")][1]');
-  const nextText = await salesRow.locator('text=/Next: #\\d+/').textContent();
-  const match = nextText?.match(/#(\d+)/);
-  if (!match) {
-    throw new Error(`Unable to parse next sequence from text: ${nextText}`);
+  // Exactly one Sales row must be showing. The card first renders the series of
+  // every FY and narrows to the active one once it has loaded (issue #687), so
+  // wait for that rather than reading whichever row is first.
+  await expect(salesRow).toHaveCount(1);
+  // The counter is an editable "Next number" field now, not "Next: #N" text.
+  const nextInput = salesRow.locator('[id^="series-next-seq-"]');
+  await expect(nextInput).toHaveValue(/^\d+$/);
+  const nextValue = await nextInput.inputValue();
+  const next = Number(nextValue);
+  if (!Number.isInteger(next)) {
+    throw new Error(`Unable to parse next sequence from field value: ${nextValue}`);
   }
-  return Number(match[1]);
+  return next;
 }
 
 /** Create a product + ledger + inventory seeded for invoicing. */
@@ -164,6 +171,13 @@ async function createInvoiceOnDate(
   const createResponse = await createResponsePromise;
   await expectSuccess(page, 'invoice created');
 
+  // Creating an invoice pops the PDF preview, whose overlay covers the sidebar —
+  // dismiss it so the next clickNavLink can reach the rail.
+  const previewModal = page.locator('.modal-panel--invoice-preview');
+  await expect(previewModal).toBeVisible({ timeout: 10_000 });
+  await previewModal.getByRole('button', { name: 'Close invoice preview' }).click();
+  await expect(previewModal).not.toBeVisible();
+
   const body = await createResponse.json() as { invoice_number?: string | null; financial_year_id?: number | null };
   return {
     invoiceNumber: body.invoice_number ?? '',
@@ -209,6 +223,10 @@ test.describe('Invoice series — correct FY used based on invoice date', () => 
     },
   );
 
+  // Known to fail intermittently because of the app bug in
+  // https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/issues/687 (the Invoice series
+  // card can stay on every FY's series). Left active, not test.fail/fixme: the
+  // failure is intermittent, so test.fail would break the run whenever it passes.
   test(
     'backdated and current-FY invoices each have independent sequence counters',
     async ({ authedPage: page }) => {

@@ -14,18 +14,19 @@ import SendEmailModal from '../components/SendEmailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ModalCloseButton from '../components/ModalCloseButton';
 import formatCurrency, { formatDate } from '../utils/formatting';
+import { remainingAmount, validateAllocations } from '../utils/validateAllocations';
 import { useFY } from '../context/FYContext';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { fetchOutstandingInvoices, fetchLedgerAddresses, createLedgerAddress, updateLedgerAddress, deleteLedgerAddress } from '../features/invoices/api';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
 import EmptyState from '../components/EmptyState';
 import LedgerPhoneLinks from '../components/LedgerPhoneLinks';
+import { toIsoDate, toLocalDateTimeInput } from '../utils/dateRanges';
 
 function defaultDateRange() {
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-  const toIso = (d: Date) => d.toISOString().slice(0, 10);
-  return { fromDate: toIso(firstDay), toDate: toIso(today) };
+  return { fromDate: toIsoDate(firstDay), toDate: toIsoDate(today) };
 }
 
 function createDefaultPaymentForm(ledgerId: number): PaymentCreate {
@@ -34,7 +35,7 @@ function createDefaultPaymentForm(ledgerId: number): PaymentCreate {
     voucher_type: 'receipt',
     amount: 0,
     account_id: null,
-    date: new Date().toISOString().slice(0, 16),
+    date: toLocalDateTimeInput(new Date()),
     mode: '',
     reference: '',
     notes: '',
@@ -47,7 +48,7 @@ function createDefaultEditPaymentForm(): PaymentUpdate {
     voucher_type: 'receipt',
     amount: 0,
     account_id: null,
-    date: new Date().toISOString().slice(0, 16),
+    date: toLocalDateTimeInput(new Date()),
     mode: '',
     reference: '',
     notes: '',
@@ -383,7 +384,7 @@ export default function LedgerViewPage() {
     }
 
     const allocatedTotal = sumAllocatedAmount(input.allocations);
-    const remainingUnallocated = input.amount - allocatedTotal;
+    const remainingUnallocated = remainingAmount(input.amount, allocatedTotal);
     const filteredInvoices = input.searchQuery.trim()
       ? input.outstanding.filter((inv) =>
           (inv.invoice_number ?? '').toLowerCase().includes(input.searchQuery.trim().toLowerCase())
@@ -516,6 +517,11 @@ export default function LedgerViewPage() {
       setError('Amount must be greater than 0');
       return;
     }
+    const allocationError = validateAllocations(paymentForm.invoice_allocations, paymentForm.amount);
+    if (allocationError) {
+      setError(allocationError);
+      return;
+    }
     try {
       setSubmittingPayment(true);
       setError('');
@@ -567,6 +573,11 @@ export default function LedgerViewPage() {
     if (!editingPayment) return;
     if ((editPaymentForm.amount ?? 0) <= 0) {
       setError('Amount must be greater than 0');
+      return;
+    }
+    const editAllocationError = validateAllocations(editPaymentForm.invoice_allocations, editPaymentForm.amount ?? 0);
+    if (editAllocationError) {
+      setError(editAllocationError);
       return;
     }
     try {
@@ -632,7 +643,7 @@ export default function LedgerViewPage() {
           <p className="eyebrow">Ledger statement</p>
           <h1 className="page-title">{ledger.name}</h1>
           <p className="section-copy">
-            {ledger.gst ? `GST: ${ledger.gst}` : null}
+            {ledger.gst ? `GSTIN: ${ledger.gst}` : null}
             {ledger.gst && ledger.phone_number?.trim() ? ' · ' : null}
             <LedgerPhoneLinks phone={ledger.phone_number} />
             {ledger.email ? ` · ${ledger.email}` : ''}

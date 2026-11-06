@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 
-from src.api.deps import require_roles
+from src.api.deps import require_platform_admin
 from src.db.session import get_db
 from src.models.smtp_config import SMTPConfig
 from src.models.user import User, UserRole
@@ -76,7 +76,7 @@ router = APIRouter()
 def create_smtp_config(
     payload: SmtpConfigCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_platform_admin(UserRole.admin)),
 ):
     existing = db.query(SMTPConfig).filter(SMTPConfig.username == payload.username).filter(SMTPConfig.host == payload.host).first()
     if existing:
@@ -101,7 +101,7 @@ def create_smtp_config(
 @router.get("/", response_model=list[SmtpConfigResponse])
 def get_smtp_config(
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_platform_admin(UserRole.admin)),
 ):
     config = db.query(SMTPConfig).all()
     return config
@@ -112,7 +112,7 @@ def update_smtp_config(
     smtp_config_id: int,
     payload: SmtpConfigUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_platform_admin(UserRole.admin)),
 ):
     config = db.query(SMTPConfig).filter(SMTPConfig.id == smtp_config_id).first()
     if not config:
@@ -152,7 +152,7 @@ def update_smtp_config(
 def delete_smtp_config(
     smtp_config_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_platform_admin(UserRole.admin)),
 ):
     config = db.query(SMTPConfig).filter(SMTPConfig.id == smtp_config_id).first()
     if not config:
@@ -167,7 +167,7 @@ def delete_smtp_config(
 def activate_smtp_config(
     smtp_config_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_platform_admin(UserRole.admin)),
 ):
     config = db.query(SMTPConfig).filter(SMTPConfig.id == smtp_config_id).first()
     if not config:
@@ -185,7 +185,7 @@ def activate_smtp_config(
 def test_smtp_config(
     payload: SmtpConfigTest,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_platform_admin(UserRole.admin)),
 ):
 
     # Fetch active SMTP config from DB (this is just a placeholder, implement actual DB fetch)
@@ -220,7 +220,7 @@ def test_smtp_config(
 def test_smtp_template(
     payload: SmtpConfigTestTemplate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin)),
+    _: User = Depends(require_platform_admin(UserRole.admin)),
 ):
     """Send a test email rendered from one of the Jinja2 HTML templates using mock data."""
     config = db.query(SMTPConfig).filter(SMTPConfig.id == payload.id).first()

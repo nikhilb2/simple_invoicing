@@ -1,0 +1,13 @@
+{
+  "name": "simple-invoicing-guide",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev . --port 5177",
+    "build": "vitepress build .",
+    "preview": "vitepress preview . --port 5177"
+  },
+  "devDependencies": {
+    "vitepress": "1.6.4"
+  }
+}

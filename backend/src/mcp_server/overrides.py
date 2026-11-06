@@ -26,6 +26,9 @@ EXCLUDED_PATH_PREFIXES: tuple[str, ...] = (
     # escalation as an API-key minting tool.
     "/api/oauth",
     "/.well-known",
+    # Not exposed to AI assistants for now: the maintainer has not decided whether
+    # they should be. See PR #379.
+    "/api/eway-bill",
 )
 
 EXCLUDED_OPERATIONS: frozenset[tuple[str, str]] = frozenset(
@@ -36,6 +39,9 @@ EXCLUDED_OPERATIONS: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/auth/change-password"),
         # Persistently mutates which company the human sees in the web UI.
         ("POST", "/api/company/select/{company_id}"),
+        # See the /api/eway-bill note above: these two live under /api/invoices.
+        ("GET", "/api/invoices/{invoice_id}/eway-bill/precheck"),
+        ("POST", "/api/invoices/{invoice_id}/eway-bill/generate"),
     }
 )
 
@@ -72,6 +78,9 @@ NAME_OVERRIDES: dict[tuple[str, str], str] = {
     ("GET", "/api/ledgers/tax-ledger/gstr1/export-pdf"): "gstr1_export_pdf",
     ("GET", "/api/ledgers/tax-ledger/gstr1/summary"): "gstr1_summary",
     ("GET", "/api/ledgers/tax-ledger/gstr1/validate"): "gstr1_validate",
+    ("GET", "/api/ledgers/tax-ledger/gstr3b/worksheet"): "gstr3b_worksheet",
+    ("GET", "/api/ledgers/tax-ledger/gstr3b/export-csv"): "gstr3b_export_csv",
+    ("GET", "/api/ledgers/tax-ledger/gstr3b/export-pdf"): "gstr3b_export_pdf",
     ("GET", "/api/ledgers/{ledger_id}/statement/pdf"): "ledgers_download_statement_pdf",
     ("GET", "/api/ledgers/{ledger_id}/statement/csv"): "ledgers_download_statement_csv",
     ("GET", "/api/ledgers/{ledger_id}/addresses/"): "ledgers_list_addresses",
@@ -89,6 +98,13 @@ NAME_OVERRIDES: dict[tuple[str, str], str] = {
     # credit notes
     ("GET", "/api/credit-notes/{cn_id}/pdf"): "credit_notes_download_pdf",
     ("POST", "/api/credit-notes/{cn_id}/cancel"): "credit_notes_cancel",
+    # quotations
+    ("GET", "/api/quotations/{quotation_id}/pdf"): "quotations_download_pdf",
+    ("GET", "/api/quotations/{quotation_id}/conversion-draft"): "quotations_conversion_draft",
+    ("POST", "/api/quotations/{quotation_id}/cancel"): "quotations_cancel",
+    ("POST", "/api/quotations/{quotation_id}/convert"): "quotations_convert",
+    ("POST", "/api/quotations/{quotation_id}/duplicate"): "quotations_duplicate",
+    ("POST", "/api/quotations/{quotation_id}/status"): "quotations_set_status",
     # shortcuts — DELETE /api/shortcuts/ and DELETE /api/shortcuts/{action_key}
     # both generate `shortcuts_delete`; this is the one real collision.
     ("DELETE", "/api/shortcuts/"): "shortcuts_delete_all",
@@ -159,7 +175,7 @@ DESCRIPTION_OVERRIDES: dict[tuple[str, str], str] = {
     ("GET", "/api/invoices/dues"): "List invoices with an outstanding balance, for chasing payment.",
     ("GET", "/api/invoices/export"): "Export the filtered invoice list as CSV.",
     ("GET", "/api/invoices/{invoice_id}/pdf"): "Render an invoice as a PDF document.",
-    ("POST", "/api/invoices/{invoice_id}/duplicate"): "Copy an invoice into a new draft with a fresh number and today's date.",
+    ("POST", "/api/invoices/{invoice_id}/duplicate"): "Create an active copy dated today with a fresh number and normal stock checks/movement. Serial-tracked invoices must be copied from the UI to pick new serials.",
     ("POST", "/api/invoices/{invoice_id}/restore"): "Un-cancel a previously cancelled invoice.",
     # ledgers
     ("GET", "/api/ledgers/"): "List ledgers (customers, suppliers and account heads). Supports free-text `search`.",
@@ -174,6 +190,20 @@ DESCRIPTION_OVERRIDES: dict[tuple[str, str], str] = {
     ("GET", "/api/ledgers/tax-ledger/gstr1/summary"): "GSTR-1 summary totals for the selected return period.",
     ("GET", "/api/ledgers/tax-ledger/gstr1/validate"): "Validate invoices against GSTR-1 filing rules and list the problems found.",
     ("GET", "/api/ledgers/tax-ledger/gstr1/export-json"): "GSTR-1 return as the GST portal's JSON upload format.",
+    ("GET", "/api/ledgers/tax-ledger/gstr3b/worksheet"): (
+        "GSTR-3B worksheet for exactly one month or one GST quarter. An ESTIMATE from the user's "
+        "own books for cross-checking, not a filing: values auto-populated on the GST portal take "
+        "precedence. Rows marked not_tracked have no figures because the books do not record them. "
+        "Read the warnings and known limits, and pass them on, before quoting any figure."
+    ),
+    ("GET", "/api/ledgers/tax-ledger/gstr3b/export-csv"): (
+        "GSTR-3B worksheet as CSV, for one month or one GST quarter. An estimate from the user's "
+        "books for cross-checking, not a filing and not uploadable to the GST portal."
+    ),
+    ("GET", "/api/ledgers/tax-ledger/gstr3b/export-pdf"): (
+        "GSTR-3B worksheet as PDF, for one month or one GST quarter. An estimate from the user's "
+        "books for cross-checking, not a filing and not uploadable to the GST portal."
+    ),
     # products / inventory
     ("GET", "/api/products/"): "List products for the active company. Supports free-text `search` over name and SKU.",
     ("GET", "/api/products/with-inventory"): "List products joined with live stock levels, sortable and filterable by stock status.",
@@ -188,6 +218,46 @@ DESCRIPTION_OVERRIDES: dict[tuple[str, str], str] = {
     ("GET", "/api/payments/{payment_id}"): "Fetch one payment with its invoice allocations.",
     ("POST", "/api/payments/"): "Record a payment received or made, optionally allocated against invoices.",
     # credit notes
+    ("GET", "/api/quotations/"): (
+        "List quotations and proforma invoices, newest first. Supports free-text `search` over "
+        "number and party, plus type, ledger and date filters. `status` filters on what is shown: "
+        "open means open and not yet expired; expired covers open or accepted past its validity "
+        "date. These are offers: they have no effect on stock, ledgers, tax or returns. Paginated."
+    ),
+    ("GET", "/api/quotations/{quotation_id}"): (
+        "Fetch one quotation or proforma invoice with its line items and every invoice created from it."
+    ),
+    ("POST", "/api/quotations/"): (
+        "Create a quotation or proforma invoice on its own number series. Moves no stock and "
+        "posts nothing to the books. Validity defaults to 30 days; send valid_until as null for none."
+    ),
+    ("PUT", "/api/quotations/{quotation_id}"): (
+        "Replace an open or accepted quotation's fields and line items. The number and document type never change."
+    ),
+    ("POST", "/api/quotations/{quotation_id}/status"): (
+        "Record the customer's answer: mark open as accepted or declined, or reopen an accepted or "
+        "declined one back to open, with an optional note."
+    ),
+    ("POST", "/api/quotations/{quotation_id}/cancel"): (
+        "Cancel a quotation. It keeps its number. Refused while it has a live invoice."
+    ),
+    ("POST", "/api/quotations/{quotation_id}/duplicate"): (
+        "Copy a quotation into a new open one with a fresh number, today's date and today's tax rates."
+    ),
+    ("GET", "/api/quotations/{quotation_id}/conversion-draft"): (
+        "Read-only: the invoice a quotation would become, ready to review, with warnings about changed "
+        "tax rates, prices, tax heads, stock shortfalls and serials to scan. Call before quotations_convert."
+    ),
+    ("POST", "/api/quotations/{quotation_id}/convert"): (
+        "Creates a real tax invoice and moves stock. Requires serial numbers for serial-tracked products. "
+        "Keeps quoted prices when sent and uses current tax rates. Closes the quotation; a second attempt "
+        "returns 409 with the existing invoice. Send quotation_updated_at from the draft: if the quotation "
+        "has changed since, this returns 409 quotation_changed, so read a new draft. Left out, it is not "
+        "checked. Not reversible except by cancelling the invoice, which reopens the quotation."
+    ),
+    ("GET", "/api/quotations/{quotation_id}/pdf"): (
+        "Render a quotation or proforma invoice as a PDF. Marked as not a tax invoice."
+    ),
     ("GET", "/api/credit-notes/"): "List credit notes. Supports free-text `search` and status/date filters.",
     ("GET", "/api/credit-notes/{cn_id}"): "Fetch one credit note with its line items.",
     ("POST", "/api/credit-notes/"): "Raise a credit note against an invoice or a ledger.",
@@ -285,6 +355,7 @@ CORE_TOOLS: frozenset[str] = frozenset(
         "ledgers_day_book",
         "tax_ledger_get",
         "gstr1_summary",
+        "gstr3b_worksheet",
         # email
         "email_send_invoice",
     }

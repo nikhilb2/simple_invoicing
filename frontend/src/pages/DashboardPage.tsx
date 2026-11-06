@@ -3,11 +3,14 @@ import { Link } from 'react-router-dom';
 import api, { getApiErrorMessage } from '../api/client';
 import StatusToasts from '../components/StatusToasts';
 import EmptyState from '../components/EmptyState';
+import FirstInvoiceTourOffer from '../components/FirstInvoiceTourOffer';
+import GetStartedChecklist from '../components/GetStartedChecklist';
 import InvoicePreview from '../components/InvoicePreview';
 import { MonthlyTrendChart, PaymentStatusDonut, TopProductsBars } from '../components/DashboardCharts';
 import type { DashboardMetrics, InventoryRow, Invoice, PaginatedInventoryOut } from '../types/api';
-import formatCurrency, { formatCompactCurrency } from '../utils/formatting';
+import formatCurrency, { formatCompactCurrency, plural } from '../utils/formatting';
 import { formatInvoiceDateLabel } from '../utils/invoiceDueDate.ts';
+import { needsStockAttention } from '../utils/stockAttention';
 
 function normalizeInventoryRows(payload: PaginatedInventoryOut | InventoryRow[] | unknown): InventoryRow[] {
   if (Array.isArray(payload)) {
@@ -19,8 +22,6 @@ function normalizeInventoryRows(payload: PaginatedInventoryOut | InventoryRow[] 
   }
   return [];
 }
-
-const LOW_STOCK_THRESHOLD = 5;
 
 /* The API's raw values ("unpaid") read as a field name in a row of prose. */
 const PAYMENT_STATUS_LABEL: Record<Invoice['payment_status'], string> = {
@@ -37,7 +38,10 @@ export default function DashboardPage() {
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const currencyCode = metrics?.currency_code || 'USD';
+  // Kept apart from `error`: dismissing the toast clears the error string,
+  // but a failed load must still not look like an empty business.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const currencyCode = metrics?.currency_code || 'INR';
 
   useEffect(() => {
     let active = true;
@@ -46,10 +50,11 @@ export default function DashboardPage() {
       try {
         setLoading(true);
         setError('');
+        setLoadFailed(false);
         const [metricsRes, inventoryRes, invoicesRes] = await Promise.all([
           api.get<DashboardMetrics>('/dashboard/metrics'),
           api.get<PaginatedInventoryOut>('/inventory/', {
-            params: { sort_by: 'quantity', sort_order: 'asc', page_size: 5 },
+            params: { maintain_inventory: true, sort_by: 'attention', sort_order: 'asc', page_size: 5 },
           }),
           api.get<{ items: Invoice[] }>('/invoices/', { params: { page_size: 6 } }),
         ]);
@@ -64,6 +69,7 @@ export default function DashboardPage() {
       } catch (err) {
         if (active) {
           setError(getApiErrorMessage(err, 'Unable to load dashboard data'));
+          setLoadFailed(true);
         }
       } finally {
         if (active) {
@@ -107,7 +113,7 @@ export default function DashboardPage() {
       eyebrow: 'Net sales',
       ...(metrics ? money(metrics.sales.total_sales) : { value: null }),
       width: '120px',
-      copy: `${metrics?.sales.sales_invoice_count ?? 0} active sales invoices.`,
+      copy: `${metrics?.sales.sales_invoice_count ?? 0} active sales ${(metrics?.sales.sales_invoice_count ?? 0) === 1 ? 'invoice' : 'invoices'}.`,
     },
     {
       eyebrow: 'Outstanding',
@@ -115,7 +121,7 @@ export default function DashboardPage() {
       toLabel: 'Invoice Dues',
       ...(metrics ? money(metrics.receivables.outstanding_amount) : { value: null }),
       width: '120px',
-      copy: `${(metrics?.receivables.unpaid_count ?? 0) + (metrics?.receivables.partial_count ?? 0)} invoices awaiting payment.`,
+      copy: `${plural((metrics?.receivables.unpaid_count ?? 0) + (metrics?.receivables.partial_count ?? 0), 'invoice')} awaiting payment.`,
     },
     {
       eyebrow: 'Overdue',
@@ -123,7 +129,7 @@ export default function DashboardPage() {
       toLabel: 'Invoice Dues',
       ...(metrics ? money(metrics.receivables.overdue_amount) : { value: null }),
       width: '110px',
-      copy: `${metrics?.receivables.overdue_count ?? 0} invoices past their due date.`,
+      copy: `${plural(metrics?.receivables.overdue_count ?? 0, 'invoice')} past their due date.`,
       tone: (metrics?.receivables.overdue_amount ?? 0) > 0 ? 'danger' : undefined,
     },
     {
@@ -146,7 +152,7 @@ export default function DashboardPage() {
       toLabel: 'the catalogue',
       ...(metrics ? money(metrics.inventory.stock_value) : { value: null }),
       width: '120px',
-      copy: `${metrics?.inventory.total_units ?? 0} units across ${metrics?.inventory.tracked_products ?? 0} tracked products.`,
+      copy: `${plural(metrics?.inventory.total_units ?? 0, 'unit')} across ${metrics?.inventory.tracked_products ?? 0} tracked ${(metrics?.inventory.tracked_products ?? 0) === 1 ? 'product' : 'products'}.`,
     },
     {
       eyebrow: 'Low stock',
@@ -155,7 +161,7 @@ export default function DashboardPage() {
       toLabel: 'low stock items',
       value: metrics ? String(metrics.inventory.low_stock_count) : null,
       width: '50px',
-      copy: `${metrics?.inventory.out_of_stock_count ?? 0} products are out of stock.`,
+      copy: `${metrics?.inventory.out_of_stock_count ?? 0} ${(metrics?.inventory.out_of_stock_count ?? 0) === 1 ? 'product is' : 'products are'} out of stock.`,
       tone: (metrics?.inventory.low_stock_count ?? 0) > 0 ? 'warning' : undefined,
     },
     {
@@ -178,6 +184,8 @@ export default function DashboardPage() {
       </section>
 
       <StatusToasts error={error} onClearError={() => setError('')} onClearSuccess={() => {}} />
+      <GetStartedChecklist metrics={metrics} />
+      <FirstInvoiceTourOffer metrics={metrics} />
       <section className="stats-grid stats-grid--dense">
         {statCards.map((card) => {
           const body = (
@@ -266,7 +274,7 @@ export default function DashboardPage() {
                 <div className="table-row skeleton" role="status" aria-label="Loading" style={{ height: '76px', borderColor: 'transparent' }}></div>
               </>
             ) : null}
-            {!loading && lowStock.length === 0 ? (
+            {!loading && !loadFailed && lowStock.length === 0 ? (
               <EmptyState
                 message="No inventory rows yet. Add products to track their stock."
                 action={<Link to="/products" className="button button--secondary button--small">Go to Products</Link>}
@@ -279,8 +287,8 @@ export default function DashboardPage() {
                       <strong>{row.product_name}</strong>
                       <span className="table-subtext">Product ID #{row.product_id}</span>
                     </div>
-                    <span className={`pill ${row.quantity <= LOW_STOCK_THRESHOLD ? 'pill--low' : 'pill--ok'}`}>{row.quantity} units</span>
-                    <span className="table-subtext text-right">{row.quantity <= LOW_STOCK_THRESHOLD ? 'Needs attention' : 'Stable'}</span>
+                    <span className={`pill ${needsStockAttention(row.quantity, row.reorder_level) ? 'pill--low' : 'pill--ok'}`}>{plural(row.quantity, 'unit')}</span>
+                    <span className="table-subtext text-right">{needsStockAttention(row.quantity, row.reorder_level) ? 'Needs attention' : 'Stable'}</span>
                   </div>
                 ))
               : null}
@@ -320,7 +328,7 @@ export default function DashboardPage() {
                 <div className="invoice-row skeleton" role="status" aria-label="Loading" style={{ height: '88px', borderColor: 'transparent' }}></div>
               </>
             ) : null}
-            {!loading && recentInvoices.length === 0 ? (
+            {!loading && !loadFailed && recentInvoices.length === 0 ? (
               <EmptyState
                 message="No invoices yet. Create your first invoice to get started."
                 action={<Link to="/invoices" className="button button--primary button--small">Create Invoice</Link>}

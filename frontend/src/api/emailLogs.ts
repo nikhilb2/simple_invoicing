@@ -30,7 +30,7 @@ export interface EmailLog {
   subject: string;
   email_type: string;
   reference_id: number | null;
-  status: 'sent' | 'failed';
+  status: 'sent' | 'sending' | 'failed';
   error_message: string | null;
   sent_by_user_id: number | null;
   sent_at: string;

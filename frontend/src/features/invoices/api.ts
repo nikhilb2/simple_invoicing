@@ -1,5 +1,7 @@
 import api from '../../api/client';
+import type { InvoiceDueSort } from '../../utils/invoiceDuesSorting';
 import type { CompanyProfile, DuesAgeing, Invoice, Ledger, LedgerAddress, LedgerAddressCreate, LedgerAddressUpdate, OutstandingInvoice, PaginatedInvoices, Product } from '../../types/api';
+import { toIsoDate } from '../../utils/dateRanges';
 
 export type VoucherTypeFilter = 'all' | 'sales' | 'purchase';
 
@@ -25,6 +27,7 @@ export type DueInvoiceFilters = {
   ledgerId?: number;
   dueDateFrom?: string;
   dueDateTo?: string;
+  sort?: InvoiceDueSort;
 };
 
 function buildInvoiceParams(filters: InvoiceFilters) {
@@ -72,7 +75,7 @@ export async function exportInvoicesCsv(filters: InvoiceExportFilters): Promise<
   const url = window.URL.createObjectURL(res.data as Blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `invoices_${new Date().toISOString().slice(0, 10)}.csv`;
+  link.download = `invoices_${toIsoDate(new Date())}.csv`;
   link.click();
   window.URL.revokeObjectURL(url);
 }
@@ -104,6 +107,9 @@ export async function fetchDueInvoicePage(filters: DueInvoiceFilters): Promise<P
   }
   if (filters.dueDateTo) {
     params.due_date_to = filters.dueDateTo;
+  }
+  if (filters.sort) {
+    params.sort = filters.sort;
   }
 
   const res = await api.get<PaginatedInvoices>('/invoices/dues', { params });

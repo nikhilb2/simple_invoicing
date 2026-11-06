@@ -6,6 +6,7 @@
  * the caller keeps its own busy flag and these throw a user-facing message on
  * failure for the caller to toast.
  */
+import { toIsoDate } from '../../utils/dateRanges';
 import api, { cleanParams, getBlobErrorMessage } from '../../api/client';
 import formatCurrency, { formatDateTime } from '../../utils/formatting';
 import { formatQuantity, isLowStock } from './types';
@@ -107,7 +108,7 @@ export async function exportCatalogueCsv(filters: ExportFilters): Promise<void> 
   try {
     const link = document.createElement('a');
     link.href = url;
-    link.download = `catalogue_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `catalogue_${toIsoDate(new Date())}.csv`;
     // Firefox ignores a click on an anchor that is not in the document.
     document.body.appendChild(link);
     link.click();

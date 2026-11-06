@@ -1,5 +1,28 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { buildRangePresets, matchPreset, toIsoDate } from './dateRanges.ts';
+import { buildRangePresets, defaultFilingPeriod, matchPreset, toIsoDate, toLocalDateTimeInput } from './dateRanges.ts';
+
+describe('toLocalDateTimeInput', () => {
+  test('an early-morning time keeps its local date and clock', () => {
+    expect(toLocalDateTimeInput(new Date(2026, 4, 9, 0, 30))).toBe('2026-05-09T00:30');
+  });
+
+  test('single-digit hours and minutes are zero-padded', () => {
+    expect(toLocalDateTimeInput(new Date(2026, 4, 9, 7, 5))).toBe('2026-05-09T07:05');
+  });
+
+  test('midnight has no seconds or timezone suffix', () => {
+    expect(toLocalDateTimeInput(new Date(2026, 4, 9))).toBe('2026-05-09T00:00');
+  });
+
+  test('month boundaries follow the local calendar', () => {
+    expect(toLocalDateTimeInput(new Date(2026, 5, 1, 0, 1))).toBe('2026-06-01T00:01');
+  });
+
+  test('year boundaries follow the local calendar', () => {
+    expect(toLocalDateTimeInput(new Date(2027, 0, 1, 0, 1))).toBe('2027-01-01T00:01');
+    expect(toLocalDateTimeInput(new Date(2026, 11, 31, 23, 59))).toBe('2026-12-31T23:59');
+  });
+});
 
 describe('toIsoDate — local calendar date, zero-padded', () => {
   test('single-digit month and day are zero-padded', () => {
@@ -107,5 +130,25 @@ describe('matchPreset — exact range match or null', () => {
   test('returns null when nothing matches, or there are no presets', () => {
     expect(matchPreset(presets, { fromDate: '2020-01-01', toDate: '2020-01-31' })).toBe(null);
     expect(matchPreset([], { fromDate: '2026-10-26', toDate: '2026-10-26' })).toBe(null);
+  });
+});
+
+describe('defaultFilingPeriod', () => {
+  test('is last month, not the whole financial year', () => {
+    const fy = { start_date: '2026-04-01', end_date: '2027-03-31' };
+    expect(defaultFilingPeriod(fy, new Date(2026, 10, 3))).toEqual({ fromDate: '2026-10-01', toDate: '2026-10-31' });
+  });
+
+  test('January reaches back across the calendar year', () => {
+    expect(defaultFilingPeriod(null, new Date(2027, 0, 15))).toEqual({ fromDate: '2026-12-01', toDate: '2026-12-31' });
+  });
+
+  test('a financial year that has closed offers its last month', () => {
+    const fy = { start_date: '2024-04-01', end_date: '2025-03-31' };
+    expect(defaultFilingPeriod(fy, new Date(2026, 10, 3))).toEqual({ fromDate: '2025-03-01', toDate: '2025-03-31' });
+  });
+
+  test('February ends on its real last day', () => {
+    expect(defaultFilingPeriod(null, new Date(2024, 2, 10))).toEqual({ fromDate: '2024-02-01', toDate: '2024-02-29' });
   });
 });

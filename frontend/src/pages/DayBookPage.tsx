@@ -58,7 +58,7 @@ export default function DayBookPage() {
   const [downloading, setDownloading] = useState<'pdf' | 'csv' | null>(null);
   const [error, setError] = useState('');
 
-  const activeCurrencyCode = company?.currency_code || 'USD';
+  const activeCurrencyCode = company?.currency_code || 'INR';
 
   // A period change reruns this effect; the cleanup flips `cancelled` so a
   // slow response from an older date range can no longer win the race.

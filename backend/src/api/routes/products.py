@@ -11,11 +11,15 @@ from sqlalchemy.orm import Session
 from decimal import Decimal
 
 from src.db.session import get_db
+from src.models.bom import BillOfMaterial
 from src.models.company import CompanyProfile
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice, InvoiceItem
+from src.models.marketplace import MarketplaceListing, MarketplaceOrder, MarketplaceOrderItem, MarketplaceProductLink
 from src.models.product import Product
 from src.models.product_serial import ProductSerial
+from src.models.production_transaction import ProductionTransaction
+from src.models.quotation import Quotation, QuotationItem
 from src.models.user import User, UserRole
 from src.schemas.product import (
     ImportCSVResult,
@@ -25,8 +29,9 @@ from src.schemas.product import (
     ProductWithInventoryOut,
     ProductWithInventoryUpdate,
 )
-from src.api.deps import get_active_company, get_current_user, require_roles
+from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.core.analytics import distinct_id_for, track
+from src.core.validation import hsn_sac_warning, normalize_hsn_sac
 from src.services.serial_service import SerialManager
 
 router = APIRouter()
@@ -45,10 +50,10 @@ def _plural(count: int, noun: str) -> str:
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
-    if payload.gst_rate < 0 or payload.gst_rate > 100:
+    if not 0 <= payload.gst_rate <= 100:
         raise HTTPException(status_code=400, detail="GST rate must be between 0 and 100")
 
     sku = payload.sku.strip().upper()
@@ -188,10 +193,10 @@ def update_product(
     product_id: int,
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
-    if payload.gst_rate < 0 or payload.gst_rate > 100:
+    if not 0 <= payload.gst_rate <= 100:
         raise HTTPException(status_code=400, detail="GST rate must be between 0 and 100")
 
     product = db.query(Product).filter(Product.id == product_id, Product.company_id == active_company.id).first()
@@ -324,7 +329,7 @@ def _backfill_serials(
 def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     product = db.query(Product).filter(Product.id == product_id, Product.company_id == active_company.id).first()
@@ -339,6 +344,75 @@ def delete_product(
     )
     if has_invoice_items:
         raise HTTPException(status_code=400, detail="Cannot delete product linked to invoices")
+
+    has_quotation_items = (
+        db.query(QuotationItem.id)
+        .join(Quotation, QuotationItem.quotation_id == Quotation.id)
+        .filter(QuotationItem.product_id == product_id, Quotation.company_id == active_company.id)
+        .first()
+    )
+    if has_quotation_items:
+        raise HTTPException(status_code=400, detail="Cannot delete product linked to quotations")
+
+    has_serials = db.query(ProductSerial.id).filter(
+        ProductSerial.company_id == active_company.id,
+        ProductSerial.product_id == product_id,
+    ).first()
+    if has_serials:
+        raise HTTPException(status_code=400, detail="Cannot delete product with serial number records")
+
+    has_marketplace_listing = db.query(MarketplaceListing.id).filter(
+        MarketplaceListing.company_id == active_company.id,
+        MarketplaceListing.product_id == product_id,
+    ).first()
+    if has_marketplace_listing:
+        raise HTTPException(status_code=400, detail="Cannot delete product linked to marketplace listings")
+
+    has_marketplace_link = db.query(MarketplaceProductLink.id).filter(
+        MarketplaceProductLink.company_id == active_company.id,
+        MarketplaceProductLink.product_id == product_id,
+    ).first()
+    if has_marketplace_link:
+        raise HTTPException(status_code=400, detail="Cannot delete product linked to marketplace products")
+
+    has_marketplace_order = (
+        db.query(MarketplaceOrderItem.id)
+        .join(MarketplaceOrder, MarketplaceOrderItem.order_id == MarketplaceOrder.id)
+        .filter(MarketplaceOrder.company_id == active_company.id, MarketplaceOrderItem.product_id == product_id)
+        .first()
+    )
+    if has_marketplace_order:
+        raise HTTPException(status_code=400, detail="Cannot delete product linked to marketplace orders")
+
+    parent_products = (
+        db.query(Product.name)
+        .join(BillOfMaterial, BillOfMaterial.product_id == Product.id)
+        .filter(
+            BillOfMaterial.company_id == active_company.id,
+            BillOfMaterial.component_product_id == product_id,
+            BillOfMaterial.product_id != product_id,
+            Product.company_id == active_company.id,
+        )
+        .distinct()
+        .order_by(Product.name)
+        .all()
+    )
+    if parent_products:
+        names = ", ".join(name for (name,) in parent_products)
+        raise HTTPException(status_code=400, detail=f"Cannot delete product used in the bill of materials for: {names}")
+
+    has_production = db.query(ProductionTransaction.id).filter(
+        ProductionTransaction.company_id == active_company.id,
+        ProductionTransaction.product_id == product_id,
+    ).first()
+    if has_production:
+        raise HTTPException(status_code=400, detail="Cannot delete product with production history")
+
+    # A product's own recipe can go with it when there is no production history.
+    db.query(BillOfMaterial).filter(
+        BillOfMaterial.company_id == active_company.id,
+        BillOfMaterial.product_id == product_id,
+    ).delete(synchronize_session=False)
 
     inventory = db.query(Inventory).filter(
         Inventory.product_id == product_id,
@@ -557,7 +631,7 @@ def update_product_with_inventory(
     product_id: int,
     payload: ProductWithInventoryUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    _: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Update product fields and optionally inventory quantity in one call."""
@@ -597,7 +671,7 @@ def update_product_with_inventory(
     if payload.reorder_level is not None:
         product.reorder_level = payload.reorder_level
     if payload.gst_rate is not None:
-        if payload.gst_rate < 0 or payload.gst_rate > 100:
+        if not 0 <= payload.gst_rate <= 100:
             raise HTTPException(status_code=400, detail="GST rate must be between 0 and 100")
         product.gst_rate = payload.gst_rate
     if payload.unit is not None:
@@ -611,6 +685,8 @@ def update_product_with_inventory(
 
     # Update inventory quantity if provided
     if payload.current_stock is not None:
+        if not product.allow_decimal and not _is_whole_number(payload.current_stock):
+            raise HTTPException(status_code=400, detail="Quantity must be a whole number for this product")
         inventory = (
             db.query(Inventory)
             .filter(
@@ -669,6 +745,7 @@ def update_product_with_inventory(
         "unit": product.unit,
         "gst_rate": float(product.gst_rate),
         "track_serials": bool(product.track_serials),
+        "hsn_warning": hsn_sac_warning(product.hsn_sac),
     }
 
 
@@ -751,7 +828,7 @@ def export_products_csv(
 async def import_products_csv(
     file: UploadFile = FastAPIFile(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """Import products from CSV — upsert by Item Code (SKU).
@@ -802,6 +879,11 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
 
     # Normalise column names
     normalised = [h.strip().lower().replace(" ", "_") for h in reader.fieldnames]
+    headers = set(normalised)
+    tax_headers = ("tax", "gst", "gst_rate", "tax_rate")
+    stock_headers = ("current_stock", "stock")
+    has_tax_column = not headers.isdisjoint(tax_headers)
+    has_stock_column = not headers.isdisjoint(stock_headers)
 
     row_num = 1  # header is row 0
     for row in reader:
@@ -827,13 +909,7 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             continue
 
         try:
-            tax_cell = (
-                values.get("tax")
-                or values.get("gst")
-                or values.get("gst_rate")
-                or values.get("tax_rate")
-                or ""
-            )
+            tax_cell = next((values[key] for key in tax_headers if values.get(key)), "")
             gst_rate = _csv_number(tax_cell.removesuffix("%"))
             if gst_rate < 0 or gst_rate > 100:
                 raise ValueError(gst_rate)
@@ -842,7 +918,7 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             continue
 
         try:
-            stock = _csv_number(values.get("current_stock") or values.get("stock") or 0)
+            stock = _csv_number(next((values[key] for key in stock_headers if values.get(key)), ""))
             if stock < 0:
                 raise ValueError(stock)
         except ValueError:
@@ -865,6 +941,17 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
             errors.append({"row": row_num, "message": f"Invalid Reorder Level for {sku}"})
             continue
 
+        try:
+            hsn_sac = normalize_hsn_sac(values.get("hsn_code"))
+        except ValueError:
+            errors.append({"row": row_num, "message": f"Invalid HSN Code for {sku}: must be 4, 6 or 8 digits"})
+            continue
+
+        # Saved all the same, like the serial-tracked stock note below.
+        hsn_warning = hsn_sac_warning(hsn_sac)
+        if hsn_warning:
+            errors.append({"row": row_num, "message": f"{sku} was saved. {hsn_warning}"})
+
         existing = (
             db.query(Product)
             .filter(
@@ -876,26 +963,21 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
 
         if existing:
             existing.name = item_name
-            existing.price = selling_price
-            existing.purchase_price = purchase_price
-            existing.gst_rate = gst_rate
-            existing.reorder_level = reorder_level
+            if "selling_price" in headers:
+                existing.price = selling_price
+            if "purchase_price" in headers:
+                existing.purchase_price = purchase_price
+            if has_tax_column:
+                existing.gst_rate = gst_rate
+            if "reorder_level" in headers:
+                existing.reorder_level = reorder_level
             if values.get("description"):
                 existing.description = values["description"]
-            if values.get("hsn_code"):
-                existing.hsn_sac = values["hsn_code"]
+            if hsn_sac:
+                existing.hsn_sac = hsn_sac
             if values.get("unit"):
                 existing.unit = values["unit"]
 
-            # Update inventory
-            inv = (
-                db.query(Inventory)
-                .filter(
-                    Inventory.product_id == existing.id,
-                    Inventory.company_id == active_company.id,
-                )
-                .first()
-            )
             # Same reason as the with-inventory update: a CSV cannot carry the
             # serials that a tracked product's stock has to be backed by.
             if existing.track_serials:
@@ -903,10 +985,19 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
                     "row": row_num,
                     "message": f"Stock for {sku} was left as-is — it is serial-tracked",
                 })
-            elif inv:
-                inv.quantity = Decimal(str(stock))
-            elif existing.maintain_inventory:
-                db.add(Inventory(company_id=active_company.id, product_id=existing.id, quantity=Decimal(str(stock))))
+            elif has_stock_column:
+                inv = (
+                    db.query(Inventory)
+                    .filter(
+                        Inventory.product_id == existing.id,
+                        Inventory.company_id == active_company.id,
+                    )
+                    .first()
+                )
+                if inv:
+                    inv.quantity = Decimal(str(stock))
+                elif existing.maintain_inventory:
+                    db.add(Inventory(company_id=active_company.id, product_id=existing.id, quantity=Decimal(str(stock))))
 
             updated += 1
         else:
@@ -915,7 +1006,7 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
                 sku=sku,
                 name=item_name,
                 description=values.get("description") or None,
-                hsn_sac=values.get("hsn_code") or None,
+                hsn_sac=hsn_sac,
                 price=selling_price,
                 purchase_price=purchase_price,
                 gst_rate=gst_rate,

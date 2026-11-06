@@ -134,7 +134,7 @@ export default function   LedgerCreatePage() {
         <div>
           <p className="eyebrow">Ledgers</p>
           <h1 className="page-title">{editingLedgerId ? `Edit ledger #${editingLedgerId}` : 'Create ledger'}</h1>
-          <p className="section-copy">{editingLedgerId ? 'Update ledger details below.' : 'Fill in the details to create a new ledger account.'}</p>
+          <p className="section-copy">{editingLedgerId ? 'Update ledger details below.' : 'A ledger is a customer or supplier account. Fill in their details to create one.'}</p>
         </div>
       </section>
 
@@ -162,18 +162,18 @@ export default function   LedgerCreatePage() {
               </div>
               <div className="field-grid">
                 <div className="field">
-                  <label htmlFor="ledger-name">Ledger name</label>
+                  <label htmlFor="ledger-name">Ledger name *</label>
                   <input
                     id="ledger-name"
                     className="input"
                     value={form.name}
                     onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))}
-                    placeholder="Acme Traders"
+                    placeholder="Sharma Traders"
                     required
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="ledger-phone">Phone number</label>
+                  <label htmlFor="ledger-phone">Phone number *</label>
                   <input
                     id="ledger-phone"
                     className="input"
@@ -185,7 +185,7 @@ export default function   LedgerCreatePage() {
                   <small className="field-hint">e.g. +91 98765 43210</small>
                 </div>
                 <div className="field">
-                  <label htmlFor="ledger-gst">GST</label>
+                  <label htmlFor="ledger-gst">GSTIN</label>
                   <input
                     id="ledger-gst"
                     className="input"
@@ -235,21 +235,21 @@ export default function   LedgerCreatePage() {
                           setForm((c) => ({ ...c, opening_balance: applyOpeningBalanceSide(c.opening_balance, nextSide) }));
                         }}
                       >
-                        <option value="debit">Debit</option>
-                        <option value="credit">Credit</option>
+                        <option value="debit">Debit (they owe you)</option>
+                        <option value="credit">Credit (you owe them)</option>
                       </select>
                     </div>
                   </div>
                   <small className="field-hint">Enter the amount only. Choose debit or credit separately. Leave blank for none.</small>
                 </div>
                 <div className="field field--full">
-                  <label htmlFor="ledger-address">Address</label>
+                  <label htmlFor="ledger-address">Address *</label>
                   <textarea
                     id="ledger-address"
                     className="textarea"
                     value={form.address}
                     onChange={(e) => setForm((c) => ({ ...c, address: e.target.value }))}
-                    placeholder="221B Baker Street, London"
+                    placeholder="12 MG Road, Pune, Maharashtra 411001"
                     required
                   />
                 </div>
@@ -272,7 +272,7 @@ export default function   LedgerCreatePage() {
                     className="input"
                     value={form.email}
                     onChange={(e) => setForm((c) => ({ ...c, email: e.target.value }))}
-                    placeholder="accounts@acme.com"
+                    placeholder="accounts@example.com"
                   />
                 </div>
                 <div className="field">
@@ -282,7 +282,7 @@ export default function   LedgerCreatePage() {
                     className="input"
                     value={form.website}
                     onChange={(e) => setForm((c) => ({ ...c, website: e.target.value }))}
-                    placeholder="https://acme.com"
+                    placeholder="https://www.example.com"
                   />
                 </div>
               </div>
@@ -324,7 +324,7 @@ export default function   LedgerCreatePage() {
                     className="input"
                     value={form.account_name}
                     onChange={(e) => setForm((c) => ({ ...c, account_name: e.target.value }))}
-                    placeholder="Acme Traders"
+                    placeholder="Sharma Traders"
                   />
                 </div>
                 <div className="field">
@@ -353,7 +353,7 @@ export default function   LedgerCreatePage() {
 
             <div className="form-action-bar">
               <div className="form-action-bar__meta">
-                <strong>Required:</strong> ledger name, phone number, and address.
+                <strong>* Required:</strong> ledger name, phone number, and address.
               </div>
               <button type="button" className="button button--secondary" onClick={() => navigate('/ledgers')} title="Cancel and return to ledgers" aria-label="Cancel and return to ledgers">
                 Cancel

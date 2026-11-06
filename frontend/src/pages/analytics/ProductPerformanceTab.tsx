@@ -20,7 +20,7 @@ import type {
   ProductPerformanceRow,
   SortDir,
 } from '../../features/analytics/types';
-import formatCurrency, { formatCompactCurrency } from '../../utils/formatting';
+import formatCurrency, { formatCompactCurrency, plural } from '../../utils/formatting';
 
 type Column = {
   key: PerformanceSortBy;
@@ -280,7 +280,7 @@ export default function ProductPerformanceTab({ filters }: { filters: AnalyticsF
           </tbody>
           <tfoot>
             <tr>
-              <th scope="row">{totals.product_count} products</th>
+              <th scope="row">{plural(totals.product_count, 'product')}</th>
               <th className="text-right">{totals.units_sold}</th>
               <th className="text-right">{totals.units_returned}</th>
               <th className="text-right">{totals.net_units_sold}</th>

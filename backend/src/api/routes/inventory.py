@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 from typing import Literal
 from decimal import Decimal
@@ -13,7 +13,7 @@ from src.models.production_transaction import ProductionTransaction
 from src.models.user import User, UserRole
 from src.schemas.inventory import InventoryAdjust, InventoryOut, PaginatedInventoryOut
 from src.schemas.bom import ProduceRequest, ProductionTransactionOut, PaginatedProductionTransactionOut
-from src.api.deps import get_active_company, get_current_user, require_roles
+from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.core.analytics import distinct_id_for, track
 from src.services import bom_service
 from src.services.serial_service import SerialManager
@@ -29,7 +29,7 @@ def _is_whole_number(value: float) -> bool:
 def adjust_inventory(
     payload: InventoryAdjust,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     product = db.query(Product).filter(
@@ -117,7 +117,8 @@ def adjust_inventory(
 @router.get("/", response_model=PaginatedInventoryOut)
 def list_inventory(
     search: str = Query(""),
-    sort_by: Literal["name", "quantity", "date_added", "last_sold"] = Query("name"),
+    maintain_inventory: bool | None = Query(None),
+    sort_by: Literal["name", "quantity", "date_added", "last_sold", "attention"] = Query("name"),
     sort_order: Literal["asc", "desc"] = Query("asc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=500),
@@ -154,6 +155,9 @@ def list_inventory(
         .filter(Product.company_id == active_company.id)
     )
 
+    if maintain_inventory is not None:
+        query = query.filter(Product.maintain_inventory.is_(maintain_inventory))
+
     if search.strip():
         term = f"%{search.strip()}%"
         query = query.filter(
@@ -162,7 +166,7 @@ def list_inventory(
 
     if sort_by == "name":
         order_col = Product.name
-    elif sort_by == "quantity":
+    elif sort_by in ("quantity", "attention"):
         order_col = quantity_expr
     elif sort_by == "date_added":
         order_col = Product.created_at
@@ -171,10 +175,25 @@ def list_inventory(
 
     total = query.count()
 
+    if sort_by == "attention":
+        # Match the dashboard metrics. Direction only changes quantity order
+        # within each group, so products needing attention always come first.
+        needs_attention = and_(
+            Product.maintain_inventory.is_(True),
+            or_(
+                quantity_expr <= 0,
+                and_(Product.reorder_level > 0, quantity_expr <= Product.reorder_level),
+            ),
+        )
+        query = query.order_by(case((needs_attention, 0), else_=1))
+
     if sort_order == "desc":
         query = query.order_by(order_col.desc().nulls_last())
     else:
         query = query.order_by(order_col.asc().nulls_last())
+
+    if sort_by == "attention":
+        query = query.order_by(Product.id)
 
     rows = query.offset((page - 1) * page_size).limit(page_size).all()
     items = [
@@ -186,6 +205,7 @@ def list_inventory(
             allow_decimal=bool(product.allow_decimal),
             price=float(product.price),
             maintain_inventory=bool(product.maintain_inventory),
+            reorder_level=float(product.reorder_level or 0),
             track_serials=bool(product.track_serials),
             quantity=float(quantity),
             date_added=product.created_at,
@@ -206,7 +226,7 @@ def list_inventory(
 def produce_item(
     payload: ProduceRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.manager)),
+    current_user: User = Depends(require_company_role(UserRole.admin, UserRole.manager)),
     active_company: CompanyProfile = Depends(get_active_company),
 ):
     """
@@ -218,6 +238,7 @@ def produce_item(
         payload.product_id,
         Decimal(str(payload.quantity)),
         current_user.id,
+        notes=payload.notes,
     )
 
     if not result["success"]:
