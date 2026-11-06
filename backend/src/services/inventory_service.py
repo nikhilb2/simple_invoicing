@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from sqlalchemy import case
 from sqlalchemy.orm import Session
 
+from src.core.document_limits import QUANTITY_STORAGE_CUTOFF
 from src.models.inventory import Inventory
 from src.models.invoice import Invoice
 from src.models.product import Product
@@ -99,11 +100,12 @@ class InventoryManager:
         *,
         company_id: int | None,
         context: str,
+        product_name: str | None = None,
     ) -> None:
         """Apply *quantity_delta* to the inventory row for *product_id*.
 
         Creates the row if it does not exist yet.  Raises HTTP 400 if the
-        resulting quantity would drop below zero.
+        resulting quantity would drop below zero or exceed the column limit.
         """
         query = self.db.query(Inventory).filter(Inventory.product_id == product_id)
         if company_id is not None:
@@ -144,6 +146,21 @@ class InventoryManager:
             raise HTTPException(
                 status_code=400,
                 detail=f"Insufficient inventory while {context}",
+            )
+        if new_quantity >= Decimal(str(QUANTITY_STORAGE_CUTOFF)):
+            name = product_name or f"product {product_id}"
+            logger.warning(
+                "inventory: quantity would exceed storage limit for product_id=%s "
+                "(new_qty=%s context=%s)",
+                product_id,
+                new_quantity,
+                context,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Stock for {name} can't go above 999,999,999.999."
+                ),
             )
         inventory.quantity = new_quantity
         logger.debug(
@@ -245,6 +262,7 @@ class InventoryManager:
                 reverse_delta,
                 company_id=invoice.company_id,
                 context=f"reversing invoice {invoice.id}",
+                product_name=product.name,
             )
 
     def restore_invoice_inventory(
@@ -276,6 +294,7 @@ class InventoryManager:
                 restore_delta,
                 company_id=company_id,
                 context=f"restoring invoice {invoice.id}",
+                product_name=product.name,
             )
 
     def apply_invoice_changes(
@@ -323,6 +342,7 @@ class InventoryManager:
                 delta,
                 company_id=company_id,
                 context=f"editing invoice {invoice.id}",
+                product_name=product.name,
             )
 
     def apply_new_items(
@@ -349,4 +369,5 @@ class InventoryManager:
                 delta,
                 company_id=company_id,
                 context=context,
+                product_name=product.name,
             )

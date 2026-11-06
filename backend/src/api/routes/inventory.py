@@ -15,6 +15,7 @@ from src.schemas.inventory import InventoryAdjust, InventoryOut, PaginatedInvent
 from src.schemas.bom import ProduceRequest, ProductionTransactionOut, PaginatedProductionTransactionOut
 from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.core.analytics import distinct_id_for, track
+from src.core.document_limits import QUANTITY_STORAGE_CUTOFF
 from src.services import bom_service
 from src.services.serial_service import SerialManager
 
@@ -75,9 +76,17 @@ def adjust_inventory(
         inventory = Inventory(company_id=active_company.id, product_id=payload.product_id, quantity=0)
         db.add(inventory)
 
-    inventory.quantity = Decimal(str(inventory.quantity or 0)) + Decimal(str(payload.quantity))
-    if Decimal(str(inventory.quantity or 0)) < 0:
+    new_quantity = Decimal(str(inventory.quantity or 0)) + Decimal(str(payload.quantity))
+    if new_quantity < 0:
         raise HTTPException(status_code=400, detail="Inventory cannot be negative")
+    if new_quantity >= Decimal(str(QUANTITY_STORAGE_CUTOFF)):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Stock for {product.name} can't go above 999,999,999.999."
+            ),
+        )
+    inventory.quantity = new_quantity
 
     if codes:
         if payload.quantity > 0:
