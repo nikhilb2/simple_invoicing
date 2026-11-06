@@ -652,6 +652,135 @@ def test_create_payment_accepts_max_numeric_amount(client):
     assert response.json()["amount"] == 99_999_999.99
 
 
+@pytest.mark.parametrize("amount", [99_999_999.995, 99_999_999.996])
+def test_create_payment_rejects_amount_that_rounds_into_storage_overflow(client, amount):
+    # PostgreSQL rounds NUMBER(10, 2) before checking overflow: these values
+    # round to 100,000,000.00 and used to reach the database and return a 500.
+    ledger_id = _payment_ledger(client, f"Pay Rounding Create {amount}")
+    response = client.post(
+        "/api/payments/",
+        json={
+            "ledger_id": ledger_id,
+            "voucher_type": "receipt",
+            "amount": amount,
+            "mode": "cash",
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"] == ["body", "amount"]
+
+
+@pytest.mark.parametrize("amount", [99_999_999.995, 99_999_999.996])
+def test_update_payment_rejects_amount_that_rounds_into_storage_overflow(client, amount):
+    ledger_id = _payment_ledger(client, f"Pay Rounding Update {amount}")
+    created = client.post(
+        "/api/payments/",
+        json={
+            "ledger_id": ledger_id,
+            "voucher_type": "receipt",
+            "amount": 100,
+            "mode": "cash",
+        },
+    )
+    assert created.status_code == 200, created.text
+    payment_id = created.json()["id"]
+
+    response = client.put(
+        f"/api/payments/{payment_id}",
+        json={"voucher_type": "receipt", "amount": amount, "mode": "cash"},
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"] == ["body", "amount"]
+    listing = client.get("/api/payments/")
+    assert listing.status_code == 200
+    row = next(row for row in listing.json() if row["id"] == payment_id)
+    assert row["amount"] == 100
+
+
+@pytest.mark.parametrize("amount", [-99_999_999.995, -99_999_999.996])
+def test_create_opening_balance_rejects_negative_amount_that_rounds_into_storage_overflow(
+    client, amount
+):
+    ledger_id = _payment_ledger(client, f"Pay Rounding Opening {amount}")
+    response = client.post(
+        "/api/payments/",
+        json={
+            "ledger_id": ledger_id,
+            "voucher_type": "opening_balance",
+            "amount": amount,
+            "mode": "cash",
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"] == ["body", "amount"]
+
+
+def test_create_opening_balance_accepts_largest_storable_negative_amount(client):
+    ledger_id = _payment_ledger(client, "Pay Minus Max Amount")
+    response = client.post(
+        "/api/payments/",
+        json={
+            "ledger_id": ledger_id,
+            "voucher_type": "opening_balance",
+            "amount": -99_999_999.99,
+            "mode": "cash",
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["amount"] == -99_999_999.99
+
+
+def test_create_payment_rejects_allocated_amount_that_rounds_into_storage_overflow(client):
+    ledger_id = _payment_ledger(client, "Pay Rounding Alloc")
+    product = client.post(
+        "/api/products/",
+        json={
+            "sku": "PAYROUNDALLOC",
+            "name": "Widget",
+            "price": 100,
+            "gst_rate": 0,
+            "initial_quantity": 5,
+        },
+    )
+    assert product.status_code == 200, product.text
+    invoice = client.post(
+        "/api/invoices/",
+        json={
+            "ledger_id": ledger_id,
+            "voucher_type": "sales",
+            "tax_inclusive": False,
+            "apply_round_off": False,
+            "items": [
+                {"product_id": product.json()["id"], "quantity": 1, "unit_price": 100}
+            ],
+        },
+    )
+    assert invoice.status_code == 200, invoice.text
+
+    response = client.post(
+        "/api/payments/",
+        json={
+            "ledger_id": ledger_id,
+            "voucher_type": "receipt",
+            "amount": 50,
+            "mode": "cash",
+            "invoice_allocations": [
+                {
+                    "invoice_id": invoice.json()["id"],
+                    "allocated_amount": 99_999_999.996,
+                }
+            ],
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"] == [
+        "body",
+        "invoice_allocations",
+        0,
+        "allocated_amount",
+    ]
+
+
 def test_create_opening_balance_accepts_negative_amount(client):
     ledger_id = _payment_ledger(client, "Pay Neg OB")
     response = client.post(
