@@ -2,7 +2,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, computed_field, field_validator
 from typing import Literal, Optional
 
-from src.core.document_limits import MONEY_STORAGE_CUTOFF, QUANTITY_STORAGE_CUTOFF
+from src.core.document_limits import LARGE_MONEY_STORAGE_CUTOFF, MONEY_STORAGE_CUTOFF, QUANTITY_STORAGE_CUTOFF
 from src.core.validation import hsn_sac_warning, normalize_hsn_sac
 
 
@@ -18,7 +18,7 @@ class ProductCreate(BaseModel):
     allow_decimal: bool = False
     maintain_inventory: bool = True
     is_producable: bool = False
-    production_cost: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    production_cost: Optional[float] = Field(default=None, ge=0, lt=LARGE_MONEY_STORAGE_CUTOFF, allow_inf_nan=False)
     reorder_level: float = Field(default=0, ge=0, lt=MONEY_STORAGE_CUTOFF, allow_inf_nan=False)
     initial_quantity: float = Field(default=0, ge=0, lt=QUANTITY_STORAGE_CUTOFF, allow_inf_nan=False)
     track_serials: bool = False
