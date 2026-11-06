@@ -606,6 +606,36 @@ def test_product_edits_validate_storage_bounds(client):
     assert response.status_code == 200, response.text
 
 
+@pytest.mark.parametrize("method", ["post", "put"])
+@pytest.mark.parametrize("value", [1e11, 10_000_000_000, 9_999_999_999.995, 9_999_999_999.996])
+def test_product_production_cost_rejects_storage_overflow(client, method, value):
+    payload = {"sku": "COST-BOUNDS", "name": "Cost bounds", "price": 10}
+    url = "/api/products/"
+    if method == "put":
+        created = client.post(url, json=payload)
+        assert created.status_code == 200, created.text
+        url = f"{url}{created.json()['id']}"
+
+    response = getattr(client, method)(url, json={**payload, "production_cost": value})
+
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"][0]["loc"] == ["body", "production_cost"]
+
+
+@pytest.mark.parametrize("fields", [
+    {}, {"production_cost": None}, {"production_cost": 0}, {"production_cost": 9_999_999_999.99},
+])
+def test_product_production_cost_valid_values_still_save(client, fields):
+    payload = {"sku": "COST-VALID", "name": "Valid cost", "price": 10, **fields}
+    created = client.post("/api/products/", json=payload)
+    assert created.status_code == 200, created.text
+    assert created.json()["production_cost"] == fields.get("production_cost")
+
+    updated = client.put(f"/api/products/{created.json()['id']}", json=payload)
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["production_cost"] == fields.get("production_cost")
+
+
 def test_csv_import_skips_overflowing_rows_and_saves_largest_valid_values(client):
     content = (
         "Item Name,Item Code,Selling Price,Purchase Price,Reorder Level,Current Stock\n"
