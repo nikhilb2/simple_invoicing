@@ -633,3 +633,104 @@ def test_note_without_a_date_can_follow_a_future_dated_invoice(client, gst_selle
 
     assert response.status_code == 201, response.text
     assert response.json()["credit_note_date"].startswith(india_today().isoformat())
+
+
+# ── Cancel/edit guards: an invoice under a credit note (#602) ────────────────
+
+
+def _stock(db_session, product_id):
+    from src.models.inventory import Inventory
+
+    db_session.expire_all()
+    row = db_session.query(Inventory).filter(Inventory.product_id == product_id).one()
+    return float(row.quantity)
+
+
+def _invoice_with_return_note(client, db_session):
+    """Stock 100 → sell 10 (90) → return 4 by credit note (94)."""
+    product_id = _create_product(client, f"SKU-{uuid4().hex[:8]}", "Widget", stock=100)
+    ledger_id = _create_ledger(client, f"Buyer {uuid4().hex[:8]}")
+    response = client.post("/api/invoices/", json={
+        "ledger_id": ledger_id,
+        "voucher_type": "sales",
+        "items": [{"product_id": product_id, "quantity": 10, "unit_price": 100}],
+    })
+    assert response.status_code == 200, response.text
+    invoice = response.json()
+    assert _stock(db_session, product_id) == 90
+
+    response = client.post("/api/credit-notes/", json={
+        "ledger_id": ledger_id,
+        "invoice_ids": [invoice["id"]],
+        "credit_note_type": "return",
+        "direction": "outward",
+        "items": [{
+            "invoice_id": invoice["id"],
+            "invoice_item_id": invoice["items"][0]["id"],
+            "quantity": 4,
+        }],
+    })
+    assert response.status_code == 201, response.text
+    note = response.json()
+    assert _stock(db_session, product_id) == 94
+    return invoice, note, product_id
+
+
+def test_cancelling_an_invoice_with_an_active_credit_note_is_refused(client, db_session):
+    """The note already returned 4 of the 10 units; a cancel reversing all 10
+    would put stock at 104 instead of 100 and orphan the active note."""
+    invoice, note, product_id = _invoice_with_return_note(client, db_session)
+
+    response = client.delete(f"/api/invoices/{invoice['id']}")
+    assert response.status_code == 400, response.text
+    assert "credit notes against it" in response.text
+    assert _stock(db_session, product_id) == 94
+
+    # Once the note is cancelled, the invoice cancels and stock is whole.
+    response = client.post(f"/api/credit-notes/{note['id']}/cancel")
+    assert response.status_code == 200, response.text
+    assert _stock(db_session, product_id) == 90
+
+    response = client.delete(f"/api/invoices/{invoice['id']}")
+    assert response.status_code == 200, response.text
+    assert _stock(db_session, product_id) == 100
+
+
+def test_editing_an_invoice_with_a_credit_note_is_refused_not_500(client, db_session):
+    """Credit note items point at the invoice's items; deleting and recreating
+    them used to fail the flush on the foreign key and surface a raw 500."""
+    invoice, note, product_id = _invoice_with_return_note(client, db_session)
+    payload = {
+        "ledger_id": invoice["ledger_id"],
+        "voucher_type": "sales",
+        "items": [{"product_id": product_id, "quantity": 10, "unit_price": 100}],
+    }
+
+    response = client.put(f"/api/invoices/{invoice['id']}", json=payload)
+    assert response.status_code == 400, response.text
+    assert "credit notes against it" in response.text
+
+    # A note whose row survives with status "cancelled" (legacy data) still
+    # has items pointing at the invoice lines, so the edit stays refused.
+    stored = db_session.get(CreditNote, note["id"])
+    stored.status = "cancelled"
+    db_session.commit()
+    response = client.put(f"/api/invoices/{invoice['id']}", json=payload)
+    assert response.status_code == 400, response.text
+    assert "credit notes against it" in response.text
+
+
+def test_editing_an_invoice_after_its_credit_note_is_cancelled_works(client, db_session):
+    """Cancelling a note through the API deletes it and its items, so the
+    invoice is editable again afterwards."""
+    invoice, note, product_id = _invoice_with_return_note(client, db_session)
+
+    response = client.post(f"/api/credit-notes/{note['id']}/cancel")
+    assert response.status_code == 200, response.text
+
+    response = client.put(f"/api/invoices/{invoice['id']}", json={
+        "ledger_id": invoice["ledger_id"],
+        "voucher_type": "sales",
+        "items": [{"product_id": product_id, "quantity": 10, "unit_price": 100}],
+    })
+    assert response.status_code == 200, response.text

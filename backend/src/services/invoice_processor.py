@@ -42,6 +42,27 @@ from src.services.company_access import company_scope, legacy_default_company
 # Module-level helpers — backward-compatible shims (delegate to InventoryManager)
 # ---------------------------------------------------------------------------
 
+def invoice_has_credit_notes(db: Session, invoice_id: int, *, active_only: bool = True) -> bool:
+    """Whether any credit note item references the invoice.
+
+    With ``active_only`` (the default), cancelled credit notes do not count:
+    their stock effect has already been unwound with them. Pass
+    ``active_only=False`` where even a cancelled note's items matter — they
+    still point at the invoice's items, so deleting those items would break
+    the ``credit_note_items.invoice_item_id`` foreign key.
+    """
+    from src.models.credit_note import CreditNote, CreditNoteItem  # noqa: PLC0415
+
+    query = (
+        db.query(CreditNoteItem.id)
+        .join(CreditNote, CreditNote.id == CreditNoteItem.credit_note_id)
+        .filter(CreditNoteItem.invoice_id == invoice_id)
+    )
+    if active_only:
+        query = query.filter(CreditNote.status == "active")
+    return query.first() is not None
+
+
 def inventory_effect_for_voucher_type(quantity: float, voucher_type: str) -> Decimal:
     """Return the signed inventory delta for *quantity* depending on voucher type.
 
@@ -455,18 +476,7 @@ class InvoiceProcessor:
             # and drives its numbering, its stock effect and whether it is
             # filed in GSTR-1. Flipping the invoice underneath it would leave
             # every one of those wrong with nothing to notice.
-            from src.models.credit_note import CreditNote, CreditNoteItem  # noqa: PLC0415
-
-            has_notes = (
-                self.db.query(CreditNoteItem.id)
-                .join(CreditNote, CreditNote.id == CreditNoteItem.credit_note_id)
-                .filter(
-                    CreditNoteItem.invoice_id == invoice.id,
-                    CreditNote.status == "active",
-                )
-                .first()
-            )
-            if has_notes:
+            if invoice_has_credit_notes(self.db, invoice.id):
                 raise HTTPException(
                     status_code=400,
                     detail=(
