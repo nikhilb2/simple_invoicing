@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, FileText, FilePlus, Mail, Pencil, ReceiptText, Share2, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, FileText, FilePlus, Link2, Mail, Pencil, ReceiptText, Share2, Trash2 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../api/client';
 import type { CompanyAccount, CompanyProfile, Invoice, Ledger, LedgerAddress, LedgerStatement, OutstandingInvoice, Payment, PaymentCreate, PaymentInvoiceAllocation, PaymentUpdate, Product } from '../types/api';
 import InvoicePreview from '../components/InvoicePreview';
@@ -8,6 +8,7 @@ import CreditNotePreview from '../components/CreditNotePreview';
 import PaymentReceiptPreview from '../components/PaymentReceiptPreview';
 import StatementPreview from '../components/StatementPreview';
 import ShareModal from '../components/ShareModal';
+import PublicLinksDialog from '../components/PublicLinksDialog';
 import StatusToasts from '../components/StatusToasts';
 import CreateInvoiceModal from '../components/CreateInvoiceModal';
 import SendEmailModal from '../components/SendEmailModal';
@@ -132,6 +133,7 @@ export default function LedgerViewPage() {
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [showStatementPreview, setShowStatementPreview] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showPublicLinksDialog, setShowPublicLinksDialog] = useState(false);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showActionsDropdown, setShowActionsDropdown] = useState(false);
@@ -727,6 +729,16 @@ export default function LedgerViewPage() {
                     <Share2 size={16} />
                     Share Statement
                   </button>
+                  <button
+                    type="button"
+                    className="action-dropdown__item"
+                    role="menuitem"
+                    aria-label="Public Links"
+                    onClick={() => { setShowActionsDropdown(false); setShowPublicLinksDialog(true); }}
+                  >
+                    <Link2 size={16} />
+                    Public Links
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -1085,6 +1097,14 @@ export default function LedgerViewPage() {
           currencyCode={activeCurrencyCode}
           onClose={() => setShowStatementPreview(false)}
           onError={(msg) => setError(msg)}
+        />
+      ) : null}
+
+      {showPublicLinksDialog ? (
+        <PublicLinksDialog
+          ledgerId={ledger.id}
+          ledgerName={ledger.name}
+          onClose={() => setShowPublicLinksDialog(false)}
         />
       ) : null}
 
