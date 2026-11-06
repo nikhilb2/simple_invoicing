@@ -880,7 +880,7 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
     # Normalise column names
     normalised = [h.strip().lower().replace(" ", "_") for h in reader.fieldnames]
     headers = set(normalised)
-    tax_headers = ("tax", "gst")
+    tax_headers = ("tax", "gst", "gst_rate", "tax_rate")
     stock_headers = ("current_stock", "stock")
     has_tax_column = not headers.isdisjoint(tax_headers)
     has_stock_column = not headers.isdisjoint(stock_headers)

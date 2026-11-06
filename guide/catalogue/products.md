@@ -100,7 +100,7 @@ Use this to load a catalogue from another system or to update prices in bulk.
 2. Edit the file and save it as CSV in UTF-8.
 3. Choose the file and click **Import and update items**. Nothing uploads until you click this.
 
-**Item Name** and **Item Code** (or Name and SKU) are required. The other columns are Purchase Price, Selling Price, Current Stock, Reorder Level, Description, HSN Code, Unit and Tax. Headings ignore case and spacing, and any extra columns are ignored.
+**Item Name** and **Item Code** (or Name and SKU) are required. The other columns are Purchase Price, Selling Price, Current Stock, Reorder Level, Description, HSN Code, Unit and Tax. Tax can also be headed **GST**, **GST Rate** or **Tax Rate**. Headings ignore case and spacing, and any extra columns are ignored.
 
 Rows are matched on Item Code:
 
