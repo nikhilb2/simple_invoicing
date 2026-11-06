@@ -1,7 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
+from src.core.document_limits import ACCOUNT_BALANCE_STORAGE_CUTOFF
 from src.services.upi import is_valid_vpa, normalize_vpa
 
 
@@ -18,7 +19,12 @@ class CompanyAccountBase(BaseModel):
     ifsc_code: str | None = None
     upi_vpa: str | None = None
     display_on_invoice: bool = True
-    opening_balance: float = 0
+    opening_balance: float = Field(
+        default=0,
+        ge=0,
+        lt=ACCOUNT_BALANCE_STORAGE_CUTOFF,
+        allow_inf_nan=False,
+    )
     is_active: bool = True
 
     @field_validator("account_type")
@@ -57,13 +63,9 @@ class CompanyAccountBase(BaseModel):
             raise ValueError("Enter a valid UPI ID, for example name@bank")
         return normalized
 
+
 class CompanyAccountCreate(CompanyAccountBase):
-    @field_validator("opening_balance")
-    @classmethod
-    def validate_opening_balance(cls, value: float) -> float:
-        if value < 0:
-            raise ValueError("opening_balance must be greater than or equal to 0")
-        return value
+    pass
 
 
 class CompanyAccountUpdate(BaseModel):
@@ -76,7 +78,12 @@ class CompanyAccountUpdate(BaseModel):
     ifsc_code: str | None = None
     upi_vpa: str | None = None
     display_on_invoice: bool | None = None
-    opening_balance: float | None = None
+    opening_balance: float | None = Field(
+        default=None,
+        ge=0,
+        lt=ACCOUNT_BALANCE_STORAGE_CUTOFF,
+        allow_inf_nan=False,
+    )
     is_active: bool | None = None
 
     @field_validator("account_type")
@@ -118,15 +125,6 @@ class CompanyAccountUpdate(BaseModel):
         if not is_valid_vpa(normalized):
             raise ValueError("Enter a valid UPI ID, for example name@bank")
         return normalized
-
-    @field_validator("opening_balance")
-    @classmethod
-    def validate_opening_balance(cls, value: float | None) -> float | None:
-        if value is None:
-            return None
-        if value < 0:
-            raise ValueError("opening_balance must be greater than or equal to 0")
-        return value
 
 
 class CompanyAccountOut(CompanyAccountBase):
