@@ -2,6 +2,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, computed_field, field_validator
 from typing import Literal, Optional
 
+from src.core.document_limits import MONEY_STORAGE_CUTOFF, QUANTITY_STORAGE_CUTOFF
 from src.core.validation import hsn_sac_warning, normalize_hsn_sac
 
 
@@ -10,16 +11,16 @@ class ProductCreate(BaseModel):
     name: str
     description: Optional[str] = None
     hsn_sac: Optional[str] = None
-    price: float = Field(ge=0, allow_inf_nan=False)
-    purchase_price: float = Field(default=0, ge=0, allow_inf_nan=False)
+    price: float = Field(ge=0, lt=MONEY_STORAGE_CUTOFF, allow_inf_nan=False)
+    purchase_price: float = Field(default=0, ge=0, lt=MONEY_STORAGE_CUTOFF, allow_inf_nan=False)
     gst_rate: float = Field(default=0, allow_inf_nan=False)
     unit: str = "Pieces"
     allow_decimal: bool = False
     maintain_inventory: bool = True
     is_producable: bool = False
     production_cost: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
-    reorder_level: float = Field(default=0, ge=0, allow_inf_nan=False)
-    initial_quantity: float = Field(default=0, ge=0, allow_inf_nan=False)
+    reorder_level: float = Field(default=0, ge=0, lt=MONEY_STORAGE_CUTOFF, allow_inf_nan=False)
+    initial_quantity: float = Field(default=0, ge=0, lt=QUANTITY_STORAGE_CUTOFF, allow_inf_nan=False)
     track_serials: bool = False
     # Opening serials on create, backfill on enable — one field, one round-trip,
     # so the flag and the units behind it can never be saved apart.
@@ -104,12 +105,12 @@ class ProductWithInventoryUpdate(BaseModel):
     description: Optional[str] = None
     hsn_sac: Optional[str] = None
     category: Optional[str] = None
-    purchase_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
-    selling_price: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    purchase_price: Optional[float] = Field(default=None, ge=0, lt=MONEY_STORAGE_CUTOFF, allow_inf_nan=False)
+    selling_price: Optional[float] = Field(default=None, ge=0, lt=MONEY_STORAGE_CUTOFF, allow_inf_nan=False)
     # Bounded like every other way of changing stock: the edit form must
     # not be a back door to a negative quantity.
-    current_stock: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
-    reorder_level: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    current_stock: Optional[float] = Field(default=None, ge=0, lt=QUANTITY_STORAGE_CUTOFF, allow_inf_nan=False)
+    reorder_level: Optional[float] = Field(default=None, ge=0, lt=MONEY_STORAGE_CUTOFF, allow_inf_nan=False)
     status: Optional[Literal["active", "inactive"]] = None
     unit: Optional[str] = None
     gst_rate: Optional[float] = Field(default=None, allow_inf_nan=False)

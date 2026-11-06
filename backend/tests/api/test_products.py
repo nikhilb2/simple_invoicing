@@ -558,3 +558,67 @@ def test_csv_import_saves_the_row_and_reports_an_hsn_gst_does_not_list(client):
     assert data["created"] == 3
     assert [e["row"] for e in data["errors"]] == [3]
     assert "IMP2 was saved" in data["errors"][0]["message"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("price", 1_000_000_000),
+        ("purchase_price", 99_999_999.995),
+        ("reorder_level", 99_999_999.995),
+        ("initial_quantity", 999_999_999.9995),
+    ],
+)
+def test_create_product_rejects_values_that_overflow_storage(client, field, value):
+    payload = {"sku": "BOUNDS", "name": "Bounds", "price": 10, field: value}
+    response = client.post("/api/products/", json=payload)
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", field]
+
+
+def test_product_edits_validate_storage_bounds(client):
+    money_max = 99_999_999.99
+    stock_max = 999_999_999.999
+    payload = {
+        "sku": "BOUNDS", "name": "Bounds", "price": money_max,
+        "purchase_price": money_max, "reorder_level": money_max,
+        "initial_quantity": stock_max, "allow_decimal": True,
+    }
+    created = client.post("/api/products/", json=payload)
+    assert created.status_code == 200, created.text
+    url = f"/api/products/{created.json()['id']}"
+    response = client.put(url, json={**payload, "price": 1_000_000_000})
+    assert response.status_code == 422
+
+    inventory_url = f"{url}/with-inventory"
+    for field, value in (
+        ("selling_price", 99_999_999.995), ("purchase_price", 1_000_000_000),
+        ("reorder_level", 1_000_000_000), ("current_stock", 10_000_000_000),
+    ):
+        response = client.put(inventory_url, json={field: value})
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"] == ["body", field]
+
+    response = client.put(inventory_url, json={
+        "selling_price": money_max, "purchase_price": money_max,
+        "reorder_level": money_max, "current_stock": stock_max,
+    })
+    assert response.status_code == 200, response.text
+
+
+def test_csv_import_skips_overflowing_rows_and_saves_largest_valid_values(client):
+    content = (
+        "Item Name,Item Code,Selling Price,Purchase Price,Reorder Level,Current Stock\n"
+        "Selling,BADSELL,99999999.995,1,1,1\n"
+        "Purchase,BADBUY,1,1000000000,1,1\n"
+        "Reorder,BADREORDER,1,1,99999999.995,1\n"
+        "Stock,BADSTOCK,1,1,1,999999999.9995\n"
+        "Valid,VALID,99999999.99,99999999.99,99999999.99,999999999.999\n"
+    )
+    response = client.post("/api/products/import-csv", files={"file": ("p.csv", content.encode(), "text/csv")})
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["created"] == 1
+    assert result["updated"] == 0
+    assert [e["row"] for e in result["errors"]] == [2, 3, 4, 5]
+    assert [p["sku"] for p in client.get("/api/products/").json()["items"]] == ["VALID"]

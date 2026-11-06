@@ -31,6 +31,7 @@ from src.schemas.product import (
 )
 from src.api.deps import get_active_company, get_current_user, require_company_role
 from src.core.analytics import distinct_id_for, track
+from src.core.document_limits import MONEY_STORAGE_CUTOFF, QUANTITY_STORAGE_CUTOFF
 from src.core.validation import hsn_sac_warning, normalize_hsn_sac
 from src.services.serial_service import SerialManager
 
@@ -904,6 +905,8 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
 
         try:
             selling_price = float(values.get("selling_price") or 0)
+            if selling_price >= MONEY_STORAGE_CUTOFF:
+                raise ValueError(selling_price)
         except ValueError:
             errors.append({"row": row_num, "message": f"Invalid Selling Price for {sku}"})
             continue
@@ -919,7 +922,7 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
 
         try:
             stock = _csv_number(next((values[key] for key in stock_headers if values.get(key)), ""))
-            if stock < 0:
+            if not 0 <= stock < QUANTITY_STORAGE_CUTOFF:
                 raise ValueError(stock)
         except ValueError:
             errors.append({"row": row_num, "message": f"Invalid Current Stock for {sku}"})
@@ -927,7 +930,7 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
 
         try:
             purchase_price = _csv_number(values.get("purchase_price") or 0)
-            if purchase_price < 0:
+            if not 0 <= purchase_price < MONEY_STORAGE_CUTOFF:
                 raise ValueError(purchase_price)
         except ValueError:
             errors.append({"row": row_num, "message": f"Invalid Purchase Price for {sku}"})
@@ -935,7 +938,7 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
 
         try:
             reorder_level = _csv_number(values.get("reorder_level") or 0)
-            if reorder_level < 0:
+            if not 0 <= reorder_level < MONEY_STORAGE_CUTOFF:
                 raise ValueError(reorder_level)
         except ValueError:
             errors.append({"row": row_num, "message": f"Invalid Reorder Level for {sku}"})
