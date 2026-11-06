@@ -567,6 +567,8 @@ def test_csv_import_saves_the_row_and_reports_an_hsn_gst_does_not_list(client):
         ("purchase_price", 99_999_999.995),
         ("reorder_level", 99_999_999.995),
         ("initial_quantity", 999_999_999.9995),
+        ("production_cost", 1e11),
+        ("production_cost", 9_999_999_999.996),
     ],
 )
 def test_create_product_rejects_values_that_overflow_storage(client, field, value):
@@ -579,16 +581,31 @@ def test_create_product_rejects_values_that_overflow_storage(client, field, valu
 def test_product_edits_validate_storage_bounds(client):
     money_max = 99_999_999.99
     stock_max = 999_999_999.999
+    cost_max = 9_999_999_999.99
     payload = {
         "sku": "BOUNDS", "name": "Bounds", "price": money_max,
         "purchase_price": money_max, "reorder_level": money_max,
         "initial_quantity": stock_max, "allow_decimal": True,
+        "is_producable": True, "production_cost": cost_max,
     }
     created = client.post("/api/products/", json=payload)
     assert created.status_code == 200, created.text
+    assert created.json()["production_cost"] == cost_max
     url = f"/api/products/{created.json()['id']}"
     response = client.put(url, json={**payload, "price": 1_000_000_000})
     assert response.status_code == 422
+
+    response = client.put(url, json={**payload, "production_cost": 1e11})
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "production_cost"]
+
+    response = client.put(url, json={**payload, "production_cost": 9_999_999_999.996})
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "production_cost"]
+
+    response = client.put(url, json=payload)
+    assert response.status_code == 200, response.text
+    assert response.json()["production_cost"] == cost_max
 
     inventory_url = f"{url}/with-inventory"
     for field, value in (
