@@ -50,6 +50,7 @@ These show a made-up demo business.
 - **Quotations & Proforma Invoices** — Offers on their own number series with PDF and share links, converted to an invoice through the composer. No effect on stock, ledgers or returns until then
 - **Credit Notes** — Issue credit notes against invoices with linked ledger and stock reversals
 - **GSTR-1** — Validate a return and export it as JSON, CSV or PDF
+- **GSTR-3B Worksheet** — Estimates your GSTR-3B figures from your books, including the IGST set-off order. It is a worksheet to check against, not a filing
 - **E-Way Bill JSON** — Check an invoice and generate the file for the portal's bulk upload (from the E-Way Bill button on the invoice preview)
 - **Tax Ledger** — Tax register with CSV and PDF export
 - **GSTIN Validation** — Checks format, state code and check digit (this does not confirm registration on the GST portal)
@@ -59,9 +60,10 @@ These show a made-up demo business.
 
 ### Getting paid
 
-- **Payment Tracking** — Record payments against invoices, with PDF receipts, dues and an ageing view
+- **Payment Tracking** — Record payments against invoices, with PDF receipts, dues, a receivables ageing summary and overdue badges
+- **Payment Reminders** — Email reminders and statements, or a ready-made WhatsApp reminder from the Invoice Dues list
 - **Pay by UPI** — Optional QR on invoice PDFs that opens the invoice's share page, where the customer pays the live outstanding balance from any UPI app
-- **Share Links** — Public links to documents, with WhatsApp sharing
+- **Share Links** — Public links to documents and ledger statements, with WhatsApp sharing. See every live link for a customer and revoke any of them
 - **Email Delivery** — Send invoices, ledger statements and payment reminders, with full email history
 
 ### Inventory and manufacturing
@@ -83,9 +85,10 @@ These show a made-up demo business.
 
 - **Multiple Companies** — Run more than one company from one login
 - **Role-Based Access** — Admin, Manager and Staff roles
-- **Accounts** — Email verification, password reset and optional Google sign-in
+- **Accounts** — Self sign-up on the hosted app, email verification, password reset and optional Google sign-in
+- **Guided First Invoice** — New owners can follow a walkthrough that points at each field while they add a customer and a product and create their first invoice
 - **Backups** — On-demand and nightly backups, with download and restore
-- **Dark Mode and Keyboard Shortcuts** — Light or dark theme, and configurable shortcuts
+- **Themes and Keyboard Shortcuts** — Light, dark or follow your device, and configurable shortcuts with a cheat sheet on `?`
 
 ### Integrations
 
@@ -344,17 +347,26 @@ See the [Makefile](Makefile) for all available commands.
 
 ## Roadmap
 
-- [x] Email invoice delivery
-- [x] Dashboard analytics and charts
-- [x] CSV export
-- [x] Dark mode
-- [ ] Multi-currency support
-- [ ] Excel (.xlsx) export
-- [ ] Recurring invoices
-- [ ] Audit log
-- [ ] Mobile-responsive redesign
+**Shipped recently**
 
-Interested in working on any of these? Check out our [Contributing Guide](CONTRIBUTING.md) and look for issues labeled **good first issue**.
+- [x] Quotations and proforma invoices
+- [x] E-way bill JSON for the portal's bulk upload
+- [x] GSTR-3B worksheet, estimated from your books
+- [x] Self sign-up and Google sign-in on the hosted app
+- [x] A guided walkthrough to your first invoice
+- [x] Light, dark and follow-your-device themes
+- [x] Layouts that work on a phone
+- [x] Email delivery, dashboard charts and CSV export
+
+**Next**
+
+- [ ] Recurring invoices
+- [ ] An audit log of who changed what
+- [ ] Excel (.xlsx) export
+- [ ] Invoices in foreign currencies
+- [ ] Balance sheet
+
+Want to work on one of these, or something else? Open an issue to talk it through, or go straight to a PR. You don't need to ask first or be assigned. Issues labelled **good first issue** are a good place to start, and [#532](https://github.com/nikhilb2/simple-invoicing-free-gst-billing-software/issues/532) explains how to report a bug or suggest an idea.
 
 ## FAQ
 
