@@ -10,7 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAuthStore } from '../store/useAuthStore';
 import { useFY } from '../context/FYContext';
 import type { CompanyProfile, CompanyProfileUpdate, InvoiceSeries, InvoiceSeriesUpdate, CompanyTermOut } from '../types/api';
-import { isCompanyConfigured } from '../utils/companySetup';
+import { clearSetupDraft, isCompanyConfigured, readSetupDraft, writeSetupDraft } from '../utils/companySetup';
 import { isCurrencyChange } from '../utils/currencyChange';
 import { buildSeriesPreview, gstr1SeriesFormatError } from '../utils/seriesPreview';
 
@@ -810,6 +810,8 @@ export default function CompanyPage() {
       if (axios.isAxiosError(err) && err.response?.status === 409 && getApiErrorCode(err) === 'company_required') {
         setNoCompany(true);
         setCompanyId(0);
+        const draft = readSetupDraft<CompanyProfileUpdate>(useAuthStore.getState().userEmail);
+        if (draft) setForm((current) => ({ ...current, ...draft }));
         if (initialSetupRequired === null) {
           setInitialSetupRequired(true);
         }
@@ -824,6 +826,12 @@ export default function CompanyPage() {
   useEffect(() => {
     void loadCompanyProfile();
   }, []);
+
+  // Until the first company is saved, keep what has been typed for this tab.
+  const setupDraftOwner = useAuthStore((state) => state.userEmail);
+  useEffect(() => {
+    if (noCompany) writeSetupDraft(setupDraftOwner, form);
+  }, [noCompany, form, setupDraftOwner]);
 
   // Any invoice at all, cancelled and purchase vouchers included: each of them
   // was issued in the currency the company had then. If the check fails we warn
@@ -882,6 +890,7 @@ export default function CompanyPage() {
         // new company becomes their active one.
         const created = await api.post<CompanyProfile>('/company/companies', payload);
         setNoCompany(false);
+        clearSetupDraft(useAuthStore.getState().userEmail);
         setCompanyId(created.data.id);
         localStorage.setItem('active_company_id', String(created.data.id));
         // The creator's role only exists now; without this they would look like a
@@ -1244,6 +1253,14 @@ export default function CompanyPage() {
                 </div>
 
                 <div className="field field--full">
+                  {/* Before the first save there is no company to add accounts to, and
+                      leaving here would only bring you back to setup. */}
+                  {noCompany ? (
+                    <small className="field-hint">
+                      After you save, you can add your bank and cash accounts from Cash &amp; Bank Accounts.
+                    </small>
+                  ) : (
+                  <>
                   <small className="field-hint">
                     Bank and cash account details are managed from Cash &amp; Bank Accounts.
                   </small>
@@ -1258,6 +1275,8 @@ export default function CompanyPage() {
                       Manage cash &amp; bank accounts
                     </button>
                   </div>
+                  </>
+                  )}
                 </div>
               </div>
 
