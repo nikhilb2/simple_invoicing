@@ -105,6 +105,8 @@ export type Ledger = {
   name: string;
   address: string;
   gst: string;
+  pan: string | null;
+  party_type: string | null;
   opening_balance: number | null;
   /** Closing balance to date (debit - credit). Only sent by the ledger list. */
   balance?: number | null;
@@ -122,6 +124,8 @@ export type LedgerCreate = {
   name: string;
   address: string;
   gst: string;
+  pan: string;
+  party_type: string | null;
   opening_balance: number | null;
   phone_number: string;
   email: string;
@@ -203,6 +207,8 @@ export type CompanyProfile = {
   name: string;
   address: string;
   gst: string;
+  pan: string | null;
+  tan: string | null;
   phone_number: string;
   currency_code: string | null;
   email: string | null;
@@ -254,6 +260,8 @@ export type CompanyProfileUpdate = {
   name: string;
   address: string;
   gst: string;
+  pan?: string;
+  tan?: string;
   phone_number: string;
   currency_code: string;
   email: string;

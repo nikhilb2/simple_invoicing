@@ -3,6 +3,8 @@ from functools import lru_cache
 from pathlib import Path
 
 GSTIN_REGEX = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[A-Z0-9]{1}Z[A-Z0-9]{1}$")
+PAN_REGEX = re.compile(r"^[A-Z]{5}[0-9]{4}[A-Z]$")
+TAN_REGEX = re.compile(r"^[A-Z]{4}[0-9]{5}[A-Z]$")
 GSTIN_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 # GST allows an HSN/SAC of 4, 6 or 8 digits only. The GST portal rejects a
 # 5- or 7-digit code outright, so accepting one here just moves the failure to
@@ -144,3 +146,34 @@ def is_gst_rate_slab(rate: float | None) -> bool:
     if rate is None:
         return False
     return any(abs(float(rate) - slab) < 0.001 for slab in GST_RATE_SLABS)
+
+
+def normalize_pan(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().upper()
+    if not normalized:
+        return None
+    if not PAN_REGEX.fullmatch(normalized):
+        raise ValueError("Invalid PAN format. Expected 10 characters, e.g. ABCDE1234F")
+    return normalized
+
+
+def normalize_tan(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().upper()
+    if not normalized:
+        return None
+    if not TAN_REGEX.fullmatch(normalized):
+        raise ValueError("Invalid TAN format. Expected 10 characters, e.g. ABCD12345E")
+    return normalized
+
+
+def pan_from_gstin(gstin: str | None) -> str | None:
+    if not gstin:
+        return None
+    normalized = gstin.strip().upper()
+    if not GSTIN_REGEX.fullmatch(normalized):
+        return None
+    return normalized[2:12]

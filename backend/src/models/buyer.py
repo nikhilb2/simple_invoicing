@@ -13,6 +13,8 @@ class Buyer(Base):
     name = Column(String, nullable=False, index=True)
     address = Column(String, nullable=False)
     gst = Column(String, nullable=True, index=True)
+    pan = Column(String(10), nullable=True, index=True)
+    party_type = Column(String(20), nullable=True)
     phone_number = Column(String, nullable=False)
     email = Column(String, nullable=True)
     website = Column(String, nullable=True)

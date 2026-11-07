@@ -28,6 +28,8 @@ export default function   LedgerCreatePage() {
     name: '',
     address: '',
     gst: '',
+    pan: '',
+    party_type: null,
     opening_balance: null,
     phone_number: '',
     email: '',
@@ -53,6 +55,8 @@ export default function   LedgerCreatePage() {
           name: l.name,
           address: l.address,
           gst: l.gst || '',
+          pan: l.pan || (l.gst ? l.gst.slice(2, 12) : ''),
+          party_type: l.party_type || null,
           opening_balance: l.opening_balance,
           phone_number: l.phone_number,
           email: l.email || '',
@@ -87,6 +91,8 @@ export default function   LedgerCreatePage() {
         name: form.name.trim(),
         address: form.address.trim(),
         gst: normalizeGstinInput(form.gst),
+        pan: form.pan.trim().toUpperCase(),
+        party_type: form.party_type || null,
         opening_balance: form.opening_balance,
         phone_number: form.phone_number.trim(),
         email: form.email.trim(),
@@ -207,6 +213,34 @@ export default function   LedgerCreatePage() {
                       {gstError}
                     </small>
                   ) : null}
+                </div>
+                <div className="field">
+                  <label htmlFor="ledger-pan">PAN</label>
+                  <input
+                    id="ledger-pan"
+                    className="input"
+                    value={form.pan}
+                    onChange={(e) => setForm((c) => ({ ...c, pan: e.target.value.toUpperCase() }))}
+                    placeholder="ABCDE1234F"
+                    maxLength={10}
+                  />
+                  <small className="field-hint">If GSTIN is entered, PAN is filled from it when left blank.</small>
+                </div>
+                <div className="field">
+                  <label htmlFor="ledger-party-type">Party type</label>
+                  <select
+                    id="ledger-party-type"
+                    className="select"
+                    value={form.party_type || ''}
+                    onChange={(e) => setForm((c) => ({ ...c, party_type: e.target.value || null }))}
+                  >
+                    <option value="">Select party type</option>
+                    <option value="individual">Individual</option>
+                    <option value="huf">HUF</option>
+                    <option value="company">Company</option>
+                    <option value="firm">Firm</option>
+                    <option value="other">Other</option>
+                  </select>
                 </div>
                 <div className="field field--full">
                   <label htmlFor="ledger-opening-balance">Opening balance</label>
