@@ -32,6 +32,7 @@ export default function ProductQuickCreateModal() {
   const closeProductCreateModal = useInvoiceComposerStore((state) => state.closeProductCreateModal);
   const setFeedbackError = useInvoiceComposerStore((state) => state.setFeedbackError);
   const setFeedbackSuccess = useInvoiceComposerStore((state) => state.setFeedbackSuccess);
+  const setCreatedProduct = useInvoiceComposerStore((state) => state.setCreatedProduct);
   const [productForm, setProductForm] = useState<ProductFormState>(createInitialProductForm());
   const [productSubmitting, setProductSubmitting] = useState(false);
 
@@ -91,7 +92,8 @@ export default function ProductQuickCreateModal() {
       setProductForm(createInitialProductForm());
       closeProductCreateModal();
       const notes = [created.data.hsn_warning, noOpeningStock ? NO_STOCK_SAVED_NOTE : null].filter(Boolean);
-      setFeedbackSuccess(`Product created successfully.${notes.length ? ` ${notes.join(' ')}` : ''}`);
+      setCreatedProduct(created.data);
+      setFeedbackSuccess(`Product created and added to the invoice.${notes.length ? ` ${notes.join(' ')}` : ''}`);
       await queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.all });
       await queryClient.invalidateQueries({ queryKey: invoiceQueryKeys.products });
     } catch (err) {

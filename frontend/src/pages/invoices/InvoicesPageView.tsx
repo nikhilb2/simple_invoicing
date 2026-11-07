@@ -56,6 +56,8 @@ export default function InvoicesPage() {
   const setSelectedLedgerId = useInvoiceComposerStore((state) => state.setSelectedLedgerId);
   const openLedgerCreateModal = useInvoiceComposerStore((state) => state.openLedgerCreateModal);
   const openProductCreateModal = useInvoiceComposerStore((state) => state.openProductCreateModal);
+  const createdProduct = useInvoiceComposerStore((state) => state.createdProduct);
+  const setCreatedProduct = useInvoiceComposerStore((state) => state.setCreatedProduct);
   const openStockUpdateModal = useInvoiceComposerStore((state) => state.openStockUpdateModal);
   const stockShortage = useInvoiceComposerStore((state) => state.stockShortage);
   const setStockShortage = useInvoiceComposerStore((state) => state.setStockShortage);
@@ -484,6 +486,33 @@ export default function InvoicesPage() {
     commitItems([...current, fresh]);
     return { item: fresh, index: current.length, created: true };
   }
+
+  /* A product made with "Add a product" goes straight onto the invoice, the way a
+     new customer is selected: the first line with no product, else the usual
+     place a scan would put it. Left to the dropdown, people typed its name
+     without picking it and the line stayed empty. */
+  function placeCreatedProduct(product: Product) {
+    adoptProduct(product);
+    const current = itemsRef.current;
+    const emptyIndex = current.findIndex((item) => !item.productId);
+    let itemId: number;
+    if (emptyIndex >= 0) {
+      itemId = current[emptyIndex].id;
+      commitItems(current.map((item, index) => (index === emptyIndex
+        ? { ...item, productId: String(product.id), unit_price: String(product.price), autoFilled: false }
+        : item)));
+    } else {
+      itemId = lineForProduct(product).item.id;
+    }
+    flashLine(itemId);
+  }
+
+  useEffect(() => {
+    if (!createdProduct) return;
+    setCreatedProduct(null);
+    placeCreatedProduct(createdProduct);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per created product
+  }, [createdProduct]);
 
   function serialTail(serialNumber: string) {
     return serialNumber.length > 4 ? `…${serialNumber.slice(-4)}` : serialNumber;

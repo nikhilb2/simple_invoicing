@@ -87,7 +87,7 @@ test.describe('Invoices', () => {
     await expect(page.locator('#invoice-ledger')).toHaveValue(new RegExp(ledgerName));
   });
 
-  test('creates a product from the quick-create modal and makes it selectable on the invoice form', async ({ authedPage: page }) => {
+  test('creates a product from the quick-create modal and puts it on the invoice line', async ({ authedPage: page }) => {
     const sku = uniqueSku();
     const productName = `Quick Product ${sku}`;
 
@@ -105,10 +105,15 @@ test.describe('Invoices', () => {
     await modal.locator('#modal-product-opening-stock').fill('5');
     await modal.getByRole('button', { name: 'Save product' }).click();
 
-    await expectSuccess(page, 'Product created successfully.');
+    await expectSuccess(page, 'Product created and added to the invoice.');
     await expect(modal).toHaveCount(0);
 
+    // No picking from the dropdown: the empty first line already holds it.
     const productInputId = (await page.locator('[id^="invoice-product-"]').first().getAttribute('id')) || 'invoice-product-1';
+    await expect(page.locator(`#${productInputId}`)).toHaveValue(`${productName} (${sku})`);
+    await expect(page.locator('[id^="invoice-price-"]').first()).toHaveValue('125');
+
+    // It stays selectable the usual way too.
     await selectComboboxOption(page, productInputId, sku);
     await expect(page.locator(`#${productInputId}`)).toHaveValue(`${productName} (${sku})`);
   });

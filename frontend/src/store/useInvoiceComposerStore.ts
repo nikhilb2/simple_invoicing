@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { StockShortage } from '../features/invoices/stockShortage';
+import type { Product } from '../types/api';
 
 /** Where the Update stock dialog starts when it is opened from a stock error. */
 export type StockUpdateStart = { productId: number; quantity: number };
@@ -12,6 +13,9 @@ type InvoiceComposerStore = {
   selectedLedgerId: string;
   showLedgerCreateModal: boolean;
   showProductCreateModal: boolean;
+  /** A product just saved from the quick-add form, waiting for the composer to put it on a line. */
+  createdProduct: Product | null;
+  setCreatedProduct: (product: Product | null) => void;
   showStockUpdateModal: boolean;
   feedbackError: string;
   feedbackSuccess: string;
@@ -33,6 +37,8 @@ export const useInvoiceComposerStore = create<InvoiceComposerStore>((set) => ({
   selectedLedgerId: '',
   showLedgerCreateModal: false,
   showProductCreateModal: false,
+  createdProduct: null,
+  setCreatedProduct: (createdProduct) => set({ createdProduct }),
   showStockUpdateModal: false,
   stockUpdateStart: null,
   stockShortage: null,
