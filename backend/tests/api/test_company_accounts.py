@@ -1,3 +1,6 @@
+import pytest
+
+
 def _ledger_payload(name: str, gst: str):
     return {
         "name": name,
@@ -254,3 +257,95 @@ def test_switching_an_account_to_cash_drops_its_upi_id(client):
     )
     assert updated.status_code == 200, updated.text
     assert updated.json()["upi_vpa"] is None
+
+
+# ---------------------------------------------------------------------------
+# Opening balance storage bounds (issue #755)
+# ---------------------------------------------------------------------------
+
+def _account_payload(**overrides):
+    payload = {
+        "account_type": "bank",
+        "display_name": "Bounds Test",
+        "opening_balance": 0,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_create_rejects_opening_balance_above_storage_limit(client):
+    response = client.post(
+        "/api/company-accounts/",
+        json=_account_payload(opening_balance=1e11),
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_create_rejects_opening_balance_that_rounds_up_to_storage_limit(client):
+    # 9,999,999,999.996 rounds up to 10,000,000,000.00 in NUMERIC(12, 2).
+    response = client.post(
+        "/api/company-accounts/",
+        json=_account_payload(opening_balance=9999999999.996),
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_create_accepts_largest_storable_opening_balance(client):
+    response = client.post(
+        "/api/company-accounts/",
+        json=_account_payload(opening_balance=9999999999.99),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["opening_balance"] == pytest.approx(9999999999.99)
+
+
+def test_create_rejects_nan_opening_balance_and_saves_nothing(client):
+    response = client.post(
+        "/api/company-accounts/",
+        json=_account_payload(opening_balance=float("nan")),
+    )
+    assert response.status_code == 422, response.text
+
+    list_response = client.get("/api/company-accounts/")
+    assert list_response.status_code == 200, list_response.text
+    assert list_response.json() == []
+
+
+def test_create_rejects_infinite_opening_balance(client):
+    response = client.post(
+        "/api/company-accounts/",
+        json=_account_payload(opening_balance=float("inf")),
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_update_rejects_opening_balance_above_storage_limit(client):
+    created = client.post(
+        "/api/company-accounts/", json=_account_payload(opening_balance=100)
+    ).json()
+
+    response = client.put(
+        f"/api/company-accounts/{created['id']}",
+        json={"opening_balance": 1e11},
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_update_rejects_nan_opening_balance(client):
+    created = client.post(
+        "/api/company-accounts/", json=_account_payload(opening_balance=100)
+    ).json()
+
+    response = client.put(
+        f"/api/company-accounts/{created['id']}",
+        json={"opening_balance": float("nan")},
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_create_still_rejects_negative_opening_balance(client):
+    response = client.post(
+        "/api/company-accounts/",
+        json=_account_payload(opening_balance=-1),
+    )
+    assert response.status_code == 422, response.text
