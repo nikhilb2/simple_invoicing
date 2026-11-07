@@ -380,6 +380,30 @@ class TestCSVImport:
         assert data["created"] == 0  # Rows with errors are skipped
         assert len(data["errors"]) == 2
 
+    def test_import_csv_extra_cells_errors_row_and_imports_valid_rows(self, client):
+        csv_content = (
+            "Item Name,Item Code,Description\n"
+            "Widget,W-1,Widget description,oops\n"
+            "Gadget,G-1\n"
+        )
+
+        res = client.post(
+            "/api/products/import-csv",
+            files={"file": ("test.csv", csv_content.encode("utf-8"), "text/csv")},
+        )
+        assert res.status_code == 200
+        assert res.json() == {
+            "created": 1,
+            "updated": 0,
+            "errors": [{"row": 2, "message": "Row 2 has more cells than the header row"}],
+        }
+
+        products = client.get("/api/products/with-inventory", params={"search": "G-1"})
+        assert products.status_code == 200
+        item, = products.json()["items"]
+        assert item["sku"] == "G-1"
+        assert item["name"] == "Gadget"
+
     def test_import_csv_empty_file(self, client):
         res = client.post(
             "/api/products/import-csv",

@@ -889,6 +889,9 @@ def _import_csv_from_content(content: bytes, db: Session, active_company: Compan
     row_num = 1  # header is row 0
     for row in reader:
         row_num += 1
+        if None in row:
+            errors.append({"row": row_num, "message": f"Row {row_num} has more cells than the header row"})
+            continue
         values = dict(zip(normalised, [v.strip() if v else "" for v in row.values()]))
 
         item_code = values.get("item_code") or values.get("sku") or values.get("item_code")
