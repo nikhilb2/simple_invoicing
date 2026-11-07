@@ -37,6 +37,15 @@ class InvoiceItemCreate(BaseModel):
     discount_type: Literal["percentage", "net"] | None = None
     discount_value: float | None = Field(default=None, lt=MONEY_LIMIT, allow_inf_nan=False)
 
+    @field_validator("product_id")
+    @classmethod
+    def _check_product_id(cls, value: int) -> int:
+        # A line whose product was typed but never picked arrives as 0. Say
+        # what to do, not "Product 0 not found".
+        if value <= 0:
+            raise ValueError("Choose a product from the list for every line.")
+        return value
+
     @field_validator("discount_value", mode="after")
     @classmethod
     def _check_discount_value(

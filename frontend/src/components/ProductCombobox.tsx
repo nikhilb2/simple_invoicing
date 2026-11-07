@@ -36,6 +36,27 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
     if (p) setQuery(`${p.name} (${p.sku})`);
   }, [value, products]);
 
+  // Typed text is not a selection. Without this, `required` passes as soon as
+  // the box holds any text, and the line is submitted with no product.
+  useEffect(() => {
+    inputRef.current?.setCustomValidity(required && !value ? 'Pick a product from the list.' : '');
+  }, [required, value]);
+
+  // On blur, a typed name or SKU that exactly matches one product selects it.
+  function handleBlur() {
+    if (value) return;
+    const typed = query.trim().toLowerCase();
+    if (!typed) return;
+    const pool = [...(serverResults ?? []), ...products];
+    const matches = pool.filter((p) =>
+      p.name.trim().toLowerCase() === typed
+      || p.sku.trim().toLowerCase() === typed
+      || `${p.name} (${p.sku})`.toLowerCase() === typed,
+    );
+    const unique = new Map(matches.map((p) => [p.id, p]));
+    if (unique.size === 1) handleSelect([...unique.values()][0]);
+  }
+
   // Cleanup debounce timer on unmount
   useEffect(() => () => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -180,6 +201,7 @@ export default function ProductCombobox({ id, products, value, onChange, onQuery
         onChange={handleInputChange}
         onFocus={() => { setOpen(true); setSearching(false); inputRef.current?.select(); }}
         onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
         placeholder="Search by name or SKU…"
         required={required}
       />

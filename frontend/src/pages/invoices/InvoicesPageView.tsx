@@ -963,6 +963,17 @@ export default function InvoicesPage() {
       return;
     }
 
+    /* A product name typed but never picked from the list leaves the line with
+       no product; sending it posts product_id 0. */
+    const unpickedIndex = items.findIndex((item) => !item.productId);
+    if (unpickedIndex >= 0) {
+      const unpicked = items[unpickedIndex];
+      setError(`Pick a product from the list on line ${unpickedIndex + 1}.`);
+      flashLine(unpicked.id);
+      document.getElementById(`invoice-product-${unpicked.id}`)?.focus();
+      return;
+    }
+
     /* A tracked line with no serials is not an incomplete form, it is an
        invoice for units nobody has identified. The block is stated on the line
        itself — a toast at the top of a six-line invoice does not say which. */
