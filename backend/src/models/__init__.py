@@ -10,6 +10,7 @@ from src.models.quotation import Quotation, QuotationItem
 from src.models.buyer import Buyer
 from src.models.ledger_address import LedgerAddress
 from src.models.company import CompanyProfile
+from src.models.tax_withholding_section import TaxWithholdingSection
 from src.models.company_account import CompanyAccount
 from src.models.payment import Payment, PaymentInvoiceAllocation
 from src.models.smtp_config import SMTPConfig

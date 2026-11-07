@@ -1,8 +1,8 @@
 from datetime import date, datetime
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.core.document_limits import MONEY_LIMIT
-from src.core.validation import normalize_gstin, normalize_gstin_format
+from src.core.validation import normalize_gstin, normalize_gstin_format, normalize_pan, pan_from_gstin
 
 # Opening balances are stored as signed NUMERIC(10, 2) payment amounts.
 # Half a paisa below the limit already rounds up to an unrepresentable value.
@@ -13,6 +13,8 @@ class LedgerCreate(BaseModel):
     name: str
     address: str
     gst: str | None = None
+    pan: str | None = None
+    party_type: str | None = None
     opening_balance: float | None = Field(
         default=None, gt=-_OPENING_BALANCE_LIMIT, lt=_OPENING_BALANCE_LIMIT, allow_inf_nan=False,
     )
@@ -29,6 +31,24 @@ class LedgerCreate(BaseModel):
     @classmethod
     def validate_gst(cls, value: str | None) -> str | None:
         return normalize_gstin(value)
+
+    @field_validator("pan")
+    @classmethod
+    def validate_pan(cls, value: str | None) -> str | None:
+        return normalize_pan(value)
+
+    @field_validator("party_type")
+    @classmethod
+    def validate_party_type(cls, value: str | None) -> str | None:
+        if value is not None and value not in {"individual", "huf", "company", "firm", "other"}:
+            raise ValueError("Party type must be individual, huf, company, firm or other")
+        return value
+
+    @model_validator(mode="after")
+    def derive_pan_from_gstin(self):
+        if not self.pan:
+            self.pan = pan_from_gstin(self.gst)
+        return self
 
     @field_validator("name", "address")
     @classmethod
@@ -51,6 +71,8 @@ class LedgerOut(BaseModel):
     name: str
     address: str
     gst: str = ""
+    pan: str | None = None
+    party_type: str | None = None
     opening_balance: float | None = None
     # Closing balance to date (debit - credit); only populated where the caller
     # asks for it, since it costs extra aggregates.

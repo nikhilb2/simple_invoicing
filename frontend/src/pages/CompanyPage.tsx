@@ -730,6 +730,8 @@ export default function CompanyPage() {
     name: '',
     address: '',
     gst: '',
+    pan: '',
+    tan: '',
     phone_number: '',
     currency_code: 'INR',
     email: '',
@@ -788,6 +790,8 @@ export default function CompanyPage() {
         name: data.name || '',
         address: data.address || '',
         gst: data.gst || '',
+        pan: data.pan || (data.gst ? data.gst.slice(2, 12) : ''),
+        tan: data.tan || '',
         phone_number: data.phone_number || '',
         currency_code: data.currency_code || 'USD',
         email: data.email || '',
@@ -872,6 +876,8 @@ export default function CompanyPage() {
         name: form.name.trim(),
         address: form.address.trim(),
         gst: form.gst.trim().toUpperCase(),
+        pan: (form.pan || '').trim().toUpperCase(),
+        tan: (form.tan || '').trim().toUpperCase(),
         phone_number: form.phone_number.trim(),
         currency_code: form.currency_code.trim().toUpperCase(),
         email: form.email.trim(),
@@ -1123,6 +1129,30 @@ export default function CompanyPage() {
                   />
                   <small className="field-hint">Format: 27ABCDE1234F1Z0</small>
                   {gstError ? <p className="field-error" id="company-gst-error" role="alert">{gstError}</p> : null}
+                </div>
+
+                <div className="field">
+                  <label htmlFor="company-pan">PAN</label>
+                  <input
+                    id="company-pan"
+                    className="input"
+                    value={form.pan || ''}
+                    onChange={(event) => setForm((current) => ({ ...current, pan: event.target.value.toUpperCase() }))}
+                    placeholder="ABCDE1234F"
+                    maxLength={10}
+                  />
+                </div>
+
+                <div className="field">
+                  <label htmlFor="company-tan">TAN</label>
+                  <input
+                    id="company-tan"
+                    className="input"
+                    value={form.tan || ''}
+                    onChange={(event) => setForm((current) => ({ ...current, tan: event.target.value.toUpperCase() }))}
+                    placeholder="ABCD12345E"
+                    maxLength={10}
+                  />
                 </div>
 
                 <div className="field">

@@ -144,6 +144,7 @@ smtp_get_config	GET	/api/smtp-configs/
 smtp_test_connection	POST	/api/smtp-configs/test
 smtp_test_template	POST	/api/smtp-configs/test-template
 smtp_update_config	PUT	/api/smtp-configs/{smtp_config_id}
+tax_withholding_list_tax_withholding_sections	GET	/api/tax-withholding-sections
 tax_ledger_csv	GET	/api/ledgers/tax-ledger/csv
 tax_ledger_get	GET	/api/ledgers/tax-ledger/
 tax_ledger_pdf	GET	/api/ledgers/tax-ledger/pdf

@@ -72,6 +72,8 @@ def _create_company_profile(db: Session, payload: CompanyProfileUpdate) -> Compa
         name=payload.name.strip(),
         address=payload.address.strip(),
         gst=payload.gst.strip().upper(),
+        pan=payload.pan,
+        tan=payload.tan,
         phone_number=payload.phone_number.strip(),
         currency_code=payload.currency_code.strip().upper() if payload.currency_code else "INR",
         email=payload.email.strip() if payload.email else None,
@@ -173,6 +175,8 @@ def _company_to_out(company: CompanyProfile) -> CompanyProfileOut:
         name=company.name,
         address=company.address,
         gst=company.gst or "",
+        pan=company.pan,
+        tan=company.tan,
         phone_number=company.phone_number or "",
         currency_code=company.currency_code,
         email=company.email,
@@ -376,6 +380,10 @@ def upsert_company_profile(
     profile.name = payload.name.strip()
     profile.address = payload.address.strip()
     profile.gst = payload.gst.strip().upper()
+    if "pan" in payload.model_fields_set or "gst" in payload.model_fields_set:
+        profile.pan = payload.pan
+    if "tan" in payload.model_fields_set:
+        profile.tan = payload.tan
     profile.phone_number = payload.phone_number.strip()
     profile.currency_code = payload.currency_code.strip().upper() if payload.currency_code else "INR"
     profile.email = payload.email.strip() if payload.email else None

@@ -118,6 +118,7 @@ EXCLUDED_TABLES: tuple[str, ...] = (
     "oauth_login_codes",
     "oauth_tokens",
     "smtp_configs",
+    "tax_withholding_sections",  # Shared tax reference data, not company data.
     "user_identities",
     "user_shortcuts",
     "users",

@@ -114,6 +114,8 @@ def _serialize_ledger(db: Session, ledger: Ledger, company_id: int | None = None
     name=ledger.name,
     address=ledger.address,
     gst=ledger.gst,
+    pan=ledger.pan,
+    party_type=ledger.party_type,
     opening_balance=float(opening_balance_payment.amount) if opening_balance_payment else None,
     phone_number=ledger.phone_number,
     email=ledger.email,
@@ -609,6 +611,8 @@ def create_ledger(
     name=payload.name.strip(),
     address=payload.address.strip(),
     gst=gst,
+    pan=payload.pan,
+    party_type=payload.party_type,
     phone_number=payload.phone_number.strip(),
     email=payload.email.strip() if payload.email else None,
     website=payload.website.strip() if payload.website else None,
@@ -1176,6 +1180,8 @@ def update_ledger(
     ledger.name = payload.name.strip()
     ledger.address = payload.address.strip()
     ledger.gst = gst
+    ledger.pan = payload.pan
+    ledger.party_type = payload.party_type
     ledger.phone_number = payload.phone_number.strip()
     ledger.email = payload.email.strip() if payload.email else None
     ledger.website = payload.website.strip() if payload.website else None

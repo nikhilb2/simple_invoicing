@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from src.core.validation import normalize_gstin
+from src.core.validation import normalize_gstin, normalize_pan, normalize_tan, pan_from_gstin
 
 
 class CompanyTermOut(BaseModel):
@@ -25,6 +25,8 @@ class CompanyProfileBase(BaseModel):
     name: str
     address: str
     gst: str = ""
+    pan: str | None = None
+    tan: str | None = None
     phone_number: str = ""
     currency_code: str | None = None
     email: str | None = None
@@ -50,6 +52,22 @@ class CompanyProfileUpdate(CompanyProfileBase):
     @classmethod
     def validate_gst(cls, value: str) -> str:
         return normalize_gstin(value) or ""
+
+    @field_validator("pan")
+    @classmethod
+    def validate_pan(cls, value: str | None) -> str | None:
+        return normalize_pan(value)
+
+    @field_validator("tan")
+    @classmethod
+    def validate_tan(cls, value: str | None) -> str | None:
+        return normalize_tan(value)
+
+    @model_validator(mode="after")
+    def derive_pan_from_gstin(self):
+        if not self.pan:
+            self.pan = pan_from_gstin(self.gst)
+        return self
 
 
 class CompanyProfileOut(CompanyProfileBase):

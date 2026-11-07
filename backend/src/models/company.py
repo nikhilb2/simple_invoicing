@@ -11,6 +11,8 @@ class CompanyProfile(Base):
     name = Column(String, nullable=False)
     address = Column(String, nullable=False)
     gst = Column(String, nullable=True)
+    pan = Column(String(10), nullable=True)
+    tan = Column(String(10), nullable=True)
     phone_number = Column(String, nullable=True)
     currency_code = Column(String, nullable=True)
     email = Column(String, nullable=True)
