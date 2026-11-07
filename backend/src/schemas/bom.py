@@ -2,6 +2,8 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
 
+from src.core.document_limits import QUANTITY_STORAGE_CUTOFF
+
 
 class BOMComponentOut(BaseModel):
     """BOM component with product details"""
@@ -23,12 +25,12 @@ class BOMCreate(BaseModel):
     """Create a new BOM entry"""
     product_id: int
     component_product_id: int
-    quantity_required: float = Field(gt=0, allow_inf_nan=False)
+    quantity_required: float = Field(gt=0, lt=QUANTITY_STORAGE_CUTOFF, allow_inf_nan=False)
 
 
 class BOMUpdate(BaseModel):
     """Update a BOM entry"""
-    quantity_required: float = Field(gt=0, allow_inf_nan=False)
+    quantity_required: float = Field(gt=0, lt=QUANTITY_STORAGE_CUTOFF, allow_inf_nan=False)
 
 
 class ProduceRequest(BaseModel):

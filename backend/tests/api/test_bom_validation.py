@@ -149,3 +149,52 @@ def test_produce_rejects_non_finite_quantity(client, db_session, raw_value):
         headers={"Content-Type": "application/json"},
     )
     assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize("quantity", [1e10, 999_999_999.9996])
+def test_bom_create_rejects_overflowing_quantity(client, db_session, quantity):
+    finished, component, _ = _make_setup(db_session)
+
+    response = client.post(
+        "/api/bom/",
+        json={
+            "product_id": finished.id,
+            "component_product_id": component.id,
+            "quantity_required": quantity,
+        },
+    )
+    # Validation (422) runs before the duplicate-pair check.
+    assert response.status_code == 422, response.text
+
+
+def test_bom_create_accepts_quantity_just_below_storage_cutoff(client, db_session):
+    finished, _, _ = _make_setup(db_session)
+    other = Product(
+        company_id=finished.company_id,
+        sku="BOMVALRAW04",
+        name="Near Limit Material",
+        price=Decimal("3"),
+    )
+    db_session.add(other)
+    db_session.commit()
+
+    response = client.post(
+        "/api/bom/",
+        json={
+            "product_id": finished.id,
+            "component_product_id": other.id,
+            "quantity_required": 999_999_999.999,
+        },
+    )
+    assert response.status_code == 201, response.text
+
+
+@pytest.mark.parametrize("quantity", [1e10, 999_999_999.9996])
+def test_bom_update_rejects_overflowing_quantity(client, db_session, quantity):
+    _, _, bom_entry = _make_setup(db_session)
+
+    response = client.put(
+        f"/api/bom/{bom_entry.id}",
+        json={"quantity_required": quantity},
+    )
+    assert response.status_code == 422, response.text
