@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import ModalCloseButton from '../../../components/ModalCloseButton';
 import { useQueryClient } from '@tanstack/react-query';
 import api, { getApiErrorMessage } from '../../../api/client';
@@ -23,7 +23,7 @@ const CUSTOM_UNIT_VALUE = '__custom__';
    rides along locally rather than widening the shared form state. */
 
 function createInitialProductForm(): ProductFormState {
-  return { name: '', sku: '', hsn_sac: '', price: '', gst_rate: '', unit: 'Pieces', allow_decimal: false, maintain_inventory: true, track_serials: false, initial_quantity: '0' };
+  return { name: '', sku: '', hsn_sac: '', price: '', gst_rate: '', unit: 'Pieces', allow_decimal: false, maintain_inventory: true, track_serials: false, initial_quantity: '' };
 }
 
 export default function ProductQuickCreateModal() {
@@ -39,7 +39,17 @@ export default function ProductQuickCreateModal() {
      on a purchase entry, and an untracked product has no stock to open with. */
   const asksOpeningStock = productForm.maintain_inventory && !productForm.track_serials;
   const openingQuantity = asksOpeningStock ? Number(productForm.initial_quantity || 0) : 0;
-  const noOpeningStock = !productForm.track_serials && startsWithNoStock(productForm.maintain_inventory, openingQuantity);
+  /* Opening stock starts empty, not 0, and must be answered while stock is
+     tracked: a prefilled 0 got saved unnoticed, and the first invoice then
+     failed on stock. 0 stays allowed, with the warning. */
+  const openingStockAnswered = productForm.initial_quantity.trim() !== '';
+  const noOpeningStock = openingStockAnswered && !productForm.track_serials && startsWithNoStock(productForm.maintain_inventory, openingQuantity);
+  const openingStockRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    openingStockRef.current?.setCustomValidity(
+      openingStockAnswered ? '' : 'Enter how many you have now, or untick Maintain inventory.',
+    );
+  }, [openingStockAnswered, asksOpeningStock, showProductCreateModal]);
 
   useEscapeClose(() => {
     if (showProductCreateModal) {
@@ -157,6 +167,43 @@ export default function ProductQuickCreateModal() {
             <label htmlFor="modal-product-gst-rate">GST %</label>
             <GstRateSelect id="modal-product-gst-rate" value={productForm.gst_rate} onChange={(rate) => setProductForm((current) => ({ ...current, gst_rate: rate }))} />
           </div>
+          <div className="field field--full" style={{ marginBottom: 0 }}>
+            <label htmlFor="modal-product-maintain-inventory" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 0 }}>
+              <input
+                id="modal-product-maintain-inventory"
+                type="checkbox"
+                checked={productForm.maintain_inventory}
+                disabled={productForm.track_serials}
+                onChange={(event) => setProductForm((current) => ({ ...current, maintain_inventory: event.target.checked }))}
+              />
+              Maintain inventory for this product
+            </label>
+            <small className="field-hint">
+              {productForm.track_serials
+                ? 'Always on while serial numbers are tracked — every serial is a unit of stock.'
+                : 'Disable this for service charges and other non-stock items.'}
+            </small>
+          </div>
+          {asksOpeningStock ? (
+            <div className="field">
+              <label htmlFor="modal-product-opening-stock">Opening stock</label>
+              <input
+                ref={openingStockRef}
+                id="modal-product-opening-stock"
+                className="input"
+                type="number"
+                min="0"
+                step={productForm.allow_decimal ? '0.001' : '1'}
+                value={productForm.initial_quantity}
+                onChange={(event) => setProductForm((current) => ({ ...current, initial_quantity: event.target.value }))}
+                placeholder="How many you have now"
+                required
+              />
+              {noOpeningStock
+                ? <small className="field-warning" role="status">{NO_STOCK_WARNING}</small>
+                : <small className="field-hint">An invoice can only sell what is in stock.</small>}
+            </div>
+          ) : null}
           <div className="field">
             <label htmlFor="modal-product-unit">Unit</label>
             <select
@@ -190,38 +237,6 @@ export default function ProductQuickCreateModal() {
               />
             </div>
           )}
-          <div className="field field--full" style={{ marginBottom: 0 }}>
-            <label htmlFor="modal-product-maintain-inventory" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 0 }}>
-              <input
-                id="modal-product-maintain-inventory"
-                type="checkbox"
-                checked={productForm.maintain_inventory}
-                disabled={productForm.track_serials}
-                onChange={(event) => setProductForm((current) => ({ ...current, maintain_inventory: event.target.checked }))}
-              />
-              Maintain inventory for this product
-            </label>
-            <small className="field-hint">
-              {productForm.track_serials
-                ? 'Always on while serial numbers are tracked — every serial is a unit of stock.'
-                : 'Disable this for service charges and other non-stock items.'}
-            </small>
-          </div>
-          {asksOpeningStock ? (
-            <div className="field">
-              <label htmlFor="modal-product-opening-stock">Opening stock</label>
-              <input
-                id="modal-product-opening-stock"
-                className="input"
-                type="number"
-                min="0"
-                step={productForm.allow_decimal ? '0.001' : '1'}
-                value={productForm.initial_quantity}
-                onChange={(event) => setProductForm((current) => ({ ...current, initial_quantity: event.target.value }))}
-              />
-              {noOpeningStock ? <small className="field-warning" role="status">{NO_STOCK_WARNING}</small> : null}
-            </div>
-          ) : null}
           <div className="field field--full" style={{ marginBottom: 0 }}>
             <label htmlFor="modal-product-allow-decimal" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: 0 }}>
               <input
