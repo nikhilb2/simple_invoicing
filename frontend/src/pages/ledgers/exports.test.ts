@@ -7,6 +7,8 @@ const ledger = (overrides: Partial<Ledger> = {}): Ledger => ({
   name: 'Acme Traders',
   address: 'Kathmandu',
   gst: '27ABCDE1234F1Z5',
+  pan: null,
+  party_type: null,
   opening_balance: null,
   balance: 1500,
   phone_number: '9800000001',

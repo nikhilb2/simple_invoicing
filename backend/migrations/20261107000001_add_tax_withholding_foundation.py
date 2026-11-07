@@ -3,6 +3,7 @@
 from sqlalchemy import text
 
 
+# threshold_single is a per-bill/transaction limit; threshold_aggregate is a tax-year limit.
 _SECTIONS = [
     ("tds", 1961, "194C", "194C", "Payment to contractor", 1, 2, 20, 30000, 100000, "per bill / tax year", "taxable", "2025-04-01", "2026-03-31"),
     ("tds", 1961, "194H", "194H", "Commission or brokerage", 2, 2, 20, None, 20000, "per tax year", "taxable", "2025-04-01", "2026-03-31"),
@@ -14,14 +15,15 @@ _SECTIONS = [
     ("tds", 1961, "194T", "194T", "Payments to partners of a firm", 10, 10, 20, None, 20000, "per tax year", "taxable", "2025-04-01", "2026-03-31"),
     ("tcs", 1961, "206C(1) Sl. No. (i)", "206C(1)", "Sale of alcoholic liquor for human consumption", 1, 1, 5, None, None, None, "gross", "2025-04-01", "2026-03-31"),
     ("tcs", 1961, "206C(1) Sl. No. (ii)", "206C(1)", "Sale of tendu leaves", 5, 5, 10, None, None, None, "gross", "2025-04-01", "2026-03-31"),
-    ("tcs", 1961, "206C(1) Sl. No. (iii)", "206C(1)", "Sale of timber or other forest produce under a forest lease", 2, 2, 5, None, None, None, "gross", "2025-04-01", "2026-03-31"),
-    ("tcs", 1961, "206C(1) Sl. No. (iv)", "206C(1)", "Sale of timber obtained by any other mode", 2, 2, 5, None, None, None, "gross", "2025-04-01", "2026-03-31"),
+    ("tcs", 1961, "206C(1) Sl. No. (iii)", "206C(1)", "Sale of timber under a forest lease", 2.5, 2.5, 5, None, None, None, "gross", "2025-04-01", "2026-03-31"),
+    ("tcs", 1961, "206C(1) Sl. No. (iv)", "206C(1)", "Sale of timber obtained by any other mode", 2.5, 2.5, 5, None, None, None, "gross", "2025-04-01", "2026-03-31"),
+    ("tcs", 1961, "206C(1) Sl. No. (v)", "206C(1)", "Sale of any other forest produce (not timber or tendu leaves)", 2.5, 2.5, 5, None, None, None, "gross", "2025-04-01", "2026-03-31"),
     ("tcs", 1961, "206C(1) Sl. No. (vi)", "206C(1)", "Sale of scrap", 1, 1, 5, None, None, None, "gross", "2025-04-01", "2026-03-31"),
     ("tcs", 1961, "206C(1) Sl. No. (vii)", "206C(1)", "Sale of coal, lignite or iron ore", 1, 1, 5, None, None, None, "gross", "2025-04-01", "2026-03-31"),
     ("tcs", 1961, "206C(1C)", "206C(1C)", "Parking lot, toll plaza, mine or quarry licence", 2, 2, 5, None, None, None, "gross", "2025-04-01", "2026-03-31"),
     ("tcs", 1961, "206C(1F)", "206C(1F)", "Sale of motor vehicles above the threshold", 1, 1, 5, 1000000, None, "per vehicle", "gross", "2025-04-01", "2026-03-31"),
     ("tcs", 1961, "206C(1G)(a)", "206C(1G)", "LRS remittance for education or medical purposes", 5, 5, 10, None, 1000000, "excess over threshold", "gross", "2025-04-01", "2026-03-31"),
-    ("tcs", 1961, "206C(1G)(a)", "206C(1G)", "Other LRS remittances", 20, 20, 20, 1000000, None, "per tax year", "gross", "2025-04-01", "2026-03-31"),
+    ("tcs", 1961, "206C(1G)(a)", "206C(1G)", "Other LRS remittances", 20, 20, 20, None, 1000000, "per tax year", "gross", "2025-04-01", "2026-03-31"),
     ("tcs", 1961, "206C(1G)(b)", "206C(1G)", "Overseas tour packages up to ₹10 lakh", 5, 5, 10, None, 1000000, "up to ₹10 lakh", "gross", "2025-04-01", "2026-03-31"),
     ("tcs", 1961, "206C(1G)(b)", "206C(1G)", "Overseas tour packages above ₹10 lakh", 20, 20, 20, None, 1000000, "excess over threshold", "gross", "2025-04-01", "2026-03-31"),
     ("tds", 2025, "393(1) Sl. No. 6(i)", "194C", "Payment to contractor", 1, 2, 20, 30000, 100000, "per bill / tax year", "taxable", "2026-04-01", None),
@@ -38,8 +40,8 @@ _SECTIONS = [
     ("tcs", 2025, "394(1) Sl. No. 4", "206C(1)", "Sale of scrap", 2, 2, 5, None, None, None, "gross", "2026-04-01", None),
     ("tcs", 2025, "394(1) Sl. No. 5", "206C(1)", "Sale of coal, lignite or iron ore", 2, 2, 5, None, None, None, "gross", "2026-04-01", None),
     ("tcs", 2025, "394(1) Sl. No. 6", "206C(1F)", "Sale of motor vehicles or notified goods above ₹10 lakh", 1, 1, 5, 1000000, None, "per transaction", "gross", "2026-04-01", None),
-    ("tcs", 2025, "394(1) Sl. No. 7", "206C(1G)", "LRS remittance for education or medical purposes", 2, 2, 5, 1000000, None, "per tax year", "gross", "2026-04-01", None),
-    ("tcs", 2025, "394(1) Sl. No. 7", "206C(1G)", "Other LRS remittances", 20, 20, 20, 1000000, None, "per tax year", "gross", "2026-04-01", None),
+    ("tcs", 2025, "394(1) Sl. No. 7", "206C(1G)", "LRS remittance for education or medical purposes", 2, 2, 5, None, 1000000, "per tax year", "gross", "2026-04-01", None),
+    ("tcs", 2025, "394(1) Sl. No. 7", "206C(1G)", "Other LRS remittances", 20, 20, 20, None, 1000000, "per tax year", "gross", "2026-04-01", None),
     ("tcs", 2025, "394(1) Sl. No. 8", "206C(1G)", "Overseas tour packages", 2, 2, 5, None, None, None, "gross", "2026-04-01", None),
     ("tcs", 2025, "394(1) Sl. No. 9", "206C(1C)", "Parking lot, toll plaza, mine or quarry licence", 2, 2, 5, None, None, None, "gross", "2026-04-01", None),
 ]

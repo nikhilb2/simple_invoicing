@@ -1,6 +1,8 @@
 from datetime import date
 from decimal import Decimal
 
+from app_main import app
+from src.api.deps import get_current_user
 from src.models.tax_withholding_section import TaxWithholdingSection
 from src.services.tax_withholding import suggest_withholding
 
@@ -45,3 +47,12 @@ def test_missing_pan_uses_higher_rate_and_tcs_is_capped_at_twenty_percent():
 def test_no_pan_tds_uses_section_specific_rate():
     section = _section(rate_no_pan=Decimal("5"))
     assert suggest_withholding(section, 1000, "individual", False) == {"rate": 5.0, "amount": 50.0}
+
+
+def test_tax_sections_require_sign_in(client):
+    current_user_override = app.dependency_overrides.pop(get_current_user)
+    try:
+        response = client.get("/api/tax-withholding-sections")
+    finally:
+        app.dependency_overrides[get_current_user] = current_user_override
+    assert response.status_code == 401
